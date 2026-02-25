@@ -1,0 +1,123 @@
+profiles:
+- boards:
+  - linkedin
+  - indeed
+  - glassdoor
+  - zip_recruiter
+  - google
+  custom_boards:
+  - adzuna
+  - theladders
+  - craigslist
+  exclude_keywords:
+  - sales
+  - account executive
+  - sales engineer
+  - SDR
+  - BDR
+  - business development
+  - sales development
+  - sales manager
+  - sales representative
+  - sales rep
+  hours_old: 240
+  locations:
+  - Remote
+  - San Francisco Bay Area, CA
+  name: cs_leadership
+  results_per_board: 75
+  titles:
+  - Customer Success Manager
+  - Customer Engagement Manager
+  - Director of Customer Success
+  - VP Customer Success
+  - Head of Customer Success
+  - Technical Account Manager
+  - TAM
+  - Customer Experience Lead
+  - CSM
+  - CX
+  - Customer Success Consultant
+- boards:
+  - linkedin
+  - indeed
+  custom_boards:
+  - adzuna
+  - craigslist
+  exclude_keywords:
+  - sales
+  - account executive
+  - SDR
+  - BDR
+  - sales development
+  hours_old: 336
+  locations:
+  - Remote
+  - San Francisco Bay Area, CA
+  mission_tags:
+  - music
+  name: music_industry
+  results_per_board: 50
+  titles:
+  - Customer Success Manager
+  - Partner Success Manager
+  - Artist Success Manager
+  - Creator Success Manager
+  - Technical Account Manager
+  - Community Manager
+  - Account Manager
+  - Label Relations Manager
+- boards:
+  - linkedin
+  - indeed
+  custom_boards:
+  - adzuna
+  - craigslist
+  exclude_keywords:
+  - sales
+  - account executive
+  - SDR
+  - BDR
+  hours_old: 336
+  locations:
+  - Remote
+  - San Francisco Bay Area, CA
+  mission_tags:
+  - animal_welfare
+  name: animal_welfare
+  results_per_board: 50
+  titles:
+  - Customer Success Manager
+  - Program Manager
+  - Community Engagement Manager
+  - Operations Manager
+  - Partner Success Manager
+  - Account Manager
+  - Development Manager
+- boards:
+  - linkedin
+  - indeed
+  custom_boards:
+  - adzuna
+  - craigslist
+  exclude_keywords:
+  - sales
+  - account executive
+  - SDR
+  - BDR
+  hours_old: 336
+  locations:
+  - Remote
+  - San Francisco Bay Area, CA
+  mission_tags:
+  - education
+  name: education
+  results_per_board: 50
+  titles:
+  - Customer Success Manager
+  - District Success Manager
+  - Implementation Specialist
+  - Partner Success Manager
+  - Account Manager
+  - School Success Manager
+  - Customer Experience Manager

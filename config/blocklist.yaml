@@ -1,0 +1,15 @@
+# Discovery blocklist — entries matching any rule are silently dropped before DB insert.
+# Applies globally across all search profiles and custom boards.
+
+# Company name blocklist — partial case-insensitive match on the company field.
+# e.g. "Amazon" blocks any listing where company contains "amazon".
+companies: []
+
+# Industry/content blocklist — blocked if company name OR job description contains any keyword.
+# Use this for industries you will never work in regardless of company.
+# e.g. "gambling", "crypto", "tobacco", "defense"
+industries: []
+
+# Location blocklist — blocked if the location field contains any of these strings.
+# e.g. "Dallas", "Austin, TX"
+locations: []

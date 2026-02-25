@@ -1,0 +1,38 @@
+# config/email.yaml — IMAP email sync configuration
+# Copy this to config/email.yaml and fill in your credentials.
+# config/email.yaml is gitignored — never commit real credentials.
+#
+# Gmail setup:
+#   1. Enable IMAP: Gmail Settings → See all settings → Forwarding and POP/IMAP
+#   2. Create App Password: myaccount.google.com/apppasswords
+#      (requires 2-Step Verification to be enabled)
+#   3. Use your Gmail address as username, App Password as password.
+#
+# Outlook / Office 365:
+#   host: outlook.office365.com
+#   port: 993
+#   use_ssl: true
+#   (Use your regular email + password, or an App Password if MFA is enabled)
+
+host: imap.gmail.com
+port: 993
+use_ssl: true
+
+# Your full email address
+username: your.email@gmail.com
+
+# Gmail: use an App Password (16-char code, no spaces)
+# Other providers: use your regular password (or App Password if MFA enabled)
+password: xxxx-xxxx-xxxx-xxxx
+
+# Sent folder name — leave blank to auto-detect
+# Gmail: "[Gmail]/Sent Mail"   Outlook: "Sent Items"   Generic: "Sent"
+sent_folder: ""
+
+# How many days back to search (90 = ~3 months)
+lookback_days: 90
+
+# Optional: Gmail label to scan for action-needed emails (e.g. "TO DO JOBS").
+# Emails in this label are matched to pipeline jobs by company name, then
+# filtered by action keywords in the subject. Leave blank to disable.
+todo_label: ""
