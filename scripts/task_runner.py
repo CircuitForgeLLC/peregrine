@@ -24,24 +24,26 @@ from scripts.db import (
 
 
 def submit_task(db_path: Path = DEFAULT_DB, task_type: str = "",
-                job_id: int = None) -> tuple[int, bool]:
+                job_id: int = None,
+                params: str | None = None) -> tuple[int, bool]:
     """Submit a background LLM task.
 
     Returns (task_id, True) if a new task was queued and a thread spawned.
     Returns (existing_id, False) if an identical task is already in-flight.
     """
-    task_id, is_new = insert_task(db_path, task_type, job_id)
+    task_id, is_new = insert_task(db_path, task_type, job_id or 0, params=params)
     if is_new:
         t = threading.Thread(
             target=_run_task,
-            args=(db_path, task_id, task_type, job_id),
+            args=(db_path, task_id, task_type, job_id or 0, params),
             daemon=True,
         )
         t.start()
     return task_id, is_new
 
 
-def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int) -> None:
+def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
+              params: str | None = None) -> None:
     """Thread body: run the generator and persist the result."""
     # job_id == 0 means a global task (e.g. discovery) with no associated job row.
     job: dict = {}

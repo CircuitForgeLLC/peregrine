@@ -30,6 +30,12 @@ candidate_accessibility_focus: false
 # Adds an LGBTQIA+ inclusion section (ERGs, non-discrimination policies, culture signals).
 candidate_lgbtq_focus: false
 
+tier: free                  # free | paid | premium
+dev_tier_override: null     # overrides tier locally (for testing only)
+wizard_complete: false
+wizard_step: 0
+dismissed_banners: []
+
 docs_dir: "~/Documents/JobSearch"
 ollama_models_dir: "~/models/ollama"
 vllm_models_dir: "~/models/vllm"
