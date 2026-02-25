@@ -208,3 +208,88 @@ def test_scrape_url_submits_enrich_craigslist_for_craigslist_job(tmp_path):
     call_args = mock_submit.call_args
     assert call_args[0][1] == "enrich_craigslist"
     assert call_args[0][2] == job_id
+
+
+import json as _json
+
+def test_wizard_generate_unknown_section_fails(tmp_path):
+    """wizard_generate with unknown section marks task failed."""
+    db = tmp_path / "t.db"
+    from scripts.db import init_db, insert_task
+    init_db(db)
+
+    params = _json.dumps({"section": "nonexistent_section", "input": {}})
+    task_id, _ = insert_task(db, "wizard_generate", 0, params=params)
+
+    # Call _run_task directly (not via thread) to test synchronously
+    from scripts.task_runner import _run_task
+    _run_task(db, task_id, "wizard_generate", 0, params=params)
+
+    import sqlite3
+    conn = sqlite3.connect(db)
+    row = conn.execute("SELECT status, error FROM background_tasks WHERE id=?", (task_id,)).fetchone()
+    conn.close()
+    assert row[0] == "failed", f"Expected 'failed', got '{row[0]}'"
+
+
+def test_wizard_generate_missing_section_fails(tmp_path):
+    """wizard_generate with no section key marks task failed."""
+    db = tmp_path / "t.db"
+    from scripts.db import init_db, insert_task
+    init_db(db)
+
+    params = _json.dumps({"input": {"resume_text": "some text"}})  # missing section key
+    task_id, _ = insert_task(db, "wizard_generate", 0, params=params)
+
+    from scripts.task_runner import _run_task
+    _run_task(db, task_id, "wizard_generate", 0, params=params)
+
+    import sqlite3
+    conn = sqlite3.connect(db)
+    row = conn.execute("SELECT status FROM background_tasks WHERE id=?", (task_id,)).fetchone()
+    conn.close()
+    assert row[0] == "failed"
+
+
+def test_wizard_generate_null_params_fails(tmp_path):
+    """wizard_generate with params=None marks task failed."""
+    db = tmp_path / "t.db"
+    from scripts.db import init_db, insert_task
+    init_db(db)
+
+    task_id, _ = insert_task(db, "wizard_generate", 0, params=None)
+
+    from scripts.task_runner import _run_task
+    _run_task(db, task_id, "wizard_generate", 0, params=None)
+
+    import sqlite3
+    conn = sqlite3.connect(db)
+    row = conn.execute("SELECT status FROM background_tasks WHERE id=?", (task_id,)).fetchone()
+    conn.close()
+    assert row[0] == "failed"
+
+
+def test_wizard_generate_stores_result_as_json(tmp_path):
+    """wizard_generate stores result JSON in error field on success."""
+    from unittest.mock import patch, MagicMock
+    db = tmp_path / "t.db"
+    from scripts.db import init_db, insert_task
+    init_db(db)
+
+    params = _json.dumps({"section": "career_summary", "input": {"resume_text": "10 years Python"}})
+    task_id, _ = insert_task(db, "wizard_generate", 0, params=params)
+
+    # Mock _run_wizard_generate to return a simple string
+    with patch("scripts.task_runner._run_wizard_generate", return_value="Experienced Python developer."):
+        from scripts.task_runner import _run_task
+        _run_task(db, task_id, "wizard_generate", 0, params=params)
+
+    import sqlite3
+    conn = sqlite3.connect(db)
+    row = conn.execute("SELECT status, error FROM background_tasks WHERE id=?", (task_id,)).fetchone()
+    conn.close()
+
+    assert row[0] == "completed", f"Expected 'completed', got '{row[0]}'"
+    payload = _json.loads(row[1])
+    assert payload["section"] == "career_summary"
+    assert payload["result"] == "Experienced Python developer."
