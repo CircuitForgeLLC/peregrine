@@ -1,0 +1,68 @@
+name: job-seeker
+# Recreate: conda env create -f environment.yml
+# Update pinned snapshot: conda env export --no-builds > environment.yml
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    # ── Web UI ────────────────────────────────────────────────────────────────
+    - streamlit>=1.35
+    - watchdog            # live reload
+    - reportlab>=4.0      # PDF cover letter export
+    - pandas>=2.0
+    - pyarrow             # streamlit data tables
+    - streamlit-paste-button>=0.1.0
+
+    # ── Job scraping ──────────────────────────────────────────────────────────
+    - python-jobspy>=1.1
+    - playwright          # browser automation (run: playwright install chromium)
+    - selenium
+    - undetected-chromedriver
+    - webdriver-manager
+    - beautifulsoup4
+    - requests
+    - curl_cffi           # Chrome TLS fingerprint — bypasses Cloudflare on The Ladders
+    - fake-useragent      # company scraper rotation
+
+    # ── LLM / AI backends ─────────────────────────────────────────────────────
+    - openai>=1.0         # used for OpenAI-compat backends (ollama, vllm, wrappers)
+    - anthropic>=0.80     # direct Anthropic API fallback
+    - ollama              # Python client for Ollama management
+    - langchain>=0.2
+    - langchain-openai
+    - langchain-anthropic
+    - langchain-ollama
+    - langchain-community
+    - langchain-google-genai
+    - google-generativeai
+    - tiktoken
+
+    # ── Resume matching ───────────────────────────────────────────────────────
+    - scikit-learn>=1.3
+    - rapidfuzz
+    - lib-resume-builder-aihawk
+
+    # ── Notion integration ────────────────────────────────────────────────────
+    - notion-client>=3.0
+
+    # ── Document handling ─────────────────────────────────────────────────────
+    - pypdf
+    - pdfminer-six
+    - pyyaml>=6.0
+    - python-dotenv
+
+    # ── Utilities ─────────────────────────────────────────────────────────────
+    - sqlalchemy
+    - tqdm
+    - loguru
+    - rich
+    - tenacity
+    - httpx
+
+    # ── Testing ───────────────────────────────────────────────────────────────
+    - pytest>=9.0
+    - pytest-cov
+    - pytest-mock
