@@ -19,3 +19,4 @@ unsloth_compiled_cache/
 data/survey_screenshots/*
 !data/survey_screenshots/.gitkeep
 config/user.yaml
+config/.backup-*
