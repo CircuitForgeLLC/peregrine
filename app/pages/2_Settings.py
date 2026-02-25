@@ -364,11 +364,20 @@ with tab_llm:
         for n in new_order
     ))
 
-    if st.button("💾 Save LLM settings", type="primary"):
+    col_save_llm, col_sync_llm = st.columns(2)
+    if col_save_llm.button("💾 Save LLM settings", type="primary"):
         save_yaml(LLM_CFG, {**cfg, "backends": updated_backends, "fallback_order": new_order})
         st.session_state.pop("_llm_order", None)
         st.session_state.pop("_llm_order_cfg_key", None)
         st.success("LLM settings saved!")
+
+    if col_sync_llm.button("🔄 Sync URLs from Profile", help="Regenerate backend base_url values from your service host/port settings in user.yaml"):
+        if _profile is not None:
+            from scripts.generate_llm_config import apply_service_urls as _apply_urls
+            _apply_urls(_profile, LLM_CFG)
+            st.success("Profile saved and service URLs updated.")
+        else:
+            st.warning("No user profile found — configure it in the My Profile tab first.")
 
 # ── Notion tab ────────────────────────────────────────────────────────────────
 with tab_notion:
