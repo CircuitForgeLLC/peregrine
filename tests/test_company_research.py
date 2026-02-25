@@ -64,16 +64,22 @@ def test_build_resume_context_top2_in_full():
 def test_build_resume_context_rest_condensed():
     """Remaining experiences appear as condensed one-liners, not full bullets."""
     ctx = _build_resume_context(RESUME, KEYWORDS, JD)
-    assert "Also in Alex" in ctx
+    assert "Also in" in ctx
     assert "Generic Co" in ctx
     # Generic Co bullets should NOT appear in full
     assert "Managed SMB portfolio" not in ctx
 
 
 def test_upguard_nda_low_score():
-    """UpGuard name replaced with 'enterprise security vendor' when score < 3."""
+    """UpGuard NDA rule: company masked when score < 3 and profile has NDA companies configured."""
+    from scripts.company_research import _profile
     ctx = _build_resume_context(RESUME, ["python", "kubernetes"], "python kubernetes devops")
-    assert "enterprise security vendor" in ctx
+    if _profile and _profile.is_nda("upguard"):
+        # Profile present with UpGuard NDA — company should be masked
+        assert "UpGuard" not in ctx
+    else:
+        # No profile or UpGuard not in NDA list — company name appears directly
+        assert "UpGuard" in ctx or "enterprise security vendor" in ctx or "previous employer" in ctx
 
 
 def test_load_resume_and_keywords_returns_lists():

@@ -89,17 +89,14 @@ def test_find_similar_letters_returns_top_k():
 
 
 def test_load_corpus_returns_list():
-    """load_corpus returns a list (may be empty if LETTERS_DIR absent, must not crash)."""
+    """load_corpus returns a list (empty if LETTERS_DIR absent) without crashing."""
     from scripts.generate_cover_letter import load_corpus, LETTERS_DIR
 
-    if LETTERS_DIR.exists():
-        corpus = load_corpus()
-        assert isinstance(corpus, list)
-        if corpus:
-            assert "company" in corpus[0]
-            assert "text" in corpus[0]
-    else:
-        pytest.skip("LETTERS_DIR not present in this environment")
+    corpus = load_corpus()
+    assert isinstance(corpus, list)
+    if corpus:
+        assert "company" in corpus[0]
+        assert "text" in corpus[0]
 
 
 def test_generate_calls_llm_router():
