@@ -9,14 +9,23 @@ Privacy-first, local-first. Your data never leaves your machine.
 
 ## Quick Start
 
+**1. Install dependencies** (Docker, Docker Compose, NVIDIA toolkit if needed):
 ```bash
 git clone https://git.circuitforge.io/circuitforge/peregrine
 cd peregrine
-cp .env.example .env
-docker compose --profile remote up -d
+bash setup.sh
 ```
 
-Open http://localhost:8501 — the setup wizard will guide you through the rest.
+**2. Start Peregrine:**
+```bash
+make start               # remote profile (no GPU)
+make start PROFILE=single-gpu  # with GPU
+```
+
+**3.** Open http://localhost:8501 — the setup wizard guides you through the rest.
+
+> **macOS:** Docker Desktop must be running before `make start`.
+> **Windows:** Not supported — use WSL2 with Ubuntu.
 
 ---
 
