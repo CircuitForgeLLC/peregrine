@@ -5,7 +5,18 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STREAMLIT_BIN="/devl/miniconda3/envs/job-seeker/bin/streamlit"
+STREAMLIT_BIN="${STREAMLIT_BIN:-streamlit}"
+# Resolve: conda env bin, system PATH, or explicit override
+if [[ "$STREAMLIT_BIN" == "streamlit" ]]; then
+    for _candidate in \
+        "$(conda run -n job-seeker which streamlit 2>/dev/null)" \
+        "$(which streamlit 2>/dev/null)"; do
+        if [[ -n "$_candidate" && -x "$_candidate" ]]; then
+            STREAMLIT_BIN="$_candidate"
+            break
+        fi
+    done
+fi
 APP_ENTRY="$REPO_DIR/app/app.py"
 PID_FILE="$REPO_DIR/.streamlit.pid"
 LOG_FILE="$REPO_DIR/.streamlit.log"
