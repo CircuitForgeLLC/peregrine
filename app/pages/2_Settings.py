@@ -88,12 +88,13 @@ _show_dev_tab = _dev_mode or bool(_u_for_dev.get("dev_tier_override"))
 
 _tab_names = [
     "👤 My Profile", "🔎 Search", "🤖 LLM Backends", "📚 Notion",
-    "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills", "🎯 Fine-Tune"
+    "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills",
+    "🔗 Integrations", "🎯 Fine-Tune"
 ]
 if _show_dev_tab:
     _tab_names.append("🛠️ Developer")
 _all_tabs = st.tabs(_tab_names)
-tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills, tab_finetune = _all_tabs[:9]
+tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills, tab_integrations, tab_finetune = _all_tabs[:10]
 
 with tab_profile:
     from scripts.user_profile import UserProfile as _UP, _DEFAULTS as _UP_DEFAULTS
@@ -924,6 +925,87 @@ with tab_skills:
             save_yaml(KEYWORDS_CFG, kw_data)
             st.success("Saved.")
             st.rerun()
+
+# ── Integrations tab ──────────────────────────────────────────────────────────
+with tab_integrations:
+    from scripts.integrations import REGISTRY as _IREGISTRY
+    from app.wizard.tiers import can_use as _ican_use, tier_label as _itier_label, TIERS as _ITIERS
+
+    _INTEG_CONFIG_DIR = CONFIG_DIR
+    _effective_tier = _profile.effective_tier if _profile else "free"
+
+    st.caption(
+        "Connect external services for job tracking, document storage, notifications, and calendar sync. "
+        "Notion is configured in the **Notion** tab."
+    )
+
+    for _iname, _icls in _IREGISTRY.items():
+        if _iname == "notion":
+            continue  # Notion has its own dedicated tab
+
+        _iaccess = (
+            _ITIERS.index(_icls.tier) <= _ITIERS.index(_effective_tier)
+            if _icls.tier in _ITIERS and _effective_tier in _ITIERS
+            else _icls.tier == "free"
+        )
+        _iconfig_exists = _icls.is_configured(_INTEG_CONFIG_DIR)
+        _ilabel = _itier_label(_iname + "_sync") or ""
+
+        with st.container(border=True):
+            _ih1, _ih2 = st.columns([8, 2])
+            with _ih1:
+                _status_badge = "🟢 Connected" if _iconfig_exists else "⚪ Not connected"
+                st.markdown(f"**{_icls.label}** &nbsp; {_status_badge}")
+            with _ih2:
+                if _ilabel:
+                    st.caption(_ilabel)
+
+            if not _iaccess:
+                st.caption(f"Upgrade to {_icls.tier} to enable {_icls.label}.")
+
+            elif _iconfig_exists:
+                _ic1, _ic2 = st.columns(2)
+                if _ic1.button("🔌 Test", key=f"itest_{_iname}", use_container_width=True):
+                    _iinst = _icls()
+                    _iinst.connect(_iinst.load_config(_INTEG_CONFIG_DIR))
+                    with st.spinner("Testing…"):
+                        if _iinst.test():
+                            st.success("Connection verified.")
+                        else:
+                            st.error("Test failed — check your credentials.")
+                if _ic2.button("🗑 Disconnect", key=f"idisconnect_{_iname}", use_container_width=True):
+                    _icls.config_path(_INTEG_CONFIG_DIR).unlink(missing_ok=True)
+                    st.rerun()
+
+            else:
+                _iinst = _icls()
+                _ifields = _iinst.fields()
+                _iform_vals: dict = {}
+                for _ifield in _ifields:
+                    _iinput_type = "password" if _ifield["type"] == "password" else "default"
+                    _iform_vals[_ifield["key"]] = st.text_input(
+                        _ifield["label"],
+                        placeholder=_ifield.get("placeholder", ""),
+                        type=_iinput_type,
+                        help=_ifield.get("help", ""),
+                        key=f"ifield_{_iname}_{_ifield['key']}",
+                    )
+                if st.button("🔗 Connect & Test", key=f"iconnect_{_iname}", type="primary"):
+                    _imissing = [
+                        f["label"] for f in _ifields
+                        if f.get("required") and not _iform_vals.get(f["key"], "").strip()
+                    ]
+                    if _imissing:
+                        st.warning(f"Required: {', '.join(_imissing)}")
+                    else:
+                        _iinst.connect(_iform_vals)
+                        with st.spinner("Testing connection…"):
+                            if _iinst.test():
+                                _iinst.save_config(_iform_vals, _INTEG_CONFIG_DIR)
+                                st.success(f"{_icls.label} connected!")
+                                st.rerun()
+                            else:
+                                st.error("Connection test failed — check your credentials.")
 
 # ── Fine-Tune Wizard tab ───────────────────────────────────────────────────────
 with tab_finetune:
