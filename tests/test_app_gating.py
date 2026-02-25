@@ -21,3 +21,19 @@ def test_wizard_gating_empty_file_still_exists(tmp_path):
     p = tmp_path / "user.yaml"
     p.write_text("")
     assert UserProfile.exists(p)
+
+
+def test_wizard_incomplete_triggers_wizard(tmp_path):
+    """wizard_complete: false should be treated as 'wizard not done'."""
+    p = tmp_path / "user.yaml"
+    p.write_text("name: T\nemail: t@t.com\ncareer_summary: x\nwizard_complete: false\n")
+    from scripts.user_profile import UserProfile
+    u = UserProfile(p)
+    assert u.wizard_complete is False
+
+def test_wizard_complete_does_not_trigger(tmp_path):
+    p = tmp_path / "user.yaml"
+    p.write_text("name: T\nemail: t@t.com\ncareer_summary: x\nwizard_complete: true\n")
+    from scripts.user_profile import UserProfile
+    u = UserProfile(p)
+    assert u.wizard_complete is True
