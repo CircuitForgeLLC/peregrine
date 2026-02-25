@@ -150,11 +150,15 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             return
 
         elif task_type == "cover_letter":
+            import json as _json
+            p = _json.loads(params or "{}")
             from scripts.generate_cover_letter import generate
             result = generate(
                 job.get("title", ""),
                 job.get("company", ""),
                 job.get("description", ""),
+                previous_result=p.get("previous_result", ""),
+                feedback=p.get("feedback", ""),
             )
             update_cover_letter(db_path, job_id, result)
 
