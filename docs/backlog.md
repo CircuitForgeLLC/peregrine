@@ -19,8 +19,7 @@ Unscheduled ideas and deferred features. Roughly grouped by area.
 
 ## Cover Letter / Resume Generation
 
-- **Iterative refinement feedback loop** — Apply Workspace cover letter generator: show previous result + a "Feedback / changes requested" text area + "Regenerate" button. Pass `previous_result` and `feedback` through `generate()` in `scripts/generate_cover_letter.py` to the LLM prompt. Same pattern for resume bullet expansion in the wizard (`wizard_generate: expand_bullets`). Backend already supports `previous_result`/`feedback` in `wizard_generate` tasks (added to `_run_wizard_generate`).
-- **Apply Workspace refinement UI ready to wire** — Remaining work: add a "Feedback / changes requested" text area and "Regenerate" button in `app/pages/4_Apply.py`, pass both fields through `submit_task` → `_run_wizard_generate`. Backend is complete.
+- ~~**Iterative refinement feedback loop**~~ — ✅ Done (`94225c9`): `generate()` accepts `previous_result`/`feedback`; task_runner parses params JSON; Apply Workspace has "Refine with Feedback" expander. Same pattern available for wizard `expand_bullets` via `_run_wizard_generate`.
 
 ---
 
