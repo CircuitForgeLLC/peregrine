@@ -20,3 +20,5 @@ data/survey_screenshots/*
 !data/survey_screenshots/.gitkeep
 config/user.yaml
 config/.backup-*
+config/integrations/*.yaml
+!config/integrations/*.yaml.example
