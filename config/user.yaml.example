@@ -21,10 +21,14 @@ mission_preferences:
   animal_welfare: ""  # e.g. "I volunteer at my local shelter every weekend"
   education: ""       # e.g. "I tutored underserved kids for 3 years and care deeply about literacy"
 
-# Set to true to include an Inclusion & Accessibility section in research briefs.
-# When true, each company brief will assess disability/ADA accommodation signals,
-# ERGs, and accessibility culture. Useful if this is a personal factor in your decisions.
+# Set to true to include optional identity-related sections in research briefs.
+# Both are for your personal decision-making only — never included in applications.
+
+# Adds a disability inclusion & accessibility section (ADA, ERGs, WCAG signals).
 candidate_accessibility_focus: false
+
+# Adds an LGBTQIA+ inclusion section (ERGs, non-discrimination policies, culture signals).
+candidate_lgbtq_focus: false
 
 docs_dir: "~/Documents/JobSearch"
 ollama_models_dir: "~/models/ollama"

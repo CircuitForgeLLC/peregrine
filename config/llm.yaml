@@ -23,7 +23,7 @@ backends:
     api_key: ollama
     base_url: http://localhost:11434/v1
     enabled: true
-    model: meghan-cover-writer:latest
+    model: llama3.2:3b   # replace with your fine-tuned cover letter model if you have one
     type: openai_compat
     supports_images: false
   ollama_research:
@@ -61,6 +61,6 @@ vision_fallback_order:
 - vision_service
 - claude_code
 - anthropic
-# Note: 'ollama' (meghan-cover-writer) intentionally excluded — research
-# must never use the fine-tuned writer model, and this also avoids evicting
+# Note: 'ollama' intentionally excluded from research order — research
+# must never use the cover letter model, and this also avoids evicting
 # the writer from GPU memory while a cover letter task is in flight.
