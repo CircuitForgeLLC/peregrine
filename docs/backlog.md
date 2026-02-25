@@ -43,7 +43,7 @@ Unscheduled ideas and deferred features. Roughly grouped by area.
 
 ## Container Runtime
 
-- **Podman support** — Update `Makefile` to auto-detect `docker compose` vs `podman-compose` (e.g. `COMPOSE ?= $(shell command -v docker 2>/dev/null && echo "docker compose" || echo "podman-compose")`). Note in README that rootless Podman requires CDI GPU device spec (`nvidia.com/gpu=all`) instead of `runtime: nvidia` in `compose.yml`.
+- ~~**Podman support**~~ — ✅ Done: `Makefile` auto-detects `docker compose` / `podman compose` / `podman-compose`; `compose.podman-gpu.yml` CDI override for GPU profiles; `setup.sh` detects existing Podman and skips Docker install.
 - **FastAPI migration path** — When concurrent-user scale demands it: port Streamlit pages to FastAPI + React/HTMX, keep `scripts/` layer unchanged, replace daemon threads with Celery + Redis. The `scripts/` separation already makes this clean.
 
 ---
