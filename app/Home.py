@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -23,6 +24,35 @@ from scripts.db import DEFAULT_DB, init_db, get_job_counts, purge_jobs, purge_em
 from scripts.task_runner import submit_task
 
 init_db(DEFAULT_DB)
+
+_SETUP_BANNERS = [
+    {"key": "connect_cloud",       "text": "Connect a cloud service for resume/cover letter storage",
+     "link_label": "Settings → Integrations"},
+    {"key": "setup_email",         "text": "Set up email sync to catch recruiter outreach",
+     "link_label": "Settings → Email"},
+    {"key": "setup_email_labels",  "text": "Set up email label filters for auto-classification",
+     "link_label": "Settings → Email (label guide)"},
+    {"key": "tune_mission",        "text": "Tune your mission preferences for better cover letters",
+     "link_label": "Settings → My Profile"},
+    {"key": "configure_keywords",  "text": "Configure keywords and blocklist for smarter search",
+     "link_label": "Settings → Search"},
+    {"key": "upload_corpus",       "text": "Upload your cover letter corpus for voice fine-tuning",
+     "link_label": "Settings → Fine-Tune"},
+    {"key": "configure_linkedin",  "text": "Configure LinkedIn Easy Apply automation",
+     "link_label": "Settings → AIHawk"},
+    {"key": "setup_searxng",       "text": "Set up company research with SearXNG",
+     "link_label": "Settings → Services"},
+    {"key": "target_companies",    "text": "Build a target company list for focused outreach",
+     "link_label": "Settings → Search"},
+    {"key": "setup_notifications", "text": "Set up notifications for stage changes",
+     "link_label": "Settings → Integrations"},
+    {"key": "tune_model",          "text": "Tune a custom cover letter model on your writing",
+     "link_label": "Settings → Fine-Tune"},
+    {"key": "review_training",     "text": "Review and curate training data for model tuning",
+     "link_label": "Settings → Fine-Tune"},
+    {"key": "setup_calendar",      "text": "Set up calendar sync to track interview dates",
+     "link_label": "Settings → Integrations"},
+]
 
 
 def _dismissible(key: str, status: str, msg: str) -> None:
@@ -479,3 +509,24 @@ with st.expander("⚠️ Danger Zone", expanded=False):
             if c2.button("Cancel       ", use_container_width=True):
                 st.session_state.pop("confirm_purge", None)
                 st.rerun()
+
+# ── Setup banners ─────────────────────────────────────────────────────────────
+if _profile and _profile.wizard_complete:
+    _dismissed = set(_profile.dismissed_banners)
+    _pending_banners = [b for b in _SETUP_BANNERS if b["key"] not in _dismissed]
+    if _pending_banners:
+        st.divider()
+        st.markdown("#### Finish setting up Peregrine")
+        for banner in _pending_banners:
+            _bcol, _bdismiss = st.columns([10, 1])
+            with _bcol:
+                st.info(f"💡 {banner['text']}  →  _{banner['link_label']}_")
+            with _bdismiss:
+                st.write("")
+                if st.button("✕", key=f"dismiss_banner_{banner['key']}", help="Dismiss"):
+                    _data = yaml.safe_load(_USER_YAML.read_text()) if _USER_YAML.exists() else {}
+                    _data.setdefault("dismissed_banners", [])
+                    if banner["key"] not in _data["dismissed_banners"]:
+                        _data["dismissed_banners"].append(banner["key"])
+                    _USER_YAML.write_text(yaml.dump(_data, default_flow_style=False, allow_unicode=True))
+                    st.rerun()
