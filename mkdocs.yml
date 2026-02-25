@@ -1,0 +1,67 @@
+site_name: Peregrine
+site_description: AI-powered job search pipeline
+site_author: Circuit Forge LLC
+site_url: https://docs.circuitforge.io/peregrine
+repo_url: https://git.circuitforge.io/circuitforge/peregrine
+repo_name: circuitforge/peregrine
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - First-Run Wizard: getting-started/first-run-wizard.md
+    - Docker Profiles: getting-started/docker-profiles.md
+  - User Guide:
+    - Job Discovery: user-guide/job-discovery.md
+    - Job Review: user-guide/job-review.md
+    - Apply Workspace: user-guide/apply-workspace.md
+    - Interviews: user-guide/interviews.md
+    - Email Sync: user-guide/email-sync.md
+    - Integrations: user-guide/integrations.md
+    - Settings: user-guide/settings.md
+  - Developer Guide:
+    - Contributing: developer-guide/contributing.md
+    - Architecture: developer-guide/architecture.md
+    - Adding a Scraper: developer-guide/adding-scrapers.md
+    - Adding an Integration: developer-guide/adding-integrations.md
+    - Testing: developer-guide/testing.md
+  - Reference:
+    - Tier System: reference/tier-system.md
+    - LLM Router: reference/llm-router.md
+    - Config Files: reference/config-files.md
