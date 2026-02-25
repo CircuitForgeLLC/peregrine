@@ -169,8 +169,19 @@ def build_prompt(
     return "\n".join(parts)
 
 
-def generate(title: str, company: str, description: str = "", _router=None) -> str:
+def generate(
+    title: str,
+    company: str,
+    description: str = "",
+    previous_result: str = "",
+    feedback: str = "",
+    _router=None,
+) -> str:
     """Generate a cover letter and return it as a string.
+
+    Pass previous_result + feedback for iterative refinement — the prior draft
+    and requested changes are appended to the prompt so the LLM revises rather
+    than starting from scratch.
 
     _router is an optional pre-built LLMRouter (used in tests to avoid real LLM calls).
     """
@@ -181,6 +192,11 @@ def generate(title: str, company: str, description: str = "", _router=None) -> s
         print(f"[cover-letter] Mission alignment detected for {company}", file=sys.stderr)
     prompt = build_prompt(title, company, description, examples, mission_hint=mission_hint)
 
+    if previous_result:
+        prompt += f"\n\n---\nPrevious draft:\n{previous_result}"
+    if feedback:
+        prompt += f"\n\nUser feedback / requested changes:\n{feedback}\n\nPlease revise accordingly."
+
     if _router is None:
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from scripts.llm_router import LLMRouter
@@ -188,6 +204,8 @@ def generate(title: str, company: str, description: str = "", _router=None) -> s
 
     print(f"[cover-letter] Generating for: {title} @ {company}", file=sys.stderr)
     print(f"[cover-letter] Style examples: {[e['company'] for e in examples]}", file=sys.stderr)
+    if feedback:
+        print("[cover-letter] Refinement mode: feedback provided", file=sys.stderr)
 
     result = _router.complete(prompt)
     return result.strip()
