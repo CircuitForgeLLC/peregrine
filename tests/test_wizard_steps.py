@@ -110,3 +110,35 @@ def test_search_missing_both():
 def test_search_none_values():
     d = {"job_titles": None, "locations": None}
     assert search_validate(d) != []
+
+# ── Step Integrations ──────────────────────────────────────────────────────────
+from app.wizard.step_integrations import validate as int_validate, get_available, is_connected
+
+def test_integrations_always_passes():
+    assert int_validate({}) == []
+    assert int_validate({"connected": ["notion", "slack"]}) == []
+
+def test_get_available_free_tier_includes_free():
+    available = get_available("free")
+    # Free integrations must always be available
+    for name in ["google_drive", "dropbox", "discord", "home_assistant"]:
+        assert name in available, f"{name} should be in free tier available list"
+
+def test_get_available_free_tier_excludes_paid():
+    available = get_available("free")
+    # Paid integrations should NOT be available on free tier
+    for name in ["notion", "google_calendar", "slack"]:
+        assert name not in available, f"{name} should NOT be in free tier available list"
+
+def test_get_available_paid_tier_includes_paid():
+    available = get_available("paid")
+    for name in ["notion", "google_sheets", "airtable", "slack", "google_calendar"]:
+        assert name in available, f"{name} should be in paid tier available list"
+
+def test_is_connected_false_when_no_file(tmp_path):
+    assert is_connected("notion", tmp_path) is False
+
+def test_is_connected_true_when_file_exists(tmp_path):
+    (tmp_path / "integrations").mkdir()
+    (tmp_path / "integrations" / "notion.yaml").write_text("token: x\n")
+    assert is_connected("notion", tmp_path) is True
