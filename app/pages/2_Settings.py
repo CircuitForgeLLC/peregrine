@@ -121,6 +121,19 @@ with tab_profile:
         if nb.button("＋ Add", key="add_nda") and new_nda.strip():
             nda_list.append(new_nda.strip())
 
+    with st.expander("🔍 Research Brief Preferences"):
+        st.caption("Optional identity-related sections added to pre-interview research briefs. For your personal decision-making only — never included in applications.")
+        u_access_focus = st.checkbox(
+            "Include disability & accessibility section",
+            value=_u.get("candidate_accessibility_focus", False),
+            help="Adds an ADA accommodation, ERG, and WCAG assessment to each company brief.",
+        )
+        u_lgbtq_focus = st.checkbox(
+            "Include LGBTQIA+ inclusion section",
+            value=_u.get("candidate_lgbtq_focus", False),
+            help="Adds an assessment of the company's LGBTQIA+ ERGs, policies, and culture signals.",
+        )
+
     with st.expander("📁 File Paths"):
         u_docs   = st.text_input("Documents directory",     _u.get("docs_dir", "~/Documents/JobSearch"))
         u_ollama = st.text_input("Ollama models directory", _u.get("ollama_models_dir", "~/models/ollama"))
@@ -160,6 +173,9 @@ with tab_profile:
             "nda_companies": nda_list,
             "docs_dir": u_docs, "ollama_models_dir": u_ollama, "vllm_models_dir": u_vllm,
             "inference_profile": u_inf_profile,
+            "mission_preferences": _u.get("mission_preferences", {}),
+            "candidate_accessibility_focus": u_access_focus,
+            "candidate_lgbtq_focus": u_lgbtq_focus,
             "services": {
                 "streamlit_port": _svc["streamlit_port"],
                 "ollama_host": svc_ollama_host, "ollama_port": int(svc_ollama_port),
