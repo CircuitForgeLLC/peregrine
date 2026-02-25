@@ -1,6 +1,6 @@
 # scripts/generate_cover_letter.py
 """
-Generate a cover letter in Meghan's voice using few-shot examples from her corpus.
+Generate a cover letter in the candidate's voice using few-shot examples from their corpus.
 
 Usage:
     conda run -n job-seeker python scripts/generate_cover_letter.py \
@@ -16,30 +16,21 @@ import re
 import sys
 from pathlib import Path
 
-LETTERS_DIR = Path("/Library/Documents/JobSearch")
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from scripts.user_profile import UserProfile
+_USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+
+LETTERS_DIR = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
 LETTER_GLOB = "*Cover Letter*.md"
 
-# Background injected into every prompt so the model has Meghan's facts
-SYSTEM_CONTEXT = """You are writing cover letters for Meghan McCann, a customer success leader.
-
-Background:
-- 6+ years in customer success, technical account management, and CS leadership
-- Most recent role: led Americas Customer Success at UpGuard (cybersecurity SaaS), managing enterprise + Fortune 500 accounts, drove NPS consistently above 95
-- Also founder of M3 Consulting, a CS advisory practice for SaaS startups
-- Attended Texas State (2 yrs), CSU East Bay (1 yr); completed degree elsewhere
-- Based in San Francisco Bay Area; open to remote/hybrid
-- Pronouns: any
-
-Voice guidelines:
-- Warm, confident, and specific — never generic
-- Opens with "I'm delighted/thrilled to apply for [role] at [company]."
-- 3–4 focused paragraphs, ~250–350 words total
-- Para 2: concrete experience (cite UpGuard and/or M3 Consulting with a specific metric)
-- Para 3: genuine connection to THIS company's mission/product
-- Closes with "Thank you for considering my application." + warm sign-off
-- Never use: "I am writing to express my interest", "passionate about making a difference",
-  "I look forward to hearing from you", or any hollow filler phrases
-"""
+# Background injected into every prompt so the model has the candidate's facts
+SYSTEM_CONTEXT = (
+    f"You are writing cover letters for {_profile.name}. {_profile.career_summary}"
+    if _profile else
+    "You are a professional cover letter writer. Write in first person."
+)
 
 
 # ── Mission-alignment detection ───────────────────────────────────────────────
@@ -69,21 +60,23 @@ _MISSION_SIGNALS: dict[str, list[str]] = {
     ],
 }
 
+_candidate = _profile.name if _profile else "the candidate"
+
 _MISSION_NOTES: dict[str, str] = {
     "music": (
-        "This company is in the music industry, which is one of Meghan's genuinely "
-        "ideal work environments — she has a real personal passion for the music scene. "
+        f"This company is in the music industry, which is one of {_candidate}'s genuinely "
+        "ideal work environments — they have a real personal passion for the music scene. "
         "Para 3 should warmly and specifically reflect this authentic alignment, not as "
-        "a generic fan statement, but as an honest statement of where she'd love to apply "
-        "her CS skills."
+        "a generic fan statement, but as an honest statement of where they'd love to apply "
+        "their CS skills."
     ),
     "animal_welfare": (
-        "This organization works in animal welfare/rescue — one of Meghan's dream-job "
+        f"This organization works in animal welfare/rescue — one of {_candidate}'s dream-job "
         "domains and a genuine personal passion. Para 3 should reflect this authentic "
-        "connection warmly and specifically, tying her CS skills to this mission."
+        "connection warmly and specifically, tying their CS skills to this mission."
     ),
     "education": (
-        "This company works in children's education or EdTech — one of Meghan's ideal "
+        f"This company works in children's education or EdTech — one of {_candidate}'s ideal "
         "work domains, reflecting genuine personal values around learning and young people. "
         "Para 3 should reflect this authentic connection specifically and warmly."
     ),
@@ -138,7 +131,7 @@ def build_prompt(
 ) -> str:
     parts = [SYSTEM_CONTEXT.strip(), ""]
     if examples:
-        parts.append("=== STYLE EXAMPLES (Meghan's past letters) ===\n")
+        parts.append(f"=== STYLE EXAMPLES ({_candidate}'s past letters) ===\n")
         for i, ex in enumerate(examples, 1):
             parts.append(f"--- Example {i} ({ex['company']}) ---")
             parts.append(ex["text"])
@@ -183,7 +176,7 @@ def generate(title: str, company: str, description: str = "", _router=None) -> s
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate a cover letter in Meghan's voice")
+    parser = argparse.ArgumentParser(description=f"Generate a cover letter in {_candidate}'s voice")
     parser.add_argument("--title", help="Job title")
     parser.add_argument("--company", help="Company name")
     parser.add_argument("--description", default="", help="Job description text")

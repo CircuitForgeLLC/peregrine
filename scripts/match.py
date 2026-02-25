@@ -18,8 +18,22 @@ import yaml
 from bs4 import BeautifulSoup
 from notion_client import Client
 
+from scripts.user_profile import UserProfile
+_USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+
 CONFIG_DIR = Path(__file__).parent.parent / "config"
-RESUME_PATH = Path("/Library/Documents/JobSearch/Meghan_McCann_Resume_02-19-2025.pdf")
+
+
+def _find_resume(docs_dir: Path) -> Path | None:
+    """Find the most recently modified PDF in docs_dir matching *resume* or *cv*."""
+    candidates = list(docs_dir.glob("*[Rr]esume*.pdf")) + list(docs_dir.glob("*[Cc][Vv]*.pdf"))
+    return max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
+
+
+RESUME_PATH = (
+    _find_resume(_profile.docs_dir) if _profile else None
+) or Path(__file__).parent.parent / "config" / "resume.pdf"
 
 
 def load_notion() -> tuple[Client, dict]:

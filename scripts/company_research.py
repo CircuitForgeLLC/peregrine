@@ -3,13 +3,13 @@
 Pre-interview company research generator.
 
 Three-phase approach:
-  1. If SearXNG is available (port 8888), use companyScraper.py to fetch live
+  1. If SearXNG is available, use companyScraper.py to fetch live
      data: CEO name, HQ address, LinkedIn, contact info.
   1b. Use Phase 1 data (company name + CEO if found) to query SearXNG for
       recent news snippets (funding, launches, leadership changes, etc.).
   2. Feed all real data into an LLM prompt to synthesise a structured brief
      covering company overview, leadership, recent developments, and talking
-     points tailored to Meghan.
+     points tailored to the candidate.
 
 Falls back to pure LLM knowledge when SearXNG is offline.
 
@@ -24,25 +24,32 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from scripts.user_profile import UserProfile
+_USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+
 # ── SearXNG scraper integration ───────────────────────────────────────────────
-_SCRAPER_DIR = Path("/Library/Development/scrapers")
+# companyScraper is bundled into the Docker image at /app/scrapers/
 _SCRAPER_AVAILABLE = False
+for _scraper_candidate in [
+    Path("/app/scrapers"),          # Docker container path
+    Path(__file__).parent.parent / "scrapers",  # local dev fallback
+]:
+    if _scraper_candidate.exists():
+        sys.path.insert(0, str(_scraper_candidate))
+        try:
+            from companyScraper import EnhancedCompanyScraper, Config as _ScraperConfig
+            _SCRAPER_AVAILABLE = True
+        except (ImportError, SystemExit):
+            pass
+        break
 
-if _SCRAPER_DIR.exists():
-    sys.path.insert(0, str(_SCRAPER_DIR))
-    try:
-        from companyScraper import EnhancedCompanyScraper, Config as _ScraperConfig
-        _SCRAPER_AVAILABLE = True
-    except (ImportError, SystemExit):
-        # companyScraper calls sys.exit(1) if bs4/fake-useragent aren't installed
-        pass
 
-
-def _searxng_running() -> bool:
+def _searxng_running(searxng_url: str = "http://localhost:8888") -> bool:
     """Quick check whether SearXNG is reachable."""
     try:
         import requests
-        r = requests.get("http://localhost:8888/", timeout=3)
+        r = requests.get(f"{searxng_url}/", timeout=3)
         return r.status_code == 200
     except Exception:
         return False
@@ -186,9 +193,13 @@ def _parse_sections(text: str) -> dict[str, str]:
 _RESUME_YAML = Path(__file__).parent.parent / "aihawk" / "data_folder" / "plain_text_resume.yaml"
 _KEYWORDS_YAML = Path(__file__).parent.parent / "config" / "resume_keywords.yaml"
 
-# Companies where Meghan has an NDA — reference as generic label unless
-# the role is security-focused (score >= 3 matching JD keywords).
-_NDA_COMPANIES = {"upguard"}
+
+def _company_label(exp: dict) -> str:
+    company = exp.get("company", "")
+    score = exp.get("score", 0)
+    if _profile:
+        return _profile.nda_label(company, score)
+    return company
 
 
 def _score_experiences(experiences: list[dict], keywords: list[str], jd: str) -> list[dict]:
@@ -214,8 +225,7 @@ def _build_resume_context(resume: dict, keywords: list[str], jd: str) -> str:
     """
     Build the resume section of the LLM context block.
     Top 2 scored experiences included in full detail; rest as one-liners.
-    Applies UpGuard NDA rule: reference as 'enterprise security vendor (NDA)'
-    unless the role is security-focused (score >= 3).
+    NDA companies are masked via UserProfile.nda_label() when score < threshold.
     """
     experiences = resume.get("experience_details", [])
     if not experiences:
@@ -225,11 +235,7 @@ def _build_resume_context(resume: dict, keywords: list[str], jd: str) -> str:
     top2 = scored[:2]
     rest = scored[2:]
 
-    def _company_label(exp: dict) -> str:
-        company = exp.get("company", "")
-        if company.lower() in _NDA_COMPANIES and exp.get("score", 0) < 3:
-            return "enterprise security vendor (NDA)"
-        return company
+    candidate = _profile.name if _profile else "the candidate"
 
     def _exp_header(exp: dict) -> str:
         return f"{exp.get('position', '')} @ {_company_label(exp)} ({exp.get('employment_period', '')})"
@@ -238,14 +244,14 @@ def _build_resume_context(resume: dict, keywords: list[str], jd: str) -> str:
         bullets = [v for resp in exp.get("key_responsibilities", []) for v in resp.values()]
         return "\n".join(f"  - {b}" for b in bullets)
 
-    lines = ["## Meghan's Matched Experience"]
+    lines = [f"## {candidate}'s Matched Experience"]
     for exp in top2:
         lines.append(f"\n**{_exp_header(exp)}** (match score: {exp['score']})")
         lines.append(_exp_bullets(exp))
 
     if rest:
         condensed = ", ".join(_exp_header(e) for e in rest)
-        lines.append(f"\nAlso in Meghan's background: {condensed}")
+        lines.append(f"\nAlso in {candidate}'s background: {condensed}")
 
     return "\n".join(lines)
 
@@ -359,7 +365,10 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None) -> dict
 
     # ── Phase 2: LLM synthesis ────────────────────────────────────────────────
     _stage("Generating brief with LLM… (30–90 seconds)")
-    prompt = f"""You are preparing Meghan McCann for a job interview.
+    name = _profile.name if _profile else "the candidate"
+    career_summary = _profile.career_summary if _profile else ""
+    prompt = f"""You are preparing {name} for a job interview.
+{f"Candidate background: {career_summary}" if career_summary else ""}
 
 Role: **{title}** at **{company}**
 
@@ -404,12 +413,12 @@ Assess {company}'s commitment to disability inclusion and accessibility. Cover:
 - Any public disability/accessibility advocacy, partnerships, or certifications
 - Glassdoor or press signals about how employees with disabilities experience the company
 If no specific signals are found, say so clearly — absence of public commitment is itself signal.
-This section is for Meghan's personal decision-making only and will not appear in any application.
+This section is for the candidate's personal decision-making only and will not appear in any application.
 
-## Talking Points for Meghan
+## Talking Points for {name}
 Five specific talking points for the phone screen. Each must:
-- Reference a concrete experience from Meghan's matched background by name
-  (UpGuard NDA rule: say "enterprise security vendor" unless the role has a clear security/compliance focus)
+- Reference a concrete experience from {name}'s matched background by name
+  (NDA rule: use the masked label shown in the matched experience section for any NDA-protected employer)
 - Connect to a specific signal from the JD or company context above
 - Be 1–2 sentences, ready to speak aloud
 - Never give generic advice
@@ -432,7 +441,7 @@ Five specific talking points for the phone screen. Each must:
         "competitors_brief": sections.get("Funding & Market Position", ""),  # competitor landscape is in the funding section
         "red_flags":         sections.get("Red Flags & Watch-outs", ""),
         "accessibility_brief": sections.get("Inclusion & Accessibility", ""),
-        "talking_points":    sections.get("Talking Points for Meghan", ""),
+        "talking_points":    sections.get(f"Talking Points for {name}", ""),
         "scrape_used":       scrape_used,
     }
 
