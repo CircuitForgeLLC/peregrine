@@ -126,3 +126,56 @@ def test_sync_default_returns_zero():
     inst = TestIntegration()
     assert inst.sync([]) == 0
     assert inst.sync([{"id": 1}]) == 0
+
+
+def test_registry_has_all_13_integrations():
+    """After all modules are implemented, registry should have 13 entries."""
+    from scripts.integrations import REGISTRY
+    expected = {
+        "notion", "google_drive", "google_sheets", "airtable",
+        "dropbox", "onedrive", "mega", "nextcloud",
+        "google_calendar", "apple_calendar",
+        "slack", "discord", "home_assistant",
+    }
+    assert expected == set(REGISTRY.keys()), (
+        f"Missing: {expected - set(REGISTRY.keys())}, "
+        f"Extra: {set(REGISTRY.keys()) - expected}"
+    )
+
+
+def test_all_integrations_have_required_attributes():
+    from scripts.integrations import REGISTRY
+    for name, cls in REGISTRY.items():
+        assert hasattr(cls, "name") and cls.name, f"{name} missing .name"
+        assert hasattr(cls, "label") and cls.label, f"{name} missing .label"
+        assert hasattr(cls, "tier") and cls.tier in ("free", "paid", "premium"), f"{name} invalid .tier"
+
+
+def test_all_integrations_fields_schema():
+    from scripts.integrations import REGISTRY
+    for name, cls in REGISTRY.items():
+        inst = cls()
+        fields = inst.fields()
+        assert isinstance(fields, list), f"{name}.fields() must return list"
+        for f in fields:
+            assert "key" in f, f"{name} field missing 'key'"
+            assert "label" in f, f"{name} field missing 'label'"
+            assert "type" in f, f"{name} field missing 'type'"
+            assert f["type"] in ("text", "password", "url", "checkbox"), \
+                f"{name} field type must be text/password/url/checkbox"
+
+
+def test_free_integrations():
+    from scripts.integrations import REGISTRY
+    free_integrations = {"google_drive", "dropbox", "onedrive", "mega", "nextcloud", "discord", "home_assistant"}
+    for name in free_integrations:
+        assert name in REGISTRY, f"{name} not in registry"
+        assert REGISTRY[name].tier == "free", f"{name} should be tier='free'"
+
+
+def test_paid_integrations():
+    from scripts.integrations import REGISTRY
+    paid_integrations = {"notion", "google_sheets", "airtable", "google_calendar", "apple_calendar", "slack"}
+    for name in paid_integrations:
+        assert name in REGISTRY, f"{name} not in registry"
+        assert REGISTRY[name].tier == "paid", f"{name} should be tier='paid'"
