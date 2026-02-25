@@ -663,49 +663,6 @@ with tab_services:
                             st.error(f"Error: {r.stderr or r.stdout}")
                         st.rerun()
 
-    st.divider()
-    st.subheader("🤗 Hugging Face")
-    st.caption(
-        "Used for uploading training data and running fine-tune jobs on HF infrastructure. "
-        "Token is stored in `config/tokens.yaml` (git-ignored). "
-        "Create a **write-permission** token at huggingface.co/settings/tokens."
-    )
-
-    tok_cfg = load_yaml(TOKENS_CFG) if TOKENS_CFG.exists() else {}
-    hf_token = st.text_input(
-        "HF Token",
-        value=tok_cfg.get("hf_token", ""),
-        type="password",
-        placeholder="hf_…",
-    )
-
-    col_save_hf, col_test_hf = st.columns(2)
-    if col_save_hf.button("💾 Save HF token", type="primary"):
-        save_yaml(TOKENS_CFG, {**tok_cfg, "hf_token": hf_token})
-        TOKENS_CFG.chmod(0o600)
-        st.success("Saved!")
-
-    if col_test_hf.button("🔌 Test HF token"):
-        with st.spinner("Checking…"):
-            try:
-                import requests as _r
-                resp = _r.get(
-                    "https://huggingface.co/api/whoami",
-                    headers={"Authorization": f"Bearer {hf_token}"},
-                    timeout=5,
-                )
-                if resp.ok:
-                    info = resp.json()
-                    name = info.get("name") or info.get("fullname") or "unknown"
-                    auth = info.get("auth", {})
-                    perm = auth.get("accessToken", {}).get("role", "read")
-                    st.success(f"Logged in as **{name}** · permission: `{perm}`")
-                    if perm == "read":
-                        st.warning("Token is read-only — create a **write** token to upload datasets and run Jobs.")
-                else:
-                    st.error(f"Invalid token ({resp.status_code})")
-            except Exception as e:
-                st.error(f"Error: {e}")
 
 # ── Resume Profile tab ────────────────────────────────────────────────────────
 with tab_resume:
@@ -1060,3 +1017,44 @@ if _show_dev_tab:
             _u_for_dev["wizard_step"] = 0
             save_yaml(USER_CFG, _u_for_dev)
             st.success("Wizard reset. Reload the app to re-run setup.")
+
+        st.divider()
+        st.markdown("**🤗 Hugging Face Token**")
+        st.caption(
+            "Used for uploading training data and running fine-tune jobs on HF infrastructure. "
+            "Stored in `config/tokens.yaml` (git-ignored). "
+            "Create a **write-permission** token at huggingface.co/settings/tokens."
+        )
+        _tok_cfg = load_yaml(TOKENS_CFG) if TOKENS_CFG.exists() else {}
+        _hf_token = st.text_input(
+            "HF Token",
+            value=_tok_cfg.get("hf_token", ""),
+            type="password",
+            placeholder="hf_…",
+            key="dev_hf_token",
+        )
+        _col_save_hf, _col_test_hf = st.columns(2)
+        if _col_save_hf.button("💾 Save HF token", type="primary", key="dev_save_hf"):
+            save_yaml(TOKENS_CFG, {**_tok_cfg, "hf_token": _hf_token})
+            TOKENS_CFG.chmod(0o600)
+            st.success("Saved!")
+        if _col_test_hf.button("🔌 Test HF token", key="dev_test_hf"):
+            with st.spinner("Checking…"):
+                try:
+                    import requests as _r
+                    resp = _r.get(
+                        "https://huggingface.co/api/whoami",
+                        headers={"Authorization": f"Bearer {_hf_token}"},
+                        timeout=5,
+                    )
+                    if resp.ok:
+                        info = resp.json()
+                        name = info.get("name") or info.get("fullname") or "unknown"
+                        perm = info.get("auth", {}).get("accessToken", {}).get("role", "read")
+                        st.success(f"Logged in as **{name}** · permission: `{perm}`")
+                        if perm == "read":
+                            st.warning("Token is read-only — create a **write** token to upload datasets and run Jobs.")
+                    else:
+                        st.error(f"Invalid token ({resp.status_code})")
+                except Exception as e:
+                    st.error(f"Error: {e}")
