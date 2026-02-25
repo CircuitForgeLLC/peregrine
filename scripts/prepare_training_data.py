@@ -1,6 +1,6 @@
 # scripts/prepare_training_data.py
 """
-Extract training pairs from Meghan's cover letter corpus for LoRA fine-tuning.
+Extract training pairs from the candidate's cover letter corpus for LoRA fine-tuning.
 
 Outputs a JSONL file where each line is:
   {"instruction": "Write a cover letter for the [role] position at [company].",
@@ -16,10 +16,17 @@ import re
 import sys
 from pathlib import Path
 
-LETTERS_DIR = Path("/Library/Documents/JobSearch")
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from scripts.user_profile import UserProfile
+_USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+
+_docs = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
+LETTERS_DIR = _docs
 # Use two globs to handle mixed capitalisation ("Cover Letter" vs "cover letter")
 LETTER_GLOBS = ["*Cover Letter*.md", "*cover letter*.md"]
-DEFAULT_OUTPUT = LETTERS_DIR / "training_data" / "cover_letters.jsonl"
+DEFAULT_OUTPUT = _docs / "training_data" / "cover_letters.jsonl"
 
 # Patterns that appear in opening sentences to extract role
 ROLE_PATTERNS = [
