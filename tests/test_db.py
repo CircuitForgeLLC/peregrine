@@ -558,3 +558,21 @@ def test_update_job_fields_ignores_unknown_columns(tmp_path):
     row = dict(conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
     conn.close()
     assert row["title"] == "Real Title"
+
+
+def test_insert_task_with_params(tmp_path):
+    from scripts.db import init_db, insert_task
+    db = tmp_path / "t.db"
+    init_db(db)
+    import json
+    params = json.dumps({"section": "career_summary"})
+    task_id, is_new = insert_task(db, "wizard_generate", 0, params=params)
+    assert is_new is True
+    # Second call with same params = dedup
+    task_id2, is_new2 = insert_task(db, "wizard_generate", 0, params=params)
+    assert is_new2 is False
+    assert task_id == task_id2
+    # Different section = new task
+    params2 = json.dumps({"section": "job_titles"})
+    task_id3, is_new3 = insert_task(db, "wizard_generate", 0, params=params2)
+    assert is_new3 is True

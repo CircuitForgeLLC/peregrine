@@ -84,3 +84,25 @@ def test_docs_dir_expanded(profile_yaml):
     p = UserProfile(profile_yaml)
     assert not str(p.docs_dir).startswith("~")
     assert p.docs_dir.is_absolute()
+
+def test_wizard_defaults(tmp_path):
+    p = tmp_path / "user.yaml"
+    p.write_text("name: Test\nemail: t@t.com\ncareer_summary: x\n")
+    u = UserProfile(p)
+    assert u.wizard_complete is False
+    assert u.wizard_step == 0
+    assert u.tier == "free"
+    assert u.dev_tier_override is None
+    assert u.dismissed_banners == []
+
+def test_effective_tier_override(tmp_path):
+    p = tmp_path / "user.yaml"
+    p.write_text("name: T\nemail: t@t.com\ncareer_summary: x\ntier: free\ndev_tier_override: premium\n")
+    u = UserProfile(p)
+    assert u.effective_tier == "premium"
+
+def test_effective_tier_no_override(tmp_path):
+    p = tmp_path / "user.yaml"
+    p.write_text("name: T\nemail: t@t.com\ncareer_summary: x\ntier: paid\n")
+    u = UserProfile(p)
+    assert u.effective_tier == "paid"
