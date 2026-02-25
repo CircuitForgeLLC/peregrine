@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import streamlit as st
 import yaml
+import os as _os
 
 from scripts.user_profile import UserProfile
 
@@ -79,12 +80,20 @@ Return ONLY valid JSON in this exact format:
 
 _show_finetune = bool(_profile and _profile.inference_profile in ("single-gpu", "dual-gpu"))
 
-tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills, tab_finetune = st.tabs(
-    ["👤 My Profile", "🔎 Search", "🤖 LLM Backends", "📚 Notion",
-     "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills", "🎯 Fine-Tune"]
-)
-
 USER_CFG = CONFIG_DIR / "user.yaml"
+
+_dev_mode = _os.getenv("DEV_MODE", "").lower() in ("true", "1", "yes")
+_u_for_dev = yaml.safe_load(USER_CFG.read_text()) or {} if USER_CFG.exists() else {}
+_show_dev_tab = _dev_mode or bool(_u_for_dev.get("dev_tier_override"))
+
+_tab_names = [
+    "👤 My Profile", "🔎 Search", "🤖 LLM Backends", "📚 Notion",
+    "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills", "🎯 Fine-Tune"
+]
+if _show_dev_tab:
+    _tab_names.append("🛠️ Developer")
+_all_tabs = st.tabs(_tab_names)
+tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills, tab_finetune = _all_tabs[:9]
 
 with tab_profile:
     from scripts.user_profile import UserProfile as _UP, _DEFAULTS as _UP_DEFAULTS
@@ -1020,3 +1029,34 @@ with tab_finetune:
             if st.button("← Back", key="ft_back3"):
                 st.session_state.ft_step = 2
                 st.rerun()
+
+# ── Developer tab ─────────────────────────────────────────────────────────────
+if _show_dev_tab:
+    with _all_tabs[-1]:
+        st.subheader("Developer Settings")
+        st.caption("These settings are for local testing only and are never used in production.")
+
+        st.markdown("**Tier Override**")
+        st.caption("Instantly switches effective tier without changing your billing tier.")
+        from app.wizard.tiers import TIERS as _TIERS
+        _current_override = _u_for_dev.get("dev_tier_override") or ""
+        _override_opts = ["(none — use real tier)"] + _TIERS
+        _override_idx = (_TIERS.index(_current_override) + 1) if _current_override in _TIERS else 0
+        _new_override = st.selectbox("dev_tier_override", _override_opts, index=_override_idx)
+        _new_override_val = None if _new_override.startswith("(none") else _new_override
+
+        if st.button("Apply tier override", key="apply_tier_override"):
+            _u_for_dev["dev_tier_override"] = _new_override_val
+            save_yaml(USER_CFG, _u_for_dev)
+            st.success(f"Tier override set to: {_new_override_val or 'none'}. Page will reload.")
+            st.rerun()
+
+        st.divider()
+        st.markdown("**Wizard Reset**")
+        st.caption("Sets `wizard_complete: false` to re-enter the wizard without deleting your config.")
+
+        if st.button("↩ Reset wizard", key="reset_wizard"):
+            _u_for_dev["wizard_complete"] = False
+            _u_for_dev["wizard_step"] = 0
+            save_yaml(USER_CFG, _u_for_dev)
+            st.success("Wizard reset. Reload the app to re-run setup.")
