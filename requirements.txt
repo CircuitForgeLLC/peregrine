@@ -1,0 +1,63 @@
+# requirements.txt — Peregrine by Circuit Forge LLC
+# Extracted from environment.yml for Docker pip installs
+# Keep in sync with environment.yml
+
+# ── Web UI ────────────────────────────────────────────────────────────────
+streamlit>=1.35
+watchdog
+reportlab>=4.0
+pandas>=2.0
+pyarrow
+streamlit-paste-button>=0.1.0
+
+# ── Job scraping ──────────────────────────────────────────────────────────
+python-jobspy>=1.1
+playwright
+selenium
+undetected-chromedriver
+webdriver-manager
+beautifulsoup4
+requests
+curl_cffi
+fake-useragent
+
+# ── LLM / AI backends ─────────────────────────────────────────────────────
+openai>=1.0
+anthropic>=0.80
+ollama
+langchain>=0.2
+langchain-openai
+langchain-anthropic
+langchain-ollama
+langchain-community
+langchain-google-genai
+google-generativeai
+tiktoken
+
+# ── Resume matching ───────────────────────────────────────────────────────
+scikit-learn>=1.3
+rapidfuzz
+lib-resume-builder-aihawk
+
+# ── Notion integration ────────────────────────────────────────────────────
+notion-client>=3.0
+
+# ── Document handling ─────────────────────────────────────────────────────
+pypdf
+pdfminer-six
+pyyaml>=6.0
+python-dotenv
+
+# ── Utilities ─────────────────────────────────────────────────────────────
+sqlalchemy
+tqdm
+loguru
+rich
+tenacity
+httpx
+
+# ── Testing ───────────────────────────────────────────────────────────────
+pytest>=9.0
+pytest-cov
+pytest-mock
+lxml
