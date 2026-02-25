@@ -1,0 +1,2 @@
+folder_id: "your-google-drive-folder-id"
+credentials_json: "~/credentials/google-drive-sa.json"

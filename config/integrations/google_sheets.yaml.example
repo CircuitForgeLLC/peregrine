@@ -1,0 +1,3 @@
+spreadsheet_id: "your-spreadsheet-id"
+sheet_name: "Jobs"
+credentials_json: "~/credentials/google-sheets-sa.json"

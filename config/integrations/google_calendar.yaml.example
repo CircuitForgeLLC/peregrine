@@ -1,0 +1,2 @@
+calendar_id: "primary"
+credentials_json: "~/credentials/google-calendar-sa.json"
