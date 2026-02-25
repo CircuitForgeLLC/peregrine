@@ -54,3 +54,38 @@ Unscheduled ideas and deferred features. Roughly grouped by area.
 See also: `docs/plans/email-sync-testing-checklist.md` for outstanding test coverage items.
 
 ---
+
+## Circuit Forge LLC — Product Expansion ("Heinous Tasks" Platform)
+
+The core insight: the Peregrine pipeline architecture (monitor → AI assist → human approval → execute) is domain-agnostic. Job searching is the proof-of-concept. The same pattern applies to any task that is high-stakes, repetitive, opaque, or just deeply unpleasant.
+
+Each product ships as a **separate app** sharing the same underlying scaffold (pipeline engine, LLM router, background tasks, wizard, tier system, operator interface for Ultra tier). The business is Circuit Forge LLC; the brand positioning is: *"AI for the tasks you hate most."*
+
+### Candidate products (rough priority order)
+
+- **Falcon** — Government form assistance. Benefits applications, disability claims, FAFSA, immigration forms, small business permits. AI pre-fills from user profile, flags ambiguous questions, generates supporting statements. High value: mistakes here are costly and correction is slow.
+
+- **Osprey** — Customer service queue management. Monitors hold queues, auto-navigates IVR trees via speech synthesis, escalates to human agent at the right moment, drafts complaint letters and dispute emails with the right tone and regulatory citations (CFPB, FCC, etc.). Tracks ticket status across cases.
+
+- **Kestrel** — DMV / government appointment booking. Monitors appointment availability for DMV, passport offices, Social Security offices, USCIS biometrics, etc. Auto-books the moment a slot opens. Sends reminders with checklist of required documents.
+
+- **Harrier** — Insurance navigation. Prior authorization tracking, claim dispute drafting, EOB reconciliation, appeal letters. High willingness-to-pay: a denied $50k claim is worth paying to fight.
+
+- **Merlin** — Rental / housing applications. Monitors listings, auto-applies to matching properties, generates cover letters for competitive rental markets (NYC, SF), tracks responses, flags lease red flags.
+
+- **Hobby** — Healthcare scheduling & coordination. Referral tracking, specialist waitlist monitoring, prescription renewal reminders, medical record request management.
+
+### Shared architecture decisions
+
+- **Separate repos, shared `circuitforge-core` package** — pipeline engine, LLM router, background task runner, wizard framework, tier system, operator interface all extracted into a private PyPI package that each product imports.
+- **Same Docker Compose scaffold** — each product is a `compose.yml` away from deployment.
+- **Same Ultra tier model** — operator interface reads from product's DB, human-in-the-loop for tasks that can't be automated (CAPTCHAs, phone calls, wet signatures).
+- **Prove Peregrine first** — don't extract `circuitforge-core` until the second product is actively being built. Premature extraction is over-engineering.
+
+### What makes this viable
+- Each domain has the same pain profile: high-stakes, time-sensitive, opaque processes with inconsistent UX.
+- Users are highly motivated to pay — the alternative is hours of their own time on hold or filling out forms.
+- The human-in-the-loop (Ultra) model handles the hardest cases without requiring full automation.
+- Regulatory moat: knowing which citations matter (CFPB for billing disputes, ADA for accommodation requests) is defensible knowledge that gets baked into prompts over time.
+
+---
