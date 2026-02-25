@@ -498,67 +498,75 @@ with tab_notion:
 
 # ── Services tab ───────────────────────────────────────────────────────────────
 with tab_services:
-    import socket
     import subprocess as _sp
 
     TOKENS_CFG = CONFIG_DIR / "tokens.yaml"
 
     # Service definitions: (display_name, port, start_cmd, stop_cmd, notes)
+    COMPOSE_DIR = str(Path(__file__).parent.parent.parent)
+    _profile_name = _profile.inference_profile if _profile else "remote"
+
     SERVICES = [
         {
             "name": "Streamlit UI",
-            "port": 8501,
-            "start": ["bash", str(Path(__file__).parent.parent.parent / "scripts/manage-ui.sh"), "start"],
-            "stop":  ["bash", str(Path(__file__).parent.parent.parent / "scripts/manage-ui.sh"), "stop"],
-            "cwd":   str(Path(__file__).parent.parent.parent),
-            "note":  "Job Seeker web interface",
+            "port": _profile._svc["streamlit_port"] if _profile else 8501,
+            "start": ["docker", "compose", "--profile", _profile_name, "up", "-d", "app"],
+            "stop":  ["docker", "compose", "stop", "app"],
+            "cwd":   COMPOSE_DIR,
+            "note":  "Peregrine web interface",
         },
         {
             "name": "Ollama (local LLM)",
-            "port": 11434,
-            "start": ["sudo", "systemctl", "start", "ollama"],
-            "stop":  ["sudo", "systemctl", "stop", "ollama"],
-            "cwd":   "/",
-            "note":  "Local inference engine — systemd service",
+            "port": _profile._svc["ollama_port"] if _profile else 11434,
+            "start": ["docker", "compose", "--profile", _profile_name, "up", "-d", "ollama"],
+            "stop":  ["docker", "compose", "stop", "ollama"],
+            "cwd":   COMPOSE_DIR,
+            "note":  f"Local inference engine — profile: {_profile_name}",
+            "hidden": _profile_name == "remote",
         },
         {
             "name": "vLLM Server",
-            "port": 8000,
-            "start": ["bash", str(Path(__file__).parent.parent.parent / "scripts/manage-vllm.sh"), "start"],
-            "stop":  ["bash", str(Path(__file__).parent.parent.parent / "scripts/manage-vllm.sh"), "stop"],
-            "cwd":   str(Path(__file__).parent.parent.parent),
+            "port": _profile._svc["vllm_port"] if _profile else 8000,
+            "start": ["docker", "compose", "--profile", _profile_name, "up", "-d", "vllm"],
+            "stop":  ["docker", "compose", "stop", "vllm"],
+            "cwd":   COMPOSE_DIR,
             "model_dir": str(_profile.vllm_models_dir) if _profile else str(Path.home() / "models" / "vllm"),
-            "note":  "Local vLLM inference (port 8000, GPU 1)",
-        },
-        {
-            "name": "Vision Service (moondream2)",
-            "port": 8002,
-            "start": ["bash", str(Path(__file__).parent.parent.parent / "scripts/manage-vision.sh"), "start"],
-            "stop":  ["bash", str(Path(__file__).parent.parent.parent / "scripts/manage-vision.sh"), "stop"],
-            "cwd":   str(Path(__file__).parent.parent.parent),
-            "note":  "Survey screenshot analysis — moondream2 (port 8002, optional)",
+            "note":  "vLLM inference — dual-gpu profile only",
+            "hidden": _profile_name != "dual-gpu",
         },
         {
             "name": "SearXNG (company scraper)",
             "port": _profile._svc["searxng_port"] if _profile else 8888,
-            "start": ["docker", "compose", "--profile", "searxng", "up", "-d", "searxng"],
+            "start": ["docker", "compose", "up", "-d", "searxng"],
             "stop":  ["docker", "compose", "stop", "searxng"],
-            "cwd":   str(Path(__file__).parent.parent.parent),
+            "cwd":   COMPOSE_DIR,
             "note":  "Privacy-respecting meta-search for company research",
         },
     ]
+    # Filter hidden services based on active profile
+    SERVICES = [s for s in SERVICES if not s.get("hidden")]
 
-    def _port_open(port: int) -> bool:
+    def _port_open(port: int, host: str = "127.0.0.1",
+                   ssl: bool = False, verify: bool = True) -> bool:
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=1):
-                return True
-        except OSError:
+            import requests as _r
+            scheme = "https" if ssl else "http"
+            _r.get(f"{scheme}://{host}:{port}/", timeout=1, verify=verify)
+            return True
+        except Exception:
             return False
 
     st.caption("Monitor and control the LLM backend services. Status is checked live on each page load.")
 
     for svc in SERVICES:
-        up = _port_open(svc["port"])
+        _svc_host = "127.0.0.1"
+        _svc_ssl = False
+        _svc_verify = True
+        if _profile:
+            _svc_host = _profile._svc.get(f"{svc['name'].split()[0].lower()}_host", "127.0.0.1")
+            _svc_ssl = _profile._svc.get(f"{svc['name'].split()[0].lower()}_ssl", False)
+            _svc_verify = _profile._svc.get(f"{svc['name'].split()[0].lower()}_ssl_verify", True)
+        up = _port_open(svc["port"], host=_svc_host, ssl=_svc_ssl, verify=_svc_verify)
         badge = "🟢 Running" if up else "🔴 Stopped"
         header = f"**{svc['name']}** — {badge}"
 
