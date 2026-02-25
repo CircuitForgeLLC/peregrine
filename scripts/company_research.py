@@ -45,6 +45,9 @@ for _scraper_candidate in [
         break
 
 
+_SEARXNG_URL: str = _profile.searxng_url if _profile else "http://localhost:8888"
+
+
 def _searxng_running(searxng_url: str = "http://localhost:8888") -> bool:
     """Quick check whether SearXNG is reachable."""
     try:
@@ -76,10 +79,10 @@ def _scrape_company(company: str) -> dict:
         timeout=20,
         input_file=None,
         output_file="/dev/null",
-        searxng_url="http://localhost:8888/",
+        searxng_url=_SEARXNG_URL + "/",
     )
     # Override the singleton Config URL
-    _ScraperConfig.SEARXNG_URL = "http://localhost:8888/"
+    _ScraperConfig.SEARXNG_URL = _SEARXNG_URL + "/"
 
     scraper = EnhancedCompanyScraper(mock_args)
     scraper.companies = [company]
@@ -121,7 +124,7 @@ def _run_search_query(query: str, results: dict, key: str) -> None:
     seen: set[str] = set()
     try:
         resp = requests.get(
-            "http://localhost:8888/search",
+            f"{_SEARXNG_URL}/search",
             params={"q": query, "format": "json", "language": "en-US"},
             timeout=12,
         )
@@ -317,7 +320,7 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None) -> dict
     live_data: dict = {}
     scrape_note = ""
     _stage("Checking for live company data…")
-    if use_scraper and _SCRAPER_AVAILABLE and _searxng_running():
+    if use_scraper and _SCRAPER_AVAILABLE and _searxng_running(_SEARXNG_URL):
         _stage("Scraping CEO & HQ data…")
         try:
             live_data = _scrape_company(company)
@@ -340,7 +343,7 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None) -> dict
     # ── Phase 1b: parallel search queries ────────────────────────────────────
     search_data: dict[str, str] = {}
     _stage("Running web searches…")
-    if use_scraper and _searxng_running():
+    if use_scraper and _searxng_running(_SEARXNG_URL):
         _stage("Running web searches (news, funding, tech, culture)…")
         try:
             ceo_name = (live_data.get("ceo") or "") if live_data else ""
@@ -469,7 +472,7 @@ if __name__ == "__main__":
     job = dict(row)
     print(f"Researching: {job['title']} @ {job['company']} …\n")
     if _SCRAPER_AVAILABLE and not args.no_scrape:
-        print(f"SearXNG available: {_searxng_running()}")
+        print(f"SearXNG available: {_searxng_running(_SEARXNG_URL)}")
 
     result = research_company(job, use_scraper=not args.no_scrape)
     save_research(DEFAULT_DB, job_id=args.job_id, **result)
