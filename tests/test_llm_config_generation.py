@@ -19,8 +19,9 @@ def test_urls_applied_to_llm_yaml(tmp_path):
     }))
     llm_yaml = tmp_path / "llm.yaml"
     llm_yaml.write_text(yaml.dump({"backends": {
-        "ollama": {"base_url": "http://old:11434/v1", "type": "openai_compat"},
-        "vllm":   {"base_url": "http://old:8000/v1",  "type": "openai_compat"},
+        "ollama":          {"base_url": "http://old:11434/v1", "type": "openai_compat"},
+        "ollama_research": {"base_url": "http://old:11434/v1", "type": "openai_compat"},
+        "vllm":            {"base_url": "http://old:8000/v1",  "type": "openai_compat"},
     }}))
 
     profile = UserProfile(user_yaml)
@@ -28,6 +29,7 @@ def test_urls_applied_to_llm_yaml(tmp_path):
 
     result = yaml.safe_load(llm_yaml.read_text())
     assert result["backends"]["ollama"]["base_url"] == "http://myserver:11434/v1"
+    assert result["backends"]["ollama_research"]["base_url"] == "http://myserver:11434/v1"
     assert result["backends"]["vllm"]["base_url"] == "http://localhost:8000/v1"
 
 
