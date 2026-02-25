@@ -71,9 +71,15 @@ Each product ships as a **separate app** sharing the same underlying scaffold (p
 
 - **Harrier** — Insurance navigation. Prior authorization tracking, claim dispute drafting, EOB reconciliation, appeal letters. High willingness-to-pay: a denied $50k claim is worth paying to fight.
 
-- **Merlin** — Rental / housing applications. Monitors listings, auto-applies to matching properties, generates cover letters for competitive rental markets (NYC, SF), tracks responses, flags lease red flags.
+- **Merlin** — Rental / housing applications. Monitors listings, auto-applies to matching properties, generates cover letters for competitive rental markets, tracks responses, flags lease red flags.
 
-- **Hobby** — Healthcare scheduling & coordination. Referral tracking, specialist waitlist monitoring, prescription renewal reminders, medical record request management.
+- **Ibis** — Healthcare coordination. The sacred ibis was the symbol of Thoth, Egyptian god of medicine — the name carries genuine medical heritage. Referral tracking, specialist waitlist monitoring, prescription renewal reminders, medical record request management, prior auth paper trails.
+
+- **Tern** — Travel planning. The Arctic tern makes the longest migration of any animal (44,000 miles/year, pole to pole) — the ultimate traveler. Flight/hotel monitoring, itinerary generation, visa requirement research, travel insurance comparison, rebooking assistance on disruption.
+
+- **Wren** — Contractor engagement. Wrens are legendary nest-builders — meticulous, structural, persistent. Contractor discovery, quote comparison, scope-of-work generation, milestone tracking, dispute documentation, lien waiver management.
+
+- **Martin** — Car / home maintenance. The house martin nests on the exterior of buildings and returns to the same site every year to maintain it — almost too on-the-nose. Service scheduling, maintenance history tracking, recall monitoring, warranty tracking, finding trusted local providers.
 
 ### Shared architecture decisions
 
