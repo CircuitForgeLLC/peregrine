@@ -22,6 +22,7 @@ _DEFAULTS = {
     "inference_profile": "remote",
     "mission_preferences": {},
     "candidate_accessibility_focus": False,
+    "candidate_lgbtq_focus": False,
     "services": {
         "streamlit_port": 8501,
         "ollama_host": "localhost",
@@ -62,6 +63,7 @@ class UserProfile:
         self.inference_profile: str = data["inference_profile"]
         self.mission_preferences: dict[str, str] = data.get("mission_preferences", {})
         self.candidate_accessibility_focus: bool = bool(data.get("candidate_accessibility_focus", False))
+        self.candidate_lgbtq_focus: bool = bool(data.get("candidate_lgbtq_focus", False))
         self._svc = data["services"]
 
     # ── Service URLs ──────────────────────────────────────────────────────────
