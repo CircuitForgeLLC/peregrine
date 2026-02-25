@@ -1,6 +1,6 @@
 # app/pages/3_Resume_Editor.py
 """
-Resume Editor — form-based editor for Meghan's AIHawk profile YAML.
+Resume Editor — form-based editor for the user's AIHawk profile YAML.
 FILL_IN fields highlighted in amber.
 """
 import sys
@@ -12,7 +12,7 @@ import yaml
 
 st.set_page_config(page_title="Resume Editor", page_icon="📝", layout="wide")
 st.title("📝 Resume Editor")
-st.caption("Edit Meghan's application profile used by AIHawk for LinkedIn Easy Apply.")
+st.caption("Edit your application profile used by AIHawk for LinkedIn Easy Apply.")
 
 RESUME_PATH = Path(__file__).parent.parent.parent / "aihawk" / "data_folder" / "plain_text_resume.yaml"
 

@@ -20,6 +20,8 @@ _DEFAULTS = {
     "ollama_models_dir": "~/models/ollama",
     "vllm_models_dir": "~/models/vllm",
     "inference_profile": "remote",
+    "mission_preferences": {},
+    "candidate_accessibility_focus": False,
     "services": {
         "streamlit_port": 8501,
         "ollama_host": "localhost",
@@ -58,6 +60,8 @@ class UserProfile:
         self.ollama_models_dir: Path = Path(data["ollama_models_dir"]).expanduser().resolve()
         self.vllm_models_dir: Path = Path(data["vllm_models_dir"]).expanduser().resolve()
         self.inference_profile: str = data["inference_profile"]
+        self.mission_preferences: dict[str, str] = data.get("mission_preferences", {})
+        self.candidate_accessibility_focus: bool = bool(data.get("candidate_accessibility_focus", False))
         self._svc = data["services"]
 
     # ── Service URLs ──────────────────────────────────────────────────────────
