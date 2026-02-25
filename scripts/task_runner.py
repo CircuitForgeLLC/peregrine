@@ -110,6 +110,13 @@ def _run_wizard_generate(section: str, input_data: dict) -> str:
         return _re.sub(r"\{(\w+)\}", replacer, tmpl)
 
     prompt = _safe_format(template, {k: str(v) for k, v in input_data.items()})
+    # Append iterative refinement context if provided
+    previous_result = input_data.get("previous_result", "")
+    feedback = input_data.get("feedback", "")
+    if previous_result:
+        prompt += f"\n\n---\nPrevious output:\n{previous_result}"
+    if feedback:
+        prompt += f"\n\nUser feedback / requested changes:\n{feedback}\n\nPlease revise accordingly."
     from scripts.llm_router import LLMRouter
     return LLMRouter().complete(prompt)
 

@@ -293,3 +293,64 @@ def test_wizard_generate_stores_result_as_json(tmp_path):
     payload = _json.loads(row[1])
     assert payload["section"] == "career_summary"
     assert payload["result"] == "Experienced Python developer."
+
+
+def test_wizard_generate_feedback_appended_to_prompt(tmp_path):
+    """feedback and previous_result fields in input_data are appended to the prompt."""
+    from unittest.mock import patch, MagicMock
+    db = tmp_path / "t.db"
+    from scripts.db import init_db, insert_task
+    init_db(db)
+
+    captured_prompts = []
+
+    def mock_complete(prompt):
+        captured_prompts.append(prompt)
+        return "Revised career summary."
+
+    import json as _json
+    params = _json.dumps({
+        "section": "career_summary",
+        "input": {
+            "resume_text": "10 years Python dev",
+            "previous_result": "Original summary text.",
+            "feedback": "Make it shorter and focus on leadership.",
+        }
+    })
+    task_id, _ = insert_task(db, "wizard_generate", 0, params=params)
+
+    with patch("scripts.llm_router.LLMRouter") as MockRouter:
+        MockRouter.return_value.complete.side_effect = mock_complete
+        from scripts.task_runner import _run_task
+        _run_task(db, task_id, "wizard_generate", 0, params=params)
+
+    assert len(captured_prompts) == 1
+    prompt_used = captured_prompts[0]
+    assert "Original summary text." in prompt_used
+    assert "Make it shorter and focus on leadership." in prompt_used
+    assert "Please revise accordingly." in prompt_used
+
+
+def test_wizard_generate_no_feedback_no_revision_block(tmp_path):
+    """When no feedback/previous_result provided, prompt has no revision block."""
+    from unittest.mock import patch
+    db = tmp_path / "t.db"
+    from scripts.db import init_db, insert_task
+    init_db(db)
+
+    captured_prompts = []
+
+    import json as _json
+    params = _json.dumps({
+        "section": "career_summary",
+        "input": {"resume_text": "5 years QA engineer"}
+    })
+    task_id, _ = insert_task(db, "wizard_generate", 0, params=params)
+
+    with patch("scripts.llm_router.LLMRouter") as MockRouter:
+        MockRouter.return_value.complete.side_effect = lambda p: (captured_prompts.append(p) or "Summary.")
+        from scripts.task_runner import _run_task
+        _run_task(db, task_id, "wizard_generate", 0, params=params)
+
+    assert "Please revise accordingly." not in captured_prompts[0]
+    assert "Previous output:" not in captured_prompts[0]
