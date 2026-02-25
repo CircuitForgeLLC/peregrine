@@ -9,7 +9,8 @@
 **Tech Stack:** FastAPI, PyJWT[crypto], Pydantic v2, SQLite, pytest, httpx (test client), cryptography (RSA key gen in tests), Docker Compose V2, Caddy.
 
 **Repos:**
-- License server: `/Library/Development/devl/circuitforge-license/` → `git.opensourcesolarpunk.com/pyr0ball/circuitforge-license`
+- License server dev: `/Library/Development/CircuitForge/circuitforge-license/` → `git.opensourcesolarpunk.com/pyr0ball/circuitforge-license`
+- License server live (on Heimdall): cloned to `/devl/circuitforge-license/`
 - Peregrine client: `/Library/Development/devl/peregrine/`
 - Run tests: `/devl/miniconda3/envs/job-seeker/bin/pytest tests/ -v`
 - Python env for local dev/test: `conda run -n job-seeker`
@@ -23,7 +24,7 @@
 ### Task 1: Repo scaffold + DB schema
 
 **Files:**
-- Create: `/Library/Development/devl/circuitforge-license/` (new directory)
+- Create: `/Library/Development/CircuitForge/circuitforge-license/` (new directory)
 - Create: `requirements.txt`
 - Create: `app/__init__.py`
 - Create: `app/db.py`
@@ -1416,8 +1417,8 @@ git push -u origin main
 
 ```bash
 # SSH to Heimdall or run locally — keys go in circuitforge-license/keys/
-mkdir -p /Library/Development/devl/circuitforge-license/keys
-cd /Library/Development/devl/circuitforge-license/keys
+mkdir -p /Library/Development/CircuitForge/circuitforge-license/keys
+cd /Library/Development/CircuitForge/circuitforge-license/keys
 openssl genrsa -out private.pem 2048
 openssl rsa -in private.pem -pubout -out public.pem
 git add public.pem
@@ -1444,7 +1445,7 @@ git push
 **Step 1: Copy the public key**
 
 ```bash
-cp /Library/Development/devl/circuitforge-license/keys/public.pem \
+cp /Library/Development/CircuitForge/circuitforge-license/keys/public.pem \
    /Library/Development/devl/peregrine/scripts/license_public_key.pem
 ```
 
@@ -2155,7 +2156,7 @@ docker exec caddy-proxy caddy reload --config /etc/caddy/Caddyfile
 
 ```bash
 # SSH to Heimdall
-cd /Library/Development/devl/circuitforge-license  # or wherever cloned
+cd /devl/circuitforge-license   # live clone lives here
 cp .env.example .env
 # Edit .env: set ADMIN_TOKEN to a long random string
 # keys/ already has private.pem + public.pem from Task 7 step 3
