@@ -62,25 +62,43 @@ _MISSION_SIGNALS: dict[str, list[str]] = {
 
 _candidate = _profile.name if _profile else "the candidate"
 
-_MISSION_NOTES: dict[str, str] = {
+_MISSION_DEFAULTS: dict[str, str] = {
     "music": (
-        f"This company is in the music industry, which is one of {_candidate}'s genuinely "
-        "ideal work environments — they have a real personal passion for the music scene. "
-        "Para 3 should warmly and specifically reflect this authentic alignment, not as "
-        "a generic fan statement, but as an honest statement of where they'd love to apply "
-        "their CS skills."
+        f"This company is in the music industry — an industry {_candidate} finds genuinely "
+        "compelling. Para 3 should warmly and specifically reflect this authentic alignment, "
+        "not as a generic fan statement, but as an honest statement of where they'd love to "
+        "apply their skills."
     ),
     "animal_welfare": (
-        f"This organization works in animal welfare/rescue — one of {_candidate}'s dream-job "
-        "domains and a genuine personal passion. Para 3 should reflect this authentic "
-        "connection warmly and specifically, tying their CS skills to this mission."
+        f"This organization works in animal welfare/rescue — a mission {_candidate} finds "
+        "genuinely meaningful. Para 3 should reflect this authentic connection warmly and "
+        "specifically, tying their skills to this mission."
     ),
     "education": (
-        f"This company works in children's education or EdTech — one of {_candidate}'s ideal "
-        "work domains, reflecting genuine personal values around learning and young people. "
-        "Para 3 should reflect this authentic connection specifically and warmly."
+        f"This company works in education or EdTech — a domain that resonates with "
+        f"{_candidate}'s values. Para 3 should reflect this authentic connection specifically "
+        "and warmly."
     ),
 }
+
+
+def _build_mission_notes() -> dict[str, str]:
+    """Merge user's custom mission notes with generic defaults."""
+    prefs = _profile.mission_preferences if _profile else {}
+    notes = {}
+    for industry, default_note in _MISSION_DEFAULTS.items():
+        custom = (prefs.get(industry) or "").strip()
+        if custom:
+            notes[industry] = (
+                f"Mission alignment — {_candidate} shared: \"{custom}\". "
+                "Para 3 should warmly and specifically reflect this authentic connection."
+            )
+        else:
+            notes[industry] = default_note
+    return notes
+
+
+_MISSION_NOTES = _build_mission_notes()
 
 
 def detect_mission_alignment(company: str, description: str) -> str | None:
