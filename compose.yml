@@ -59,6 +59,25 @@ services:
               capabilities: [gpu]
     profiles: [single-gpu, dual-gpu]
 
+  vision:
+    build:
+      context: .
+      dockerfile: scripts/vision_service/Dockerfile
+    ports:
+      - "${VISION_PORT:-8002}:8002"
+    environment:
+      - VISION_MODEL=${VISION_MODEL:-vikhyatk/moondream2}
+      - VISION_REVISION=${VISION_REVISION:-2025-01-09}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    profiles: [single-gpu, dual-gpu]
+    restart: unless-stopped
+
   vllm:
     image: vllm/vllm-openai:latest
     ports:

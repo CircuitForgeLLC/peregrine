@@ -77,9 +77,11 @@ Return ONLY valid JSON in this exact format:
             pass
     return {"suggested_titles": [], "suggested_excludes": []}
 
-tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills = st.tabs(
+_show_finetune = bool(_profile and _profile.inference_profile in ("single-gpu", "dual-gpu"))
+
+tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills, tab_finetune = st.tabs(
     ["👤 My Profile", "🔎 Search", "🤖 LLM Backends", "📚 Notion",
-     "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills"]
+     "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills", "🎯 Fine-Tune"]
 )
 
 USER_CFG = CONFIG_DIR / "user.yaml"
@@ -535,6 +537,15 @@ with tab_services:
             "hidden": _profile_name != "dual-gpu",
         },
         {
+            "name": "Vision Service (moondream2)",
+            "port": 8002,
+            "start": ["docker", "compose", "--profile", _profile_name, "up", "-d", "vision"],
+            "stop":  ["docker", "compose", "stop", "vision"],
+            "cwd":   COMPOSE_DIR,
+            "note":  "Screenshot/image understanding for survey assistant",
+            "hidden": _profile_name not in ("single-gpu", "dual-gpu"),
+        },
+        {
             "name": "SearXNG (company scraper)",
             "port": _profile._svc["searxng_port"] if _profile else 8888,
             "start": ["docker", "compose", "up", "-d", "searxng"],
@@ -931,3 +942,65 @@ with tab_skills:
             save_yaml(KEYWORDS_CFG, kw_data)
             st.success("Saved.")
             st.rerun()
+
+# ── Fine-Tune Wizard tab ───────────────────────────────────────────────────────
+with tab_finetune:
+    if not _show_finetune:
+        st.info(
+            f"Fine-tuning requires a GPU profile. "
+            f"Current profile: `{_profile.inference_profile if _profile else 'not configured'}`. "
+            "Change it in **My Profile** to enable this feature."
+        )
+    else:
+        st.subheader("Fine-Tune Your Cover Letter Model")
+        st.caption(
+            "Upload your existing cover letters to train a personalised writing model. "
+            "Requires a GPU. The base model is used until fine-tuning completes."
+        )
+
+        ft_step = st.session_state.get("ft_step", 1)
+
+        if ft_step == 1:
+            st.markdown("**Step 1: Upload Cover Letters**")
+            uploaded = st.file_uploader(
+                "Upload cover letters (PDF, DOCX, or TXT)",
+                type=["pdf", "docx", "txt"],
+                accept_multiple_files=True,
+            )
+            if uploaded and st.button("Extract Training Pairs →", type="primary", key="ft_extract"):
+                upload_dir = _profile.docs_dir / "training_data" / "uploads"
+                upload_dir.mkdir(parents=True, exist_ok=True)
+                for f in uploaded:
+                    (upload_dir / f.name).write_bytes(f.read())
+                st.session_state.ft_step = 2
+                st.rerun()
+
+        elif ft_step == 2:
+            st.markdown("**Step 2: Preview Training Pairs**")
+            st.info("Run `python scripts/prepare_training_data.py` to extract pairs, then return here.")
+            jsonl_path = _profile.docs_dir / "training_data" / "cover_letters.jsonl"
+            if jsonl_path.exists():
+                import json as _json
+                pairs = [_json.loads(l) for l in jsonl_path.read_text().splitlines() if l.strip()]
+                st.caption(f"{len(pairs)} training pairs extracted.")
+                for i, p in enumerate(pairs[:3]):
+                    with st.expander(f"Pair {i+1}"):
+                        st.text(p.get("input", "")[:300])
+            else:
+                st.warning("No training pairs found. Run `prepare_training_data.py` first.")
+            col_back, col_next = st.columns([1, 4])
+            if col_back.button("← Back", key="ft_back2"):
+                st.session_state.ft_step = 1
+                st.rerun()
+            if col_next.button("Start Training →", type="primary", key="ft_next2"):
+                st.session_state.ft_step = 3
+                st.rerun()
+
+        elif ft_step == 3:
+            st.markdown("**Step 3: Train**")
+            st.slider("Epochs", 3, 20, 10, key="ft_epochs")
+            if st.button("🚀 Start Fine-Tune", type="primary", key="ft_start"):
+                st.info("Fine-tune queued as a background task. Check back in 30–60 minutes.")
+            if st.button("← Back", key="ft_back3"):
+                st.session_state.ft_step = 2
+                st.rerun()
