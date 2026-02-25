@@ -7,12 +7,20 @@ Unscheduled ideas and deferred features. Roughly grouped by area.
 ## Settings / Data Management
 
 - **Backup / Restore / Teleport** — Settings panel option to export a full config snapshot (user.yaml + all gitignored configs) as a zip, restore from a snapshot, and "teleport" (export + import to a new machine or Docker volume). Useful for migrations, multi-machine setups, and safe wizard testing.
+- **Complete Google Drive integration test()** — `scripts/integrations/google_drive.py` `test()` currently only checks that the credentials file exists (TODO comment). Implement actual Google Drive API call using `google-api-python-client` to verify the token works.
+
+---
+
+## First-Run Wizard
+
+- **Wire real LLM test in Step 5 (Inference)** — `app/wizard/step_inference.py` validates an `endpoint_confirmed` boolean flag only. Replace with an actual LLM call: submit a minimal prompt to the configured endpoint, show pass/fail, and only set `endpoint_confirmed: true` on success. Should test whichever backend the user selected (Ollama, vLLM, Anthropic, etc.).
 
 ---
 
 ## Cover Letter / Resume Generation
 
 - **Iterative refinement feedback loop** — Apply Workspace cover letter generator: show previous result + a "Feedback / changes requested" text area + "Regenerate" button. Pass `previous_result` and `feedback` through `generate()` in `scripts/generate_cover_letter.py` to the LLM prompt. Same pattern for resume bullet expansion in the wizard (`wizard_generate: expand_bullets`). Backend already supports `previous_result`/`feedback` in `wizard_generate` tasks (added to `_run_wizard_generate`).
+- **Apply Workspace refinement UI ready to wire** — Remaining work: add a "Feedback / changes requested" text area and "Regenerate" button in `app/pages/4_Apply.py`, pass both fields through `submit_task` → `_run_wizard_generate`. Backend is complete.
 
 ---
 
