@@ -36,7 +36,7 @@ _docs = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearc
 LETTERS_JSONL   = _docs / "training_data" / "cover_letters.jsonl"
 OUTPUT_DIR      = _docs / "training_data" / "finetune_output"
 GGUF_DIR        = _docs / "training_data" / "gguf"
-OLLAMA_NAME     = f"{_profile.name.split()[0].lower()}-cover-writer" if _profile else "cover-writer"
+OLLAMA_NAME     = f"{(_profile.name.split() or ['cover'])[0].lower()}-cover-writer" if _profile else "cover-writer"
 
 SYSTEM_PROMPT = (
     f"You are {_profile.name}'s personal cover letter writer. "
