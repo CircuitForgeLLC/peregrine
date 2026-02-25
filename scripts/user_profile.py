@@ -23,6 +23,11 @@ _DEFAULTS = {
     "mission_preferences": {},
     "candidate_accessibility_focus": False,
     "candidate_lgbtq_focus": False,
+    "tier": "free",
+    "dev_tier_override": None,
+    "wizard_complete": False,
+    "wizard_step": 0,
+    "dismissed_banners": [],
     "services": {
         "streamlit_port": 8501,
         "ollama_host": "localhost",
@@ -64,6 +69,11 @@ class UserProfile:
         self.mission_preferences: dict[str, str] = data.get("mission_preferences", {})
         self.candidate_accessibility_focus: bool = bool(data.get("candidate_accessibility_focus", False))
         self.candidate_lgbtq_focus: bool = bool(data.get("candidate_lgbtq_focus", False))
+        self.tier: str = data.get("tier", "free")
+        self.dev_tier_override: str | None = data.get("dev_tier_override") or None
+        self.wizard_complete: bool = bool(data.get("wizard_complete", False))
+        self.wizard_step: int = int(data.get("wizard_step", 0))
+        self.dismissed_banners: list[str] = list(data.get("dismissed_banners", []))
         self._svc = data["services"]
 
     # ── Service URLs ──────────────────────────────────────────────────────────
@@ -89,6 +99,11 @@ class UserProfile:
     def ssl_verify(self, service: str) -> bool:
         """Return ssl_verify flag for a named service (ollama/vllm/searxng)."""
         return bool(self._svc.get(f"{service}_ssl_verify", True))
+
+    @property
+    def effective_tier(self) -> str:
+        """Returns dev_tier_override if set, otherwise tier."""
+        return self.dev_tier_override or self.tier
 
     # ── NDA helpers ───────────────────────────────────────────────────────────
     def is_nda(self, company: str) -> bool:
