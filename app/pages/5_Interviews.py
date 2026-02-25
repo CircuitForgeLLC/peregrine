@@ -22,6 +22,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import streamlit as st
 
+from scripts.user_profile import UserProfile
+
+_USER_YAML = Path(__file__).parent.parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+_name = _profile.name if _profile else "Job Seeker"
+
 from scripts.db import (
     DEFAULT_DB, init_db,
     get_interview_jobs, advance_to_stage, reject_at_stage,
@@ -186,19 +192,21 @@ def _email_modal(job: dict) -> None:
                 with st.spinner("Drafting…"):
                     try:
                         from scripts.llm_router import complete
+                        _persona = (
+                            f"{_name} is a {_profile.career_summary[:120] if _profile and _profile.career_summary else 'professional'}"
+                        )
                         draft = complete(
                             prompt=(
                                 f"Draft a professional, warm reply to this email.\n\n"
                                 f"From: {last.get('from_addr', '')}\n"
                                 f"Subject: {last.get('subject', '')}\n\n"
                                 f"{last.get('body', '')}\n\n"
-                                f"Context: Alex Rivera is a Customer Success / "
-                                f"Technical Account Manager applying for "
+                                f"Context: {_persona} applying for "
                                 f"{job.get('title')} at {job.get('company')}."
                             ),
                             system=(
-                                "You are Alex Rivera's professional email assistant. "
-                                "Write concise, warm, and professional replies in her voice. "
+                                f"You are {_name}'s professional email assistant. "
+                                "Write concise, warm, and professional replies in their voice. "
                                 "Keep it to 3–5 sentences unless more is needed."
                             ),
                         )
