@@ -91,6 +91,7 @@ services:
       --gpu-memory-utilization 0.75
       --enforce-eager
       --max-num-seqs 8
+      --cpu-offload-gb ${CPU_OFFLOAD_GB:-0}
     deploy:
       resources:
         reservations:

@@ -22,10 +22,38 @@ PID_FILE="$REPO_DIR/.streamlit.pid"
 LOG_FILE="$REPO_DIR/.streamlit.log"
 PORT="${STREAMLIT_PORT:-8501}"
 
+_resolve_port() {
+    # Ask preflight.py for the next free port near the configured port.
+    # Falls back to a pure-bash scan if Python/yaml is not available.
+    local python_bin
+    for python_bin in python3 python; do
+        if command -v "$python_bin" &>/dev/null && \
+           "$python_bin" -c "import yaml" &>/dev/null 2>&1; then
+            local resolved
+            resolved=$("$python_bin" "$REPO_DIR/scripts/preflight.py" --service streamlit 2>/dev/null)
+            if [[ -n "$resolved" && "$resolved" =~ ^[0-9]+$ ]]; then
+                echo "$resolved"; return
+            fi
+        fi
+    done
+    # Pure-bash fallback: scan for a free port
+    local p="$PORT"
+    while (echo >/dev/tcp/127.0.0.1/"$p") 2>/dev/null; do
+        ((p++))
+        [[ $p -gt $((PORT + 20)) ]] && break
+    done
+    echo "$p"
+}
+
 start() {
     if is_running; then
         echo "Already running (PID $(cat "$PID_FILE")). Use 'restart' to reload."
         return 0
+    fi
+
+    PORT=$(_resolve_port)
+    if [[ "$PORT" != "${STREAMLIT_PORT:-8501}" ]]; then
+        echo "Port ${STREAMLIT_PORT:-8501} in use — using $PORT instead."
     fi
 
     echo "Starting Streamlit on http://localhost:$PORT …"
