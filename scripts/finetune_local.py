@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # scripts/finetune_local.py
 """
-Local LoRA fine-tune on Alex's cover letter corpus.
+Local LoRA fine-tune on the candidate's cover letter corpus.
 No HuggingFace account or internet required after the base model is cached.
 
 Usage:
@@ -17,24 +17,32 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 # Limit CUDA to GPU 0. device_map={"":0} in FastLanguageModel.from_pretrained
 # pins every layer to GPU 0, avoiding the accelerate None-device bug that
 # occurs with device_map="auto" on multi-GPU machines with 4-bit quantisation.
 # Do NOT set WORLD_SIZE/RANK — that triggers torch.distributed initialisation.
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 
+from scripts.user_profile import UserProfile
+_USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+
 # ── Config ────────────────────────────────────────────────────────────────────
 DEFAULT_MODEL   = "unsloth/Llama-3.2-3B-Instruct"   # safe on 8 GB VRAM
-LETTERS_JSONL   = Path("/Library/Documents/JobSearch/training_data/cover_letters.jsonl")
-OUTPUT_DIR      = Path("/Library/Documents/JobSearch/training_data/finetune_output")
-GGUF_DIR        = Path("/Library/Documents/JobSearch/training_data/gguf")
-OLLAMA_NAME     = "alex-cover-writer"
+
+_docs = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
+LETTERS_JSONL   = _docs / "training_data" / "cover_letters.jsonl"
+OUTPUT_DIR      = _docs / "training_data" / "finetune_output"
+GGUF_DIR        = _docs / "training_data" / "gguf"
+OLLAMA_NAME     = f"{_profile.name.split()[0].lower()}-cover-writer" if _profile else "cover-writer"
 
 SYSTEM_PROMPT = (
-    "You are Alex Rivera's personal cover letter writer. "
-    "Write professional, warm, and results-focused cover letters in Alex's voice. "
-    "Draw on her background in customer success, technical account management, "
-    "and revenue operations. Be specific and avoid generic filler."
+    f"You are {_profile.name}'s personal cover letter writer. "
+    f"{_profile.career_summary}"
+    if _profile else
+    "You are a professional cover letter writer. Write in first person."
 )
 
 # ── Args ──────────────────────────────────────────────────────────────────────
@@ -48,7 +56,7 @@ parser.add_argument("--max-length", type=int, default=1024, help="Max token leng
 args = parser.parse_args()
 
 print(f"\n{'='*60}")
-print(f"  Alex Cover Letter Fine-Tuner")
+print(f"  Cover Letter Fine-Tuner  [{OLLAMA_NAME}]")
 print(f"  Base model : {args.model}")
 print(f"  Epochs     : {args.epochs}")
 print(f"  LoRA rank  : {args.rank}")
