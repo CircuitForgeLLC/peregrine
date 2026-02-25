@@ -61,3 +61,7 @@ pytest>=9.0
 pytest-cov
 pytest-mock
 lxml
+
+# ── Documentation ────────────────────────────────────────────────────────
+mkdocs>=1.5
+mkdocs-material>=9.5
