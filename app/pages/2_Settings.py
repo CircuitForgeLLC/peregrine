@@ -77,9 +77,103 @@ Return ONLY valid JSON in this exact format:
             pass
     return {"suggested_titles": [], "suggested_excludes": []}
 
-tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills = st.tabs(
-    ["🔎 Search", "🤖 LLM Backends", "📚 Notion", "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills"]
+tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills = st.tabs(
+    ["👤 My Profile", "🔎 Search", "🤖 LLM Backends", "📚 Notion",
+     "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills"]
 )
+
+USER_CFG = CONFIG_DIR / "user.yaml"
+
+with tab_profile:
+    from scripts.user_profile import UserProfile as _UP, _DEFAULTS as _UP_DEFAULTS
+    import yaml as _yaml_up
+
+    st.caption("Your identity and service configuration. Saved values drive all LLM prompts, PDF headers, and service connections.")
+
+    _u = _yaml_up.safe_load(USER_CFG.read_text()) or {} if USER_CFG.exists() else {}
+    _svc = {**_UP_DEFAULTS["services"], **_u.get("services", {})}
+
+    with st.expander("👤 Identity", expanded=True):
+        c1, c2 = st.columns(2)
+        u_name     = c1.text_input("Full Name",   _u.get("name", ""))
+        u_email    = c1.text_input("Email",        _u.get("email", ""))
+        u_phone    = c2.text_input("Phone",        _u.get("phone", ""))
+        u_linkedin = c2.text_input("LinkedIn URL", _u.get("linkedin", ""))
+        u_summary  = st.text_area("Career Summary (used in LLM prompts)",
+                                   _u.get("career_summary", ""), height=100)
+
+    with st.expander("🔒 Sensitive Employers (NDA)"):
+        st.caption("Companies listed here appear as 'previous employer (NDA)' in research briefs.")
+        nda_list = list(_u.get("nda_companies", []))
+        if nda_list:
+            nda_cols = st.columns(len(nda_list))
+            _to_remove = None
+            for i, company in enumerate(nda_list):
+                if nda_cols[i].button(f"× {company}", key=f"rm_nda_{company}"):
+                    _to_remove = company
+            if _to_remove:
+                nda_list.remove(_to_remove)
+        nc, nb = st.columns([4, 1])
+        new_nda = nc.text_input("Add employer", key="new_nda",
+                                 label_visibility="collapsed", placeholder="Employer name…")
+        if nb.button("＋ Add", key="add_nda") and new_nda.strip():
+            nda_list.append(new_nda.strip())
+
+    with st.expander("📁 File Paths"):
+        u_docs   = st.text_input("Documents directory",     _u.get("docs_dir", "~/Documents/JobSearch"))
+        u_ollama = st.text_input("Ollama models directory", _u.get("ollama_models_dir", "~/models/ollama"))
+        u_vllm   = st.text_input("vLLM models directory",   _u.get("vllm_models_dir", "~/models/vllm"))
+
+    with st.expander("⚙️ Inference Profile"):
+        _profiles = ["remote", "cpu", "single-gpu", "dual-gpu"]
+        u_inf_profile = st.selectbox("Active profile", _profiles,
+                                      index=_profiles.index(_u.get("inference_profile", "remote")))
+
+    with st.expander("🔌 Service Ports & Hosts"):
+        st.caption("Advanced — change only if services run on non-default ports or remote hosts.")
+        sc1, sc2, sc3 = st.columns(3)
+        with sc1:
+            st.markdown("**Ollama**")
+            svc_ollama_host   = st.text_input("Host",        _svc["ollama_host"],   key="svc_ollama_host")
+            svc_ollama_port   = st.number_input("Port",      value=_svc["ollama_port"], step=1, key="svc_ollama_port")
+            svc_ollama_ssl    = st.checkbox("SSL",           _svc["ollama_ssl"],    key="svc_ollama_ssl")
+            svc_ollama_verify = st.checkbox("Verify cert",   _svc["ollama_ssl_verify"], key="svc_ollama_verify")
+        with sc2:
+            st.markdown("**vLLM**")
+            svc_vllm_host   = st.text_input("Host",          _svc["vllm_host"],   key="svc_vllm_host")
+            svc_vllm_port   = st.number_input("Port",        value=_svc["vllm_port"], step=1, key="svc_vllm_port")
+            svc_vllm_ssl    = st.checkbox("SSL",             _svc["vllm_ssl"],    key="svc_vllm_ssl")
+            svc_vllm_verify = st.checkbox("Verify cert",     _svc["vllm_ssl_verify"], key="svc_vllm_verify")
+        with sc3:
+            st.markdown("**SearXNG**")
+            svc_sxng_host   = st.text_input("Host",          _svc["searxng_host"],   key="svc_sxng_host")
+            svc_sxng_port   = st.number_input("Port",        value=_svc["searxng_port"], step=1, key="svc_sxng_port")
+            svc_sxng_ssl    = st.checkbox("SSL",             _svc["searxng_ssl"],    key="svc_sxng_ssl")
+            svc_sxng_verify = st.checkbox("Verify cert",     _svc["searxng_ssl_verify"], key="svc_sxng_verify")
+
+    if st.button("💾 Save Profile", type="primary", key="save_user_profile"):
+        new_data = {
+            "name": u_name, "email": u_email, "phone": u_phone,
+            "linkedin": u_linkedin, "career_summary": u_summary,
+            "nda_companies": nda_list,
+            "docs_dir": u_docs, "ollama_models_dir": u_ollama, "vllm_models_dir": u_vllm,
+            "inference_profile": u_inf_profile,
+            "services": {
+                "streamlit_port": _svc["streamlit_port"],
+                "ollama_host": svc_ollama_host, "ollama_port": int(svc_ollama_port),
+                "ollama_ssl": svc_ollama_ssl, "ollama_ssl_verify": svc_ollama_verify,
+                "vllm_host": svc_vllm_host, "vllm_port": int(svc_vllm_port),
+                "vllm_ssl": svc_vllm_ssl, "vllm_ssl_verify": svc_vllm_verify,
+                "searxng_host": svc_sxng_host, "searxng_port": int(svc_sxng_port),
+                "searxng_ssl": svc_sxng_ssl, "searxng_ssl_verify": svc_sxng_verify,
+            }
+        }
+        save_yaml(USER_CFG, new_data)
+        # Reload from disk so URL generation uses saved values
+        from scripts.generate_llm_config import apply_service_urls as _apply_urls
+        _apply_urls(_UP(USER_CFG), LLM_CFG)
+        st.success("Profile saved and service URLs updated.")
+        st.rerun()
 
 # ── Search tab ───────────────────────────────────────────────────────────────
 with tab_search:
@@ -364,20 +458,11 @@ with tab_llm:
         for n in new_order
     ))
 
-    col_save_llm, col_sync_llm = st.columns(2)
-    if col_save_llm.button("💾 Save LLM settings", type="primary"):
+    if st.button("💾 Save LLM settings", type="primary"):
         save_yaml(LLM_CFG, {**cfg, "backends": updated_backends, "fallback_order": new_order})
         st.session_state.pop("_llm_order", None)
         st.session_state.pop("_llm_order_cfg_key", None)
         st.success("LLM settings saved!")
-
-    if col_sync_llm.button("🔄 Sync URLs from Profile", help="Regenerate backend base_url values from your service host/port settings in user.yaml"):
-        if _profile is not None:
-            from scripts.generate_llm_config import apply_service_urls as _apply_urls
-            _apply_urls(_profile, LLM_CFG)
-            st.success("Profile saved and service URLs updated.")
-        else:
-            st.warning("No user profile found — configure it in the My Profile tab first.")
 
 # ── Notion tab ────────────────────────────────────────────────────────────────
 with tab_notion:
