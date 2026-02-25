@@ -247,11 +247,50 @@ elif step == 5:
             from scripts.generate_llm_config import apply_service_urls
             apply_service_urls(UserProfile(USER_CFG), LLM_CFG)
 
+        # Write API keys to .env (Docker Compose reads these)
+        env_path = CONFIG_DIR.parent / ".env"
+        env_lines = []
+        if env_path.exists():
+            env_lines = env_path.read_text().splitlines()
+
+        def _set_env(lines: list[str], key: str, value: str) -> list[str]:
+            """Update or append a KEY=value line."""
+            prefix = f"{key}="
+            new_line = f"{key}={value}"
+            for i, line in enumerate(lines):
+                if line.startswith(prefix):
+                    lines[i] = new_line
+                    return lines
+            lines.append(new_line)
+            return lines
+
+        anthropic_key = data.get("anthropic_key", "")
+        openai_url = data.get("openai_url", "")
+        openai_key = data.get("openai_key", "")
+
+        if anthropic_key:
+            env_lines = _set_env(env_lines, "ANTHROPIC_API_KEY", anthropic_key)
+        if openai_url:
+            env_lines = _set_env(env_lines, "OPENAI_COMPAT_URL", openai_url)
+        if openai_key:
+            env_lines = _set_env(env_lines, "OPENAI_COMPAT_KEY", openai_key)
+
+        if anthropic_key or openai_url:
+            env_path.write_text("\n".join(env_lines) + "\n")
+
         if save_notion and notion_token and notion_db:
+            # Load field_map defaults from example
+            notion_example = CONFIG_DIR / "notion.yaml.example"
+            field_map = {}
+            if notion_example.exists():
+                ex = yaml.safe_load(notion_example.read_text()) or {}
+                field_map = ex.get("field_map", {})
+
             NOTION_CFG.write_text(yaml.dump({
                 "token": notion_token,
                 "database_id": notion_db,
-            }))
+                "field_map": field_map,
+            }, default_flow_style=False, allow_unicode=True))
 
         st.session_state.wizard_step = 1
         st.session_state.wizard_data = {}
