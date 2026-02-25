@@ -16,6 +16,13 @@ Unscheduled ideas and deferred features. Roughly grouped by area.
 
 ---
 
+## Container Runtime
+
+- **Podman support** — Update `Makefile` to auto-detect `docker compose` vs `podman-compose` (e.g. `COMPOSE ?= $(shell command -v docker 2>/dev/null && echo "docker compose" || echo "podman-compose")`). Note in README that rootless Podman requires CDI GPU device spec (`nvidia.com/gpu=all`) instead of `runtime: nvidia` in `compose.yml`.
+- **FastAPI migration path** — When concurrent-user scale demands it: port Streamlit pages to FastAPI + React/HTMX, keep `scripts/` layer unchanged, replace daemon threads with Celery + Redis. The `scripts/` separation already makes this clean.
+
+---
+
 ## Email Sync
 
 See also: `docs/plans/email-sync-testing-checklist.md` for outstanding test coverage items.
