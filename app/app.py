@@ -65,7 +65,11 @@ _startup()
 from scripts.user_profile import UserProfile as _UserProfile
 _USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
 
-if not _UserProfile.exists(_USER_YAML):
+_show_wizard = (
+    not _UserProfile.exists(_USER_YAML)
+    or not _UserProfile(_USER_YAML).wizard_complete
+)
+if _show_wizard:
     _setup_page = st.Page("pages/0_Setup.py", title="Setup", icon="👋")
     st.navigation({"": [_setup_page]}).run()
     st.stop()
@@ -114,6 +118,8 @@ def _task_indicator():
             label = "Enriching"
         elif task_type == "scrape_url":
             label = "Scraping URL"
+        elif task_type == "wizard_generate":
+            label = "Wizard generation"
         elif task_type == "enrich_craigslist":
             label = "Enriching listing"
         else:
