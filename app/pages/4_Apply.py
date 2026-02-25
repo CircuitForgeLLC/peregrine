@@ -14,6 +14,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yaml
 
+from scripts.user_profile import UserProfile
+
+_USER_YAML = Path(__file__).parent.parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+_name = _profile.name if _profile else "Job Seeker"
+
 from scripts.db import (
     DEFAULT_DB, init_db, get_jobs_by_status,
     update_cover_letter, mark_applied, update_job_status,
@@ -21,7 +27,7 @@ from scripts.db import (
 )
 from scripts.task_runner import submit_task
 
-DOCS_DIR = Path("/Library/Documents/JobSearch")
+DOCS_DIR = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
 RESUME_YAML = Path(__file__).parent.parent.parent / "aihawk" / "data_folder" / "plain_text_resume.yaml"
 
 st.title("🚀 Apply Workspace")
@@ -70,13 +76,16 @@ def _make_cover_letter_pdf(job: dict, cover_letter: str, output_dir: Path) -> Pa
         textColor=dark, leading=16, spaceAfter=12, alignment=TA_LEFT,
     )
 
+    display_name = _profile.name.upper() if _profile else "YOUR NAME"
+    contact_line = " · ".join(filter(None, [
+        _profile.email if _profile else "",
+        _profile.phone if _profile else "",
+        _profile.linkedin if _profile else "",
+    ]))
+
     story = [
-        Paragraph("ALEX RIVERA", name_style),
-        Paragraph(
-            "alex@example.com  ·  (555) 867-5309  ·  "
-            "linkedin.com/in/AlexMcCann  ·  hirealexmccann.site",
-            contact_style,
-        ),
+        Paragraph(display_name, name_style),
+        Paragraph(contact_line, contact_style),
         HRFlowable(width="100%", thickness=1, color=teal, spaceBefore=8, spaceAfter=0),
         Paragraph(datetime.now().strftime("%B %d, %Y"), date_style),
     ]
@@ -88,7 +97,7 @@ def _make_cover_letter_pdf(job: dict, cover_letter: str, output_dir: Path) -> Pa
 
     story += [
         Spacer(1, 6),
-        Paragraph("Warm regards,<br/><br/>Alex Rivera", body_style),
+        Paragraph(f"Warm regards,<br/><br/>{_profile.name if _profile else 'Your Name'}", body_style),
     ]
 
     doc.build(story)
@@ -96,7 +105,7 @@ def _make_cover_letter_pdf(job: dict, cover_letter: str, output_dir: Path) -> Pa
 
 # ── Application Q&A helper ─────────────────────────────────────────────────────
 def _answer_question(job: dict, question: str) -> str:
-    """Call the LLM to answer an application question in Alex's voice.
+    """Call the LLM to answer an application question in the user's voice.
 
     Uses research_fallback_order (claude_code → vllm → ollama_research)
     rather than the default cover-letter order — the fine-tuned cover letter
@@ -106,21 +115,22 @@ def _answer_question(job: dict, question: str) -> str:
     router = LLMRouter()
     fallback = router.config.get("research_fallback_order") or router.config.get("fallback_order")
     description_snippet = (job.get("description") or "")[:1200].strip()
-    prompt = f"""You are answering job application questions for Alex Rivera, a customer success leader.
+    _persona_summary = (
+        _profile.career_summary[:200] if _profile and _profile.career_summary
+        else "a professional with experience in their field"
+    )
+    prompt = f"""You are answering job application questions for {_name}.
 
 Background:
-- 6+ years in customer success, technical account management, and CS leadership
-- Most recent role: led Americas Customer Success at UpGuard (cybersecurity SaaS), NPS consistently ≥95
-- Also founder of M3 Consulting, a CS advisory practice for SaaS startups
-- Based in SF Bay Area; open to remote/hybrid; pronouns: any
+{_persona_summary}
 
-Role she's applying to: {job.get("title", "")} at {job.get("company", "")}
+Role they're applying to: {job.get("title", "")} at {job.get("company", "")}
 {f"Job description excerpt:{chr(10)}{description_snippet}" if description_snippet else ""}
 
 Application Question:
 {question}
 
-Answer in Alex's voice — specific, warm, and confident. If the question specifies a word or character limit, respect it. Answer only the question with no preamble or sign-off."""
+Answer in {_name}'s voice — specific, warm, and confident. If the question specifies a word or character limit, respect it. Answer only the question with no preamble or sign-off."""
     return router.complete(prompt, fallback_order=fallback).strip()
 
 

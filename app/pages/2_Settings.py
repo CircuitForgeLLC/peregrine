@@ -10,6 +10,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import streamlit as st
 import yaml
 
+from scripts.user_profile import UserProfile
+
+_USER_YAML = Path(__file__).parent.parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+_name = _profile.name if _profile else "Job Seeker"
+
 st.title("⚙️ Settings")
 
 CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
@@ -402,7 +408,6 @@ with tab_services:
     import subprocess as _sp
 
     TOKENS_CFG = CONFIG_DIR / "tokens.yaml"
-    PFP_DIR = Path("/Library/Documents/Post Fight Processing")
 
     # Service definitions: (display_name, port, start_cmd, stop_cmd, notes)
     SERVICES = [
@@ -423,29 +428,13 @@ with tab_services:
             "note":  "Local inference engine — systemd service",
         },
         {
-            "name": "Claude Code Wrapper",
-            "port": 3009,
-            "start": ["bash", str(PFP_DIR / "manage-services.sh"), "start"],
-            "stop":  ["bash", str(PFP_DIR / "manage-services.sh"), "stop"],
-            "cwd":   str(PFP_DIR),
-            "note":  "OpenAI-compat proxy → Claude Code (port 3009)",
-        },
-        {
-            "name": "GitHub Copilot Wrapper",
-            "port": 3010,
-            "start": ["bash", str(PFP_DIR / "manage-copilot.sh"), "start"],
-            "stop":  ["bash", str(PFP_DIR / "manage-copilot.sh"), "stop"],
-            "cwd":   str(PFP_DIR),
-            "note":  "OpenAI-compat proxy → GitHub Copilot (port 3010)",
-        },
-        {
             "name": "vLLM Server",
             "port": 8000,
             "start": ["bash", str(Path(__file__).parent.parent.parent / "scripts/manage-vllm.sh"), "start"],
             "stop":  ["bash", str(Path(__file__).parent.parent.parent / "scripts/manage-vllm.sh"), "stop"],
             "cwd":   str(Path(__file__).parent.parent.parent),
-            "model_dir": "/Library/Assets/LLM/vllm/models",
-            "note":  "Local vLLM inference — Ouro model family (port 8000, GPU 1)",
+            "model_dir": str(_profile.vllm_models_dir) if _profile else str(Path.home() / "models" / "vllm"),
+            "note":  "Local vLLM inference (port 8000, GPU 1)",
         },
         {
             "name": "Vision Service (moondream2)",
@@ -457,11 +446,11 @@ with tab_services:
         },
         {
             "name": "SearXNG (company scraper)",
-            "port": 8888,
-            "start": ["docker", "compose", "up", "-d"],
-            "stop":  ["docker", "compose", "down"],
-            "cwd":   str(Path("/Library/Development/scrapers/SearXNG")),
-            "note":  "Privacy-respecting meta-search used for company research (port 8888)",
+            "port": _profile._svc["searxng_port"] if _profile else 8888,
+            "start": ["docker", "compose", "--profile", "searxng", "up", "-d", "searxng"],
+            "stop":  ["docker", "compose", "stop", "searxng"],
+            "cwd":   str(Path(__file__).parent.parent.parent),
+            "note":  "Privacy-respecting meta-search for company research",
         },
     ]
 
@@ -583,7 +572,7 @@ with tab_services:
 # ── Resume Profile tab ────────────────────────────────────────────────────────
 with tab_resume:
     st.caption(
-        "Edit Alex's application profile. "
+        f"Edit {_name}'s application profile. "
         "Bullets are used as paste-able shortcuts in the Apply Workspace."
     )
 
@@ -728,7 +717,7 @@ with tab_email:
     EMAIL_EXAMPLE = CONFIG_DIR / "email.yaml.example"
 
     st.caption(
-        "Connect Alex's email via IMAP to automatically associate recruitment "
+        f"Connect {_name}'s email via IMAP to automatically associate recruitment "
         "emails with job applications. Only emails that mention the company name "
         "AND contain a recruitment keyword are ever imported — no personal emails "
         "are touched."
@@ -789,7 +778,7 @@ with tab_email:
 with tab_skills:
     st.subheader("🏷️ Skills & Keywords")
     st.caption(
-        "These are matched against job descriptions to select Alex's most relevant "
+        f"These are matched against job descriptions to select {_name}'s most relevant "
         "experience and highlight keyword overlap in the research brief."
     )
 
