@@ -1,0 +1,35 @@
+# compose.podman-gpu.yml — Podman GPU override
+#
+# Replaces Docker-specific `driver: nvidia` reservations with CDI device specs
+# for rootless Podman. Apply automatically via `make start PROFILE=single-gpu`
+# when podman/podman-compose is detected, or manually:
+#   podman-compose -f compose.yml -f compose.podman-gpu.yml --profile single-gpu up -d
+#
+# Prerequisites:
+#   sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+#   (requires nvidia-container-toolkit >= 1.14)
+#
+services:
+  ollama-gpu:
+    devices:
+      - nvidia.com/gpu=0
+    deploy:
+      resources:
+        reservations:
+          devices: []
+
+  vision:
+    devices:
+      - nvidia.com/gpu=0
+    deploy:
+      resources:
+        reservations:
+          devices: []
+
+  vllm:
+    devices:
+      - nvidia.com/gpu=1
+    deploy:
+      resources:
+        reservations:
+          devices: []

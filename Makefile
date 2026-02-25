@@ -6,23 +6,41 @@
 PROFILE ?= remote
 PYTHON  ?= python3
 
-setup:          ## Install dependencies (Docker, NVIDIA toolkit)
+# Auto-detect container engine: prefer docker compose, fall back to podman
+COMPOSE ?= $(shell \
+  command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
+  && echo "docker compose" \
+  || (command -v podman >/dev/null 2>&1 \
+      && podman compose version >/dev/null 2>&1 \
+      && echo "podman compose" \
+      || echo "podman-compose"))
+
+# GPU profiles on Podman require a CDI override (rootless Podman can't use driver: nvidia)
+# Generate CDI spec first: sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+COMPOSE_FILES := -f compose.yml
+ifneq (,$(findstring podman,$(COMPOSE)))
+  ifneq (,$(findstring gpu,$(PROFILE)))
+    COMPOSE_FILES := -f compose.yml -f compose.podman-gpu.yml
+  endif
+endif
+
+setup:          ## Install dependencies (Docker or Podman + NVIDIA toolkit)
 	@bash setup.sh
 
 preflight:      ## Check ports + system resources; write .env
 	@$(PYTHON) scripts/preflight.py
 
 start: preflight  ## Preflight check then start Peregrine (PROFILE=remote|cpu|single-gpu|dual-gpu)
-	docker compose --profile $(PROFILE) up -d
+	$(COMPOSE) $(COMPOSE_FILES) --profile $(PROFILE) up -d
 
 stop:           ## Stop all Peregrine services
-	docker compose down
+	$(COMPOSE) down
 
 restart: preflight  ## Preflight check then restart all services
-	docker compose down && docker compose --profile $(PROFILE) up -d
+	$(COMPOSE) down && $(COMPOSE) $(COMPOSE_FILES) --profile $(PROFILE) up -d
 
 logs:           ## Tail app logs
-	docker compose logs -f app
+	$(COMPOSE) logs -f app
 
 test:           ## Run the test suite
 	$(PYTHON) -m pytest tests/ -v
@@ -30,7 +48,7 @@ test:           ## Run the test suite
 clean:          ## Remove containers, images, and data volumes (DESTRUCTIVE)
 	@echo "WARNING: This will delete all Peregrine containers and data."
 	@read -p "Type 'yes' to confirm: " confirm && [ "$$confirm" = "yes" ]
-	docker compose down --rmi local --volumes
+	$(COMPOSE) down --rmi local --volumes
 
 help:           ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
