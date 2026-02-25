@@ -1,0 +1,4 @@
+host: "https://nextcloud.example.com"
+username: "your-username"
+password: "your-app-password"
+folder_path: "/Peregrine"
