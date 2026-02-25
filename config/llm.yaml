@@ -1,0 +1,66 @@
+backends:
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+    enabled: false
+    model: claude-sonnet-4-6
+    type: anthropic
+    supports_images: true
+  claude_code:
+    api_key: any
+    base_url: http://localhost:3009/v1
+    enabled: false
+    model: claude-code-terminal
+    type: openai_compat
+    supports_images: true
+  github_copilot:
+    api_key: any
+    base_url: http://localhost:3010/v1
+    enabled: false
+    model: gpt-4o
+    type: openai_compat
+    supports_images: false
+  ollama:
+    api_key: ollama
+    base_url: http://localhost:11434/v1
+    enabled: true
+    model: meghan-cover-writer:latest
+    type: openai_compat
+    supports_images: false
+  ollama_research:
+    api_key: ollama
+    base_url: http://localhost:11434/v1
+    enabled: true
+    model: llama3.1:8b
+    type: openai_compat
+    supports_images: false
+  vllm:
+    api_key: ''
+    base_url: http://localhost:8000/v1
+    enabled: true
+    model: __auto__
+    type: openai_compat
+    supports_images: false
+  vision_service:
+    base_url: http://localhost:8002
+    enabled: false
+    type: vision_service
+    supports_images: true
+fallback_order:
+- ollama
+- claude_code
+- vllm
+- github_copilot
+- anthropic
+research_fallback_order:
+- claude_code
+- vllm
+- ollama_research
+- github_copilot
+- anthropic
+vision_fallback_order:
+- vision_service
+- claude_code
+- anthropic
+# Note: 'ollama' (meghan-cover-writer) intentionally excluded — research
+# must never use the fine-tuned writer model, and this also avoids evicting
+# the writer from GPU memory while a cover letter task is in flight.
