@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Cover letter iterative refinement: "Refine with Feedback" expander in Apply Workspace; `generate()` accepts `previous_result`/`feedback`; task params passed through `submit_task`
 - Expanded first-run wizard: 7-step onboarding with GPU detection, tier selection,
   resume upload/parsing, LLM inference test, search profile builder, integration cards
 - Tier system: free / paid / premium feature gates (`app/wizard/tiers.py`)
