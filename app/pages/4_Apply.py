@@ -255,6 +255,32 @@ with col_tools:
         label_visibility="collapsed",
     )
 
+    # ── Iterative refinement ──────────────────────
+    if cl_text and not _cl_running:
+        with st.expander("✏️ Refine with Feedback"):
+            st.caption("Describe what to change. The current draft is passed to the LLM as context.")
+            _fb_key = f"fb_{selected_id}"
+            feedback_text = st.text_area(
+                "Feedback",
+                placeholder="e.g. Shorten the second paragraph and add a line about cross-functional leadership.",
+                height=80,
+                key=_fb_key,
+                label_visibility="collapsed",
+            )
+            if st.button("✨ Regenerate with Feedback", use_container_width=True,
+                         disabled=not (feedback_text or "").strip(),
+                         key=f"cl_refine_{selected_id}"):
+                import json as _json
+                submit_task(
+                    DEFAULT_DB, "cover_letter", selected_id,
+                    params=_json.dumps({
+                        "previous_result": cl_text,
+                        "feedback": feedback_text.strip(),
+                    }),
+                )
+                st.session_state.pop(_fb_key, None)
+                st.rerun()
+
     # Copy + Save row
     c1, c2 = st.columns(2)
     with c1:
