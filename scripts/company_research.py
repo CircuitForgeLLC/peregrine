@@ -370,6 +370,19 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None) -> dict
     _stage("Generating brief with LLM… (30–90 seconds)")
     name = _profile.name if _profile else "the candidate"
     career_summary = _profile.career_summary if _profile else ""
+    accessibility_focus = _profile.candidate_accessibility_focus if _profile else False
+    _section_count = 8 if accessibility_focus else 7
+    _accessibility_section = """
+## Inclusion & Accessibility
+Assess {company}'s commitment to disability inclusion and accessibility. Cover:
+- ADA accommodation language in job postings or company policy
+- Disability Employee Resource Group (ERG) or affinity group
+- Product or service accessibility (WCAG compliance, adaptive features, AT integrations)
+- Any public disability/accessibility advocacy, partnerships, or certifications
+- Glassdoor or press signals about how employees with disabilities experience the company
+If no specific signals are found, say so clearly — absence of public commitment is itself signal.
+This section is for the candidate's personal decision-making only and will not appear in any application.
+""".format(company=company) if accessibility_focus else ""
     prompt = f"""You are preparing {name} for a job interview.
 {f"Candidate background: {career_summary}" if career_summary else ""}
 
@@ -385,8 +398,8 @@ Role: **{title}** at **{company}**
 
 ---
 
-Produce a structured research brief using **exactly** these eight markdown section headers
-(include all eight even if a section has limited data — say so honestly):
+Produce a structured research brief using **exactly** these {_section_count} markdown section headers
+(include all {_section_count} even if a section has limited data — say so honestly):
 
 ## Company Overview
 What {company} does, core product/service, business model, size/stage (startup / scale-up / enterprise), market positioning.
@@ -408,16 +421,7 @@ Draw on the live snippets above; if none available, note what is publicly known.
 Culture issues, layoffs, exec departures, financial stress, or Glassdoor concerns worth knowing before the call.
 If nothing notable, write "No significant red flags identified."
 
-## Inclusion & Accessibility
-Assess {company}'s commitment to disability inclusion and accessibility. Cover:
-- ADA accommodation language in job postings or company policy
-- Disability Employee Resource Group (ERG) or affinity group
-- Product or service accessibility (WCAG compliance, adaptive features, AT integrations)
-- Any public disability/accessibility advocacy, partnerships, or certifications
-- Glassdoor or press signals about how employees with disabilities experience the company
-If no specific signals are found, say so clearly — absence of public commitment is itself signal.
-This section is for the candidate's personal decision-making only and will not appear in any application.
-
+{_accessibility_section}
 ## Talking Points for {name}
 Five specific talking points for the phone screen. Each must:
 - Reference a concrete experience from {name}'s matched background by name
