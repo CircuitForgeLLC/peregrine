@@ -64,6 +64,35 @@ install_git() {
     success "git installed."
 }
 
+# ── Podman detection ───────────────────────────────────────────────────────────
+# If Podman is already present, skip Docker entirely and ensure podman-compose is available.
+check_podman() {
+    if ! cmd_exists podman; then return 1; fi
+    success "Podman detected ($(podman --version)) — skipping Docker install."
+    # Ensure a compose provider is available
+    if podman compose version &>/dev/null 2>&1; then
+        success "podman compose available."
+    elif cmd_exists podman-compose; then
+        success "podman-compose available."
+    else
+        info "Installing podman-compose…"
+        case "$DISTRO_FAMILY" in
+            debian)  $SUDO apt-get install -y podman-compose 2>/dev/null \
+                     || pip3 install --user podman-compose ;;
+            fedora)  $SUDO dnf install -y podman-compose 2>/dev/null \
+                     || pip3 install --user podman-compose ;;
+            arch)    $SUDO pacman -Sy --noconfirm podman-compose 2>/dev/null \
+                     || pip3 install --user podman-compose ;;
+            macos)   brew install podman-compose 2>/dev/null \
+                     || pip3 install --user podman-compose ;;
+        esac
+        success "podman-compose installed."
+    fi
+    warn "GPU profiles (single-gpu, dual-gpu) require CDI setup:"
+    warn "  sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml"
+    return 0
+}
+
 # ── Docker ─────────────────────────────────────────────────────────────────────
 install_docker_linux_debian() {
     $SUDO apt-get update -q
@@ -196,9 +225,12 @@ main() {
     echo ""
 
     install_git
-    install_docker
-    check_compose
-    install_nvidia_toolkit
+    # Podman takes precedence if already installed; otherwise install Docker
+    if ! check_podman; then
+        install_docker
+        check_compose
+        install_nvidia_toolkit
+    fi
     setup_env
 
     echo ""
@@ -207,7 +239,7 @@ main() {
     echo -e "  ${GREEN}Next steps:${NC}"
     echo -e "  1. Edit ${YELLOW}.env${NC} to set your preferred ports and model paths"
     echo -e "  2. Start Peregrine:"
-    echo -e "     ${YELLOW}docker compose --profile remote up -d${NC}"
+    echo -e "     ${YELLOW}make start${NC}  (auto-detects Docker or Podman)"
     echo -e "  3. Open ${YELLOW}http://localhost:8501${NC} — the setup wizard will guide you"
     echo ""
     if groups "$USER" 2>/dev/null | grep -q docker; then
