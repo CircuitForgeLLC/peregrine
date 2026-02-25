@@ -61,6 +61,15 @@ def _startup() -> None:
 
 _startup()
 
+# ── First-run wizard gate ───────────────────────────────────────────────────────
+from scripts.user_profile import UserProfile as _UserProfile
+_USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
+
+if not _UserProfile.exists(_USER_YAML):
+    _setup_page = st.Page("pages/0_Setup.py", title="Setup", icon="👋")
+    st.navigation({"": [_setup_page]}).run()
+    st.stop()
+
 # ── Navigation ─────────────────────────────────────────────────────────────────
 # st.navigation() must be called before any sidebar writes so it can establish
 # the navigation structure first; sidebar additions come after.
