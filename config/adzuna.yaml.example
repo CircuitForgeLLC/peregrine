@@ -1,0 +1,5 @@
+# Adzuna Jobs API credentials
+# Register at https://developer.adzuna.com/admin/applications
+# Both app_id and app_key are required.
+app_id: ""   # short alphanumeric ID from your developer dashboard
+app_key: ""  # 32-character hex key from your developer dashboard

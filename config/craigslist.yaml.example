@@ -1,0 +1,24 @@
+# Craigslist metro subdomains to search.
+# Copy to config/craigslist.yaml and adjust for your markets.
+# Full subdomain list: https://www.craigslist.org/about/sites
+metros:
+  - sfbay
+  - newyork
+  - chicago
+  - losangeles
+  - seattle
+  - austin
+
+# Maps search profile location strings → Craigslist metro subdomain.
+# Locations not listed here are silently skipped.
+location_map:
+  "San Francisco Bay Area, CA": sfbay
+  "New York, NY": newyork
+  "Chicago, IL": chicago
+  "Los Angeles, CA": losangeles
+  "Seattle, WA": seattle
+  "Austin, TX": austin
+
+# Craigslist job category. Defaults to 'jjj' (general jobs) if omitted.
+# Other options: csr (customer service), mar (marketing), sof (software/qa/dba)
+# category: jjj

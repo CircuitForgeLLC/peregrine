@@ -1,0 +1,24 @@
+# Copy to config/notion.yaml and fill in your values.
+# notion.yaml is gitignored — never commit it.
+#
+# Get your integration token from: https://www.notion.so/my-integrations
+# Then share the "Tracking Job Applications" database with your integration:
+#   Open the DB in Notion → ... menu → Add connections → select your integration
+#
+token: "secret_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+database_id: "1bd75cff-7708-8007-8c00-f1de36620a0a"
+
+field_map:
+  title_field: "Salary"
+  job_title: "Job Title"
+  company: "Company Name"
+  url: "Role Link"
+  source: "Job Source"
+  status: "Status of Application"
+  status_new: "Application Submitted"
+  date_found: "Date Found"
+  remote: "Remote"
+  match_score: "Match Score"
+  keyword_gaps: "Keyword Gaps"
+  notes: "Notes"
+  job_description: "Job Description"
