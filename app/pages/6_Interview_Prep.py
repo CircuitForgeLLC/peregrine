@@ -13,6 +13,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import streamlit as st
 
+from scripts.user_profile import UserProfile
+
+_USER_YAML = Path(__file__).parent.parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+_name = _profile.name if _profile else "Job Seeker"
+
 from scripts.db import (
     DEFAULT_DB, init_db,
     get_interview_jobs, get_contacts, get_research,
@@ -231,7 +237,7 @@ with col_prep:
                         system=(
                             f"You are a recruiter at {job.get('company')} conducting "
                             f"a phone screen for the {job.get('title')} role. "
-                            f"Ask one question at a time. After Meghan answers, give "
+                            f"Ask one question at a time. After {_name} answers, give "
                             f"brief feedback (1–2 sentences), then ask your next question. "
                             f"Be professional but warm."
                         ),
@@ -253,7 +259,7 @@ with col_prep:
                     "content": (
                         f"You are a recruiter at {job.get('company')} conducting "
                         f"a phone screen for the {job.get('title')} role. "
-                        f"Ask one question at a time. After Meghan answers, give "
+                        f"Ask one question at a time. After {_name} answers, give "
                         f"brief feedback (1–2 sentences), then ask your next question."
                     ),
                 }
@@ -265,7 +271,7 @@ with col_prep:
                     router = LLMRouter()
                     # Build prompt from history for single-turn backends
                     convo = "\n\n".join(
-                        f"{'Interviewer' if m['role'] == 'assistant' else 'Meghan'}: {m['content']}"
+                        f"{'Interviewer' if m['role'] == 'assistant' else _name}: {m['content']}"
                         for m in history
                     )
                     response = router.complete(
@@ -331,12 +337,12 @@ with col_context:
                                     f"From: {last.get('from_addr', '')}\n"
                                     f"Subject: {last.get('subject', '')}\n\n"
                                     f"{last.get('body', '')}\n\n"
-                                    f"Context: Meghan is a CS/TAM professional applying "
+                                    f"Context: {_name} is a professional applying "
                                     f"for {job.get('title')} at {job.get('company')}."
                                 ),
                                 system=(
-                                    "You are Meghan McCann's professional email assistant. "
-                                    "Write concise, warm, and professional replies in her voice."
+                                    f"You are {_name}'s professional email assistant. "
+                                    "Write concise, warm, and professional replies in their voice."
                                 ),
                             )
                             st.session_state[f"draft_{selected_id}"] = draft

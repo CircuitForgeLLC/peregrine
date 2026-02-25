@@ -11,6 +11,12 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from scripts.user_profile import UserProfile
+
+_USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+_name = _profile.name if _profile else "Job Seeker"
+
 from scripts.db import DEFAULT_DB, init_db, get_job_counts, purge_jobs, purge_email_data, \
     purge_non_remote, archive_jobs, kill_stuck_tasks, get_task_for_job, get_active_tasks, \
     insert_job, get_existing_urls
@@ -64,7 +70,7 @@ def _queue_url_imports(db_path: Path, urls: list) -> int:
     return queued
 
 
-st.title("🔍 Meghan's Job Search")
+st.title(f"🔍 {_name}'s Job Search")
 st.caption("Discover → Review → Sync to Notion")
 
 st.divider()
@@ -149,7 +155,7 @@ with mid:
                    .get_jobs_by_status(DEFAULT_DB, "pending")
                    if j.get("match_score") is None and j.get("description"))
     st.subheader("Score Listings")
-    st.caption(f"Run TF-IDF match scoring against Meghan's resume. {unscored} pending job{'s' if unscored != 1 else ''} unscored.")
+    st.caption(f"Run TF-IDF match scoring against {_name}'s resume. {unscored} pending job{'s' if unscored != 1 else ''} unscored.")
     if st.button("📊 Score All Unscored Jobs", use_container_width=True, type="primary",
                  disabled=unscored == 0):
         with st.spinner("Scoring…"):
