@@ -84,7 +84,8 @@ CREATE_BACKGROUND_TASKS = """
 CREATE TABLE IF NOT EXISTS background_tasks (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     task_type   TEXT NOT NULL,
-    job_id      INTEGER NOT NULL,
+    job_id      INTEGER DEFAULT 0,
+    params      TEXT,
     status      TEXT NOT NULL DEFAULT 'queued',
     error       TEXT,
     created_at  DATETIME DEFAULT (datetime('now')),
@@ -150,6 +151,10 @@ def _migrate_db(db_path: Path) -> None:
         conn.execute("ALTER TABLE background_tasks ADD COLUMN updated_at TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE background_tasks ADD COLUMN params TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.commit()
     conn.close()
 
@@ -641,28 +646,40 @@ def get_survey_responses(db_path: Path = DEFAULT_DB, job_id: int = None) -> list
 # ── Background task helpers ───────────────────────────────────────────────────
 
 def insert_task(db_path: Path = DEFAULT_DB, task_type: str = "",
-                job_id: int = None) -> tuple[int, bool]:
+                job_id: int = None,
+                params: Optional[str] = None) -> tuple[int, bool]:
     """Insert a new background task.
 
     Returns (task_id, True) if inserted, or (existing_id, False) if a
     queued/running task for the same (task_type, job_id) already exists.
+
+    Dedup key: (task_type, job_id) when params is None;
+               (task_type, job_id, params) when params is provided.
     """
     conn = sqlite3.connect(db_path)
-    existing = conn.execute(
-        "SELECT id FROM background_tasks WHERE task_type=? AND job_id=? AND status IN ('queued','running')",
-        (task_type, job_id),
-    ).fetchone()
-    if existing:
+    try:
+        if params is not None:
+            existing = conn.execute(
+                "SELECT id FROM background_tasks WHERE task_type=? AND job_id=? "
+                "AND params=? AND status IN ('queued','running')",
+                (task_type, job_id, params),
+            ).fetchone()
+        else:
+            existing = conn.execute(
+                "SELECT id FROM background_tasks WHERE task_type=? AND job_id=? "
+                "AND status IN ('queued','running')",
+                (task_type, job_id),
+            ).fetchone()
+        if existing:
+            return existing[0], False
+        cur = conn.execute(
+            "INSERT INTO background_tasks (task_type, job_id, params) VALUES (?,?,?)",
+            (task_type, job_id, params),
+        )
+        conn.commit()
+        return cur.lastrowid, True
+    finally:
         conn.close()
-        return existing[0], False
-    cur = conn.execute(
-        "INSERT INTO background_tasks (task_type, job_id, status) VALUES (?, ?, 'queued')",
-        (task_type, job_id),
-    )
-    task_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-    return task_id, True
 
 
 def update_task_status(db_path: Path = DEFAULT_DB, task_id: int = None,
