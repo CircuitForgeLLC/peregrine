@@ -1,0 +1,83 @@
+# compose.yml — Peregrine by Circuit Forge LLC
+# Profiles: remote | cpu | single-gpu | dual-gpu
+services:
+
+  app:
+    build: .
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ${DOCS_DIR:-~/Documents/JobSearch}:/docs
+    environment:
+      - STAGING_DB=/app/data/staging.db
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_COMPAT_URL=${OPENAI_COMPAT_URL:-}
+      - OPENAI_COMPAT_KEY=${OPENAI_COMPAT_KEY:-}
+    depends_on:
+      searxng:
+        condition: service_healthy
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    ports:
+      - "${SEARXNG_PORT:-8888}:8080"
+    volumes:
+      - ./docker/searxng:/etc/searxng:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-~/models/ollama}:/root/.ollama
+      - ./docker/ollama/entrypoint.sh:/entrypoint.sh
+    environment:
+      - OLLAMA_MODELS=/root/.ollama
+      - DEFAULT_OLLAMA_MODEL=${OLLAMA_DEFAULT_MODEL:-llama3.2:3b}
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    profiles: [cpu, single-gpu, dual-gpu]
+    restart: unless-stopped
+
+  ollama-gpu:
+    extends:
+      service: ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    profiles: [single-gpu, dual-gpu]
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    ports:
+      - "${VLLM_PORT:-8000}:8000"
+    volumes:
+      - ${VLLM_MODELS_DIR:-~/models/vllm}:/models
+    command: >
+      --model /models/${VLLM_MODEL:-Ouro-1.4B}
+      --trust-remote-code
+      --max-model-len 4096
+      --gpu-memory-utilization 0.75
+      --enforce-eager
+      --max-num-seqs 8
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+    profiles: [dual-gpu]
+    restart: unless-stopped
