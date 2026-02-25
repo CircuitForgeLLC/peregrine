@@ -9,7 +9,8 @@ Privacy-first, local-first. Your data never leaves your machine.
 
 ## Quick Start
 
-**1. Install dependencies** (Docker, Docker Compose, NVIDIA toolkit if needed):
+**1. Install dependencies** (Docker, NVIDIA toolkit if needed):
+
 ```bash
 git clone https://git.circuitforge.io/circuitforge/peregrine
 cd peregrine
@@ -17,9 +18,11 @@ bash setup.sh
 ```
 
 **2. Start Peregrine:**
+
 ```bash
-make start               # remote profile (no GPU)
-make start PROFILE=single-gpu  # with GPU
+make start                        # remote profile (API-only, no GPU)
+make start PROFILE=single-gpu     # with one GPU
+make start PROFILE=dual-gpu       # dual GPU (Ollama + vLLM)
 ```
 
 **3.** Open http://localhost:8501 — the setup wizard guides you through the rest.
@@ -31,50 +34,83 @@ make start PROFILE=single-gpu  # with GPU
 
 ## Inference Profiles
 
-| Profile | Services | Use case |
-|---------|----------|----------|
-| `remote` | app + searxng | No GPU; LLM calls go to Anthropic/OpenAI |
+| Profile | Services started | Use case |
+|---------|-----------------|----------|
+| `remote` | app + searxng | No GPU; LLM calls go to Anthropic / OpenAI |
 | `cpu` | app + ollama + searxng | No GPU; local models on CPU (slow) |
-| `single-gpu` | app + ollama + vision + searxng | One GPU for cover letters + research + vision |
+| `single-gpu` | app + ollama + vision + searxng | One GPU: cover letters, research, vision |
 | `dual-gpu` | app + ollama + vllm + vision + searxng | GPU 0 = Ollama, GPU 1 = vLLM |
-
-Set the profile in `.env`:
-```bash
-# .env
-DOCKER_COMPOSE_PROFILES=single-gpu
-```
-
-Or select it during the setup wizard.
 
 ---
 
 ## First-Run Wizard
 
-On first launch, the app shows a 5-step setup wizard:
+On first launch the setup wizard walks through seven steps:
 
-1. **Hardware Detection** — auto-detects NVIDIA GPUs and suggests a profile
-2. **Your Identity** — name, email, career summary (used in cover letters and prompts)
-3. **Sensitive Employers** — companies masked as "previous employer (NDA)" in research briefs
-4. **Inference & API Keys** — Anthropic/OpenAI keys (remote), or Ollama model (local)
-5. **Notion Sync** — optional; syncs jobs to a Notion database
+1. **Hardware** — detects NVIDIA GPUs and recommends a profile
+2. **Tier** — choose free, paid, or premium (or use `dev_tier_override` for local testing)
+3. **Identity** — name, email, phone, LinkedIn, career summary
+4. **Resume** — upload a PDF/DOCX for LLM parsing, or use the guided form builder
+5. **Inference** — configure LLM backends and API keys
+6. **Search** — job titles, locations, boards, keywords, blocklist
+7. **Integrations** — optional cloud storage, calendar, and notification services
 
-Wizard writes `config/user.yaml`. Re-run by deleting that file.
+Wizard state is saved after each step — a crash or browser close resumes where you left off.
+Re-enter the wizard any time via **Settings → Developer → Reset wizard**.
 
 ---
 
-## Email Sync (Optional)
+## Features
 
-Peregrine can monitor your inbox for job-related emails (interview requests, rejections, survey links) and automatically update job stages.
+| Feature | Tier |
+|---------|------|
+| Job discovery (JobSpy + custom boards) | Free |
+| Resume keyword matching | Free |
+| Cover letter generation | Paid |
+| Company research briefs | Paid |
+| Interview prep & practice Q&A | Paid |
+| Email sync & auto-classification | Paid |
+| Survey assistant (culture-fit Q&A) | Paid |
+| Integration connectors (Notion, Airtable, Google Sheets, etc.) | Paid |
+| Calendar sync (Google, Apple) | Paid |
+| Cover letter model fine-tuning | Premium |
+| Multi-user support | Premium |
 
-Configure via **Settings → Email** after setup. Requires:
-- IMAP access to your email account
-- For Gmail: enable IMAP + create an App Password
+---
+
+## Email Sync
+
+Monitors your inbox for job-related emails and automatically updates job stages (interview requests, rejections, survey links, offers).
+
+Configure in **Settings → Email**. Requires IMAP access and, for Gmail, an App Password.
+
+---
+
+## Integrations
+
+Connect external services in **Settings → Integrations**:
+
+- **Job tracking:** Notion, Airtable, Google Sheets
+- **Document storage:** Google Drive, Dropbox, OneDrive, MEGA, Nextcloud
+- **Calendar:** Google Calendar, Apple Calendar (CalDAV)
+- **Notifications:** Slack, Discord (webhook), Home Assistant
+
+---
+
+## Developer Docs
+
+Full documentation at: https://docs.circuitforge.io/peregrine
+
+- [Installation guide](https://docs.circuitforge.io/peregrine/getting-started/installation/)
+- [Adding a custom job board scraper](https://docs.circuitforge.io/peregrine/developer-guide/adding-scrapers/)
+- [Adding an integration](https://docs.circuitforge.io/peregrine/developer-guide/adding-integrations/)
+- [Contributing](https://docs.circuitforge.io/peregrine/developer-guide/contributing/)
 
 ---
 
 ## License
 
 Core discovery pipeline: [MIT](LICENSE-MIT)
-AI features (cover letter generation, company research, interview prep): [BSL 1.1](LICENSE-BSL)
+AI features (cover letter generation, company research, interview prep, UI): [BSL 1.1](LICENSE-BSL)
 
 © 2026 Circuit Forge LLC
