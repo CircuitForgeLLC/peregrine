@@ -1,0 +1,26 @@
+Business Source License 1.1
+
+Licensor:             Circuit Forge LLC
+Licensed Work:        Peregrine — AI-powered job search pipeline
+                      Copyright (c) 2026 Circuit Forge LLC
+Additional Use Grant: You may use the Licensed Work for personal,
+                      non-commercial job searching purposes only.
+Change Date:          2030-01-01
+Change License:       MIT License
+
+For the full Business Source License 1.1 text, see:
+https://mariadb.com/bsl11/
+
+---
+
+This license applies to the following components of Peregrine:
+
+- scripts/llm_router.py
+- scripts/generate_cover_letter.py
+- scripts/company_research.py
+- scripts/task_runner.py
+- scripts/resume_parser.py
+- scripts/imap_sync.py
+- scripts/vision_service/
+- scripts/integrations/
+- app/
