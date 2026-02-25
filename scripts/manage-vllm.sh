@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-VLLM_BIN="/devl/miniconda3/envs/vllm/bin/python"
-MODEL_DIR="/Library/Assets/LLM/vllm/models"
+VLLM_BIN="${VLLM_BIN:-python3}"
+MODEL_DIR="${VLLM_MODELS_DIR:-${HOME}/models/vllm}"
 PID_FILE="/tmp/vllm-server.pid"
 LOG_FILE="/tmp/vllm-server.log"
 MODEL_FILE="/tmp/vllm-server.model"

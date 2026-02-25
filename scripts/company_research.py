@@ -371,7 +371,8 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None) -> dict
     name = _profile.name if _profile else "the candidate"
     career_summary = _profile.career_summary if _profile else ""
     accessibility_focus = _profile.candidate_accessibility_focus if _profile else False
-    _section_count = 8 if accessibility_focus else 7
+    lgbtq_focus = _profile.candidate_lgbtq_focus if _profile else False
+    _section_count = 7 + (1 if accessibility_focus else 0) + (1 if lgbtq_focus else 0)
     _accessibility_section = """
 ## Inclusion & Accessibility
 Assess {company}'s commitment to disability inclusion and accessibility. Cover:
@@ -383,6 +384,17 @@ Assess {company}'s commitment to disability inclusion and accessibility. Cover:
 If no specific signals are found, say so clearly — absence of public commitment is itself signal.
 This section is for the candidate's personal decision-making only and will not appear in any application.
 """.format(company=company) if accessibility_focus else ""
+    _lgbtq_section = """
+## LGBTQIA+ Inclusion
+Assess {company}'s culture and policies around LGBTQIA+ inclusion. Cover:
+- Non-discrimination policies that explicitly include sexual orientation and gender identity
+- LGBTQIA+ Employee Resource Group (ERG) or Pride Network
+- Benefits that support LGBTQIA+ employees (gender-affirming care, domestic partner benefits)
+- Public statements, donations, or advocacy (Pride sponsorships, HRC Corporate Equality Index rating)
+- Glassdoor or press signals about how LGBTQIA+ employees experience the company day-to-day
+If no specific signals are found, say so clearly — absence of public commitment is itself signal.
+This section is for the candidate's personal decision-making only and will not appear in any application.
+""".format(company=company) if lgbtq_focus else ""
     prompt = f"""You are preparing {name} for a job interview.
 {f"Candidate background: {career_summary}" if career_summary else ""}
 
@@ -421,7 +433,7 @@ Draw on the live snippets above; if none available, note what is publicly known.
 Culture issues, layoffs, exec departures, financial stress, or Glassdoor concerns worth knowing before the call.
 If nothing notable, write "No significant red flags identified."
 
-{_accessibility_section}
+{_lgbtq_section}{_accessibility_section}
 ## Talking Points for {name}
 Five specific talking points for the phone screen. Each must:
 - Reference a concrete experience from {name}'s matched background by name
