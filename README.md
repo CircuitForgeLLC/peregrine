@@ -11,10 +11,10 @@ Privacy-first, local-first. Your data never leaves your machine.
 
 ## Quick Start
 
-**1. Install dependencies** (Docker, NVIDIA toolkit if needed):
+**1. Clone and install dependencies** (Docker, NVIDIA toolkit if needed):
 
 ```bash
-git clone https://git.circuitforge.io/circuitforge/peregrine
+git clone https://git.opensourcesolarpunk.com/pyr0ball/peregrine
 cd peregrine
 bash setup.sh
 ```
@@ -22,14 +22,22 @@ bash setup.sh
 **2. Start Peregrine:**
 
 ```bash
-make start                        # remote profile (API-only, no GPU)
-make start PROFILE=single-gpu     # with one GPU
-make start PROFILE=dual-gpu       # dual GPU (Ollama + vLLM)
+./manage.sh start                          # remote profile (API-only, no GPU)
+./manage.sh start --profile cpu            # local Ollama on CPU
+./manage.sh start --profile single-gpu    # Ollama + Vision on GPU 0
+./manage.sh start --profile dual-gpu      # Ollama + Vision + vLLM (GPU 0 + 1)
+```
+
+Or use `make` directly:
+
+```bash
+make start                        # remote profile
+make start PROFILE=single-gpu
 ```
 
 **3.** Open http://localhost:8501 — the setup wizard guides you through the rest.
 
-> **macOS:** Docker Desktop must be running before `make start`.
+> **macOS:** Docker Desktop must be running before starting.
 > **Windows:** Not supported — use WSL2 with Ubuntu.
 
 ---
@@ -96,6 +104,28 @@ Connect external services in **Settings → Integrations**:
 - **Document storage:** Google Drive, Dropbox, OneDrive, MEGA, Nextcloud
 - **Calendar:** Google Calendar, Apple Calendar (CalDAV)
 - **Notifications:** Slack, Discord (webhook), Home Assistant
+
+---
+
+## CLI Reference (`manage.sh`)
+
+`manage.sh` is the single entry point for all common operations — no need to remember Make targets or Docker commands.
+
+```
+./manage.sh setup               Install Docker/Podman + NVIDIA toolkit
+./manage.sh start [--profile P] Preflight check then start services
+./manage.sh stop                Stop all services
+./manage.sh restart             Restart all services
+./manage.sh status              Show running containers
+./manage.sh logs [service]      Tail logs (default: app)
+./manage.sh update              Pull latest images + rebuild app container
+./manage.sh preflight           Check ports + resources; write .env
+./manage.sh test                Run test suite
+./manage.sh prepare-training    Scan docs for cover letters → training JSONL
+./manage.sh finetune            Run LoRA fine-tune (needs --profile single-gpu+)
+./manage.sh open                Open the web UI in your browser
+./manage.sh clean               Remove containers, images, volumes (asks to confirm)
+```
 
 ---
 
