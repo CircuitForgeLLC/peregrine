@@ -48,7 +48,7 @@ _SERVICES: dict[str, tuple[str, int, str, bool, bool]] = {
     "searxng":   ("searxng_port",   8888, "SEARXNG_PORT",   True,  True),
     "vllm":      ("vllm_port",      8000, "VLLM_PORT",      True,  True),
     "vision":    ("vision_port",    8002, "VISION_PORT",    True,  True),
-    "ollama":    ("ollama_port",  11434,  "OLLAMA_PORT",    False, True),
+    "ollama":    ("ollama_port",  11434,  "OLLAMA_PORT",    True,  True),
 }
 
 # LLM yaml backend keys → url suffix, keyed by service name
