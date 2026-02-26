@@ -29,3 +29,4 @@ scrapers/.debug/
 scrapers/raw_scrapes/
 
 compose.override.yml
+config/license.json
