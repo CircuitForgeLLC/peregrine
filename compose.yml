@@ -92,8 +92,5 @@ services:
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODELS_MOUNT=/ollama-models
       - OLLAMA_MODELS_OLLAMA_PATH=/root/.ollama
-    depends_on:
-      ollama:
-        condition: service_started
-    profiles: [cpu, single-gpu, dual-gpu]
+    profiles: [finetune]
     restart: "no"

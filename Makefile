@@ -55,7 +55,7 @@ prepare-training: ## Scan docs_dir for cover letters and build training JSONL
 
 finetune:       ## Fine-tune your personal cover letter model (run prepare-training first)
 	@echo "Starting fine-tune (30-90 min on GPU, much longer on CPU)..."
-	$(COMPOSE) $(COMPOSE_FILES) --profile $(PROFILE) run --rm finetune
+	$(COMPOSE) $(COMPOSE_FILES) -f compose.gpu.yml --profile finetune run --rm finetune
 
 clean:          ## Remove containers, images, and data volumes (DESTRUCTIVE)
 	@echo "WARNING: This will delete all Peregrine containers and data."
