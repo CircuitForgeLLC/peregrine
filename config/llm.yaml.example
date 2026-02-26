@@ -21,21 +21,21 @@ backends:
     supports_images: false
   ollama:
     api_key: ollama
-    base_url: http://localhost:11434/v1
+    base_url: http://ollama:11434/v1    # Docker service name; use localhost:11434 outside Docker
     enabled: true
-    model: alex-cover-writer:latest
+    model: llama3.2:3b
     type: openai_compat
     supports_images: false
   ollama_research:
     api_key: ollama
-    base_url: http://localhost:11434/v1
+    base_url: http://ollama:11434/v1    # Docker service name; use localhost:11434 outside Docker
     enabled: true
-    model: llama3.1:8b
+    model: llama3.2:3b
     type: openai_compat
     supports_images: false
   vllm:
     api_key: ''
-    base_url: http://localhost:8000/v1
+    base_url: http://vllm:8000/v1      # Docker service name; use localhost:8000 outside Docker
     enabled: true
     model: __auto__
     type: openai_compat

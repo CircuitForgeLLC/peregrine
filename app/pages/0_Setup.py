@@ -403,9 +403,9 @@ elif step == 5:
         st.caption("Change only if services run on non-default ports or remote hosts.")
         svc = dict(saved_yaml.get("services", {}))
         for svc_name, default_host, default_port in [
-            ("ollama",  "localhost", 11434),
-            ("vllm",    "localhost", 8000),
-            ("searxng", "localhost", 8888),
+            ("ollama",  "ollama",   11434),  # Docker service name
+            ("vllm",    "vllm",     8000),   # Docker service name
+            ("searxng", "searxng",  8080),   # Docker internal port (host-mapped: 8888)
         ]:
             c1, c2 = st.columns([3, 1])
             svc[f"{svc_name}_host"] = c1.text_input(
