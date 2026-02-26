@@ -12,6 +12,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -22,7 +23,10 @@ from scripts.user_profile import UserProfile
 _USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
 _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
 
-_docs = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
+_docs_env = os.environ.get("DOCS_DIR", "")
+_docs = Path(_docs_env) if _docs_env else (
+    _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
+)
 LETTERS_DIR = _docs
 # Use two globs to handle mixed capitalisation ("Cover Letter" vs "cover letter")
 LETTER_GLOBS = ["*Cover Letter*.md", "*cover letter*.md"]
