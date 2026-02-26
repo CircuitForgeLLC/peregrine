@@ -127,7 +127,7 @@ def activate(
     import httpx
     mid = _machine_id()
     resp = httpx.post(
-        f"{_LICENSE_SERVER}/activate",
+        f"{_LICENSE_SERVER}/v1/activate",
         json={
             "key": key,
             "machine_id": mid,
@@ -162,7 +162,7 @@ def deactivate(
         return
     try:
         httpx.post(
-            f"{_LICENSE_SERVER}/deactivate",
+            f"{_LICENSE_SERVER}/v1/deactivate",
             json={"jwt": stored["jwt"], "machine_id": stored.get("machine_id", _machine_id())},
             timeout=10,
         )
@@ -195,7 +195,7 @@ def refresh_if_needed(
     try:
         import httpx
         resp = httpx.post(
-            f"{_LICENSE_SERVER}/refresh",
+            f"{_LICENSE_SERVER}/v1/refresh",
             json={"jwt": stored["jwt"], "machine_id": stored.get("machine_id", _machine_id())},
             timeout=10,
         )
@@ -228,7 +228,7 @@ def report_usage(
         try:
             import httpx
             httpx.post(
-                f"{_LICENSE_SERVER}/usage",
+                f"{_LICENSE_SERVER}/v1/usage",
                 json={"event_type": event_type, "product": _PRODUCT, "metadata": metadata or {}},
                 headers={"Authorization": f"Bearer {stored['jwt']}"},
                 timeout=5,
@@ -253,7 +253,7 @@ def report_flag(
         try:
             import httpx
             httpx.post(
-                f"{_LICENSE_SERVER}/flag",
+                f"{_LICENSE_SERVER}/v1/flag",
                 json={"flag_type": flag_type, "product": _PRODUCT, "details": details or {}},
                 headers={"Authorization": f"Bearer {stored['jwt']}"},
                 timeout=5,
