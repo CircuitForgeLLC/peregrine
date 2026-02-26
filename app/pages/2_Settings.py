@@ -570,6 +570,8 @@ with tab_resume:
             _zip_code = _field("Zip Code",   _info.get("zip_code", ""), "rp_zip")
             _dob      = _field("Date of Birth", _info.get("date_of_birth", ""), "rp_dob",
                                help="MM/DD/YYYY")
+        _address = _field("Street Address", _info.get("address", ""), "rp_address",
+                          help="Used in job applications. Not shown on your resume.")
 
     # ── Experience ────────────────────────────────────────────────────────────
     with st.expander("💼 Work Experience"):
@@ -654,7 +656,8 @@ with tab_resume:
         _data["personal_information"] = {
             **_data.get("personal_information", {}),
             "name": _name, "surname": _surname, "email": _email, "phone": _phone,
-            "city": _city, "zip_code": _zip_code, "linkedin": _linkedin, "date_of_birth": _dob,
+            "city": _city, "zip_code": _zip_code, "address": _address,
+            "linkedin": _linkedin, "date_of_birth": _dob,
         }
         _data["experience_details"] = _updated_exp
         _data["salary_expectations"] = {"salary_range_usd": _salary_range}
