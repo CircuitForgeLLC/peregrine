@@ -8,6 +8,7 @@ Run: streamlit run app/app.py
      bash scripts/manage-ui.sh start
 """
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
@@ -138,7 +139,20 @@ def _task_indicator():
         detail = f" · {stage}" if stage else (f" — {t.get('company')}" if t.get("company") else "")
         st.caption(f"{icon} {label}{detail}")
 
+@st.cache_resource
+def _get_version() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "describe", "--tags", "--always"],
+            cwd=Path(__file__).parent.parent,
+            text=True,
+        ).strip()
+    except Exception:
+        return "dev"
+
 with st.sidebar:
     _task_indicator()
+    st.divider()
+    st.caption(f"Peregrine {_get_version()}")
 
 pg.run()
