@@ -217,6 +217,58 @@ setup_env() {
     fi
 }
 
+# ── Model weights storage ───────────────────────────────────────────────────────
+_update_env_key() {
+    # Portable in-place key=value update for .env files (Linux + macOS).
+    # Appends the key if not already present.
+    local file="$1" key="$2" val="$3"
+    awk -v k="$key" -v v="$val" '
+        BEGIN { found=0 }
+        $0 ~ ("^" k "=") { print k "=" v; found=1; next }
+        { print }
+        END { if (!found) print k "=" v }
+    ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+}
+
+configure_model_paths() {
+    local env_file
+    env_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.env"
+
+    # Skip prompts when stdin is not a terminal (e.g. curl | bash)
+    if [[ ! -t 0 ]]; then
+        info "Non-interactive — using default model paths from .env"
+        return
+    fi
+
+    echo ""
+    info "Model weights storage"
+    echo -e "  AI models can be 2–30+ GB each. If you have a separate data drive,"
+    echo -e "  point these at it now. Press Enter to keep the value shown in [brackets]."
+    echo ""
+
+    local current input
+
+    current="$(grep -E '^OLLAMA_MODELS_DIR=' "$env_file" 2>/dev/null | cut -d= -f2-)"
+    [[ -z "$current" ]] && current="~/models/ollama"
+    read -rp "  Ollama models dir [${current}]: " input || input=""
+    input="${input:-$current}"
+    input="${input/#\~/$HOME}"
+    mkdir -p "$input" 2>/dev/null || warn "Could not create $input — ensure it exists before 'make start'"
+    _update_env_key "$env_file" "OLLAMA_MODELS_DIR" "$input"
+    success "OLLAMA_MODELS_DIR=$input"
+
+    current="$(grep -E '^VLLM_MODELS_DIR=' "$env_file" 2>/dev/null | cut -d= -f2-)"
+    [[ -z "$current" ]] && current="~/models/vllm"
+    read -rp "  vLLM models dir   [${current}]: " input || input=""
+    input="${input:-$current}"
+    input="${input/#\~/$HOME}"
+    mkdir -p "$input" 2>/dev/null || warn "Could not create $input — ensure it exists before 'make start'"
+    _update_env_key "$env_file" "VLLM_MODELS_DIR" "$input"
+    success "VLLM_MODELS_DIR=$input"
+
+    echo ""
+}
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 main() {
     echo ""
@@ -235,15 +287,17 @@ main() {
         install_nvidia_toolkit
     fi
     setup_env
+    configure_model_paths
 
     echo ""
     success "All dependencies installed."
     echo ""
     echo -e "  ${GREEN}Next steps:${NC}"
-    echo -e "  1. Edit ${YELLOW}.env${NC} to set your preferred ports and model paths"
-    echo -e "  2. Start Peregrine:"
-    echo -e "     ${YELLOW}make start${NC}  (auto-detects Docker or Podman)"
-    echo -e "  3. Open ${YELLOW}http://localhost:8501${NC} — the setup wizard will guide you"
+    echo -e "  1. Start Peregrine:"
+    echo -e "     ${YELLOW}make start${NC}             # remote/API-only (no local GPU)"
+    echo -e "     ${YELLOW}make start PROFILE=cpu${NC} # local Ollama inference (CPU)"
+    echo -e "  2. Open ${YELLOW}http://localhost:8501${NC} — the setup wizard will guide you"
+    echo -e "  (Tip: edit ${YELLOW}.env${NC} any time to adjust ports or model paths)"
     echo ""
     if groups "$USER" 2>/dev/null | grep -q docker; then
         true
