@@ -1,0 +1,38 @@
+# Dockerfile.finetune — Cover letter LoRA fine-tuner (QLoRA via unsloth)
+# Large image (~12-15 GB after build). Built once, cached on rebuilds.
+# GPU strongly recommended. CPU fallback works but training is very slow.
+#
+# Tested base: pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+# If your GPU requires a different CUDA version, change the FROM line and
+# reinstall bitsandbytes for the matching CUDA (e.g. bitsandbytes-cuda121).
+FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+
+WORKDIR /app
+
+# Build tools needed by bitsandbytes CUDA kernels and unsloth
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ git libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install training stack.
+# unsloth detects CUDA version automatically from the base image.
+RUN pip install --no-cache-dir \
+    "unsloth @ git+https://github.com/unslothai/unsloth.git" \
+    "datasets>=2.18" "trl>=0.8" peft transformers \
+    "bitsandbytes>=0.43.0" accelerate sentencepiece \
+    requests pyyaml
+
+COPY scripts/ /app/scripts/
+COPY config/  /app/config/
+
+ENV PYTHONUNBUFFERED=1
+# Pin to GPU 0; overridable at runtime with --env CUDA_VISIBLE_DEVICES=
+ENV CUDA_VISIBLE_DEVICES=0
+
+# Runtime env vars injected by compose.yml:
+#   OLLAMA_URL              — Ollama API base (default: http://ollama:11434)
+#   OLLAMA_MODELS_MOUNT     — finetune container's mount path for ollama models volume
+#   OLLAMA_MODELS_OLLAMA_PATH — Ollama container's mount path for same volume
+#   DOCS_DIR                — cover letters + training data root (default: /docs)
+
+ENTRYPOINT ["python", "scripts/finetune_local.py"]
