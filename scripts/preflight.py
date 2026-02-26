@@ -423,6 +423,9 @@ def main() -> None:
         env_updates["RECOMMENDED_PROFILE"] = profile
         if offload_gb > 0:
             env_updates["CPU_OFFLOAD_GB"] = str(offload_gb)
+        # GPU info for the app container (which lacks nvidia-smi access)
+        env_updates["PEREGRINE_GPU_COUNT"] = str(len(gpus))
+        env_updates["PEREGRINE_GPU_NAMES"] = ",".join(g["name"] for g in gpus)
         write_env(env_updates)
         update_llm_yaml(ports)
         write_compose_override(ports)
