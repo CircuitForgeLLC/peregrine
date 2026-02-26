@@ -87,14 +87,98 @@ _u_for_dev = yaml.safe_load(USER_CFG.read_text()) or {} if USER_CFG.exists() els
 _show_dev_tab = _dev_mode or bool(_u_for_dev.get("dev_tier_override"))
 
 _tab_names = [
-    "👤 My Profile", "🔎 Search", "🤖 LLM Backends", "📚 Notion",
-    "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills",
-    "🔗 Integrations", "🎯 Fine-Tune", "🔑 License"
+    "👤 My Profile", "📝 Resume Profile", "🔎 Search",
+    "⚙️ System", "🎯 Fine-Tune", "🔑 License"
 ]
 if _show_dev_tab:
     _tab_names.append("🛠️ Developer")
 _all_tabs = st.tabs(_tab_names)
-tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills, tab_integrations, tab_finetune, tab_license = _all_tabs[:11]
+tab_profile, tab_resume, tab_search, tab_system, tab_finetune, tab_license = _all_tabs[:6]
+
+# ── Sidebar LLM generate panel ────────────────────────────────────────────────
+# Paid-tier feature: generates content for any LLM-injectable profile field.
+# Writes directly into session state keyed to the target widget's `key=` param,
+# then reruns so the field picks up the new value automatically.
+from app.wizard.tiers import can_use as _cu
+_gen_panel_active = bool(_profile) and _cu(
+    _profile.effective_tier if _profile else "free", "llm_career_summary"
+)
+
+# Seed session state for LLM-injectable text fields on first load
+_u_init = yaml.safe_load(USER_CFG.read_text()) or {} if USER_CFG.exists() else {}
+for _fk, _fv in [
+    ("profile_career_summary", _u_init.get("career_summary", "")),
+    ("profile_candidate_voice", _u_init.get("candidate_voice", "")),
+]:
+    if _fk not in st.session_state:
+        st.session_state[_fk] = _fv
+
+if _gen_panel_active:
+    @st.fragment
+    def _generate_sidebar_panel():
+        st.markdown("**✨ AI Generate**")
+        st.caption("Select a field, add an optional hint, then click Generate. The result is injected directly into the field.")
+
+        _GEN_FIELDS = {
+            "Career Summary":       "profile_career_summary",
+            "Voice & Personality":  "profile_candidate_voice",
+            "Mission Note":         "_mission_note_preview",
+        }
+        _tgt_label = st.selectbox(
+            "Field", list(_GEN_FIELDS.keys()),
+            key="gen_panel_target", label_visibility="collapsed",
+        )
+        _tgt_key = _GEN_FIELDS[_tgt_label]
+
+        if _tgt_label == "Mission Note":
+            _gen_domain = st.text_input("Domain", placeholder="e.g. animal welfare", key="gen_panel_domain")
+        else:
+            _gen_domain = None
+
+        _gen_hint = st.text_input("Hint (optional)", placeholder="e.g. emphasise leadership", key="gen_panel_hint")
+
+        if st.button("✨ Generate", type="primary", key="gen_panel_run", use_container_width=True):
+            _p = _profile
+            if _tgt_label == "Career Summary":
+                _prompt = (
+                    f"Write a 3-4 sentence professional career summary for {_p.name} in first person, "
+                    f"suitable for use in cover letters and LLM prompts. "
+                    f"Current summary: {_p.career_summary}. "
+                )
+            elif _tgt_label == "Voice & Personality":
+                _prompt = (
+                    f"Write a 2-4 sentence voice and personality descriptor for {_p.name} "
+                    f"to guide an LLM writing cover letters in their authentic style. "
+                    f"Describe personality traits, tone, and writing voice — not a bio. "
+                    f"Career context: {_p.career_summary}. "
+                )
+            else:
+                _prompt = (
+                    f"Write a 2-3 sentence personal mission alignment note (first person, warm, authentic) "
+                    f"for {_p.name} in the '{_gen_domain or 'this'}' domain for use in cover letters. "
+                    f"Background: {_p.career_summary}. "
+                    f"Voice: {_p.candidate_voice}. "
+                    "Do not start with 'I'."
+                )
+            if _gen_hint:
+                _prompt += f" Additional guidance: {_gen_hint}."
+            with st.spinner("Generating…"):
+                from scripts.llm_router import LLMRouter as _LR
+                _result = _LR().complete(_prompt).strip()
+            st.session_state[_tgt_key] = _result
+            if _tgt_label != "Mission Note":
+                st.rerun()
+
+        if st.session_state.get("_mission_note_preview"):
+            st.caption("Copy into a Mission & Values domain row:")
+            st.text_area("", st.session_state["_mission_note_preview"],
+                         height=80, key="gen_mission_display")
+            if st.button("✓ Clear", key="gen_mission_clear", use_container_width=True):
+                del st.session_state["_mission_note_preview"]
+                st.rerun()
+
+    with st.sidebar:
+        _generate_sidebar_panel()
 
 with tab_profile:
     from scripts.user_profile import UserProfile as _UP, _DEFAULTS as _UP_DEFAULTS
@@ -111,38 +195,88 @@ with tab_profile:
         u_email    = c1.text_input("Email",        _u.get("email", ""))
         u_phone    = c2.text_input("Phone",        _u.get("phone", ""))
         u_linkedin = c2.text_input("LinkedIn URL", _u.get("linkedin", ""))
-        u_summary  = st.text_area("Career Summary (used in LLM prompts)",
-                                   _u.get("career_summary", ""), height=100)
+        u_summary = st.text_area("Career Summary (used in LLM prompts)",
+                                  key="profile_career_summary", height=100)
         u_voice = st.text_area(
             "Voice & Personality (shapes cover letter tone)",
-            _u.get("candidate_voice", ""),
+            key="profile_candidate_voice",
             height=80,
             help="Personality traits and writing voice that the LLM uses to write authentically in your style. Never disclosed in applications.",
         )
 
     with st.expander("🎯 Mission & Values"):
         st.caption("Industry passions and causes you care about. Used to inject authentic Para 3 alignment when a company matches. Never disclosed in applications.")
-        _mission = dict(_u.get("mission_preferences", {}))
-        _mission_keys = ["animal_welfare", "education", "music", "social_impact"]
-        _mission_labels = {
-            "animal_welfare": "🐾 Animal Welfare",
-            "education": "📚 Education / EdTech / Kids",
-            "music": "🎵 Music Industry",
-            "social_impact": "🌍 Social Impact / Nonprofits",
+
+        # Initialise session state from saved YAML; re-sync after a save (version bump)
+        _mission_ver = str(_u.get("mission_preferences", {}))
+        if "mission_rows" not in st.session_state or st.session_state.get("mission_ver") != _mission_ver:
+            st.session_state.mission_rows = [
+                {"key": k, "value": v}
+                for k, v in _u.get("mission_preferences", {}).items()
+            ]
+            st.session_state.mission_ver = _mission_ver
+
+        _can_generate = _gen_panel_active
+
+        _to_delete = None
+        for _idx, _row in enumerate(st.session_state.mission_rows):
+            _rc1, _rc2 = st.columns([1, 3])
+            with _rc1:
+                _row["key"] = st.text_input(
+                    "Domain", _row["key"],
+                    key=f"mkey_{_idx}",
+                    label_visibility="collapsed",
+                    placeholder="e.g. animal_welfare",
+                )
+            with _rc2:
+                _btn_col, _area_col = st.columns([1, 5])
+                with _area_col:
+                    _row["value"] = st.text_area(
+                        "Alignment note", _row["value"],
+                        key=f"mval_{_idx}",
+                        label_visibility="collapsed",
+                        placeholder="Your personal connection to this domain…",
+                        height=68,
+                    )
+                with _btn_col:
+                    if _can_generate:
+                        if st.button("✨", key=f"mgen_{_idx}", help="Generate alignment note with AI"):
+                            _domain = _row["key"].replace("_", " ")
+                            _gen_prompt = (
+                                f"Write a 2–3 sentence personal mission alignment note "
+                                f"(first person, warm, authentic) for {_profile.name if _profile else 'the candidate'} "
+                                f"in the '{_domain}' domain for use in cover letters. "
+                                f"Background: {_profile.career_summary if _profile else ''}. "
+                                f"Voice: {_profile.candidate_voice if _profile else ''}. "
+                                f"The note should explain their genuine personal connection and why they'd "
+                                f"be motivated working in this space. Do not start with 'I'."
+                            )
+                            with st.spinner(f"Generating note for {_domain}…"):
+                                from scripts.llm_router import LLMRouter as _LLMRouter
+                                _row["value"] = _LLMRouter().complete(_gen_prompt).strip()
+                            st.rerun()
+                    if st.button("🗑", key=f"mdel_{_idx}", help="Remove this domain"):
+                        _to_delete = _idx
+
+        if _to_delete is not None:
+            st.session_state.mission_rows.pop(_to_delete)
+            st.rerun()
+
+        _ac1, _ac2 = st.columns([3, 1])
+        _new_domain = _ac1.text_input("New domain", key="mission_new_key",
+                                       label_visibility="collapsed", placeholder="Add a domain…")
+        if _ac2.button("＋ Add", key="mission_add") and _new_domain.strip():
+            st.session_state.mission_rows.append({"key": _new_domain.strip(), "value": ""})
+            st.rerun()
+
+        if not _can_generate:
+            st.caption("✨ AI generation requires a paid tier.")
+
+        _mission_updated = {
+            r["key"]: r["value"]
+            for r in st.session_state.mission_rows
+            if r["key"].strip()
         }
-        _mission_updated = {}
-        for key in _mission_keys:
-            _mission_updated[key] = st.text_area(
-                _mission_labels[key],
-                _mission.get(key, ""),
-                height=68,
-                key=f"mission_{key}",
-                help=f"Your personal connection to this domain. Leave blank to use the default prompt hint.",
-            )
-        # Preserve any extra keys the user may have added manually in YAML
-        for k, v in _mission.items():
-            if k not in _mission_keys:
-                _mission_updated[k] = v
 
     with st.expander("🔒 Sensitive Employers (NDA)"):
         st.caption("Companies listed here appear as 'previous employer (NDA)' in research briefs.")
@@ -174,64 +308,20 @@ with tab_profile:
             help="Adds an assessment of the company's LGBTQIA+ ERGs, policies, and culture signals.",
         )
 
-    with st.expander("📁 File Paths"):
-        u_docs   = st.text_input("Documents directory",     _u.get("docs_dir", "~/Documents/JobSearch"))
-        u_ollama = st.text_input("Ollama models directory", _u.get("ollama_models_dir", "~/models/ollama"))
-        u_vllm   = st.text_input("vLLM models directory",   _u.get("vllm_models_dir", "~/models/vllm"))
-
-    with st.expander("⚙️ Inference Profile"):
-        _profiles = ["remote", "cpu", "single-gpu", "dual-gpu"]
-        u_inf_profile = st.selectbox("Active profile", _profiles,
-                                      index=_profiles.index(_u.get("inference_profile", "remote")))
-
-    with st.expander("🔌 Service Ports & Hosts"):
-        st.caption("Advanced — change only if services run on non-default ports or remote hosts.")
-        sc1, sc2, sc3 = st.columns(3)
-        with sc1:
-            st.markdown("**Ollama**")
-            svc_ollama_host   = st.text_input("Host",        _svc["ollama_host"],   key="svc_ollama_host")
-            svc_ollama_port   = st.number_input("Port",      value=_svc["ollama_port"], step=1, key="svc_ollama_port")
-            svc_ollama_ssl    = st.checkbox("SSL",           _svc["ollama_ssl"],    key="svc_ollama_ssl")
-            svc_ollama_verify = st.checkbox("Verify cert",   _svc["ollama_ssl_verify"], key="svc_ollama_verify")
-        with sc2:
-            st.markdown("**vLLM**")
-            svc_vllm_host   = st.text_input("Host",          _svc["vllm_host"],   key="svc_vllm_host")
-            svc_vllm_port   = st.number_input("Port",        value=_svc["vllm_port"], step=1, key="svc_vllm_port")
-            svc_vllm_ssl    = st.checkbox("SSL",             _svc["vllm_ssl"],    key="svc_vllm_ssl")
-            svc_vllm_verify = st.checkbox("Verify cert",     _svc["vllm_ssl_verify"], key="svc_vllm_verify")
-        with sc3:
-            st.markdown("**SearXNG**")
-            svc_sxng_host   = st.text_input("Host",          _svc["searxng_host"],   key="svc_sxng_host")
-            svc_sxng_port   = st.number_input("Port",        value=_svc["searxng_port"], step=1, key="svc_sxng_port")
-            svc_sxng_ssl    = st.checkbox("SSL",             _svc["searxng_ssl"],    key="svc_sxng_ssl")
-            svc_sxng_verify = st.checkbox("Verify cert",     _svc["searxng_ssl_verify"], key="svc_sxng_verify")
-
     if st.button("💾 Save Profile", type="primary", key="save_user_profile"):
-        new_data = {
+        # Merge: read existing YAML and update only profile fields, preserving system fields
+        _existing = _yaml_up.safe_load(USER_CFG.read_text()) or {} if USER_CFG.exists() else {}
+        _existing.update({
             "name": u_name, "email": u_email, "phone": u_phone,
             "linkedin": u_linkedin, "career_summary": u_summary,
             "candidate_voice": u_voice,
             "nda_companies": nda_list,
-            "docs_dir": u_docs, "ollama_models_dir": u_ollama, "vllm_models_dir": u_vllm,
-            "inference_profile": u_inf_profile,
             "mission_preferences": {k: v for k, v in _mission_updated.items() if v.strip()},
             "candidate_accessibility_focus": u_access_focus,
             "candidate_lgbtq_focus": u_lgbtq_focus,
-            "services": {
-                "streamlit_port": _svc["streamlit_port"],
-                "ollama_host": svc_ollama_host, "ollama_port": int(svc_ollama_port),
-                "ollama_ssl": svc_ollama_ssl, "ollama_ssl_verify": svc_ollama_verify,
-                "vllm_host": svc_vllm_host, "vllm_port": int(svc_vllm_port),
-                "vllm_ssl": svc_vllm_ssl, "vllm_ssl_verify": svc_vllm_verify,
-                "searxng_host": svc_sxng_host, "searxng_port": int(svc_sxng_port),
-                "searxng_ssl": svc_sxng_ssl, "searxng_ssl_verify": svc_sxng_verify,
-            }
-        }
-        save_yaml(USER_CFG, new_data)
-        # Reload from disk so URL generation uses saved values
-        from scripts.generate_llm_config import apply_service_urls as _apply_urls
-        _apply_urls(_UP(USER_CFG), LLM_CFG)
-        st.success("Profile saved and service URLs updated.")
+        })
+        save_yaml(USER_CFG, _existing)
+        st.success("Profile saved.")
         st.rerun()
 
 # ── Search tab ───────────────────────────────────────────────────────────────
@@ -409,293 +499,6 @@ with tab_search:
             })
             st.success("Blocklist saved — takes effect on next discovery run.")
 
-# ── LLM Backends tab ─────────────────────────────────────────────────────────
-with tab_llm:
-    import requests as _req
-
-    def _ollama_models(base_url: str) -> list[str]:
-        """Fetch installed model names from the Ollama /api/tags endpoint."""
-        try:
-            r = _req.get(base_url.rstrip("/v1").rstrip("/") + "/api/tags", timeout=2)
-            if r.ok:
-                return [m["name"] for m in r.json().get("models", [])]
-        except Exception:
-            pass
-        return []
-
-    cfg = load_yaml(LLM_CFG)
-    backends = cfg.get("backends", {})
-    fallback_order = cfg.get("fallback_order", list(backends.keys()))
-
-    # Persist reordering across reruns triggered by ↑↓ buttons.
-    # Reset to config order whenever the config file is fresher than the session key.
-    _cfg_key = str(fallback_order)
-    if st.session_state.get("_llm_order_cfg_key") != _cfg_key:
-        st.session_state["_llm_order"] = list(fallback_order)
-        st.session_state["_llm_order_cfg_key"] = _cfg_key
-    new_order: list[str] = st.session_state["_llm_order"]
-
-    # All known backends (in current order first, then any extras)
-    all_names = list(new_order) + [n for n in backends if n not in new_order]
-
-    st.caption("Enable/disable backends and drag their priority with the ↑ ↓ buttons. "
-               "First enabled + reachable backend wins on each call.")
-
-    updated_backends = {}
-
-    for name in all_names:
-        b = backends.get(name, {})
-        enabled = b.get("enabled", True)
-        label = name.replace("_", " ").title()
-        pos = new_order.index(name) + 1 if name in new_order else "—"
-        header = f"{'🟢' if enabled else '⚫'} **{pos}. {label}**"
-
-        with st.expander(header, expanded=False):
-            col_tog, col_up, col_dn, col_spacer = st.columns([2, 1, 1, 4])
-
-            new_enabled = col_tog.checkbox("Enabled", value=enabled, key=f"{name}_enabled")
-
-            # Up / Down only apply to backends currently in the order
-            if name in new_order:
-                idx = new_order.index(name)
-                if col_up.button("↑", key=f"{name}_up", disabled=idx == 0):
-                    new_order[idx], new_order[idx - 1] = new_order[idx - 1], new_order[idx]
-                    st.session_state["_llm_order"] = new_order
-                    st.rerun()
-                if col_dn.button("↓", key=f"{name}_dn", disabled=idx == len(new_order) - 1):
-                    new_order[idx], new_order[idx + 1] = new_order[idx + 1], new_order[idx]
-                    st.session_state["_llm_order"] = new_order
-                    st.rerun()
-
-            if b.get("type") == "openai_compat":
-                url = st.text_input("URL", value=b.get("base_url", ""), key=f"{name}_url")
-
-                # Ollama gets a live model picker; other backends get a text input
-                if name == "ollama":
-                    ollama_models = _ollama_models(b.get("base_url", "http://localhost:11434"))
-                    current_model = b.get("model", "")
-                    if ollama_models:
-                        options = ollama_models
-                        idx_default = options.index(current_model) if current_model in options else 0
-                        model = st.selectbox(
-                            "Model",
-                            options,
-                            index=idx_default,
-                            key=f"{name}_model",
-                            help="Lists models currently installed in Ollama. Pull new ones with `ollama pull <name>`.",
-                        )
-                    else:
-                        st.caption("_Ollama not reachable — enter model name manually_")
-                        model = st.text_input("Model", value=current_model, key=f"{name}_model")
-                else:
-                    model = st.text_input("Model", value=b.get("model", ""), key=f"{name}_model")
-
-                updated_backends[name] = {**b, "base_url": url, "model": model, "enabled": new_enabled}
-            elif b.get("type") == "anthropic":
-                model = st.text_input("Model", value=b.get("model", ""), key=f"{name}_model")
-                updated_backends[name] = {**b, "model": model, "enabled": new_enabled}
-            else:
-                updated_backends[name] = {**b, "enabled": new_enabled}
-
-            if b.get("type") == "openai_compat":
-                if st.button(f"Test connection", key=f"test_{name}"):
-                    with st.spinner("Testing…"):
-                        try:
-                            from scripts.llm_router import LLMRouter
-                            r = LLMRouter()
-                            reachable = r._is_reachable(b.get("base_url", ""))
-                            if reachable:
-                                st.success("Reachable ✓")
-                            else:
-                                st.warning("Not reachable ✗")
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-
-    st.divider()
-    st.caption("Current priority: " + " → ".join(
-        f"{'✓' if backends.get(n, {}).get('enabled', True) else '✗'} {n}"
-        for n in new_order
-    ))
-
-    if st.button("💾 Save LLM settings", type="primary"):
-        save_yaml(LLM_CFG, {**cfg, "backends": updated_backends, "fallback_order": new_order})
-        st.session_state.pop("_llm_order", None)
-        st.session_state.pop("_llm_order_cfg_key", None)
-        st.success("LLM settings saved!")
-
-# ── Notion tab ────────────────────────────────────────────────────────────────
-with tab_notion:
-    cfg = load_yaml(NOTION_CFG) if NOTION_CFG.exists() else {}
-
-    st.subheader("Notion Connection")
-    token = st.text_input(
-        "Integration Token",
-        value=cfg.get("token", ""),
-        type="password",
-        help="Find this at notion.so/my-integrations → your integration → Internal Integration Token",
-    )
-    db_id = st.text_input(
-        "Database ID",
-        value=cfg.get("database_id", ""),
-        help="The 32-character ID from your Notion database URL",
-    )
-
-    col_save, col_test = st.columns(2)
-    if col_save.button("💾 Save Notion settings", type="primary"):
-        save_yaml(NOTION_CFG, {**cfg, "token": token, "database_id": db_id})
-        st.success("Notion settings saved!")
-
-    if col_test.button("🔌 Test connection"):
-        with st.spinner("Connecting…"):
-            try:
-                from notion_client import Client
-                n = Client(auth=token)
-                db = n.databases.retrieve(db_id)
-                st.success(f"Connected to: **{db['title'][0]['plain_text']}**")
-            except Exception as e:
-                st.error(f"Connection failed: {e}")
-
-# ── Services tab ───────────────────────────────────────────────────────────────
-with tab_services:
-    import subprocess as _sp
-
-    TOKENS_CFG = CONFIG_DIR / "tokens.yaml"
-
-    # Service definitions: (display_name, port, start_cmd, stop_cmd, notes)
-    COMPOSE_DIR = str(Path(__file__).parent.parent.parent)
-    _profile_name = _profile.inference_profile if _profile else "remote"
-
-    SERVICES = [
-        {
-            "name": "Streamlit UI",
-            "port": _profile._svc["streamlit_port"] if _profile else 8501,
-            "start": ["docker", "compose", "--profile", _profile_name, "up", "-d", "app"],
-            "stop":  ["docker", "compose", "stop", "app"],
-            "cwd":   COMPOSE_DIR,
-            "note":  "Peregrine web interface",
-        },
-        {
-            "name": "Ollama (local LLM)",
-            "port": _profile._svc["ollama_port"] if _profile else 11434,
-            "start": ["docker", "compose", "--profile", _profile_name, "up", "-d", "ollama"],
-            "stop":  ["docker", "compose", "stop", "ollama"],
-            "cwd":   COMPOSE_DIR,
-            "note":  f"Local inference engine — profile: {_profile_name}",
-            "hidden": _profile_name == "remote",
-        },
-        {
-            "name": "vLLM Server",
-            "port": _profile._svc["vllm_port"] if _profile else 8000,
-            "start": ["docker", "compose", "--profile", _profile_name, "up", "-d", "vllm"],
-            "stop":  ["docker", "compose", "stop", "vllm"],
-            "cwd":   COMPOSE_DIR,
-            "model_dir": str(_profile.vllm_models_dir) if _profile else str(Path.home() / "models" / "vllm"),
-            "note":  "vLLM inference — dual-gpu profile only",
-            "hidden": _profile_name != "dual-gpu",
-        },
-        {
-            "name": "Vision Service (moondream2)",
-            "port": 8002,
-            "start": ["docker", "compose", "--profile", _profile_name, "up", "-d", "vision"],
-            "stop":  ["docker", "compose", "stop", "vision"],
-            "cwd":   COMPOSE_DIR,
-            "note":  "Screenshot/image understanding for survey assistant",
-            "hidden": _profile_name not in ("single-gpu", "dual-gpu"),
-        },
-        {
-            "name": "SearXNG (company scraper)",
-            "port": _profile._svc["searxng_port"] if _profile else 8888,
-            "start": ["docker", "compose", "up", "-d", "searxng"],
-            "stop":  ["docker", "compose", "stop", "searxng"],
-            "cwd":   COMPOSE_DIR,
-            "note":  "Privacy-respecting meta-search for company research",
-        },
-    ]
-    # Filter hidden services based on active profile
-    SERVICES = [s for s in SERVICES if not s.get("hidden")]
-
-    def _port_open(port: int, host: str = "127.0.0.1",
-                   ssl: bool = False, verify: bool = True) -> bool:
-        try:
-            import requests as _r
-            scheme = "https" if ssl else "http"
-            _r.get(f"{scheme}://{host}:{port}/", timeout=1, verify=verify)
-            return True
-        except Exception:
-            return False
-
-    st.caption("Monitor and control the LLM backend services. Status is checked live on each page load.")
-
-    for svc in SERVICES:
-        _svc_host = "127.0.0.1"
-        _svc_ssl = False
-        _svc_verify = True
-        if _profile:
-            _svc_host = _profile._svc.get(f"{svc['name'].split()[0].lower()}_host", "127.0.0.1")
-            _svc_ssl = _profile._svc.get(f"{svc['name'].split()[0].lower()}_ssl", False)
-            _svc_verify = _profile._svc.get(f"{svc['name'].split()[0].lower()}_ssl_verify", True)
-        up = _port_open(svc["port"], host=_svc_host, ssl=_svc_ssl, verify=_svc_verify)
-        badge = "🟢 Running" if up else "🔴 Stopped"
-        header = f"**{svc['name']}** — {badge}"
-
-        with st.container(border=True):
-            left_col, right_col = st.columns([3, 1])
-            with left_col:
-                st.markdown(header)
-                st.caption(f"Port {svc['port']} · {svc['note']}")
-
-                # Model selector for services backed by a local model directory (e.g. vLLM)
-                if "model_dir" in svc:
-                    _mdir = Path(svc["model_dir"])
-                    _models = (
-                        sorted(d.name for d in _mdir.iterdir() if d.is_dir())
-                        if _mdir.exists() else []
-                    )
-                    _mk = f"svc_model_{svc['port']}"
-                    _loaded_file = Path("/tmp/vllm-server.model")
-                    _loaded = _loaded_file.read_text().strip() if (_loaded_file.exists()) else ""
-                    if _models:
-                        _default = _models.index(_loaded) if _loaded in _models else 0
-                        st.selectbox(
-                            "Model",
-                            _models,
-                            index=_default,
-                            key=_mk,
-                            disabled=up,
-                            help="Model to load on start. Stop then Start to swap models.",
-                        )
-                    else:
-                        st.caption(f"_No models found in {svc['model_dir']}_")
-
-            with right_col:
-                if svc["start"] is None:
-                    st.caption("_Manual start only_")
-                elif up:
-                    if st.button("⏹ Stop", key=f"svc_stop_{svc['port']}", use_container_width=True):
-                        with st.spinner(f"Stopping {svc['name']}…"):
-                            r = _sp.run(svc["stop"], capture_output=True, text=True, cwd=svc["cwd"])
-                        if r.returncode == 0:
-                            st.success("Stopped.")
-                        else:
-                            st.error(f"Error: {r.stderr or r.stdout}")
-                        st.rerun()
-                else:
-                    # Build start command, appending selected model for services with model_dir
-                    _start_cmd = list(svc["start"])
-                    if "model_dir" in svc:
-                        _sel = st.session_state.get(f"svc_model_{svc['port']}")
-                        if _sel:
-                            _start_cmd.append(_sel)
-                    if st.button("▶ Start", key=f"svc_start_{svc['port']}", use_container_width=True, type="primary"):
-                        with st.spinner(f"Starting {svc['name']}…"):
-                            r = _sp.run(_start_cmd, capture_output=True, text=True, cwd=svc["cwd"])
-                        if r.returncode == 0:
-                            st.success("Started!")
-                        else:
-                            st.error(f"Error: {r.stderr or r.stdout}")
-                        st.rerun()
-
-
 # ── Resume Profile tab ────────────────────────────────────────────────────────
 with tab_resume:
     st.caption(
@@ -838,205 +641,449 @@ with tab_resume:
         st.success("✅ Resume profile saved!")
         st.balloons()
 
-# ── Email tab ─────────────────────────────────────────────────────────────────
-with tab_email:
-    EMAIL_CFG = CONFIG_DIR / "email.yaml"
-    EMAIL_EXAMPLE = CONFIG_DIR / "email.yaml.example"
-
-    st.caption(
-        f"Connect {_name}'s email via IMAP to automatically associate recruitment "
-        "emails with job applications. Only emails that mention the company name "
-        "AND contain a recruitment keyword are ever imported — no personal emails "
-        "are touched."
-    )
-
-    if not EMAIL_CFG.exists():
-        st.info("No email config found — fill in your credentials below and click **Save** to create it.")
-
-    em_cfg = load_yaml(EMAIL_CFG) if EMAIL_CFG.exists() else {}
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        em_host = st.text_input("IMAP Host", em_cfg.get("host", "imap.gmail.com"), key="em_host")
-        em_port = st.number_input("Port", value=int(em_cfg.get("port", 993)),
-                                  min_value=1, max_value=65535, key="em_port")
-        em_ssl  = st.checkbox("Use SSL", value=em_cfg.get("use_ssl", True), key="em_ssl")
-    with col_b:
-        em_user = st.text_input("Username (email address)", em_cfg.get("username", ""), key="em_user")
-        em_pass = st.text_input("Password / App Password", em_cfg.get("password", ""),
-                                type="password", key="em_pass")
-        em_sent = st.text_input("Sent folder (blank = auto-detect)",
-                                em_cfg.get("sent_folder", ""), key="em_sent",
-                                placeholder='e.g. "[Gmail]/Sent Mail"')
-
-    em_days = st.slider("Look-back window (days)", 14, 365,
-                        int(em_cfg.get("lookback_days", 90)), key="em_days")
-
-    st.caption(
-        "**Gmail users:** create an App Password at "
-        "myaccount.google.com/apppasswords (requires 2-Step Verification). "
-        "Enable IMAP at Gmail Settings → Forwarding and POP/IMAP."
-    )
-
-    col_save, col_test = st.columns(2)
-
-    if col_save.button("💾 Save email settings", type="primary", key="em_save"):
-        save_yaml(EMAIL_CFG, {
-            "host": em_host, "port": int(em_port), "use_ssl": em_ssl,
-            "username": em_user, "password": em_pass,
-            "sent_folder": em_sent, "lookback_days": int(em_days),
-        })
-        EMAIL_CFG.chmod(0o600)
-        st.success("Saved!")
-
-    if col_test.button("🔌 Test connection", key="em_test"):
-        with st.spinner("Connecting…"):
-            try:
-                import imaplib as _imap
-                _conn = (_imap.IMAP4_SSL if em_ssl else _imap.IMAP4)(em_host, int(em_port))
-                _conn.login(em_user, em_pass)
-                _, _caps = _conn.capability()
-                _conn.logout()
-                st.success(f"Connected successfully to {em_host}")
-            except Exception as e:
-                st.error(f"Connection failed: {e}")
-
-# ── Skills & Keywords tab ─────────────────────────────────────────────────────
-with tab_skills:
+    st.divider()
     st.subheader("🏷️ Skills & Keywords")
     st.caption(
-        f"These are matched against job descriptions to select {_name}'s most relevant "
-        "experience and highlight keyword overlap in the research brief."
+        f"Matched against job descriptions to surface {_name}'s most relevant experience "
+        "and highlight keyword overlap in research briefs. Search the bundled list or add your own."
     )
+
+    from scripts.skills_utils import load_suggestions as _load_sugg, filter_tag as _filter_tag
 
     if not KEYWORDS_CFG.exists():
         st.warning("resume_keywords.yaml not found — create it at config/resume_keywords.yaml")
     else:
         kw_data = load_yaml(KEYWORDS_CFG)
+        kw_changed = False
 
-        changed = False
-        for category in ["skills", "domains", "keywords"]:
-            st.markdown(f"**{category.title()}**")
-            tags: list[str] = kw_data.get(category, [])
+        _KW_META = {
+            "skills":   ("🛠️ Skills",   "e.g. Customer Success, SQL, Project Management"),
+            "domains":  ("🏢 Domains",  "e.g. B2B SaaS, EdTech, Non-profit"),
+            "keywords": ("🔑 Keywords", "e.g. NPS, churn prevention, cross-functional"),
+        }
 
-            if not tags:
-                st.caption("No tags yet — add one below.")
+        for kw_category, (kw_label, kw_placeholder) in _KW_META.items():
+            st.markdown(f"**{kw_label}**")
+            kw_current: list[str] = kw_data.get(kw_category, [])
+            kw_suggestions = _load_sugg(kw_category)
 
-            # Render existing tags as removable chips (value-based keys for stability)
-            n_cols = min(max(len(tags), 1), 6)
-            cols = st.columns(n_cols)
-            to_remove = None
-            for i, tag in enumerate(tags):
-                with cols[i % n_cols]:
-                    if st.button(f"× {tag}", key=f"rm_{category}_{tag}", use_container_width=True):
-                        to_remove = tag
-            if to_remove:
-                tags.remove(to_remove)
-                kw_data[category] = tags
-                changed = True
+            # Merge: suggestions first, then any custom tags not in suggestions
+            kw_custom = [t for t in kw_current if t not in kw_suggestions]
+            kw_options = kw_suggestions + kw_custom
 
-            # Add new tag
-            new_col, btn_col = st.columns([4, 1])
-            new_tag = new_col.text_input(
-                "Add",
-                key=f"new_{category}",
+            kw_selected = st.multiselect(
+                kw_label,
+                options=kw_options,
+                default=[t for t in kw_current if t in kw_options],
+                key=f"kw_ms_{kw_category}",
                 label_visibility="collapsed",
-                placeholder=f"Add {category[:-1] if category.endswith('s') else category}…",
+                help=f"Search and select from the bundled list, or add custom tags below.",
             )
-            if btn_col.button("＋ Add", key=f"add_{category}"):
-                tag = new_tag.strip()
-                if tag and tag not in tags:
-                    tags.append(tag)
-                    kw_data[category] = tags
-                    changed = True
+
+            # Custom tag input — for entries not in the suggestions list
+            kw_add_col, kw_btn_col = st.columns([5, 1])
+            kw_raw = kw_add_col.text_input(
+                "Custom tag", key=f"kw_custom_{kw_category}",
+                label_visibility="collapsed",
+                placeholder=f"Custom: {kw_placeholder}",
+            )
+            if kw_btn_col.button("＋", key=f"kw_add_{kw_category}", help="Add custom tag"):
+                cleaned = _filter_tag(kw_raw)
+                if cleaned is None:
+                    st.warning(f"'{kw_raw}' was rejected — check length, characters, or content.")
+                elif cleaned in kw_options:
+                    st.info(f"'{cleaned}' is already in the list — select it above.")
+                else:
+                    # Persist custom tag: add to YAML and session state so it appears in options
+                    kw_new_list = kw_selected + [cleaned]
+                    kw_data[kw_category] = kw_new_list
+                    kw_changed = True
+
+            # Detect multiselect changes
+            if sorted(kw_selected) != sorted(kw_current):
+                kw_data[kw_category] = kw_selected
+                kw_changed = True
 
             st.markdown("---")
 
-        if changed:
+        if kw_changed:
             save_yaml(KEYWORDS_CFG, kw_data)
-            st.success("Saved.")
             st.rerun()
 
-# ── Integrations tab ──────────────────────────────────────────────────────────
-with tab_integrations:
-    from scripts.integrations import REGISTRY as _IREGISTRY
-    from app.wizard.tiers import can_use as _ican_use, tier_label as _itier_label, TIERS as _ITIERS
+# ── System tab ────────────────────────────────────────────────────────────────
+with tab_system:
+    st.caption("Infrastructure, LLM backends, integrations, and service connections.")
 
-    _INTEG_CONFIG_DIR = CONFIG_DIR
-    _effective_tier = _profile.effective_tier if _profile else "free"
+    # ── File Paths & Inference ────────────────────────────────────────────────
+    with st.expander("📁 File Paths & Inference Profile"):
+        _su = _yaml_up.safe_load(USER_CFG.read_text()) or {} if USER_CFG.exists() else {}
+        _ssvc = {**_UP_DEFAULTS["services"], **_su.get("services", {})}
+        s_docs   = st.text_input("Documents directory",     _su.get("docs_dir", "~/Documents/JobSearch"))
+        s_ollama = st.text_input("Ollama models directory", _su.get("ollama_models_dir", "~/models/ollama"))
+        s_vllm   = st.text_input("vLLM models directory",   _su.get("vllm_models_dir", "~/models/vllm"))
+        _inf_profiles = ["remote", "cpu", "single-gpu", "dual-gpu"]
+        s_inf_profile = st.selectbox("Inference profile", _inf_profiles,
+                                      index=_inf_profiles.index(_su.get("inference_profile", "remote")))
 
-    st.caption(
-        "Connect external services for job tracking, document storage, notifications, and calendar sync. "
-        "Notion is configured in the **Notion** tab."
-    )
+    # ── Service Hosts & Ports ─────────────────────────────────────────────────
+    with st.expander("🔌 Service Hosts & Ports"):
+        st.caption("Advanced — change only if services run on non-default ports or remote hosts.")
+        ssc1, ssc2, ssc3 = st.columns(3)
+        with ssc1:
+            st.markdown("**Ollama**")
+            s_ollama_host   = st.text_input("Host",       _ssvc["ollama_host"],        key="sys_ollama_host")
+            s_ollama_port   = st.number_input("Port",     value=_ssvc["ollama_port"],  step=1, key="sys_ollama_port")
+            s_ollama_ssl    = st.checkbox("SSL",          _ssvc["ollama_ssl"],          key="sys_ollama_ssl")
+            s_ollama_verify = st.checkbox("Verify cert",  _ssvc["ollama_ssl_verify"],   key="sys_ollama_verify")
+        with ssc2:
+            st.markdown("**vLLM**")
+            s_vllm_host   = st.text_input("Host",         _ssvc["vllm_host"],          key="sys_vllm_host")
+            s_vllm_port   = st.number_input("Port",       value=_ssvc["vllm_port"],    step=1, key="sys_vllm_port")
+            s_vllm_ssl    = st.checkbox("SSL",            _ssvc["vllm_ssl"],            key="sys_vllm_ssl")
+            s_vllm_verify = st.checkbox("Verify cert",    _ssvc["vllm_ssl_verify"],     key="sys_vllm_verify")
+        with ssc3:
+            st.markdown("**SearXNG**")
+            s_sxng_host   = st.text_input("Host",         _ssvc["searxng_host"],       key="sys_sxng_host")
+            s_sxng_port   = st.number_input("Port",       value=_ssvc["searxng_port"], step=1, key="sys_sxng_port")
+            s_sxng_ssl    = st.checkbox("SSL",            _ssvc["searxng_ssl"],          key="sys_sxng_ssl")
+            s_sxng_verify = st.checkbox("Verify cert",    _ssvc["searxng_ssl_verify"],   key="sys_sxng_verify")
 
-    for _iname, _icls in _IREGISTRY.items():
-        if _iname == "notion":
-            continue  # Notion has its own dedicated tab
+    if st.button("💾 Save System Settings", type="primary", key="save_system"):
+        _sys_existing = _yaml_up.safe_load(USER_CFG.read_text()) or {} if USER_CFG.exists() else {}
+        _sys_existing.update({
+            "docs_dir": s_docs, "ollama_models_dir": s_ollama, "vllm_models_dir": s_vllm,
+            "inference_profile": s_inf_profile,
+            "services": {
+                "streamlit_port": _ssvc["streamlit_port"],
+                "ollama_host": s_ollama_host, "ollama_port": int(s_ollama_port),
+                "ollama_ssl": s_ollama_ssl, "ollama_ssl_verify": s_ollama_verify,
+                "vllm_host": s_vllm_host, "vllm_port": int(s_vllm_port),
+                "vllm_ssl": s_vllm_ssl, "vllm_ssl_verify": s_vllm_verify,
+                "searxng_host": s_sxng_host, "searxng_port": int(s_sxng_port),
+                "searxng_ssl": s_sxng_ssl, "searxng_ssl_verify": s_sxng_verify,
+            },
+        })
+        save_yaml(USER_CFG, _sys_existing)
+        from scripts.generate_llm_config import apply_service_urls as _apply_urls
+        _apply_urls(_UP(USER_CFG), LLM_CFG)
+        st.success("System settings saved and service URLs updated.")
+        st.rerun()
 
-        _iaccess = (
-            _ITIERS.index(_icls.tier) <= _ITIERS.index(_effective_tier)
-            if _icls.tier in _ITIERS and _effective_tier in _ITIERS
-            else _icls.tier == "free"
-        )
-        _iconfig_exists = _icls.is_configured(_INTEG_CONFIG_DIR)
-        _ilabel = _itier_label(_iname + "_sync") or ""
+    st.divider()
 
-        with st.container(border=True):
-            _ih1, _ih2 = st.columns([8, 2])
-            with _ih1:
-                _status_badge = "🟢 Connected" if _iconfig_exists else "⚪ Not connected"
-                st.markdown(f"**{_icls.label}** &nbsp; {_status_badge}")
-            with _ih2:
-                if _ilabel:
-                    st.caption(_ilabel)
+    # ── LLM Backends ─────────────────────────────────────────────────────────
+    with st.expander("🤖 LLM Backends", expanded=False):
+        import requests as _req
 
-            if not _iaccess:
-                st.caption(f"Upgrade to {_icls.tier} to enable {_icls.label}.")
+        def _ollama_models(base_url: str) -> list[str]:
+            try:
+                r = _req.get(base_url.rstrip("/v1").rstrip("/") + "/api/tags", timeout=2)
+                if r.ok:
+                    return [m["name"] for m in r.json().get("models", [])]
+            except Exception:
+                pass
+            return []
 
-            elif _iconfig_exists:
-                _ic1, _ic2 = st.columns(2)
-                if _ic1.button("🔌 Test", key=f"itest_{_iname}", use_container_width=True):
-                    _iinst = _icls()
-                    _iinst.connect(_iinst.load_config(_INTEG_CONFIG_DIR))
-                    with st.spinner("Testing…"):
-                        if _iinst.test():
-                            st.success("Connection verified.")
+        llm_cfg = load_yaml(LLM_CFG)
+        llm_backends = llm_cfg.get("backends", {})
+        llm_fallback_order = llm_cfg.get("fallback_order", list(llm_backends.keys()))
+
+        _llm_cfg_key = str(llm_fallback_order)
+        if st.session_state.get("_llm_order_cfg_key") != _llm_cfg_key:
+            st.session_state["_llm_order"] = list(llm_fallback_order)
+            st.session_state["_llm_order_cfg_key"] = _llm_cfg_key
+        llm_new_order: list[str] = st.session_state["_llm_order"]
+        llm_all_names = list(llm_new_order) + [n for n in llm_backends if n not in llm_new_order]
+
+        st.caption("Enable/disable backends and set priority with ↑ ↓. First enabled + reachable backend wins.")
+        llm_updated_backends = {}
+        for llm_name in llm_all_names:
+            b = llm_backends.get(llm_name, {})
+            llm_enabled = b.get("enabled", True)
+            llm_label = llm_name.replace("_", " ").title()
+            llm_pos = llm_new_order.index(llm_name) + 1 if llm_name in llm_new_order else "—"
+            llm_header = f"{'🟢' if llm_enabled else '⚫'} **{llm_pos}. {llm_label}**"
+            with st.expander(llm_header, expanded=False):
+                llm_c1, llm_c2, llm_c3, llm_c4 = st.columns([2, 1, 1, 4])
+                llm_new_enabled = llm_c1.checkbox("Enabled", value=llm_enabled, key=f"{llm_name}_enabled")
+                if llm_name in llm_new_order:
+                    llm_idx = llm_new_order.index(llm_name)
+                    if llm_c2.button("↑", key=f"{llm_name}_up", disabled=llm_idx == 0):
+                        llm_new_order[llm_idx], llm_new_order[llm_idx-1] = llm_new_order[llm_idx-1], llm_new_order[llm_idx]
+                        st.session_state["_llm_order"] = llm_new_order
+                        st.rerun()
+                    if llm_c3.button("↓", key=f"{llm_name}_dn", disabled=llm_idx == len(llm_new_order)-1):
+                        llm_new_order[llm_idx], llm_new_order[llm_idx+1] = llm_new_order[llm_idx+1], llm_new_order[llm_idx]
+                        st.session_state["_llm_order"] = llm_new_order
+                        st.rerun()
+                if b.get("type") == "openai_compat":
+                    llm_url = st.text_input("URL", value=b.get("base_url", ""), key=f"{llm_name}_url")
+                    if llm_name == "ollama":
+                        llm_om = _ollama_models(b.get("base_url", "http://localhost:11434"))
+                        llm_cur = b.get("model", "")
+                        if llm_om:
+                            llm_model = st.selectbox("Model", llm_om,
+                                index=llm_om.index(llm_cur) if llm_cur in llm_om else 0,
+                                key=f"{llm_name}_model",
+                                help="Lists models currently installed in Ollama.")
                         else:
-                            st.error("Test failed — check your credentials.")
-                if _ic2.button("🗑 Disconnect", key=f"idisconnect_{_iname}", use_container_width=True):
-                    _icls.config_path(_INTEG_CONFIG_DIR).unlink(missing_ok=True)
-                    st.rerun()
-
-            else:
-                _iinst = _icls()
-                _ifields = _iinst.fields()
-                _iform_vals: dict = {}
-                for _ifield in _ifields:
-                    _iinput_type = "password" if _ifield["type"] == "password" else "default"
-                    _iform_vals[_ifield["key"]] = st.text_input(
-                        _ifield["label"],
-                        placeholder=_ifield.get("placeholder", ""),
-                        type=_iinput_type,
-                        help=_ifield.get("help", ""),
-                        key=f"ifield_{_iname}_{_ifield['key']}",
-                    )
-                if st.button("🔗 Connect & Test", key=f"iconnect_{_iname}", type="primary"):
-                    _imissing = [
-                        f["label"] for f in _ifields
-                        if f.get("required") and not _iform_vals.get(f["key"], "").strip()
-                    ]
-                    if _imissing:
-                        st.warning(f"Required: {', '.join(_imissing)}")
+                            st.caption("_Ollama not reachable — enter model name manually_")
+                            llm_model = st.text_input("Model", value=llm_cur, key=f"{llm_name}_model")
                     else:
-                        _iinst.connect(_iform_vals)
-                        with st.spinner("Testing connection…"):
-                            if _iinst.test():
-                                _iinst.save_config(_iform_vals, _INTEG_CONFIG_DIR)
-                                st.success(f"{_icls.label} connected!")
-                                st.rerun()
-                            else:
-                                st.error("Connection test failed — check your credentials.")
+                        llm_model = st.text_input("Model", value=b.get("model", ""), key=f"{llm_name}_model")
+                    llm_updated_backends[llm_name] = {**b, "base_url": llm_url, "model": llm_model, "enabled": llm_new_enabled}
+                elif b.get("type") == "anthropic":
+                    llm_model = st.text_input("Model", value=b.get("model", ""), key=f"{llm_name}_model")
+                    llm_updated_backends[llm_name] = {**b, "model": llm_model, "enabled": llm_new_enabled}
+                else:
+                    llm_updated_backends[llm_name] = {**b, "enabled": llm_new_enabled}
+                if b.get("type") == "openai_compat":
+                    if st.button("Test connection", key=f"test_{llm_name}"):
+                        with st.spinner("Testing…"):
+                            try:
+                                from scripts.llm_router import LLMRouter as _LR
+                                reachable = _LR()._is_reachable(b.get("base_url", ""))
+                                st.success("Reachable ✓") if reachable else st.warning("Not reachable ✗")
+                            except Exception as e:
+                                st.error(f"Error: {e}")
+
+        st.caption("Priority: " + " → ".join(
+            f"{'✓' if llm_backends.get(n, {}).get('enabled', True) else '✗'} {n}"
+            for n in llm_new_order
+        ))
+        if st.button("💾 Save LLM settings", type="primary", key="sys_save_llm"):
+            save_yaml(LLM_CFG, {**llm_cfg, "backends": llm_updated_backends, "fallback_order": llm_new_order})
+            st.session_state.pop("_llm_order", None)
+            st.session_state.pop("_llm_order_cfg_key", None)
+            st.success("LLM settings saved!")
+
+    # ── Notion ────────────────────────────────────────────────────────────────
+    with st.expander("📚 Notion"):
+        notion_cfg = load_yaml(NOTION_CFG) if NOTION_CFG.exists() else {}
+        n_token = st.text_input("Integration Token", value=notion_cfg.get("token", ""),
+                                 type="password", key="sys_notion_token",
+                                 help="notion.so/my-integrations → your integration → Internal Integration Token")
+        n_db_id = st.text_input("Database ID", value=notion_cfg.get("database_id", ""),
+                                 key="sys_notion_db",
+                                 help="The 32-character ID from your Notion database URL")
+        n_c1, n_c2 = st.columns(2)
+        if n_c1.button("💾 Save Notion", type="primary", key="sys_save_notion"):
+            save_yaml(NOTION_CFG, {**notion_cfg, "token": n_token, "database_id": n_db_id})
+            st.success("Notion settings saved!")
+        if n_c2.button("🔌 Test Notion", key="sys_test_notion"):
+            with st.spinner("Connecting…"):
+                try:
+                    from notion_client import Client as _NC
+                    _ndb = _NC(auth=n_token).databases.retrieve(n_db_id)
+                    st.success(f"Connected to: **{_ndb['title'][0]['plain_text']}**")
+                except Exception as e:
+                    st.error(f"Connection failed: {e}")
+
+    # ── Services ──────────────────────────────────────────────────────────────
+    with st.expander("🔌 Services", expanded=True):
+        import subprocess as _sp
+        TOKENS_CFG = CONFIG_DIR / "tokens.yaml"
+        COMPOSE_DIR = str(Path(__file__).parent.parent.parent)
+        _sys_profile_name = _profile.inference_profile if _profile else "remote"
+        SYS_SERVICES = [
+            {
+                "name": "Streamlit UI",
+                "port": _profile._svc["streamlit_port"] if _profile else 8501,
+                "start": ["docker", "compose", "--profile", _sys_profile_name, "up", "-d", "app"],
+                "stop":  ["docker", "compose", "stop", "app"],
+                "cwd":   COMPOSE_DIR, "note": "Peregrine web interface",
+            },
+            {
+                "name": "Ollama (local LLM)",
+                "port": _profile._svc["ollama_port"] if _profile else 11434,
+                "start": ["docker", "compose", "--profile", _sys_profile_name, "up", "-d", "ollama"],
+                "stop":  ["docker", "compose", "stop", "ollama"],
+                "cwd":   COMPOSE_DIR,
+                "note":  f"Local inference — profile: {_sys_profile_name}",
+                "hidden": _sys_profile_name == "remote",
+            },
+            {
+                "name": "vLLM Server",
+                "port": _profile._svc["vllm_port"] if _profile else 8000,
+                "start": ["docker", "compose", "--profile", _sys_profile_name, "up", "-d", "vllm"],
+                "stop":  ["docker", "compose", "stop", "vllm"],
+                "cwd":   COMPOSE_DIR,
+                "model_dir": str(_profile.vllm_models_dir) if _profile else str(Path.home() / "models" / "vllm"),
+                "note":  "vLLM inference — dual-gpu profile only",
+                "hidden": _sys_profile_name != "dual-gpu",
+            },
+            {
+                "name": "Vision Service (moondream2)",
+                "port": 8002,
+                "start": ["docker", "compose", "--profile", _sys_profile_name, "up", "-d", "vision"],
+                "stop":  ["docker", "compose", "stop", "vision"],
+                "cwd":   COMPOSE_DIR, "note": "Screenshot analysis for survey assistant",
+                "hidden": _sys_profile_name not in ("single-gpu", "dual-gpu"),
+            },
+            {
+                "name": "SearXNG (company scraper)",
+                "port": _profile._svc["searxng_port"] if _profile else 8888,
+                "start": ["docker", "compose", "up", "-d", "searxng"],
+                "stop":  ["docker", "compose", "stop", "searxng"],
+                "cwd":   COMPOSE_DIR, "note": "Privacy-respecting meta-search for company research",
+            },
+        ]
+        SYS_SERVICES = [s for s in SYS_SERVICES if not s.get("hidden")]
+
+        def _port_open(port: int, host: str = "127.0.0.1", ssl: bool = False, verify: bool = True) -> bool:
+            try:
+                import requests as _r
+                scheme = "https" if ssl else "http"
+                _r.get(f"{scheme}://{host}:{port}/", timeout=1, verify=verify)
+                return True
+            except Exception:
+                return False
+
+        st.caption("Monitor and control backend services. Status checked live on each page load.")
+        for svc in SYS_SERVICES:
+            _sh = "127.0.0.1"
+            _ss = False
+            _sv = True
+            if _profile:
+                _sh = _profile._svc.get(f"{svc['name'].split()[0].lower()}_host", "127.0.0.1")
+                _ss = _profile._svc.get(f"{svc['name'].split()[0].lower()}_ssl", False)
+                _sv = _profile._svc.get(f"{svc['name'].split()[0].lower()}_ssl_verify", True)
+            up = _port_open(svc["port"], host=_sh, ssl=_ss, verify=_sv)
+            with st.container(border=True):
+                lc, rc = st.columns([3, 1])
+                with lc:
+                    st.markdown(f"**{svc['name']}** — {'🟢 Running' if up else '🔴 Stopped'}")
+                    st.caption(f"Port {svc['port']} · {svc['note']}")
+                    if "model_dir" in svc:
+                        _mdir = Path(svc["model_dir"])
+                        _models = sorted(d.name for d in _mdir.iterdir() if d.is_dir()) if _mdir.exists() else []
+                        _mk = f"svc_model_{svc['port']}"
+                        _loaded_file = Path("/tmp/vllm-server.model")
+                        _loaded = _loaded_file.read_text().strip() if _loaded_file.exists() else ""
+                        if _models:
+                            st.selectbox("Model", _models,
+                                index=_models.index(_loaded) if _loaded in _models else 0,
+                                key=_mk)
+                        else:
+                            st.caption(f"_No models found in {svc['model_dir']}_")
+                with rc:
+                    if svc.get("start") is None:
+                        st.caption("_Manual start only_")
+                    elif up:
+                        if st.button("⏹ Stop", key=f"sys_svc_stop_{svc['port']}", use_container_width=True):
+                            with st.spinner(f"Stopping {svc['name']}…"):
+                                r = _sp.run(svc["stop"], capture_output=True, text=True, cwd=svc["cwd"])
+                            st.success("Stopped.") if r.returncode == 0 else st.error(r.stderr or r.stdout)
+                            st.rerun()
+                    else:
+                        _start_cmd = list(svc["start"])
+                        if "model_dir" in svc:
+                            _sel = st.session_state.get(f"svc_model_{svc['port']}")
+                            if _sel:
+                                _start_cmd.append(_sel)
+                        if st.button("▶ Start", key=f"sys_svc_start_{svc['port']}", use_container_width=True, type="primary"):
+                            with st.spinner(f"Starting {svc['name']}…"):
+                                r = _sp.run(_start_cmd, capture_output=True, text=True, cwd=svc["cwd"])
+                            st.success("Started!") if r.returncode == 0 else st.error(r.stderr or r.stdout)
+                            st.rerun()
+
+    # ── Email ─────────────────────────────────────────────────────────────────
+    with st.expander("📧 Email"):
+        EMAIL_CFG = CONFIG_DIR / "email.yaml"
+        if not EMAIL_CFG.exists():
+            st.info("No email config found — fill in credentials below and click Save to create it.")
+        em_cfg = load_yaml(EMAIL_CFG) if EMAIL_CFG.exists() else {}
+        em_c1, em_c2 = st.columns(2)
+        with em_c1:
+            em_host = st.text_input("IMAP Host", em_cfg.get("host", "imap.gmail.com"), key="sys_em_host")
+            em_port = st.number_input("Port", value=int(em_cfg.get("port", 993)), min_value=1, max_value=65535, key="sys_em_port")
+            em_ssl  = st.checkbox("Use SSL", value=em_cfg.get("use_ssl", True), key="sys_em_ssl")
+        with em_c2:
+            em_user = st.text_input("Username (email)", em_cfg.get("username", ""), key="sys_em_user")
+            em_pass = st.text_input("Password / App Password", em_cfg.get("password", ""), type="password", key="sys_em_pass")
+            em_sent = st.text_input("Sent folder (blank = auto-detect)", em_cfg.get("sent_folder", ""),
+                                    key="sys_em_sent", placeholder='e.g. "[Gmail]/Sent Mail"')
+        em_days = st.slider("Look-back window (days)", 14, 365, int(em_cfg.get("lookback_days", 90)), key="sys_em_days")
+        st.caption("**Gmail users:** create an App Password at myaccount.google.com/apppasswords. Enable IMAP at Gmail Settings → Forwarding and POP/IMAP.")
+        em_s1, em_s2 = st.columns(2)
+        if em_s1.button("💾 Save Email", type="primary", key="sys_em_save"):
+            save_yaml(EMAIL_CFG, {
+                "host": em_host, "port": int(em_port), "use_ssl": em_ssl,
+                "username": em_user, "password": em_pass,
+                "sent_folder": em_sent, "lookback_days": int(em_days),
+            })
+            EMAIL_CFG.chmod(0o600)
+            st.success("Saved!")
+        if em_s2.button("🔌 Test Email", key="sys_em_test"):
+            with st.spinner("Connecting…"):
+                try:
+                    import imaplib as _imap
+                    _conn = (_imap.IMAP4_SSL if em_ssl else _imap.IMAP4)(em_host, int(em_port))
+                    _conn.login(em_user, em_pass)
+                    _conn.logout()
+                    st.success(f"Connected to {em_host}")
+                except Exception as e:
+                    st.error(f"Connection failed: {e}")
+
+    # ── Integrations ──────────────────────────────────────────────────────────
+    with st.expander("🔗 Integrations"):
+        from scripts.integrations import REGISTRY as _IREGISTRY
+        from app.wizard.tiers import can_use as _ican_use, tier_label as _itier_label, TIERS as _ITIERS
+        _INTEG_CONFIG_DIR = CONFIG_DIR
+        _effective_tier = _profile.effective_tier if _profile else "free"
+        st.caption("Connect external services for job tracking, document storage, notifications, and calendar sync.")
+        for _iname, _icls in _IREGISTRY.items():
+            _iaccess = (
+                _ITIERS.index(_icls.tier) <= _ITIERS.index(_effective_tier)
+                if _icls.tier in _ITIERS and _effective_tier in _ITIERS
+                else _icls.tier == "free"
+            )
+            _iconfig_exists = _icls.is_configured(_INTEG_CONFIG_DIR)
+            _ilabel = _itier_label(_iname + "_sync") or ""
+            with st.container(border=True):
+                _ih1, _ih2 = st.columns([8, 2])
+                with _ih1:
+                    st.markdown(f"**{_icls.label}** &nbsp; {'🟢 Connected' if _iconfig_exists else '⚪ Not connected'}")
+                with _ih2:
+                    if _ilabel:
+                        st.caption(_ilabel)
+                if not _iaccess:
+                    st.caption(f"Upgrade to {_icls.tier} to enable {_icls.label}.")
+                elif _iconfig_exists:
+                    _ic1, _ic2 = st.columns(2)
+                    if _ic1.button("🔌 Test", key=f"itest_{_iname}", use_container_width=True):
+                        _iinst = _icls()
+                        _iinst.connect(_iinst.load_config(_INTEG_CONFIG_DIR))
+                        with st.spinner("Testing…"):
+                            st.success("Connection verified.") if _iinst.test() else st.error("Test failed — check credentials.")
+                    if _ic2.button("🗑 Disconnect", key=f"idisconnect_{_iname}", use_container_width=True):
+                        _icls.config_path(_INTEG_CONFIG_DIR).unlink(missing_ok=True)
+                        st.rerun()
+                else:
+                    _iinst = _icls()
+                    _ifields = _iinst.fields()
+                    _iform_vals: dict = {}
+                    for _ifield in _ifields:
+                        _iform_vals[_ifield["key"]] = st.text_input(
+                            _ifield["label"],
+                            placeholder=_ifield.get("placeholder", ""),
+                            type="password" if _ifield["type"] == "password" else "default",
+                            help=_ifield.get("help", ""),
+                            key=f"ifield_{_iname}_{_ifield['key']}",
+                        )
+                    if st.button("🔗 Connect & Test", key=f"iconnect_{_iname}", type="primary"):
+                        _imissing = [f["label"] for f in _ifields if f.get("required") and not _iform_vals.get(f["key"], "").strip()]
+                        if _imissing:
+                            st.warning(f"Required: {', '.join(_imissing)}")
+                        else:
+                            _iinst.connect(_iform_vals)
+                            with st.spinner("Testing connection…"):
+                                if _iinst.test():
+                                    _iinst.save_config(_iform_vals, _INTEG_CONFIG_DIR)
+                                    st.success(f"{_icls.label} connected!")
+                                    st.rerun()
+                                else:
+                                    st.error("Connection test failed — check your credentials.")
 
 # ── Fine-Tune Wizard tab ───────────────────────────────────────────────────────
 with tab_finetune:
