@@ -193,7 +193,7 @@ def _parse_sections(text: str) -> dict[str, str]:
     return sections
 
 
-_RESUME_YAML = Path(__file__).parent.parent / "aihawk" / "data_folder" / "plain_text_resume.yaml"
+_RESUME_YAML = Path(__file__).parent.parent / "config" / "plain_text_resume.yaml"
 _KEYWORDS_YAML = Path(__file__).parent.parent / "config" / "resume_keywords.yaml"
 
 
