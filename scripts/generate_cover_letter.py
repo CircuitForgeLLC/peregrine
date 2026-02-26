@@ -26,11 +26,19 @@ LETTERS_DIR = _profile.docs_dir if _profile else Path.home() / "Documents" / "Jo
 LETTER_GLOB = "*Cover Letter*.md"
 
 # Background injected into every prompt so the model has the candidate's facts
-SYSTEM_CONTEXT = (
-    f"You are writing cover letters for {_profile.name}. {_profile.career_summary}"
-    if _profile else
-    "You are a professional cover letter writer. Write in first person."
-)
+def _build_system_context() -> str:
+    if not _profile:
+        return "You are a professional cover letter writer. Write in first person."
+    parts = [f"You are writing cover letters for {_profile.name}. {_profile.career_summary}"]
+    if _profile.candidate_voice:
+        parts.append(
+            f"Voice and personality: {_profile.candidate_voice} "
+            "Write in a way that reflects these authentic traits — not as a checklist, "
+            "but as a natural expression of who this person is."
+        )
+    return " ".join(parts)
+
+SYSTEM_CONTEXT = _build_system_context()
 
 
 # ── Mission-alignment detection ───────────────────────────────────────────────
@@ -58,6 +66,13 @@ _MISSION_SIGNALS: dict[str, list[str]] = {
         "instructure", "canvas lms", "clever", "district", "teacher",
         "k-12", "k12", "grade", "pedagogy",
     ],
+    "social_impact": [
+        "nonprofit", "non-profit", "501(c)", "social impact", "mission-driven",
+        "public benefit", "community", "underserved", "equity", "justice",
+        "humanitarian", "advocacy", "charity", "foundation", "ngo",
+        "social good", "civic", "public health", "mental health", "food security",
+        "housing", "homelessness", "poverty", "workforce development",
+    ],
 }
 
 _candidate = _profile.name if _profile else "the candidate"
@@ -78,6 +93,11 @@ _MISSION_DEFAULTS: dict[str, str] = {
         f"This company works in education or EdTech — a domain that resonates with "
         f"{_candidate}'s values. Para 3 should reflect this authentic connection specifically "
         "and warmly."
+    ),
+    "social_impact": (
+        f"This organization is mission-driven / social impact focused — exactly the kind of "
+        f"cause {_candidate} cares deeply about. Para 3 should warmly reflect their genuine "
+        "desire to apply their skills to work that makes a real difference in people's lives."
     ),
 }
 

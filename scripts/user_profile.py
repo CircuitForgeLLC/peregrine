@@ -15,6 +15,7 @@ _DEFAULTS = {
     "phone": "",
     "linkedin": "",
     "career_summary": "",
+    "candidate_voice": "",
     "nda_companies": [],
     "docs_dir": "~/Documents/JobSearch",
     "ollama_models_dir": "~/models/ollama",
@@ -61,6 +62,7 @@ class UserProfile:
         self.phone: str = data["phone"]
         self.linkedin: str = data["linkedin"]
         self.career_summary: str = data["career_summary"]
+        self.candidate_voice: str = data.get("candidate_voice", "")
         self.nda_companies: list[str] = [c.lower() for c in data["nda_companies"]]
         self.docs_dir: Path = Path(data["docs_dir"]).expanduser().resolve()
         self.ollama_models_dir: Path = Path(data["ollama_models_dir"]).expanduser().resolve()

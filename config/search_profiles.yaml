@@ -4,6 +4,17 @@ profiles:
   - indeed
   - glassdoor
   - zip_recruiter
+  job_titles:
+  - Customer Service Specialist
+  locations:
+  - San Francisco CA
+  name: default
+  remote_only: false
+- boards:
+  - linkedin
+  - indeed
+  - glassdoor
+  - zip_recruiter
   - google
   custom_boards:
   - adzuna

@@ -92,6 +92,18 @@ def _find_column_split(page) -> float | None:
     return split_x if split_x and best_gap > page.width * 0.03 else None
 
 
+_CID_BULLETS = {127, 149, 183}  # common bullet CIDs across ATS-reembedded fonts
+
+def _clean_cid(text: str) -> str:
+    """Replace (cid:NNN) glyph references emitted by pdfplumber when a PDF font
+    lacks a ToUnicode map.  Known bullet CIDs become '•'; everything else is
+    stripped so downstream section parsing sees clean text."""
+    def _replace(m: re.Match) -> str:
+        n = int(m.group(1))
+        return "•" if n in _CID_BULLETS else ""
+    return re.sub(r"\(cid:(\d+)\)", _replace, text)
+
+
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract text from PDF, handling two-column layouts via gutter detection.
 
@@ -116,12 +128,12 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
                     pages.append("\n".join(filter(None, [header_text, left_text, right_text])))
                     continue
             pages.append(page.extract_text() or "")
-    return "\n".join(pages)
+    return _clean_cid("\n".join(pages))
 
 
 def extract_text_from_docx(file_bytes: bytes) -> str:
     doc = Document(io.BytesIO(file_bytes))
-    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    return _clean_cid("\n".join(p.text for p in doc.paragraphs if p.text.strip()))
 
 
 def extract_text_from_odt(file_bytes: bytes) -> str:
@@ -139,7 +151,7 @@ def extract_text_from_odt(file_bytes: bytes) -> str:
             text = "".join(elem.itertext()).strip()
             if text:
                 lines.append(text)
-    return "\n".join(lines)
+    return _clean_cid("\n".join(lines))
 
 
 # ── Section splitter ──────────────────────────────────────────────────────────

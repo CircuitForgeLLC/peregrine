@@ -19,6 +19,7 @@ unsloth_compiled_cache/
 data/survey_screenshots/*
 !data/survey_screenshots/.gitkeep
 config/user.yaml
+config/plain_text_resume.yaml
 config/.backup-*
 config/integrations/*.yaml
 !config/integrations/*.yaml.example
@@ -30,3 +31,7 @@ scrapers/raw_scrapes/
 
 compose.override.yml
 config/license.json
+config/user.yaml.working
+
+# Claude context files — kept out of version control
+CLAUDE.md
