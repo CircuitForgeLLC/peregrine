@@ -305,17 +305,20 @@ elif step == 4:
     tab_upload, tab_builder = st.tabs(["\U0001f4ce Upload", "\U0001f4dd Build manually"])
 
     with tab_upload:
-        uploaded = st.file_uploader("Upload PDF or DOCX", type=["pdf", "docx"])
+        uploaded = st.file_uploader("Upload PDF, DOCX, or ODT", type=["pdf", "docx", "odt"])
         if uploaded and st.button("Parse Resume", type="primary", key="parse_resume"):
             from scripts.resume_parser import (
-                extract_text_from_pdf, extract_text_from_docx, structure_resume,
+                extract_text_from_pdf, extract_text_from_docx,
+                extract_text_from_odt, structure_resume,
             )
             file_bytes = uploaded.read()
             ext = uploaded.name.rsplit(".", 1)[-1].lower()
-            raw_text = (
-                extract_text_from_pdf(file_bytes) if ext == "pdf"
-                else extract_text_from_docx(file_bytes)
-            )
+            if ext == "pdf":
+                raw_text = extract_text_from_pdf(file_bytes)
+            elif ext == "odt":
+                raw_text = extract_text_from_odt(file_bytes)
+            else:
+                raw_text = extract_text_from_docx(file_bytes)
             with st.spinner("Parsing\u2026"):
                 parsed, parse_err = structure_resume(raw_text)
 
