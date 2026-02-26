@@ -10,10 +10,13 @@ then show the guided form builder.
 from __future__ import annotations
 import io
 import json
+import logging
 import re
 
 import pdfplumber
 from docx import Document
+
+log = logging.getLogger(__name__)
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
@@ -47,22 +50,37 @@ def _llm_structure(raw_text: str) -> str:
         "- skills (list of strings)\n"
         "- achievements (list of strings, may be empty)\n\n"
         "Return ONLY valid JSON. No markdown, no explanation.\n\n"
-        f"Resume text:\n{raw_text[:6000]}"
+        f"Resume text:\n{raw_text[:4000]}"
     )
     router = LLMRouter()
-    return router.complete(prompt)
+    return router.complete(prompt, max_tokens=2048)
 
 
-def structure_resume(raw_text: str) -> dict:
+def structure_resume(raw_text: str) -> tuple[dict, str]:
     """Convert raw resume text to a structured dict via LLM.
 
-    Returns an empty dict on any failure — caller should fall back to form builder.
+    Returns (result_dict, error_message). result_dict is empty on failure.
     """
+    import traceback
+    if not raw_text.strip():
+        return {}, "Text extraction returned empty — the file may be image-based or unreadable."
+    raw = ""
     try:
         raw = _llm_structure(raw_text)
-        # Strip markdown code fences if present
-        raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
-        raw = re.sub(r"\s*```$", "", raw)
-        return json.loads(raw)
-    except Exception:
-        return {}
+        cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        try:
+            return json.loads(cleaned), ""
+        except json.JSONDecodeError:
+            # Try json-repair before giving up — handles truncation and minor malformations
+            from json_repair import repair_json
+            repaired = repair_json(cleaned)
+            result = json.loads(repaired)
+            log.warning("[resume_parser] Used json-repair to recover malformed output")
+            return result, ""
+    except json.JSONDecodeError as e:
+        log.error("[resume_parser] JSON parse error (even after repair): %s\nRaw output:\n%s", e, raw[:500])
+        return {}, f"LLM returned invalid JSON: {e}"
+    except Exception as e:
+        log.error("[resume_parser] Error:\n%s", traceback.format_exc())
+        return {}, str(e)

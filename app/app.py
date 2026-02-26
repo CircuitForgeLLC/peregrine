@@ -7,10 +7,13 @@ a "System" section so it doesn't crowd the navigation.
 Run: streamlit run app/app.py
      bash scripts/manage-ui.sh start
 """
+import logging
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+logging.basicConfig(level=logging.WARNING, format="%(name)s %(levelname)s: %(message)s")
 
 import streamlit as st
 from scripts.db import DEFAULT_DB, init_db, get_active_tasks

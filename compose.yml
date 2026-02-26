@@ -19,6 +19,8 @@ services:
       - PEREGRINE_GPU_COUNT=${PEREGRINE_GPU_COUNT:-0}
       - PEREGRINE_GPU_NAMES=${PEREGRINE_GPU_NAMES:-}
       - RECOMMENDED_PROFILE=${RECOMMENDED_PROFILE:-remote}
+      - PYTHONUNBUFFERED=1
+      - PYTHONLOGGING=WARNING
     depends_on:
       searxng:
         condition: service_healthy
