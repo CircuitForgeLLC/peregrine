@@ -82,7 +82,7 @@ case "$CMD" in
     start)
         info "Starting Peregrine (PROFILE=${PROFILE})..."
         make start PROFILE="$PROFILE"
-        PORT="$(python3 scripts/preflight.py --service streamlit 2>/dev/null || echo 8501)"
+        PORT="$(grep -m1 '^STREAMLIT_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8501)"
         success "Peregrine is up → http://localhost:${PORT}"
         ;;
 
@@ -95,7 +95,7 @@ case "$CMD" in
     restart)
         info "Restarting (PROFILE=${PROFILE})..."
         make restart PROFILE="$PROFILE"
-        PORT="$(python3 scripts/preflight.py --service streamlit 2>/dev/null || echo 8501)"
+        PORT="$(grep -m1 '^STREAMLIT_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8501)"
         success "Peregrine restarted → http://localhost:${PORT}"
         ;;
 
@@ -148,7 +148,7 @@ case "$CMD" in
         ;;
 
     open)
-        PORT="$(python3 scripts/preflight.py --service streamlit 2>/dev/null || echo 8501)"
+        PORT="$(grep -m1 '^STREAMLIT_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8501)"
         URL="http://localhost:${PORT}"
         info "Opening ${URL}"
         if command -v xdg-open &>/dev/null; then
