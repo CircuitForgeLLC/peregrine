@@ -22,3 +22,8 @@ config/user.yaml
 config/.backup-*
 config/integrations/*.yaml
 !config/integrations/*.yaml.example
+
+# companyScraper runtime artifacts
+scrapers/.cache/
+scrapers/.debug/
+scrapers/raw_scrapes/
