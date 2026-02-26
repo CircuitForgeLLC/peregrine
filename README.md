@@ -2,6 +2,8 @@
 
 **AI-powered job search pipeline — by [Circuit Forge LLC](https://circuitforge.io)**
 
+> *"Don't be evil, for real and forever."*
+
 Automates the full job search lifecycle: discovery → matching → cover letters → applications → interview prep.
 Privacy-first, local-first. Your data never leaves your machine.
 
