@@ -65,3 +65,32 @@ def tier_label(feature: str) -> str:
     if required is None:
         return ""
     return "🔒 Paid" if required == "paid" else "⭐ Premium"
+
+
+def effective_tier(
+    profile=None,
+    license_path=None,
+    public_key_path=None,
+) -> str:
+    """Return the effective tier for this installation.
+
+    Priority:
+    1. profile.dev_tier_override (developer mode override)
+    2. License JWT verification (offline RS256 check)
+    3. "free" (fallback)
+
+    license_path and public_key_path default to production paths when None.
+    Pass explicit paths in tests to avoid touching real files.
+    """
+    if profile and getattr(profile, "dev_tier_override", None):
+        return profile.dev_tier_override
+
+    from scripts.license import effective_tier as _license_tier
+    from pathlib import Path as _Path
+
+    kwargs = {}
+    if license_path is not None:
+        kwargs["license_path"] = _Path(license_path)
+    if public_key_path is not None:
+        kwargs["public_key_path"] = _Path(public_key_path)
+    return _license_tier(**kwargs)
