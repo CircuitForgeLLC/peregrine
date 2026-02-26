@@ -12,7 +12,9 @@ import io
 import json
 import logging
 import re
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pdfplumber
 from docx import Document
@@ -66,15 +68,78 @@ _LINKEDIN_RE = re.compile(r"linkedin\.com/in/[\w\-]+", re.I)
 
 # ── Text extraction ───────────────────────────────────────────────────────────
 
+def _find_column_split(page) -> float | None:
+    """Return the x-coordinate of the gutter between two columns, or None if single-column.
+
+    Finds the largest horizontal gap between word x0 positions in the middle 40%
+    of the page width — that gap is the column gutter.
+    """
+    words = page.extract_words()
+    if len(words) < 10:
+        return None
+    lo, hi = page.width * 0.25, page.width * 0.75
+    # Collect unique left-edge positions of words that start in the middle band
+    xs = sorted({int(w["x0"]) for w in words if lo <= w["x0"] <= hi})
+    if len(xs) < 2:
+        return None
+    # Find the biggest consecutive gap
+    best_gap, split_x = 0.0, None
+    for i in range(len(xs) - 1):
+        gap = xs[i + 1] - xs[i]
+        if gap > best_gap:
+            best_gap, split_x = gap, (xs[i] + xs[i + 1]) / 2
+    # Only treat as two-column if the gap is substantial (> 3% of page width)
+    return split_x if split_x and best_gap > page.width * 0.03 else None
+
+
 def extract_text_from_pdf(file_bytes: bytes) -> str:
+    """Extract text from PDF, handling two-column layouts via gutter detection.
+
+    For two-column pages, the full-width header (name, contact) is extracted
+    separately from the columnar body to avoid the centered header being clipped.
+    """
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        pages = [page.extract_text() or "" for page in pdf.pages]
+        pages: list[str] = []
+        for page in pdf.pages:
+            w, h = page.width, page.height
+            split_x = _find_column_split(page)
+            if split_x:
+                # Find y-coordinate where right-column content starts.
+                # Everything above that belongs to the full-width header.
+                words = page.extract_words()
+                right_words = [wd for wd in words if wd["x0"] >= split_x]
+                col_start_y = min(wd["top"] for wd in right_words) if right_words else 0
+                header_text = page.within_bbox((0,       0,       w,       col_start_y)).extract_text() or ""
+                left_text   = page.within_bbox((0,       col_start_y, split_x, h)).extract_text() or ""
+                right_text  = page.within_bbox((split_x, col_start_y, w,       h)).extract_text() or ""
+                if len(left_text.strip()) > 60 and len(right_text.strip()) > 60:
+                    pages.append("\n".join(filter(None, [header_text, left_text, right_text])))
+                    continue
+            pages.append(page.extract_text() or "")
     return "\n".join(pages)
 
 
 def extract_text_from_docx(file_bytes: bytes) -> str:
     doc = Document(io.BytesIO(file_bytes))
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+
+def extract_text_from_odt(file_bytes: bytes) -> str:
+    """Extract plain text from an ODT file (ZIP + XML, no external deps required)."""
+    # ODT is a ZIP archive; content.xml holds the document body
+    _NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+    lines: list[str] = []
+    with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+        with zf.open("content.xml") as f:
+            tree = ET.parse(f)
+    # Walk all text:p and text:h elements in document order
+    for elem in tree.iter():
+        tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+        if tag in ("p", "h"):
+            text = "".join(elem.itertext()).strip()
+            if text:
+                lines.append(text)
+    return "\n".join(lines)
 
 
 # ── Section splitter ──────────────────────────────────────────────────────────
@@ -108,18 +173,34 @@ def _parse_header(lines: list[str]) -> dict:
     email_m   = _EMAIL_RE.search(full_text)
     phone_m   = _PHONE_RE.search(full_text)
 
-    # Name heuristic: first non-empty line that looks like a person's name
+    # Name heuristic: first non-empty line that looks like a person's name.
+    # Handle two common layouts:
+    #   (A) Name on its own line
+    #   (B) "email@example.com Firstname Lastname" on one line
     name = ""
-    for line in lines[:5]:
-        if "@" in line or re.match(r"^\d", line.strip()):
+    for line in lines[:8]:
+        stripped = line.strip()
+        if not stripped:
             continue
-        # Skip lines that look like city/state/zip or URLs
-        if re.search(r"\b[A-Z]{2}\b\s*\d{5}", line) or re.search(r"https?://|linkedin|github", line, re.I):
+        # Layout B: line contains email — extract the part after the email as name
+        if "@" in stripped:
+            email_m = _EMAIL_RE.search(stripped)
+            if email_m:
+                after = stripped[email_m.end():].strip(" |•,")
+                after_clean = re.sub(r"\s{2,}", " ", after)
+                alpha_check = re.sub(r"[.\-'\u2019]", "", after_clean.replace(" ", ""))
+                if 2 <= len(after_clean.split()) <= 5 and alpha_check.isalpha():
+                    name = after_clean
+                    break
             continue
-        # Strip separators and credential suffixes (MBA, PhD, etc.) for the alpha check
-        candidate = re.sub(r"[|•·,]+", " ", line).strip()
+        # Skip phone/URL/city lines
+        if re.match(r"^\d", stripped):
+            continue
+        if re.search(r"\b[A-Z]{2}\b\s*\d{5}", stripped) or re.search(r"https?://|linkedin|github", stripped, re.I):
+            continue
+        # Layout A: plain name line
+        candidate = re.sub(r"[|•·,]+", " ", stripped).strip()
         candidate = re.sub(r"\s{2,}", " ", candidate)
-        # Normalise: remove periods, hyphens for the alpha-only check
         alpha_check = re.sub(r"[.\-'\u2019]", "", candidate.replace(" ", ""))
         if 2 <= len(candidate.split()) <= 5 and alpha_check.isalpha():
             name = candidate
@@ -151,13 +232,27 @@ def _parse_experience(lines: list[str]) -> list[dict]:
         if date_match:
             if current:
                 entries.append(current)
-            # Title/company may be on this line (layout B) or the previous line (layout A)
-            same_line = _DATE_RANGE_RE.sub("", line).strip(" –—|-•")
-            header = same_line if same_line.strip() else prev_line
-            parts = re.split(r"\s{2,}|[|•·,–—]\s*", header.strip(), maxsplit=1)
+            # Title/company extraction — three layouts:
+            #  (A) Title on prev_line, "Company | Location | Dates" on date line
+            #  (B) "Title | Company" on prev_line, dates on date line (same_line empty)
+            #  (C) "Title | Company | Dates" all on one line
+            same_line = _DATE_RANGE_RE.sub("", line)
+            # Remove residual punctuation-only fragments like "()" left after date removal
+            same_line = re.sub(r"[()[\]{}\s]+$", "", same_line).strip(" –—|-•")
+            if prev_line and same_line.strip():
+                # Layout A: title = prev_line, company = first segment of same_line
+                title   = prev_line.strip()
+                co_part = re.split(r"\s{2,}|[|,]\s*", same_line.strip(), maxsplit=1)[0]
+                company = co_part.strip()
+            else:
+                # Layout B/C: title | company are together (prev_line or same_line)
+                header = same_line if same_line.strip() else prev_line
+                parts  = re.split(r"\s{2,}|[|•·,–—]\s*", header.strip(), maxsplit=1)
+                title   = parts[0].strip() if parts else ""
+                company = parts[1].strip() if len(parts) > 1 else ""
             current = {
-                "title":      parts[0].strip() if parts else "",
-                "company":    parts[1].strip() if len(parts) > 1 else "",
+                "title":      title,
+                "company":    company,
                 "start_date": date_match.group(1),
                 "end_date":   date_match.group(2),
                 "bullets":    [],
