@@ -47,6 +47,7 @@ pypdf
 pdfminer-six
 pdfplumber
 python-docx
+json-repair
 pyyaml>=6.0
 python-dotenv
 
