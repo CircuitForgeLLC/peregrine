@@ -81,6 +81,16 @@ def build_records(letters_dir: Path = LETTERS_DIR) -> list[dict]:
             if p not in seen:
                 seen.add(p)
                 all_paths.append(p)
+
+    # Also scan web-uploaded files (Settings → Fine-tune → Upload)
+    uploads_dir = letters_dir / "training_data" / "uploads"
+    if uploads_dir.exists():
+        for glob in ("*.md", "*.txt"):
+            for p in uploads_dir.glob(glob):
+                if p not in seen:
+                    seen.add(p)
+                    all_paths.append(p)
+
     for path in sorted(all_paths):
         text = path.read_text(encoding="utf-8", errors="ignore").strip()
         if not text or len(text) < 100:
