@@ -1026,9 +1026,10 @@ with tab_finetune:
 
         if ft_step == 1:
             st.markdown("**Step 1: Upload Cover Letters**")
+            st.caption("Accepted formats: `.md` or `.txt`. Convert PDFs to text before uploading.")
             uploaded = st.file_uploader(
-                "Upload cover letters (PDF, DOCX, or TXT)",
-                type=["pdf", "docx", "txt"],
+                "Upload cover letters (.md or .txt)",
+                type=["md", "txt"],
                 accept_multiple_files=True,
             )
             if uploaded and st.button("Extract Training Pairs →", type="primary", key="ft_extract"):
@@ -1040,18 +1041,45 @@ with tab_finetune:
                 st.rerun()
 
         elif ft_step == 2:
-            st.markdown("**Step 2: Preview Training Pairs**")
-            st.info("Run `python scripts/prepare_training_data.py` to extract pairs, then return here.")
+            st.markdown("**Step 2: Extract Training Pairs**")
+            import json as _json
+            import sqlite3 as _sqlite3
+            from scripts.db import DEFAULT_DB as _FT_DB
+
             jsonl_path = _profile.docs_dir / "training_data" / "cover_letters.jsonl"
+
+            # Show task status
+            _ft_conn = _sqlite3.connect(_FT_DB)
+            _ft_conn.row_factory = _sqlite3.Row
+            _ft_task = _ft_conn.execute(
+                "SELECT * FROM background_tasks WHERE task_type='prepare_training' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            _ft_conn.close()
+
+            if _ft_task:
+                _ft_status = _ft_task["status"]
+                if _ft_status == "completed":
+                    st.success(f"✅ {_ft_task['error'] or 'Extraction complete'}")
+                elif _ft_status in ("running", "queued"):
+                    st.info(f"⏳ {_ft_status.capitalize()}… refresh to check progress.")
+                elif _ft_status == "failed":
+                    st.error(f"Extraction failed: {_ft_task['error']}")
+
+            if st.button("⚙️ Extract Training Pairs", type="primary", key="ft_extract2"):
+                from scripts.task_runner import submit_task as _ft_submit
+                _ft_submit(_FT_DB, "prepare_training", 0)
+                st.info("Extracting in the background — refresh in a moment.")
+                st.rerun()
+
             if jsonl_path.exists():
-                import json as _json
                 pairs = [_json.loads(l) for l in jsonl_path.read_text().splitlines() if l.strip()]
-                st.caption(f"{len(pairs)} training pairs extracted.")
+                st.caption(f"{len(pairs)} training pairs ready.")
                 for i, p in enumerate(pairs[:3]):
                     with st.expander(f"Pair {i+1}"):
-                        st.text(p.get("input", "")[:300])
+                        st.text(p.get("output", p.get("input", ""))[:300])
             else:
-                st.warning("No training pairs found. Run `prepare_training_data.py` first.")
+                st.caption("No training pairs yet — click Extract above.")
+
             col_back, col_next = st.columns([1, 4])
             if col_back.button("← Back", key="ft_back2"):
                 st.session_state.ft_step = 1
@@ -1061,12 +1089,44 @@ with tab_finetune:
                 st.rerun()
 
         elif ft_step == 3:
-            st.markdown("**Step 3: Train**")
-            st.slider("Epochs", 3, 20, 10, key="ft_epochs")
-            if st.button("🚀 Start Fine-Tune", type="primary", key="ft_start"):
-                st.info("Fine-tune queued as a background task. Check back in 30–60 minutes.")
-            if st.button("← Back", key="ft_back3"):
+            st.markdown("**Step 3: Fine-Tune**")
+
+            _ft_profile_name = ((_profile.name.split() or ["cover"])[0].lower()
+                                if _profile else "cover")
+            _ft_model_name = f"{_ft_profile_name}-cover-writer"
+
+            st.info(
+                "Run the command below from your terminal. Training takes 30–90 min on GPU "
+                "and registers the model automatically when complete."
+            )
+            st.code("make finetune PROFILE=single-gpu", language="bash")
+            st.caption(
+                f"Your model will appear as **{_ft_model_name}:latest** in Ollama. "
+                "Cover letter generation will use it automatically."
+            )
+
+            st.markdown("**Model status:**")
+            try:
+                import os as _os
+                import requests as _ft_req
+                _ollama_url = _os.environ.get("OLLAMA_URL", "http://localhost:11434")
+                _tags = _ft_req.get(f"{_ollama_url}/api/tags", timeout=3)
+                if _tags.status_code == 200:
+                    _model_names = [m["name"] for m in _tags.json().get("models", [])]
+                    if any(_ft_model_name in m for m in _model_names):
+                        st.success(f"✅ `{_ft_model_name}:latest` is ready in Ollama!")
+                    else:
+                        st.warning(f"⏳ `{_ft_model_name}:latest` not registered yet.")
+                else:
+                    st.caption("Ollama returned an unexpected response.")
+            except Exception:
+                st.caption("Could not reach Ollama — ensure services are running with `make start`.")
+
+            col_back, col_refresh = st.columns([1, 3])
+            if col_back.button("← Back", key="ft_back3"):
                 st.session_state.ft_step = 2
+                st.rerun()
+            if col_refresh.button("🔄 Check model status", key="ft_refresh3"):
                 st.rerun()
 
 # ── Developer tab ─────────────────────────────────────────────────────────────
