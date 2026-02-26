@@ -479,6 +479,45 @@ with tab_search:
             st.success("Blocklist saved — takes effect on next discovery run.")
 
 # ── Resume Profile tab ────────────────────────────────────────────────────────
+
+def _upload_resume_widget(key_prefix: str) -> None:
+    """Upload + parse + save a resume file. Overwrites config/plain_text_resume.yaml on success."""
+    _uf = st.file_uploader(
+        "Upload resume (PDF, DOCX, or ODT)",
+        type=["pdf", "docx", "odt"],
+        key=f"{key_prefix}_file",
+    )
+    if _uf and st.button("Parse & Save", type="primary", key=f"{key_prefix}_parse"):
+        from scripts.resume_parser import (
+            extract_text_from_pdf, extract_text_from_docx,
+            extract_text_from_odt, structure_resume,
+        )
+        _fb = _uf.read()
+        _ext = _uf.name.rsplit(".", 1)[-1].lower()
+        if _ext == "pdf":
+            _raw = extract_text_from_pdf(_fb)
+        elif _ext == "odt":
+            _raw = extract_text_from_odt(_fb)
+        else:
+            _raw = extract_text_from_docx(_fb)
+        with st.spinner("Parsing resume…"):
+            _parsed, _perr = structure_resume(_raw)
+        if _parsed and any(_parsed.get(k) for k in ("name", "experience", "skills")):
+            RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
+            RESUME_PATH.write_text(yaml.dump(_parsed, default_flow_style=False, allow_unicode=True))
+            # Persist raw text to user.yaml for LLM context
+            if USER_CFG.exists():
+                _uy = yaml.safe_load(USER_CFG.read_text()) or {}
+                _uy["resume_raw_text"] = _raw[:8000]
+                save_yaml(USER_CFG, _uy)
+            st.success("Resume parsed and saved!")
+            st.rerun()
+        else:
+            st.warning(
+                f"Parsing found limited data — try a different file format. "
+                f"{('Error: ' + _perr) if _perr else ''}"
+            )
+
 with tab_resume:
     st.caption(
         f"Edit {_name}'s application profile. "
@@ -486,10 +525,25 @@ with tab_resume:
     )
 
     if not RESUME_PATH.exists():
-        st.error(f"Resume YAML not found at `{RESUME_PATH}`. Copy or create `config/plain_text_resume.yaml`.")
+        st.info(
+            "No resume profile found yet. Upload your resume below to get started, "
+            "or re-run the [Setup wizard](/0_Setup) to build one step-by-step."
+        )
+        _upload_resume_widget("rp_new")
         st.stop()
 
+    with st.expander("🔄 Replace Resume"):
+        st.caption("Re-upload to overwrite your saved profile. Parsed fields will replace the current data.")
+        _upload_resume_widget("rp_replace")
+
     _data = yaml.safe_load(RESUME_PATH.read_text()) or {}
+
+    if "FILL_IN" in RESUME_PATH.read_text():
+        st.info(
+            "Some fields still need attention (marked ⚠️ below). "
+            "Re-upload your resume above to auto-fill them, or "
+            "re-run the [Setup wizard](/0_Setup) to fill them step-by-step."
+        )
 
     def _field(label: str, value: str, key: str, help: str = "", password: bool = False) -> str:
         needs_attention = str(value).startswith("FILL_IN") or value == ""
@@ -806,7 +860,7 @@ with tab_system:
                                 key=f"{llm_name}_model",
                                 help="Lists models currently installed in Ollama.")
                         else:
-                            st.caption("_Ollama not reachable — enter model name manually_")
+                            st.caption("_Ollama not reachable — enter model name manually. Start it in the **Services** section below._")
                             llm_model = st.text_input("Model", value=llm_cur, key=f"{llm_name}_model")
                     else:
                         llm_model = st.text_input("Model", value=b.get("model", ""), key=f"{llm_name}_model")
@@ -944,7 +998,7 @@ with tab_system:
                                 index=_models.index(_loaded) if _loaded in _models else 0,
                                 key=_mk)
                         else:
-                            st.caption(f"_No models found in {svc['model_dir']}_")
+                            st.caption(f"_No models found in `{svc['model_dir']}` — train one in the **🎯 Fine-Tune** tab above_")
                 with rc:
                     if svc.get("start") is None:
                         st.caption("_Manual start only_")
@@ -1070,7 +1124,7 @@ with tab_finetune:
         st.info(
             f"Fine-tuning requires a GPU profile. "
             f"Current profile: `{_profile.inference_profile if _profile else 'not configured'}`. "
-            "Change it in **My Profile** to enable this feature."
+            "Switch to the **👤 My Profile** tab above and change your inference profile to `single-gpu` or `dual-gpu`."
         )
     else:
         st.subheader("Fine-Tune Your Cover Letter Model")
