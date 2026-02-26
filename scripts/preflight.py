@@ -7,6 +7,11 @@ recommends a Docker Compose profile, and calculates optional vLLM KV-cache
 CPU offload when VRAM is tight.  Writes resolved settings to .env so docker
 compose picks them up automatically.
 
+When a managed service (ollama, vllm, vision, searxng) is already running
+on its configured port, preflight *adopts* it: the app is configured to reach
+it via host.docker.internal, and a compose.override.yml is generated to
+prevent Docker from starting a conflicting container.
+
 Usage:
     python scripts/preflight.py              # full report + write .env
     python scripts/preflight.py --check-only # report only, no .env write
@@ -27,17 +32,38 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).parent.parent
-USER_YAML = ROOT / "config" / "user.yaml"
-ENV_FILE = ROOT / ".env"
+USER_YAML    = ROOT / "config" / "user.yaml"
+LLM_YAML     = ROOT / "config" / "llm.yaml"
+ENV_FILE     = ROOT / ".env"
+OVERRIDE_YML = ROOT / "compose.override.yml"
 
-# ── Port table ────────────────────────────────────────────────────────────────
-# (yaml_key, default, env_var, peregrine_owns_it)
-_PORTS: dict[str, tuple[str, int, str, bool]] = {
-    "streamlit": ("streamlit_port",   8501, "STREAMLIT_PORT", True),
-    "searxng":   ("searxng_port",     8888, "SEARXNG_PORT",   True),
-    "vllm":      ("vllm_port",        8000, "VLLM_PORT",      True),
-    "vision":    ("vision_port",      8002, "VISION_PORT",    True),
-    "ollama":    ("ollama_port",     11434, "OLLAMA_PORT",    False),
+# ── Service table ──────────────────────────────────────────────────────────────
+# (yaml_key, default_port, env_var, docker_owned, adoptable)
+#
+# docker_owned  — True if Docker Compose normally starts this service
+# adoptable     — True if an existing process on this port should be used instead
+#                 of starting a Docker container (and the Docker service disabled)
+_SERVICES: dict[str, tuple[str, int, str, bool, bool]] = {
+    "streamlit": ("streamlit_port", 8501, "STREAMLIT_PORT", True,  False),
+    "searxng":   ("searxng_port",   8888, "SEARXNG_PORT",   True,  True),
+    "vllm":      ("vllm_port",      8000, "VLLM_PORT",      True,  True),
+    "vision":    ("vision_port",    8002, "VISION_PORT",    True,  True),
+    "ollama":    ("ollama_port",  11434,  "OLLAMA_PORT",    False, True),
+}
+
+# LLM yaml backend keys → url suffix, keyed by service name
+_LLM_BACKENDS: dict[str, list[tuple[str, str]]] = {
+    "ollama": [("ollama", "/v1"), ("ollama_research", "/v1")],
+    "vllm":   [("vllm", "/v1")],
+    "vision": [("vision_service", "")],
+}
+
+# Docker-internal hostname:port for each service (when running in Docker)
+_DOCKER_INTERNAL: dict[str, tuple[str, int]] = {
+    "ollama":  ("ollama",  11434),
+    "vllm":    ("vllm",    8000),
+    "vision":  ("vision",  8002),
+    "searxng": ("searxng", 8080),   # searxng internal port differs from host port
 }
 
 
@@ -134,17 +160,32 @@ def find_free_port(start: int, limit: int = 30) -> int:
 
 def check_ports(svc: dict) -> dict[str, dict]:
     results = {}
-    for name, (yaml_key, default, env_var, owned) in _PORTS.items():
+    for name, (yaml_key, default, env_var, docker_owned, adoptable) in _SERVICES.items():
         configured = int(svc.get(yaml_key, default))
         free = is_port_free(configured)
-        resolved = configured if (free or not owned) else find_free_port(configured + 1)
+
+        if free:
+            # Port is free — start Docker service as normal
+            resolved = configured
+            external = False
+        elif adoptable:
+            # Port is in use by a compatible service — adopt it, skip Docker container
+            resolved = configured
+            external = True
+        else:
+            # Port in use, not adoptable (e.g. streamlit) — reassign
+            resolved = find_free_port(configured + 1)
+            external = False
+
         results[name] = {
-            "configured": configured,
-            "resolved":   resolved,
-            "changed":    resolved != configured,
-            "owned":      owned,
-            "free":       free,
-            "env_var":    env_var,
+            "configured":   configured,
+            "resolved":     resolved,
+            "changed":      resolved != configured,
+            "docker_owned": docker_owned,
+            "adoptable":    adoptable,
+            "free":         free,
+            "external":     external,
+            "env_var":      env_var,
         }
     return results
 
@@ -178,7 +219,7 @@ def calc_cpu_offload_gb(gpus: list[dict], ram_available_gb: float) -> int:
     return min(int(headroom * 0.25), 8)
 
 
-# ── .env writer ───────────────────────────────────────────────────────────────
+# ── Config writers ─────────────────────────────────────────────────────────────
 
 def write_env(updates: dict[str, str]) -> None:
     existing: dict[str, str] = {}
@@ -192,6 +233,77 @@ def write_env(updates: dict[str, str]) -> None:
     ENV_FILE.write_text(
         "\n".join(f"{k}={v}" for k, v in sorted(existing.items())) + "\n"
     )
+
+
+def update_llm_yaml(ports: dict[str, dict]) -> None:
+    """Rewrite base_url entries in config/llm.yaml to match adopted/internal services."""
+    if not LLM_YAML.exists():
+        return
+    cfg = yaml.safe_load(LLM_YAML.read_text()) or {}
+    backends = cfg.get("backends", {})
+    changed = False
+
+    for svc_name, backend_list in _LLM_BACKENDS.items():
+        if svc_name not in ports:
+            continue
+        info = ports[svc_name]
+        port = info["resolved"]
+
+        if info["external"]:
+            # Reach the host service from inside the Docker container
+            host = f"host.docker.internal:{port}"
+        elif svc_name in _DOCKER_INTERNAL:
+            # Use Docker service name + internal port
+            docker_host, internal_port = _DOCKER_INTERNAL[svc_name]
+            host = f"{docker_host}:{internal_port}"
+        else:
+            continue
+
+        for backend_name, url_suffix in backend_list:
+            if backend_name in backends:
+                new_url = f"http://{host}{url_suffix}"
+                if backends[backend_name].get("base_url") != new_url:
+                    backends[backend_name]["base_url"] = new_url
+                    changed = True
+
+    if changed:
+        cfg["backends"] = backends
+        LLM_YAML.write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True,
+                                      sort_keys=False))
+
+
+def write_compose_override(ports: dict[str, dict]) -> None:
+    """
+    Generate compose.override.yml to disable Docker services that are being
+    adopted from external processes.  Cleans up the file when nothing to disable.
+
+    Docker Compose auto-applies compose.override.yml — no Makefile change needed.
+    Overriding `profiles` with an unused name prevents the service from starting
+    under any normal profile (remote/cpu/single-gpu/dual-gpu).
+    """
+    # Only disable services that Docker would normally start (docker_owned=True)
+    # and are being adopted from an external process.
+    to_disable = {
+        name: info for name, info in ports.items()
+        if info["external"] and info["docker_owned"]
+    }
+
+    if not to_disable:
+        if OVERRIDE_YML.exists():
+            OVERRIDE_YML.unlink()
+        return
+
+    lines = [
+        "# compose.override.yml — AUTO-GENERATED by preflight.py, do not edit manually.",
+        "# Disables Docker services that are already running externally on the host.",
+        "# Re-run preflight (make preflight) to regenerate after stopping host services.",
+        "services:",
+    ]
+    for name, info in to_disable.items():
+        lines.append(f"  {name}:")
+        lines.append(f"    profiles: [_external_]  # adopted: host service on :{info['resolved']}")
+
+    OVERRIDE_YML.write_text("\n".join(lines) + "\n")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -209,10 +321,14 @@ def main() -> None:
     svc = _load_svc()
     ports = check_ports(svc)
 
-    # Single-service mode — used by manage-ui.sh
+    # Single-service mode — used by manage.sh / manage-ui.sh
     if args.service:
         info = ports.get(args.service.lower())
-        print(info["resolved"] if info else _PORTS[args.service.lower()][1])
+        if info:
+            print(info["resolved"])
+        else:
+            _, default, *_ = _SERVICES.get(args.service.lower(), (None, 8501, None, None, None))
+            print(default)
         return
 
     ram_total, ram_avail = get_ram_gb()
@@ -222,23 +338,25 @@ def main() -> None:
     offload_gb = calc_cpu_offload_gb(gpus, ram_avail)
 
     if not args.quiet:
-        reassigned = [n for n, i in ports.items() if i["changed"]]
-        unresolved  = [n for n, i in ports.items() if not i["free"] and not i["changed"]]
-
         print("╔══ Peregrine Preflight ══════════════════════════════╗")
         print("║")
         print("║  Ports")
         for name, info in ports.items():
-            tag = "owned " if info["owned"] else "extern"
-            if not info["owned"]:
-                # external: in-use means the service is reachable
-                status = "✓ reachable" if not info["free"] else "⚠ not responding"
+            if info["external"]:
+                status = f"✓ adopted  (using host service on :{info['resolved']})"
+                tag = "extern"
+            elif not info["docker_owned"]:
+                status = "⚠ not responding" if info["free"] else "✓ reachable"
+                tag = "extern"
             elif info["free"]:
                 status = "✓ free"
+                tag = "owned "
             elif info["changed"]:
                 status = f"→ reassigned to :{info['resolved']}"
+                tag = "owned "
             else:
                 status = "⚠ in use"
+                tag = "owned "
             print(f"║    {name:<10} :{info['configured']}  [{tag}]  {status}")
 
         print("║")
@@ -263,6 +381,9 @@ def main() -> None:
         else:
             print("║    vLLM KV offload  not needed")
 
+        reassigned = [n for n, i in ports.items() if i["changed"]]
+        adopted    = [n for n, i in ports.items() if i["external"]]
+
         if reassigned:
             print("║")
             print("║  Port reassignments written to .env:")
@@ -270,16 +391,12 @@ def main() -> None:
                 info = ports[name]
                 print(f"║    {info['env_var']}={info['resolved']}  (was :{info['configured']})")
 
-        # External services: in-use = ✓ running; free = warn (may be down)
-        ext_down = [n for n, i in ports.items() if not i["owned"] and i["free"]]
-        if ext_down:
+        if adopted:
             print("║")
-            print("║  ⚠  External services not detected on configured port:")
-            for name in ext_down:
+            print("║  Adopted external services (Docker containers disabled):")
+            for name in adopted:
                 info = ports[name]
-                svc_key = _PORTS[name][0]
-                print(f"║    {name} :{info['configured']} — nothing listening "
-                      f"(start the service or update services.{svc_key} in user.yaml)")
+                print(f"║    {name} :{info['resolved']}  → app will use host.docker.internal:{info['resolved']}")
 
         print("╚════════════════════════════════════════════════════╝")
 
@@ -289,12 +406,18 @@ def main() -> None:
         if offload_gb > 0:
             env_updates["CPU_OFFLOAD_GB"] = str(offload_gb)
         write_env(env_updates)
+        update_llm_yaml(ports)
+        write_compose_override(ports)
         if not args.quiet:
-            print(f"  wrote {ENV_FILE.relative_to(ROOT)}")
+            artifacts = [str(ENV_FILE.relative_to(ROOT))]
+            if OVERRIDE_YML.exists():
+                artifacts.append(str(OVERRIDE_YML.relative_to(ROOT)))
+            print(f"  wrote {', '.join(artifacts)}")
 
-    # Fail only when an owned port can't be resolved (shouldn't happen in practice)
-    owned_stuck = [n for n, i in ports.items() if i["owned"] and not i["free"] and not i["changed"]]
-    sys.exit(1 if owned_stuck else 0)
+    # Fail only when a non-adoptable owned port couldn't be reassigned
+    stuck = [n for n, i in ports.items()
+             if not i["free"] and not i["external"] and not i["changed"]]
+    sys.exit(1 if stuck else 0)
 
 
 if __name__ == "__main__":
