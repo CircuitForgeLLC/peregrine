@@ -22,11 +22,11 @@ log = logging.getLogger(__name__)
 # ── Section header detection ──────────────────────────────────────────────────
 
 _SECTION_NAMES = {
-    "summary":    re.compile(r"^(summary|objective|profile|about me|professional summary)", re.I),
-    "experience": re.compile(r"^(experience|work experience|employment|work history|professional experience)", re.I),
-    "education":  re.compile(r"^(education|academic|qualifications|degrees?)", re.I),
-    "skills":     re.compile(r"^(skills?|technical skills?|core competencies|competencies|expertise)", re.I),
-    "achievements": re.compile(r"^(achievements?|accomplishments?|awards?|honors?|certifications?)", re.I),
+    "summary":    re.compile(r"^(summary|objective|profile|about me|professional summary|career summary|career objective|personal statement)\s*:?\s*$", re.I),
+    "experience": re.compile(r"^(experience|work experience|employment|work history|professional experience|career history|relevant experience|professional history|employment history|positions? held)\s*:?\s*$", re.I),
+    "education":  re.compile(r"^(education|academic|qualifications|degrees?|educational background|academic background)\s*:?\s*$", re.I),
+    "skills":     re.compile(r"^(skills?|technical skills?|core competencies|competencies|expertise|areas? of expertise|key skills?|proficiencies|tools? & technologies)\s*:?\s*$", re.I),
+    "achievements": re.compile(r"^(achievements?|accomplishments?|awards?|honors?|certifications?|publications?|volunteer)\s*:?\s*$", re.I),
 }
 
 # Degrees — used to detect education lines
@@ -108,17 +108,20 @@ def _parse_header(lines: list[str]) -> dict:
     email_m   = _EMAIL_RE.search(full_text)
     phone_m   = _PHONE_RE.search(full_text)
 
-    # Name heuristic: first non-empty line that has no @ and no digits-only tokens
+    # Name heuristic: first non-empty line that looks like a person's name
     name = ""
     for line in lines[:5]:
         if "@" in line or re.match(r"^\d", line.strip()):
             continue
-        # Skip lines that look like city/state/zip
-        if re.search(r"\b[A-Z]{2}\b\s*\d{5}", line):
+        # Skip lines that look like city/state/zip or URLs
+        if re.search(r"\b[A-Z]{2}\b\s*\d{5}", line) or re.search(r"https?://|linkedin|github", line, re.I):
             continue
+        # Strip separators and credential suffixes (MBA, PhD, etc.) for the alpha check
         candidate = re.sub(r"[|•·,]+", " ", line).strip()
         candidate = re.sub(r"\s{2,}", " ", candidate)
-        if 2 <= len(candidate.split()) <= 5 and candidate.replace(" ", "").isalpha():
+        # Normalise: remove periods, hyphens for the alpha-only check
+        alpha_check = re.sub(r"[.\-'\u2019]", "", candidate.replace(" ", ""))
+        if 2 <= len(candidate.split()) <= 5 and alpha_check.isalpha():
             name = candidate
             break
 

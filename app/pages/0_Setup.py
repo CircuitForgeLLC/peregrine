@@ -317,14 +317,33 @@ elif step == 4:
                 else extract_text_from_docx(file_bytes)
             )
             with st.spinner("Parsing\u2026"):
-                parsed = structure_resume(raw_text)
-            if parsed:
+                parsed, parse_err = structure_resume(raw_text)
+
+            # Diagnostic: show raw extraction + detected fields regardless of outcome
+            with st.expander("🔍 Parse diagnostics", expanded=not bool(parsed and any(
+                parsed.get(k) for k in ("name", "experience", "skills")
+            ))):
+                st.caption("**Raw extracted text (first 800 chars)**")
+                st.code(raw_text[:800] if raw_text else "(empty)", language="text")
+                if parsed:
+                    st.caption("**Detected fields**")
+                    st.json({k: (v[:3] if isinstance(v, list) else v) for k, v in parsed.items()})
+
+            if parsed and any(parsed.get(k) for k in ("name", "experience", "skills")):
                 st.session_state["_parsed_resume"] = parsed
                 st.session_state["_raw_resume_text"] = raw_text
                 _save_yaml({"_raw_resume_text": raw_text[:8000]})
                 st.success("Parsed! Review the builder tab to edit entries.")
+            elif parsed:
+                # Parsed but empty — show what we got and let them proceed or build manually
+                st.session_state["_parsed_resume"] = parsed
+                st.warning("Resume text was extracted but no fields were recognised. "
+                           "Check the diagnostics above — the section headers may use unusual labels. "
+                           "You can still fill in the Build tab manually.")
             else:
                 st.warning("Auto-parse failed \u2014 switch to the Build tab and add entries manually.")
+                if parse_err:
+                    st.caption(f"Reason: {parse_err}")
 
     with tab_builder:
         parsed = st.session_state.get("_parsed_resume", {})
