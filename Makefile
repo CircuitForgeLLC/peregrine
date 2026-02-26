@@ -15,12 +15,17 @@ COMPOSE ?= $(shell \
       && echo "podman compose" \
       || echo "podman-compose"))
 
-# GPU profiles on Podman require a CDI override (rootless Podman can't use driver: nvidia)
-# Generate CDI spec first: sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+# GPU profiles require an overlay for NVIDIA device reservations.
+# Docker uses deploy.resources (compose.gpu.yml); Podman uses CDI device specs (compose.podman-gpu.yml).
+# Generate CDI spec for Podman first: sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 COMPOSE_FILES := -f compose.yml
 ifneq (,$(findstring podman,$(COMPOSE)))
   ifneq (,$(findstring gpu,$(PROFILE)))
     COMPOSE_FILES := -f compose.yml -f compose.podman-gpu.yml
+  endif
+else
+  ifneq (,$(findstring gpu,$(PROFILE)))
+    COMPOSE_FILES := -f compose.yml -f compose.gpu.yml
   endif
 endif
 
