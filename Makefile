@@ -18,14 +18,20 @@ COMPOSE ?= $(shell \
 # GPU profiles require an overlay for NVIDIA device reservations.
 # Docker uses deploy.resources (compose.gpu.yml); Podman uses CDI device specs (compose.podman-gpu.yml).
 # Generate CDI spec for Podman first: sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
-COMPOSE_FILES := -f compose.yml
+#
+# NOTE: When explicit -f flags are used, Docker Compose does NOT auto-detect
+# compose.override.yml. We must include it explicitly when present.
+OVERRIDE_FILE := $(wildcard compose.override.yml)
+COMPOSE_OVERRIDE := $(if $(OVERRIDE_FILE),-f compose.override.yml,)
+
+COMPOSE_FILES := -f compose.yml $(COMPOSE_OVERRIDE)
 ifneq (,$(findstring podman,$(COMPOSE)))
   ifneq (,$(findstring gpu,$(PROFILE)))
-    COMPOSE_FILES := -f compose.yml -f compose.podman-gpu.yml
+    COMPOSE_FILES := -f compose.yml $(COMPOSE_OVERRIDE) -f compose.podman-gpu.yml
   endif
 else
   ifneq (,$(findstring gpu,$(PROFILE)))
-    COMPOSE_FILES := -f compose.yml -f compose.gpu.yml
+    COMPOSE_FILES := -f compose.yml $(COMPOSE_OVERRIDE) -f compose.gpu.yml
   endif
 endif
 
