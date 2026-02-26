@@ -168,6 +168,27 @@ check_compose() {
     fi
 }
 
+# ── Docker daemon health check ──────────────────────────────────────────────────
+check_docker_running() {
+    if docker info &>/dev/null 2>&1; then
+        success "Docker daemon is running."
+        return
+    fi
+    warn "Docker daemon is not responding."
+    if [[ "$OS" == "Linux" ]] && command -v systemctl &>/dev/null; then
+        info "Starting Docker service…"
+        $SUDO systemctl start docker 2>/dev/null || true
+        sleep 2
+        if docker info &>/dev/null 2>&1; then
+            success "Docker daemon started."
+        else
+            warn "Docker failed to start. Run: sudo systemctl start docker"
+        fi
+    elif [[ "$OS" == "Darwin" ]]; then
+        warn "Docker Desktop is not running. Start it, wait for the whale icon, then run 'make start'."
+    fi
+}
+
 # ── NVIDIA Container Toolkit ───────────────────────────────────────────────────
 install_nvidia_toolkit() {
     [[ "$OS" != "Linux" ]] && return   # macOS has no NVIDIA support
@@ -175,8 +196,8 @@ install_nvidia_toolkit() {
         info "No NVIDIA GPU detected — skipping Container Toolkit."
         return
     fi
-    if docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu22.04 nvidia-smi &>/dev/null 2>&1; then
-        success "NVIDIA Container Toolkit already working."
+    if cmd_exists nvidia-ctk && nvidia-ctk runtime validate --runtime=docker &>/dev/null 2>&1; then
+        success "NVIDIA Container Toolkit already configured."
         return
     fi
     info "NVIDIA GPU detected. Installing Container Toolkit…"
@@ -283,6 +304,7 @@ main() {
     # Podman takes precedence if already installed; otherwise install Docker
     if ! check_podman; then
         install_docker
+        check_docker_running
         check_compose
         install_nvidia_toolkit
     fi
