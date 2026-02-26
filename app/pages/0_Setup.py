@@ -40,7 +40,15 @@ def _save_yaml(updates: dict) -> None:
 
 
 def _detect_gpus() -> list[str]:
+    """Detect GPUs. Prefers env vars written by preflight (works inside Docker)."""
+    import os
     import subprocess
+    # Preflight writes PEREGRINE_GPU_NAMES to .env; compose passes it to the container.
+    # This is the reliable path when running inside Docker without nvidia-smi access.
+    env_names = os.environ.get("PEREGRINE_GPU_NAMES", "").strip()
+    if env_names:
+        return [n.strip() for n in env_names.split(",") if n.strip()]
+    # Fallback: try nvidia-smi directly (works when running bare or with GPU passthrough)
     try:
         out = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
@@ -52,6 +60,11 @@ def _detect_gpus() -> list[str]:
 
 
 def _suggest_profile(gpus: list[str]) -> str:
+    import os
+    # If preflight already ran and wrote a profile recommendation, use it.
+    recommended = os.environ.get("RECOMMENDED_PROFILE", "").strip()
+    if recommended:
+        return recommended
     if len(gpus) >= 2:
         return "dual-gpu"
     if len(gpus) == 1:
