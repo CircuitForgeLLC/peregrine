@@ -243,6 +243,17 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             )
             return
 
+        elif task_type == "prepare_training":
+            from scripts.prepare_training_data import build_records, write_jsonl, DEFAULT_OUTPUT
+            records = build_records()
+            write_jsonl(records, DEFAULT_OUTPUT)
+            n = len(records)
+            update_task_status(
+                db_path, task_id, "completed",
+                error=f"{n} training pair{'s' if n != 1 else ''} extracted",
+            )
+            return
+
         else:
             raise ValueError(f"Unknown task_type: {task_type!r}")
 
