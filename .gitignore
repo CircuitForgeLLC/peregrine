@@ -27,3 +27,5 @@ config/integrations/*.yaml
 scrapers/.cache/
 scrapers/.debug/
 scrapers/raw_scrapes/
+
+compose.override.yml
