@@ -46,6 +46,7 @@ notion-client>=3.0
 pypdf
 pdfminer-six
 pdfplumber
+python-docx
 pyyaml>=6.0
 python-dotenv
 
