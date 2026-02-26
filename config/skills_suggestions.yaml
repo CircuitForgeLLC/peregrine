@@ -1,0 +1,193 @@
+# skills_suggestions.yaml — Bundled tag suggestions for the Skills & Keywords UI.
+# Shown as searchable options in the multiselect. Users can add custom tags beyond these.
+# Future: community aggregate (paid tier) will supplement this list from anonymised installs.
+
+skills:
+  # ── Customer Success & Account Management ──
+  - Customer Success
+  - Technical Account Management
+  - Account Management
+  - Customer Onboarding
+  - Renewal Management
+  - Churn Prevention
+  - Expansion Revenue
+  - Executive Relationship Management
+  - Escalation Management
+  - QBR Facilitation
+  - Customer Advocacy
+  - Voice of the Customer
+  - Customer Health Scoring
+  - Success Planning
+  - Customer Education
+  - Implementation Management
+  # ── Revenue & Operations ──
+  - Revenue Operations
+  - Sales Operations
+  - Pipeline Management
+  - Forecasting
+  - Contract Negotiation
+  - Upsell & Cross-sell
+  - ARR / MRR Management
+  - NRR Optimization
+  - Quota Attainment
+  # ── Leadership & Management ──
+  - Team Leadership
+  - People Management
+  - Cross-functional Collaboration
+  - Change Management
+  - Stakeholder Management
+  - Executive Presentation
+  - Strategic Planning
+  - OKR Setting
+  - Hiring & Recruiting
+  - Coaching & Mentoring
+  - Performance Management
+  # ── Project & Program Management ──
+  - Project Management
+  - Program Management
+  - Agile / Scrum
+  - Kanban
+  - Risk Management
+  - Resource Planning
+  - Process Improvement
+  - SOP Development
+  # ── Technical Skills ──
+  - SQL
+  - Python
+  - Data Analysis
+  - Tableau
+  - Looker
+  - Power BI
+  - Excel / Google Sheets
+  - REST APIs
+  - Salesforce
+  - HubSpot
+  - Gainsight
+  - Totango
+  - ChurnZero
+  - Zendesk
+  - Intercom
+  - Jira
+  - Confluence
+  - Notion
+  - Slack
+  - Zoom
+  # ── Communications & Writing ──
+  - Executive Communication
+  - Technical Writing
+  - Proposal Writing
+  - Presentation Skills
+  - Public Speaking
+  - Stakeholder Communication
+  # ── Compliance & Security ──
+  - Compliance
+  - Risk Assessment
+  - SOC 2
+  - ISO 27001
+  - GDPR
+  - Security Awareness
+  - Vendor Management
+
+domains:
+  # ── Software & Tech ──
+  - B2B SaaS
+  - Enterprise Software
+  - Cloud Infrastructure
+  - Developer Tools
+  - Cybersecurity
+  - Data & Analytics
+  - AI / ML Platform
+  - FinTech
+  - InsurTech
+  - LegalTech
+  - HR Tech
+  - MarTech
+  - AdTech
+  - DevOps / Platform Engineering
+  - Open Source
+  # ── Industry Verticals ──
+  - Healthcare / HealthTech
+  - Education / EdTech
+  - Non-profit / Social Impact
+  - Government / GovTech
+  - E-commerce / Retail
+  - Manufacturing
+  - Financial Services
+  - Media & Entertainment
+  - Music Industry
+  - Logistics & Supply Chain
+  - Real Estate / PropTech
+  - Energy / CleanTech
+  - Hospitality & Travel
+  # ── Market Segments ──
+  - Enterprise
+  - Mid-Market
+  - SMB / SME
+  - Startup
+  - Fortune 500
+  - Public Sector
+  - International / Global
+  # ── Business Models ──
+  - Subscription / SaaS
+  - Marketplace
+  - Usage-based Pricing
+  - Professional Services
+  - Self-serve / PLG
+
+keywords:
+  # ── CS Metrics & Outcomes ──
+  - NPS
+  - CSAT
+  - CES
+  - Churn Rate
+  - Net Revenue Retention
+  - Gross Revenue Retention
+  - Logo Retention
+  - Time-to-Value
+  - Product Adoption
+  - Feature Utilisation
+  - Health Score
+  - Customer Lifetime Value
+  # ── Sales & Growth ──
+  - ARR
+  - MRR
+  - GRR
+  - NRR
+  - Expansion ARR
+  - Pipeline Coverage
+  - Win Rate
+  - Average Contract Value
+  - Land & Expand
+  - Multi-threading
+  # ── Process & Delivery ──
+  - Onboarding
+  - Implementation
+  - Knowledge Transfer
+  - Escalation
+  - SLA
+  - Root Cause Analysis
+  - Post-mortem
+  - Runbook
+  - Playbook Development
+  - Feedback Loop
+  - Product Roadmap Input
+  # ── Team & Culture ──
+  - Cross-functional
+  - Distributed Team
+  - Remote-first
+  - High-growth
+  - Fast-paced
+  - Autonomous
+  - Data-driven
+  - Customer-centric
+  - Empathetic Leadership
+  - Inclusive Culture
+  # ── Job-seeker Keywords ──
+  - Strategic
+  - Proactive
+  - Hands-on
+  - Scalable Processes
+  - Operational Excellence
+  - Business Impact
+  - Executive Visibility
+  - Player-Coach
