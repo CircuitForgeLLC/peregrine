@@ -16,7 +16,7 @@ Privacy-first, local-first. Your data never leaves your machine.
 ```bash
 git clone https://git.opensourcesolarpunk.com/pyr0ball/peregrine
 cd peregrine
-bash setup.sh
+./manage.sh setup
 ```
 
 **2. Start Peregrine:**
