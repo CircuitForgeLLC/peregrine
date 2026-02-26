@@ -28,7 +28,7 @@ from scripts.db import (
 from scripts.task_runner import submit_task
 
 DOCS_DIR = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
-RESUME_YAML = Path(__file__).parent.parent.parent / "aihawk" / "data_folder" / "plain_text_resume.yaml"
+RESUME_YAML = Path(__file__).parent.parent.parent / "config" / "plain_text_resume.yaml"
 
 st.title("🚀 Apply Workspace")
 

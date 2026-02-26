@@ -22,7 +22,7 @@ curl_cffi
 fake-useragent
 
 # ── LLM / AI backends ─────────────────────────────────────────────────────
-openai>=1.0
+openai>=1.55.0,<2.0.0  # >=1.55 required for httpx 0.28 compat; <2.0 for langchain-openai
 anthropic>=0.80
 ollama
 langchain>=0.2
@@ -50,6 +50,9 @@ python-docx
 json-repair
 pyyaml>=6.0
 python-dotenv
+
+# ── Auth / licensing ──────────────────────────────────────────────────────
+PyJWT>=2.8
 
 # ── Utilities ─────────────────────────────────────────────────────────────
 sqlalchemy

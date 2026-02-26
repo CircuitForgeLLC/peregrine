@@ -24,7 +24,7 @@ SEARCH_CFG = CONFIG_DIR / "search_profiles.yaml"
 BLOCKLIST_CFG = CONFIG_DIR / "blocklist.yaml"
 LLM_CFG = CONFIG_DIR / "llm.yaml"
 NOTION_CFG = CONFIG_DIR / "notion.yaml"
-RESUME_PATH = Path(__file__).parent.parent.parent / "aihawk" / "data_folder" / "plain_text_resume.yaml"
+RESUME_PATH = Path(__file__).parent.parent.parent / "config" / "plain_text_resume.yaml"
 KEYWORDS_CFG = CONFIG_DIR / "resume_keywords.yaml"
 
 def load_yaml(path: Path) -> dict:
@@ -113,6 +113,36 @@ with tab_profile:
         u_linkedin = c2.text_input("LinkedIn URL", _u.get("linkedin", ""))
         u_summary  = st.text_area("Career Summary (used in LLM prompts)",
                                    _u.get("career_summary", ""), height=100)
+        u_voice = st.text_area(
+            "Voice & Personality (shapes cover letter tone)",
+            _u.get("candidate_voice", ""),
+            height=80,
+            help="Personality traits and writing voice that the LLM uses to write authentically in your style. Never disclosed in applications.",
+        )
+
+    with st.expander("🎯 Mission & Values"):
+        st.caption("Industry passions and causes you care about. Used to inject authentic Para 3 alignment when a company matches. Never disclosed in applications.")
+        _mission = dict(_u.get("mission_preferences", {}))
+        _mission_keys = ["animal_welfare", "education", "music", "social_impact"]
+        _mission_labels = {
+            "animal_welfare": "🐾 Animal Welfare",
+            "education": "📚 Education / EdTech / Kids",
+            "music": "🎵 Music Industry",
+            "social_impact": "🌍 Social Impact / Nonprofits",
+        }
+        _mission_updated = {}
+        for key in _mission_keys:
+            _mission_updated[key] = st.text_area(
+                _mission_labels[key],
+                _mission.get(key, ""),
+                height=68,
+                key=f"mission_{key}",
+                help=f"Your personal connection to this domain. Leave blank to use the default prompt hint.",
+            )
+        # Preserve any extra keys the user may have added manually in YAML
+        for k, v in _mission.items():
+            if k not in _mission_keys:
+                _mission_updated[k] = v
 
     with st.expander("🔒 Sensitive Employers (NDA)"):
         st.caption("Companies listed here appear as 'previous employer (NDA)' in research briefs.")
@@ -180,10 +210,11 @@ with tab_profile:
         new_data = {
             "name": u_name, "email": u_email, "phone": u_phone,
             "linkedin": u_linkedin, "career_summary": u_summary,
+            "candidate_voice": u_voice,
             "nda_companies": nda_list,
             "docs_dir": u_docs, "ollama_models_dir": u_ollama, "vllm_models_dir": u_vllm,
             "inference_profile": u_inf_profile,
-            "mission_preferences": _u.get("mission_preferences", {}),
+            "mission_preferences": {k: v for k, v in _mission_updated.items() if v.strip()},
             "candidate_accessibility_focus": u_access_focus,
             "candidate_lgbtq_focus": u_lgbtq_focus,
             "services": {
@@ -673,7 +704,7 @@ with tab_resume:
     )
 
     if not RESUME_PATH.exists():
-        st.error(f"Resume YAML not found at `{RESUME_PATH}`. Is AIHawk cloned?")
+        st.error(f"Resume YAML not found at `{RESUME_PATH}`. Copy or create `config/plain_text_resume.yaml`.")
         st.stop()
 
     _data = yaml.safe_load(RESUME_PATH.read_text()) or {}

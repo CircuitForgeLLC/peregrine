@@ -405,7 +405,7 @@ elif step == 4:
         if errs:
             st.error("\n".join(errs))
         else:
-            resume_yaml_path = _ROOT / "aihawk" / "data_folder" / "plain_text_resume.yaml"
+            resume_yaml_path = _ROOT / "config" / "plain_text_resume.yaml"
             resume_yaml_path.parent.mkdir(parents=True, exist_ok=True)
             resume_data = {**parsed, "experience": experience} if parsed else {"experience": experience}
             resume_yaml_path.write_text(
