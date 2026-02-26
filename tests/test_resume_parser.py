@@ -41,51 +41,62 @@ def test_extract_docx_returns_string():
     assert "Senior Developer" in result
 
 
-def test_structure_resume_returns_dict():
-    """structure_resume returns a dict with expected keys when LLM returns valid JSON."""
-    raw_text = "Jane Doe\nSoftware Engineer at Acme 2020-2023"
-    llm_response = '{"name": "Jane Doe", "experience": [{"company": "Acme", "title": "Engineer", "bullets": []}], "skills": [], "education": []}'
+def test_structure_resume_returns_tuple_with_keys():
+    """structure_resume returns (dict, str) tuple with expected keys from plain text."""
+    raw_text = (
+        "Jane Doe\njane@example.com\n\n"
+        "Experience\nSoftware Engineer | Acme Corp\nJan 2020 - Dec 2023\n• Built things\n\n"
+        "Skills\nPython, SQL"
+    )
+    from scripts.resume_parser import structure_resume
+    result, err = structure_resume(raw_text)
 
-    with patch("scripts.resume_parser._llm_structure", return_value=llm_response):
-        from scripts.resume_parser import structure_resume
-        result = structure_resume(raw_text)
-
+    assert err == ""
     assert isinstance(result, dict)
     assert "experience" in result
     assert isinstance(result["experience"], list)
     assert result["name"] == "Jane Doe"
+    assert result["email"] == "jane@example.com"
 
 
-def test_structure_resume_strips_markdown_fences():
-    """structure_resume handles LLM output wrapped in ```json ... ``` fences."""
-    raw_text = "Some resume"
-    llm_response = '```json\n{"name": "Bob", "experience": []}\n```'
+def test_structure_resume_empty_text_returns_error():
+    """structure_resume returns empty dict + error message for empty input."""
+    from scripts.resume_parser import structure_resume
+    result, err = structure_resume("   ")
 
-    with patch("scripts.resume_parser._llm_structure", return_value=llm_response):
-        from scripts.resume_parser import structure_resume
-        result = structure_resume(raw_text)
-
-    assert result.get("name") == "Bob"
-
-
-def test_structure_resume_invalid_json_returns_empty():
-    """structure_resume returns {} on invalid JSON instead of crashing."""
-    with patch("scripts.resume_parser._llm_structure", return_value="not json at all"):
-        from scripts.resume_parser import structure_resume
-        result = structure_resume("some text")
-
-    assert isinstance(result, dict)
     assert result == {}
+    assert err != ""
 
 
-def test_structure_resume_llm_exception_returns_empty():
-    """structure_resume returns {} when LLM raises an exception."""
-    with patch("scripts.resume_parser._llm_structure", side_effect=Exception("LLM down")):
+def test_parse_resume_contact_extraction():
+    """parse_resume correctly extracts name, email, and phone from header block."""
+    raw_text = (
+        "Alice Smith\nalice.smith@email.com | (206) 555-9999\n\n"
+        "Skills\nLeadership, Communication"
+    )
+    from scripts.resume_parser import parse_resume
+    result, err = parse_resume(raw_text)
+
+    assert err == ""
+    assert result["name"] == "Alice Smith"
+    assert result["email"] == "alice.smith@email.com"
+    assert "555-9999" in result["phone"]
+
+
+def test_structure_resume_llm_failure_still_returns_result():
+    """structure_resume returns usable result even when LLM career summary fails."""
+    raw_text = (
+        "Bob Jones\nbob@test.com\n\n"
+        "Skills\nProject Management, Agile"
+    )
+    with patch("scripts.resume_parser._llm_career_summary", side_effect=Exception("LLM down")):
         from scripts.resume_parser import structure_resume
-        result = structure_resume("some text")
+        result, err = structure_resume(raw_text)
 
-    assert isinstance(result, dict)
-    assert result == {}
+    # Regex parse should still succeed even if LLM summary enhancement fails
+    assert err == ""
+    assert result["name"] == "Bob Jones"
+    assert "Project Management" in result["skills"]
 
 
 def test_extract_pdf_empty_page_returns_string():
