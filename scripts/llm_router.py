@@ -35,7 +35,8 @@ class LLMRouter:
     def complete(self, prompt: str, system: str | None = None,
                  model_override: str | None = None,
                  fallback_order: list[str] | None = None,
-                 images: list[str] | None = None) -> str:
+                 images: list[str] | None = None,
+                 max_tokens: int | None = None) -> str:
         """
         Generate a completion. Tries each backend in fallback_order.
 
@@ -114,9 +115,10 @@ class LLMRouter:
                     else:
                         messages.append({"role": "user", "content": prompt})
 
-                    resp = client.chat.completions.create(
-                        model=model, messages=messages
-                    )
+                    create_kwargs: dict = {"model": model, "messages": messages}
+                    if max_tokens is not None:
+                        create_kwargs["max_tokens"] = max_tokens
+                    resp = client.chat.completions.create(**create_kwargs)
                     print(f"[LLMRouter] Used backend: {name} ({model})")
                     return resp.choices[0].message.content
 
