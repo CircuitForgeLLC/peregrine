@@ -48,18 +48,6 @@ services:
     profiles: [cpu, single-gpu, dual-gpu]
     restart: unless-stopped
 
-  ollama-gpu:
-    extends:
-      service: ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
-    profiles: [single-gpu, dual-gpu]
-
   vision:
     build:
       context: .
@@ -69,13 +57,6 @@ services:
     environment:
       - VISION_MODEL=${VISION_MODEL:-vikhyatk/moondream2}
       - VISION_REVISION=${VISION_REVISION:-2025-01-09}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
     profiles: [single-gpu, dual-gpu]
     restart: unless-stopped
 
@@ -93,13 +74,6 @@ services:
       --enforce-eager
       --max-num-seqs 8
       --cpu-offload-gb ${CPU_OFFLOAD_GB:-0}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["1"]
-              capabilities: [gpu]
     profiles: [dual-gpu]
     restart: unless-stopped
 
