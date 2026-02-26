@@ -16,6 +16,9 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_COMPAT_URL=${OPENAI_COMPAT_URL:-}
       - OPENAI_COMPAT_KEY=${OPENAI_COMPAT_KEY:-}
+      - PEREGRINE_GPU_COUNT=${PEREGRINE_GPU_COUNT:-0}
+      - PEREGRINE_GPU_NAMES=${PEREGRINE_GPU_NAMES:-}
+      - RECOMMENDED_PROFILE=${RECOMMENDED_PROFILE:-remote}
     depends_on:
       searxng:
         condition: service_healthy
