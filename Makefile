@@ -47,8 +47,10 @@ start: preflight  ## Preflight check then start Peregrine (PROFILE=remote|cpu|si
 stop:           ## Stop all Peregrine services
 	$(COMPOSE) down
 
-restart: preflight  ## Preflight check then restart all services
-	$(COMPOSE) down && $(COMPOSE) $(COMPOSE_FILES) --profile $(PROFILE) up -d
+restart:  ## Stop services, re-run preflight (ports now free), then start
+	$(COMPOSE) down
+	@$(PYTHON) scripts/preflight.py
+	$(COMPOSE) $(COMPOSE_FILES) --profile $(PROFILE) up -d
 
 logs:           ## Tail app logs
 	$(COMPOSE) logs -f app
