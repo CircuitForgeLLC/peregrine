@@ -310,57 +310,86 @@ with tab_search:
     p = profiles[0] if profiles else {}
 
     # Seed session state from config on first load (or when config changes after save)
-    _sp_hash = str(p.get("titles", [])) + str(p.get("exclude_keywords", []))
+    _sp_hash = str(p.get("titles", [])) + str(p.get("locations", [])) + str(p.get("exclude_keywords", []))
     if st.session_state.get("_sp_hash") != _sp_hash:
-        st.session_state["_sp_titles"] = "\n".join(p.get("titles", []))
+        _saved_titles = list(p.get("titles", []))
+        st.session_state["_sp_title_options"] = _saved_titles.copy()
+        st.session_state["_sp_titles_multi"] = _saved_titles.copy()
+        _saved_locs = list(p.get("locations", []))
+        st.session_state["_sp_loc_options"] = _saved_locs.copy()
+        st.session_state["_sp_locations_multi"] = _saved_locs.copy()
         st.session_state["_sp_excludes"] = "\n".join(p.get("exclude_keywords", []))
         st.session_state["_sp_hash"] = _sp_hash
 
     # ── Titles ────────────────────────────────────────────────────────────────
-    title_row, suggest_btn_col = st.columns([4, 1])
-    with title_row:
+    _title_row, _suggest_btn_col = st.columns([4, 1])
+    with _title_row:
         st.subheader("Job Titles to Search")
-    with suggest_btn_col:
-        st.write("")  # vertical align
+    with _suggest_btn_col:
+        st.write("")
         _run_suggest = st.button("✨ Suggest", key="sp_suggest_btn",
                                   help="Ask the LLM to suggest additional titles and exclude keywords based on your resume")
 
-    titles_text = st.text_area(
-        "One title per line",
-        key="_sp_titles",
-        height=150,
-        help="JobSpy will search for any of these titles across all configured boards.",
-        label_visibility="visible",
+    st.multiselect(
+        "Job titles",
+        options=st.session_state.get("_sp_title_options", p.get("titles", [])),
+        key="_sp_titles_multi",
+        help="Select from known titles. Suggestions from ✨ Suggest appear here — pick the ones you want.",
+        label_visibility="collapsed",
     )
+    _add_t_col, _add_t_btn = st.columns([5, 1])
+    with _add_t_col:
+        st.text_input("Add a title", key="_sp_new_title", label_visibility="collapsed",
+                      placeholder="Type a title and press ＋")
+    with _add_t_btn:
+        if st.button("＋", key="sp_add_title_btn", use_container_width=True, help="Add custom title"):
+            _t = st.session_state.get("_sp_new_title", "").strip()
+            if _t:
+                _opts = list(st.session_state.get("_sp_title_options", []))
+                _sel  = list(st.session_state.get("_sp_titles_multi", []))
+                if _t not in _opts:
+                    _opts.append(_t)
+                    st.session_state["_sp_title_options"] = _opts
+                if _t not in _sel:
+                    _sel.append(_t)
+                    st.session_state["_sp_titles_multi"] = _sel
+                st.session_state["_sp_new_title"] = ""
+                st.rerun()
+    with st.expander("📋 Paste a list of titles"):
+        st.text_area("One title per line", key="_sp_paste_titles", height=80, label_visibility="collapsed",
+                     placeholder="Paste one title per line…")
+        if st.button("Import", key="sp_import_titles"):
+            _new = [t.strip() for t in st.session_state.get("_sp_paste_titles", "").splitlines() if t.strip()]
+            _opts = list(st.session_state.get("_sp_title_options", []))
+            _sel  = list(st.session_state.get("_sp_titles_multi", []))
+            for _t in _new:
+                if _t not in _opts:
+                    _opts.append(_t)
+                if _t not in _sel:
+                    _sel.append(_t)
+            st.session_state["_sp_title_options"] = _opts
+            st.session_state["_sp_titles_multi"] = _sel
+            st.session_state["_sp_paste_titles"] = ""
+            st.rerun()
 
     # ── LLM suggestions panel ────────────────────────────────────────────────
     if _run_suggest:
-        current = [t.strip() for t in titles_text.splitlines() if t.strip()]
+        _current_titles = list(st.session_state.get("_sp_titles_multi", []))
         with st.spinner("Asking LLM for suggestions…"):
-            suggestions = _suggest_search_terms(current, RESUME_PATH)
+            suggestions = _suggest_search_terms(_current_titles, RESUME_PATH)
+        # Add suggested titles to options list (not auto-selected — user picks from dropdown)
+        _opts = list(st.session_state.get("_sp_title_options", []))
+        for _t in suggestions.get("suggested_titles", []):
+            if _t not in _opts:
+                _opts.append(_t)
+        st.session_state["_sp_title_options"] = _opts
         st.session_state["_sp_suggestions"] = suggestions
+        st.rerun()
 
     if st.session_state.get("_sp_suggestions"):
         sugg = st.session_state["_sp_suggestions"]
-        s_titles = sugg.get("suggested_titles", [])
         s_excl = sugg.get("suggested_excludes", [])
-
-        existing_titles = {t.lower() for t in titles_text.splitlines() if t.strip()}
         existing_excl = {e.lower() for e in st.session_state.get("_sp_excludes", "").splitlines() if e.strip()}
-
-        if s_titles:
-            st.caption("**Suggested titles** — click to add:")
-            cols = st.columns(min(len(s_titles), 4))
-            for i, title in enumerate(s_titles):
-                with cols[i % 4]:
-                    if title.lower() not in existing_titles:
-                        if st.button(f"+ {title}", key=f"sp_add_title_{i}"):
-                            st.session_state["_sp_titles"] = (
-                                st.session_state.get("_sp_titles", "").rstrip("\n") + f"\n{title}"
-                            )
-                            st.rerun()
-                    else:
-                        st.caption(f"✓ {title}")
 
         if s_excl:
             st.caption("**Suggested exclusions** — click to add:")
@@ -380,12 +409,49 @@ with tab_search:
             st.session_state.pop("_sp_suggestions", None)
             st.rerun()
 
+    # ── Locations ─────────────────────────────────────────────────────────────
     st.subheader("Locations")
-    locations_text = st.text_area(
-        "One location per line",
-        value="\n".join(p.get("locations", [])),
-        height=100,
+    st.multiselect(
+        "Locations",
+        options=st.session_state.get("_sp_loc_options", p.get("locations", [])),
+        key="_sp_locations_multi",
+        help="Select from known locations or add your own below.",
+        label_visibility="collapsed",
     )
+    _add_l_col, _add_l_btn = st.columns([5, 1])
+    with _add_l_col:
+        st.text_input("Add a location", key="_sp_new_loc", label_visibility="collapsed",
+                      placeholder="Type a location and press ＋")
+    with _add_l_btn:
+        if st.button("＋", key="sp_add_loc_btn", use_container_width=True, help="Add custom location"):
+            _l = st.session_state.get("_sp_new_loc", "").strip()
+            if _l:
+                _opts = list(st.session_state.get("_sp_loc_options", []))
+                _sel  = list(st.session_state.get("_sp_locations_multi", []))
+                if _l not in _opts:
+                    _opts.append(_l)
+                    st.session_state["_sp_loc_options"] = _opts
+                if _l not in _sel:
+                    _sel.append(_l)
+                    st.session_state["_sp_locations_multi"] = _sel
+                st.session_state["_sp_new_loc"] = ""
+                st.rerun()
+    with st.expander("📋 Paste a list of locations"):
+        st.text_area("One location per line", key="_sp_paste_locs", height=80, label_visibility="collapsed",
+                     placeholder="Paste one location per line…")
+        if st.button("Import", key="sp_import_locs"):
+            _new = [l.strip() for l in st.session_state.get("_sp_paste_locs", "").splitlines() if l.strip()]
+            _opts = list(st.session_state.get("_sp_loc_options", []))
+            _sel  = list(st.session_state.get("_sp_locations_multi", []))
+            for _l in _new:
+                if _l not in _opts:
+                    _opts.append(_l)
+                if _l not in _sel:
+                    _sel.append(_l)
+            st.session_state["_sp_loc_options"] = _opts
+            st.session_state["_sp_locations_multi"] = _sel
+            st.session_state["_sp_paste_locs"] = ""
+            st.rerun()
 
     st.subheader("Exclude Keywords")
     st.caption("Jobs whose **title or description** contain any of these words are silently dropped before entering the queue. Case-insensitive.")
@@ -424,8 +490,8 @@ with tab_search:
     if st.button("💾 Save search settings", type="primary"):
         profiles[0] = {
             **p,
-            "titles": [t.strip() for t in titles_text.splitlines() if t.strip()],
-            "locations": [loc.strip() for loc in locations_text.splitlines() if loc.strip()],
+            "titles": list(st.session_state.get("_sp_titles_multi", [])),
+            "locations": list(st.session_state.get("_sp_locations_multi", [])),
             "boards": selected_boards,
             "custom_boards": selected_custom,
             "results_per_board": results_per,
@@ -893,33 +959,13 @@ with tab_system:
             st.session_state.pop("_llm_order_cfg_key", None)
             st.success("LLM settings saved!")
 
-    # ── Notion ────────────────────────────────────────────────────────────────
-    with st.expander("📚 Notion"):
-        notion_cfg = load_yaml(NOTION_CFG) if NOTION_CFG.exists() else {}
-        n_token = st.text_input("Integration Token", value=notion_cfg.get("token", ""),
-                                 type="password", key="sys_notion_token",
-                                 help="notion.so/my-integrations → your integration → Internal Integration Token")
-        n_db_id = st.text_input("Database ID", value=notion_cfg.get("database_id", ""),
-                                 key="sys_notion_db",
-                                 help="The 32-character ID from your Notion database URL")
-        n_c1, n_c2 = st.columns(2)
-        if n_c1.button("💾 Save Notion", type="primary", key="sys_save_notion"):
-            save_yaml(NOTION_CFG, {**notion_cfg, "token": n_token, "database_id": n_db_id})
-            st.success("Notion settings saved!")
-        if n_c2.button("🔌 Test Notion", key="sys_test_notion"):
-            with st.spinner("Connecting…"):
-                try:
-                    from notion_client import Client as _NC
-                    _ndb = _NC(auth=n_token).databases.retrieve(n_db_id)
-                    st.success(f"Connected to: **{_ndb['title'][0]['plain_text']}**")
-                except Exception as e:
-                    st.error(f"Connection failed: {e}")
-
     # ── Services ──────────────────────────────────────────────────────────────
     with st.expander("🔌 Services", expanded=True):
         import subprocess as _sp
+        import shutil as _shutil
         TOKENS_CFG = CONFIG_DIR / "tokens.yaml"
         COMPOSE_DIR = str(Path(__file__).parent.parent.parent)
+        _docker_available = bool(_shutil.which("docker"))
         _sys_profile_name = _profile.inference_profile if _profile else "remote"
         SYS_SERVICES = [
             {
@@ -1003,8 +1049,10 @@ with tab_system:
                         else:
                             st.caption(f"_No models found in `{svc['model_dir']}` — train one in the **🎯 Fine-Tune** tab above_")
                 with rc:
-                    if svc.get("start") is None:
-                        st.caption("_Manual start only_")
+                    if svc.get("start") is None or not _docker_available:
+                        _hint_cmd = " ".join(svc.get("start") or [])
+                        st.caption(f"_Run from host terminal:_")
+                        st.code(_hint_cmd, language=None)
                     elif up:
                         if st.button("⏹ Stop", key=f"sys_svc_stop_{svc['port']}", use_container_width=True):
                             with st.spinner(f"Stopping {svc['name']}…"):
