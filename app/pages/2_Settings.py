@@ -89,12 +89,12 @@ _show_dev_tab = _dev_mode or bool(_u_for_dev.get("dev_tier_override"))
 _tab_names = [
     "👤 My Profile", "🔎 Search", "🤖 LLM Backends", "📚 Notion",
     "🔌 Services", "📝 Resume Profile", "📧 Email", "🏷️ Skills",
-    "🔗 Integrations", "🎯 Fine-Tune"
+    "🔗 Integrations", "🎯 Fine-Tune", "🔑 License"
 ]
 if _show_dev_tab:
     _tab_names.append("🛠️ Developer")
 _all_tabs = st.tabs(_tab_names)
-tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills, tab_integrations, tab_finetune = _all_tabs[:10]
+tab_profile, tab_search, tab_llm, tab_notion, tab_services, tab_resume, tab_email, tab_skills, tab_integrations, tab_finetune, tab_license = _all_tabs[:11]
 
 with tab_profile:
     from scripts.user_profile import UserProfile as _UP, _DEFAULTS as _UP_DEFAULTS
@@ -1128,6 +1128,53 @@ with tab_finetune:
                 st.rerun()
             if col_refresh.button("🔄 Check model status", key="ft_refresh3"):
                 st.rerun()
+
+# ── License tab ───────────────────────────────────────────────────────────────
+with tab_license:
+    st.subheader("🔑 License")
+
+    from scripts.license import (
+        verify_local as _verify_local,
+        activate as _activate,
+        deactivate as _deactivate,
+        _DEFAULT_LICENSE_PATH,
+        _DEFAULT_PUBLIC_KEY_PATH,
+    )
+
+    _lic = _verify_local()
+
+    if _lic:
+        _grace_note = " _(grace period active)_" if _lic.get("in_grace") else ""
+        st.success(f"**{_lic['tier'].title()} tier** active{_grace_note}")
+        try:
+            import json as _json
+            _key_display = _json.loads(_DEFAULT_LICENSE_PATH.read_text()).get("key_display", "—")
+        except Exception:
+            _key_display = "—"
+        st.caption(f"Key: `{_key_display}`")
+        if _lic.get("notice"):
+            st.info(_lic["notice"])
+        if st.button("Deactivate this machine", type="secondary", key="lic_deactivate"):
+            _deactivate()
+            st.success("Deactivated. Restart the app to apply.")
+            st.rerun()
+    else:
+        st.info("No active license — running on **free tier**.")
+        st.caption("Enter a license key to unlock paid features.")
+        _key_input = st.text_input(
+            "License key",
+            placeholder="CFG-PRNG-XXXX-XXXX-XXXX",
+            label_visibility="collapsed",
+            key="lic_key_input",
+        )
+        if st.button("Activate", disabled=not (_key_input or "").strip(), key="lic_activate"):
+            with st.spinner("Activating…"):
+                try:
+                    result = _activate(_key_input.strip())
+                    st.success(f"Activated! Tier: **{result['tier']}**")
+                    st.rerun()
+                except Exception as _e:
+                    st.error(f"Activation failed: {_e}")
 
 # ── Developer tab ─────────────────────────────────────────────────────────────
 if _show_dev_tab:
