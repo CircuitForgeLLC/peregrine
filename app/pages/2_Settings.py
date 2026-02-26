@@ -95,10 +95,9 @@ if _show_dev_tab:
 _all_tabs = st.tabs(_tab_names)
 tab_profile, tab_resume, tab_search, tab_system, tab_finetune, tab_license = _all_tabs[:6]
 
-# ── Sidebar LLM generate panel ────────────────────────────────────────────────
-# Paid-tier feature: generates content for any LLM-injectable profile field.
-# Writes directly into session state keyed to the target widget's `key=` param,
-# then reruns so the field picks up the new value automatically.
+# ── Inline LLM generate buttons ───────────────────────────────────────────────
+# Paid-tier feature: ✨ Generate buttons sit directly below each injectable field.
+# Writes into session state keyed to the widget's `key=` param, then reruns.
 from app.wizard.tiers import can_use as _cu
 _gen_panel_active = bool(_profile) and _cu(
     _profile.effective_tier if _profile else "free", "llm_career_summary"
@@ -112,73 +111,6 @@ for _fk, _fv in [
 ]:
     if _fk not in st.session_state:
         st.session_state[_fk] = _fv
-
-if _gen_panel_active:
-    @st.fragment
-    def _generate_sidebar_panel():
-        st.markdown("**✨ AI Generate**")
-        st.caption("Select a field, add an optional hint, then click Generate. The result is injected directly into the field.")
-
-        _GEN_FIELDS = {
-            "Career Summary":       "profile_career_summary",
-            "Voice & Personality":  "profile_candidate_voice",
-            "Mission Note":         "_mission_note_preview",
-        }
-        _tgt_label = st.selectbox(
-            "Field", list(_GEN_FIELDS.keys()),
-            key="gen_panel_target", label_visibility="collapsed",
-        )
-        _tgt_key = _GEN_FIELDS[_tgt_label]
-
-        if _tgt_label == "Mission Note":
-            _gen_domain = st.text_input("Domain", placeholder="e.g. animal welfare", key="gen_panel_domain")
-        else:
-            _gen_domain = None
-
-        _gen_hint = st.text_input("Hint (optional)", placeholder="e.g. emphasise leadership", key="gen_panel_hint")
-
-        if st.button("✨ Generate", type="primary", key="gen_panel_run", use_container_width=True):
-            _p = _profile
-            if _tgt_label == "Career Summary":
-                _prompt = (
-                    f"Write a 3-4 sentence professional career summary for {_p.name} in first person, "
-                    f"suitable for use in cover letters and LLM prompts. "
-                    f"Current summary: {_p.career_summary}. "
-                )
-            elif _tgt_label == "Voice & Personality":
-                _prompt = (
-                    f"Write a 2-4 sentence voice and personality descriptor for {_p.name} "
-                    f"to guide an LLM writing cover letters in their authentic style. "
-                    f"Describe personality traits, tone, and writing voice — not a bio. "
-                    f"Career context: {_p.career_summary}. "
-                )
-            else:
-                _prompt = (
-                    f"Write a 2-3 sentence personal mission alignment note (first person, warm, authentic) "
-                    f"for {_p.name} in the '{_gen_domain or 'this'}' domain for use in cover letters. "
-                    f"Background: {_p.career_summary}. "
-                    f"Voice: {_p.candidate_voice}. "
-                    "Do not start with 'I'."
-                )
-            if _gen_hint:
-                _prompt += f" Additional guidance: {_gen_hint}."
-            with st.spinner("Generating…"):
-                from scripts.llm_router import LLMRouter as _LR
-                _result = _LR().complete(_prompt).strip()
-            st.session_state[_tgt_key] = _result
-            if _tgt_label != "Mission Note":
-                st.rerun()
-
-        if st.session_state.get("_mission_note_preview"):
-            st.caption("Copy into a Mission & Values domain row:")
-            st.text_area("", st.session_state["_mission_note_preview"],
-                         height=80, key="gen_mission_display")
-            if st.button("✓ Clear", key="gen_mission_clear", use_container_width=True):
-                del st.session_state["_mission_note_preview"]
-                st.rerun()
-
-    with st.sidebar:
-        _generate_sidebar_panel()
 
 with tab_profile:
     from scripts.user_profile import UserProfile as _UP, _DEFAULTS as _UP_DEFAULTS
@@ -197,12 +129,55 @@ with tab_profile:
         u_linkedin = c2.text_input("LinkedIn URL", _u.get("linkedin", ""))
         u_summary = st.text_area("Career Summary (used in LLM prompts)",
                                   key="profile_career_summary", height=100)
+        if _gen_panel_active:
+            if st.button("✨ Generate", key="gen_career_summary", help="Generate career summary with AI"):
+                _cs_draft = st.session_state.get("profile_career_summary", "").strip()
+                _cs_resume_ctx = ""
+                if RESUME_PATH.exists():
+                    _rdata = load_yaml(RESUME_PATH)
+                    _exps = (_rdata.get("experience_details") or [])[:3]
+                    _exp_lines = []
+                    for _e in _exps:
+                        _t = _e.get("position", "")
+                        _c = _e.get("company", "")
+                        _b = "; ".join((_e.get("key_responsibilities") or [])[:2])
+                        _exp_lines.append(f"- {_t} at {_c}: {_b}")
+                    _cs_resume_ctx = "\n".join(_exp_lines)
+                _cs_prompt = (
+                    f"Write a 3-4 sentence professional career summary for {_profile.name} in first person, "
+                    f"suitable for use in cover letters and LLM prompts. "
+                    f"Return only the summary, no preamble.\n"
+                )
+                if _cs_draft:
+                    _cs_prompt += f"\nExisting draft to improve or replace:\n{_cs_draft}\n"
+                if _cs_resume_ctx:
+                    _cs_prompt += f"\nRecent experience for context:\n{_cs_resume_ctx}\n"
+                with st.spinner("Generating…"):
+                    from scripts.llm_router import LLMRouter as _LLMRouter
+                    st.session_state["profile_career_summary"] = _LLMRouter().complete(_cs_prompt).strip()
+                st.rerun()
         u_voice = st.text_area(
             "Voice & Personality (shapes cover letter tone)",
             key="profile_candidate_voice",
             height=80,
             help="Personality traits and writing voice that the LLM uses to write authentically in your style. Never disclosed in applications.",
         )
+        if _gen_panel_active:
+            if st.button("✨ Generate", key="gen_candidate_voice", help="Generate voice descriptor with AI"):
+                _vc_draft = st.session_state.get("profile_candidate_voice", "").strip()
+                _vc_prompt = (
+                    f"Write a 2-4 sentence voice and personality descriptor for {_profile.name} "
+                    f"to guide an LLM writing cover letters in their authentic style. "
+                    f"Describe personality traits, tone, and writing voice — not a bio. "
+                    f"Career context: {_profile.career_summary}. "
+                    f"Return only the descriptor, no preamble.\n"
+                )
+                if _vc_draft:
+                    _vc_prompt += f"\nExisting descriptor to improve:\n{_vc_draft}\n"
+                with st.spinner("Generating…"):
+                    from scripts.llm_router import LLMRouter as _LLMRouter
+                    st.session_state["profile_candidate_voice"] = _LLMRouter().complete(_vc_prompt).strip()
+                st.rerun()
 
     with st.expander("🎯 Mission & Values"):
         st.caption("Industry passions and causes you care about. Used to inject authentic Para 3 alignment when a company matches. Never disclosed in applications.")
@@ -242,6 +217,7 @@ with tab_profile:
                     if _can_generate:
                         if st.button("✨", key=f"mgen_{_idx}", help="Generate alignment note with AI"):
                             _domain = _row["key"].replace("_", " ")
+                            _m_draft = st.session_state.get(f"mval_{_idx}", _row["value"]).strip()
                             _gen_prompt = (
                                 f"Write a 2–3 sentence personal mission alignment note "
                                 f"(first person, warm, authentic) for {_profile.name if _profile else 'the candidate'} "
@@ -249,8 +225,11 @@ with tab_profile:
                                 f"Background: {_profile.career_summary if _profile else ''}. "
                                 f"Voice: {_profile.candidate_voice if _profile else ''}. "
                                 f"The note should explain their genuine personal connection and why they'd "
-                                f"be motivated working in this space. Do not start with 'I'."
+                                f"be motivated working in this space. Do not start with 'I'. "
+                                f"Return only the note, no preamble.\n"
                             )
+                            if _m_draft:
+                                _gen_prompt += f"\nExisting note to improve:\n{_m_draft}\n"
                             with st.spinner(f"Generating note for {_domain}…"):
                                 from scripts.llm_router import LLMRouter as _LLMRouter
                                 _row["value"] = _LLMRouter().complete(_gen_prompt).strip()
