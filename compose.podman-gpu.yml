@@ -33,3 +33,11 @@ services:
       resources:
         reservations:
           devices: []
+
+  finetune:
+    devices:
+      - nvidia.com/gpu=0
+    deploy:
+      resources:
+        reservations:
+          devices: []

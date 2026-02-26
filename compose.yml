@@ -12,6 +12,7 @@ services:
       - ${DOCS_DIR:-~/Documents/JobSearch}:/docs
     environment:
       - STAGING_DB=/app/data/staging.db
+      - DOCS_DIR=/docs
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_COMPAT_URL=${OPENAI_COMPAT_URL:-}
       - OPENAI_COMPAT_KEY=${OPENAI_COMPAT_KEY:-}
@@ -101,3 +102,22 @@ services:
               capabilities: [gpu]
     profiles: [dual-gpu]
     restart: unless-stopped
+
+  finetune:
+    build:
+      context: .
+      dockerfile: Dockerfile.finetune
+    volumes:
+      - ${DOCS_DIR:-~/Documents/JobSearch}:/docs
+      - ${OLLAMA_MODELS_DIR:-~/models/ollama}:/ollama-models
+      - ./config:/app/config
+    environment:
+      - DOCS_DIR=/docs
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODELS_MOUNT=/ollama-models
+      - OLLAMA_MODELS_OLLAMA_PATH=/root/.ollama
+    depends_on:
+      ollama:
+        condition: service_started
+    profiles: [cpu, single-gpu, dual-gpu]
+    restart: "no"

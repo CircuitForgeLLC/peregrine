@@ -32,7 +32,12 @@ _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
 # ── Config ────────────────────────────────────────────────────────────────────
 DEFAULT_MODEL   = "unsloth/Llama-3.2-3B-Instruct"   # safe on 8 GB VRAM
 
-_docs = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
+# DOCS_DIR env var overrides user_profile when running inside Docker
+_docs_env = os.environ.get("DOCS_DIR", "")
+_docs = Path(_docs_env) if _docs_env else (
+    _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
+)
+
 LETTERS_JSONL   = _docs / "training_data" / "cover_letters.jsonl"
 OUTPUT_DIR      = _docs / "training_data" / "finetune_output"
 GGUF_DIR        = _docs / "training_data" / "gguf"
@@ -66,7 +71,7 @@ print(f"{'='*60}\n")
 # ── Load dataset ──────────────────────────────────────────────────────────────
 if not LETTERS_JSONL.exists():
     sys.exit(f"ERROR: Dataset not found at {LETTERS_JSONL}\n"
-             "Run: conda run -n job-seeker python scripts/prepare_training_data.py")
+             "Run: make prepare-training  (or: python scripts/prepare_training_data.py)")
 
 records = [json.loads(l) for l in LETTERS_JSONL.read_text().splitlines() if l.strip()]
 print(f"Loaded {len(records)} training examples.")
@@ -222,35 +227,102 @@ if not args.no_gguf and USE_UNSLOTH:
 else:
     gguf_path = None
 
-# ── Print next steps ──────────────────────────────────────────────────────────
-print(f"\n{'='*60}")
-print("  DONE — next steps to load into Ollama:")
-print(f"{'='*60}")
+# ── Register with Ollama (auto) ────────────────────────────────────────────────
+
+def _auto_register_ollama(gguf_path: Path, model_name: str, system_prompt: str) -> bool:
+    """
+    Copy GGUF into the shared Ollama models volume and register via the API.
+
+    Works in two modes:
+      Containerised — OLLAMA_MODELS_MOUNT + OLLAMA_MODELS_OLLAMA_PATH env vars
+                      translate the container path into Ollama's view of the file.
+      Local         — gguf_path is an absolute path Ollama can read directly.
+    """
+    import shutil
+    import requests
+
+    ollama_url        = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    models_mount      = os.environ.get("OLLAMA_MODELS_MOUNT", "")
+    ollama_models_dir = os.environ.get("OLLAMA_MODELS_OLLAMA_PATH", "")
+
+    # ── Place GGUF where Ollama can read it ───────────────────────────────────
+    if models_mount and ollama_models_dir:
+        # Containerised: write into the shared volume; Ollama reads from its own mount.
+        dest_dir = Path(models_mount) / "custom"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / gguf_path.name
+        if dest != gguf_path:
+            print(f"Copying GGUF → shared volume: {dest}")
+            shutil.copy2(gguf_path, dest)
+        ollama_gguf = f"{ollama_models_dir}/custom/{gguf_path.name}"
+    else:
+        # Local: pass the absolute path directly.
+        ollama_gguf = str(gguf_path.resolve())
+
+    modelfile_text = (
+        f"FROM {ollama_gguf}\n"
+        f"SYSTEM \"\"\"\n{system_prompt}\n\"\"\"\n"
+        f"PARAMETER temperature 0.7\n"
+        f"PARAMETER top_p 0.9\n"
+        f"PARAMETER num_ctx 32768\n"
+    )
+
+    # Write Modelfile to disk as a reference (useful for debugging)
+    (OUTPUT_DIR / "Modelfile").write_text(modelfile_text)
+
+    # ── Create via Ollama API ─────────────────────────────────────────────────
+    print(f"\nRegistering '{model_name}' with Ollama at {ollama_url} …")
+    try:
+        r = requests.post(
+            f"{ollama_url}/api/create",
+            json={"name": model_name, "modelfile": modelfile_text},
+            timeout=300,
+            stream=True,
+        )
+        for line in r.iter_lines():
+            if line:
+                import json as _json
+                try:
+                    msg = _json.loads(line).get("status", "")
+                except Exception:
+                    msg = line.decode()
+                if msg:
+                    print(f"  {msg}")
+        if r.status_code != 200:
+            print(f"  WARNING: Ollama returned HTTP {r.status_code}")
+            return False
+    except Exception as exc:
+        print(f"  Ollama registration failed: {exc}")
+        print(f"  Run manually: ollama create {model_name} -f {OUTPUT_DIR / 'Modelfile'}")
+        return False
+
+    # ── Update config/llm.yaml ────────────────────────────────────────────────
+    llm_yaml = Path(__file__).parent.parent / "config" / "llm.yaml"
+    if llm_yaml.exists():
+        try:
+            import yaml as _yaml
+            cfg = _yaml.safe_load(llm_yaml.read_text()) or {}
+            if "backends" in cfg and "ollama" in cfg["backends"]:
+                cfg["backends"]["ollama"]["model"] = f"{model_name}:latest"
+                llm_yaml.write_text(
+                    _yaml.dump(cfg, default_flow_style=False, allow_unicode=True)
+                )
+                print(f"  llm.yaml updated → ollama.model = {model_name}:latest")
+        except Exception as exc:
+            print(f"  Could not update llm.yaml automatically: {exc}")
+
+    print(f"\n{'='*60}")
+    print(f"  Model ready: {model_name}:latest")
+    print(f"  Test: ollama run {model_name} 'Write a cover letter for a Senior Engineer role at Acme Corp.'")
+    print(f"{'='*60}\n")
+    return True
+
 
 if gguf_path and gguf_path.exists():
-    modelfile = OUTPUT_DIR / "Modelfile"
-    modelfile.write_text(f"""FROM {gguf_path}
-SYSTEM \"\"\"
-{SYSTEM_PROMPT}
-\"\"\"
-PARAMETER temperature 0.7
-PARAMETER top_p 0.9
-PARAMETER num_ctx 32768
-""")
-    print(f"\n1. Modelfile written to: {modelfile}")
-    print(f"\n2. Create the Ollama model:")
-    print(f"     ollama create {OLLAMA_NAME} -f {modelfile}")
-    print(f"\n3. Test it:")
-    print(f"     ollama run {OLLAMA_NAME} 'Write a cover letter for a Senior Customer Success Manager position at Acme Corp.'")
-    print(f"\n4. Update llm.yaml to use '{OLLAMA_NAME}:latest' as the ollama model,")
-    print(f"   then pick it in Settings → LLM Backends → Ollama → Model.")
+    _auto_register_ollama(gguf_path, OLLAMA_NAME, SYSTEM_PROMPT)
 else:
-    print(f"\n  Adapter only (no GGUF). To convert manually:")
-    print(f"  1. Merge adapter:")
-    print(f"       conda run -n ogma python -c \"")
-    print(f"         from peft import AutoPeftModelForCausalLM")
-    print(f"         m = AutoPeftModelForCausalLM.from_pretrained('{adapter_path}')")
-    print(f"         m.merge_and_unload().save_pretrained('{OUTPUT_DIR}/merged')\"")
-    print(f"  2. Convert to GGUF using textgen env's convert_hf_to_gguf.py")
-    print(f"  3. ollama create {OLLAMA_NAME} -f Modelfile")
-print()
+    print(f"\n{'='*60}")
+    print("  Adapter saved (no GGUF produced).")
+    print(f"  Re-run without --no-gguf to generate a GGUF for Ollama registration.")
+    print(f"  Adapter path: {adapter_path}")
+    print(f"{'='*60}\n")
