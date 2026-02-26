@@ -1,0 +1,46 @@
+# compose.gpu.yml — Docker NVIDIA GPU overlay
+#
+# Adds NVIDIA GPU reservations to Peregrine services.
+# Applied automatically by `make start PROFILE=single-gpu|dual-gpu` when Docker is detected.
+# Manual: docker compose -f compose.yml -f compose.gpu.yml --profile single-gpu up -d
+#
+# Prerequisites:
+#   sudo nvidia-ctk runtime configure --runtime=docker
+#   sudo systemctl restart docker
+#
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  vision:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  vllm:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+
+  finetune:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
