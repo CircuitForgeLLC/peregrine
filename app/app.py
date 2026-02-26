@@ -61,6 +61,13 @@ def _startup() -> None:
 
 _startup()
 
+# Silent license refresh on startup — no-op if unreachable
+try:
+    from scripts.license import refresh_if_needed as _refresh_license
+    _refresh_license()
+except Exception:
+    pass
+
 # ── First-run wizard gate ───────────────────────────────────────────────────────
 from scripts.user_profile import UserProfile as _UserProfile
 _USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
