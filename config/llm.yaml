@@ -21,26 +21,26 @@ backends:
     type: openai_compat
   ollama:
     api_key: ollama
-    base_url: http://localhost:11434/v1
+    base_url: http://ollama:11434/v1
     enabled: true
-    model: meghan-cover-writer:latest
+    model: llama3.2:3b
     supports_images: false
     type: openai_compat
   ollama_research:
     api_key: ollama
-    base_url: http://localhost:11434/v1
+    base_url: http://ollama:11434/v1
     enabled: true
-    model: llama3.1:8b
+    model: llama3.2:3b
     supports_images: false
     type: openai_compat
   vision_service:
-    base_url: http://localhost:8002
+    base_url: http://vision:8002
     enabled: true
     supports_images: true
     type: vision_service
   vllm:
     api_key: ''
-    base_url: http://localhost:8000/v1
+    base_url: http://vllm:8000/v1
     enabled: true
     model: __auto__
     supports_images: false

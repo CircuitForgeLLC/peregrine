@@ -44,15 +44,15 @@ inference_profile: "remote"  # remote | cpu | single-gpu | dual-gpu
 
 services:
   streamlit_port: 8501
-  ollama_host: localhost
+  ollama_host: ollama        # Docker service name; use "localhost" if running outside Docker
   ollama_port: 11434
   ollama_ssl: false
   ollama_ssl_verify: true
-  vllm_host: localhost
+  vllm_host: vllm            # Docker service name; use "localhost" if running outside Docker
   vllm_port: 8000
   vllm_ssl: false
   vllm_ssl_verify: true
-  searxng_host: localhost
-  searxng_port: 8888
+  searxng_host: searxng      # Docker service name; use "localhost" if running outside Docker
+  searxng_port: 8080         # internal Docker port; use 8888 for host-mapped access
   searxng_ssl: false
   searxng_ssl_verify: true

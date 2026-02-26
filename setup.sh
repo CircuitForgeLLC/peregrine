@@ -204,81 +204,9 @@ install_nvidia_toolkit() {
     success "NVIDIA Container Toolkit installed."
 }
 
-# ── Ollama ─────────────────────────────────────────────────────────────────────
-install_ollama() {
-    # ── Install ───────────────────────────────────────────────────────────────
-    if cmd_exists ollama; then
-        success "Ollama already installed: $(ollama --version 2>/dev/null)"
-    else
-        info "Installing Ollama…"
-        case "$OS" in
-            Linux)
-                curl -fsSL https://ollama.com/install.sh | sh ;;
-            Darwin)
-                if cmd_exists brew; then
-                    brew install ollama
-                else
-                    warn "Homebrew not found — skipping Ollama. Install from: https://ollama.com/download"
-                    return
-                fi ;;
-        esac
-        success "Ollama installed."
-    fi
-
-    # ── Start service ─────────────────────────────────────────────────────────
-    if [[ "$OS" == "Linux" ]] && command -v systemctl &>/dev/null; then
-        $SUDO systemctl enable ollama 2>/dev/null || true
-        if ! systemctl is-active --quiet ollama 2>/dev/null; then
-            info "Starting Ollama service…"
-            $SUDO systemctl start ollama 2>/dev/null || true
-        fi
-        info "Waiting for Ollama to be ready…"
-        local i=0
-        until ollama list &>/dev/null 2>&1; do
-            sleep 1; i=$((i+1))
-            if [[ $i -ge 30 ]]; then
-                warn "Ollama service timed out. Run: sudo systemctl start ollama"
-                return
-            fi
-        done
-        success "Ollama service running."
-    elif [[ "$OS" == "Darwin" ]]; then
-        if ! ollama list &>/dev/null 2>&1; then
-            info "Starting Ollama…"
-            brew services start ollama 2>/dev/null \
-                || { ollama serve &>/tmp/ollama.log &; }
-            local i=0
-            until ollama list &>/dev/null 2>&1; do
-                sleep 1; i=$((i+1))
-                if [[ $i -ge 15 ]]; then
-                    warn "Ollama did not start. Run: ollama serve"
-                    return
-                fi
-            done
-        fi
-        success "Ollama service running."
-    fi
-
-    # ── Pull default model ────────────────────────────────────────────────────
-    local script_dir model
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    model="$(grep -E '^OLLAMA_DEFAULT_MODEL=' "${script_dir}/.env" 2>/dev/null \
-             | cut -d= -f2 | tr -d '[:space:]')"
-    [[ -z "$model" ]] && model="llama3.2:3b"
-
-    if ollama show "${model}" &>/dev/null 2>&1; then
-        success "Default model already present: ${model}"
-    else
-        info "Pulling default model: ${model} (this may take several minutes)…"
-        if ollama pull "${model}"; then
-            success "Default model ready: ${model}"
-        else
-            warn "Model pull failed — run manually: ollama pull ${model}"
-        fi
-    fi
-}
-
 # ── Environment setup ──────────────────────────────────────────────────────────
+# Note: Ollama runs as a Docker container — the compose.yml ollama service
+# handles model download automatically on first start (see docker/ollama/entrypoint.sh).
 setup_env() {
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
@@ -292,10 +220,11 @@ setup_env() {
 # ── Main ───────────────────────────────────────────────────────────────────────
 main() {
     echo ""
-    echo -e "${BLUE}╔══════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║   Peregrine — Dependency Installer       ║${NC}"
-    echo -e "${BLUE}║   by Circuit Forge LLC                   ║${NC}"
-    echo -e "${BLUE}╚══════════════════════════════════════════╝${NC}"
+    echo -e "${BLUE}╔══════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║   Peregrine — Dependency Installer                   ║${NC}"
+    echo -e "${BLUE}║   by Circuit Forge LLC                               ║${NC}"
+    echo -e "${BLUE}║   \"Don't be evil, for real and forever.\"             ║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
 
     install_git
@@ -305,8 +234,7 @@ main() {
         check_compose
         install_nvidia_toolkit
     fi
-    setup_env       # creates .env before install_ollama reads OLLAMA_DEFAULT_MODEL
-    install_ollama
+    setup_env
 
     echo ""
     success "All dependencies installed."
