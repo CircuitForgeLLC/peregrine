@@ -45,6 +45,13 @@ backends:
     model: __auto__
     supports_images: false
     type: openai_compat
+  vllm_research:
+    api_key: ''
+    base_url: http://host.docker.internal:8000/v1
+    enabled: true
+    model: __auto__
+    supports_images: false
+    type: openai_compat
 fallback_order:
 - ollama
 - claude_code
@@ -53,7 +60,7 @@ fallback_order:
 - anthropic
 research_fallback_order:
 - claude_code
-- vllm
+- vllm_research
 - ollama_research
 - github_copilot
 - anthropic
