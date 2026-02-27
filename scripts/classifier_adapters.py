@@ -26,6 +26,9 @@ LABELS: list[str] = [
     "positive_response",
     "survey_received",
     "neutral",
+    "event_rescheduled",
+    "unrelated",
+    "digest",
 ]
 
 # Natural-language descriptions used by the RerankerAdapter.
@@ -35,7 +38,10 @@ LABEL_DESCRIPTIONS: dict[str, str] = {
     "rejected": "application rejected or not moving forward with candidacy",
     "positive_response": "positive recruiter interest or request to connect",
     "survey_received": "invitation to complete a culture-fit survey or assessment",
-    "neutral": "automated ATS confirmation or unrelated email",
+    "neutral": "automated ATS confirmation such as application received",
+    "event_rescheduled": "an interview or scheduled event moved to a new time",
+    "unrelated": "non-job-search email unrelated to any application or recruiter",
+    "digest": "job digest or multi-listing email with multiple job postings",
 }
 
 # Lazy import shims — allow tests to patch without requiring the libs installed.
@@ -135,23 +141,23 @@ class ClassifierAdapter(abc.ABC):
 class ZeroShotAdapter(ClassifierAdapter):
     """Wraps any transformers zero-shot-classification pipeline.
 
-    Design note: the module-level ``pipeline`` shim is resolved once in load()
-    and stored as ``self._pipeline``.  classify() calls ``self._pipeline`` directly
-    with (text, candidate_labels, multi_label=False).  This makes the adapter
-    patchable in tests via ``patch('scripts.classifier_adapters.pipeline', mock)``:
-    ``mock`` is stored in ``self._pipeline`` and called with the text during
-    classify(), so ``mock.call_args`` captures the arguments.
+    load() calls pipeline("zero-shot-classification", model=..., device=...) to get
+    an inference callable, stored as self._pipeline.  classify() then calls
+    self._pipeline(text, LABELS, multi_label=False).  In tests, patch
+    'scripts.classifier_adapters.pipeline' with a MagicMock whose .return_value is
+    itself a MagicMock(return_value={...}) to simulate both the factory call and the
+    inference call.
 
-    For real transformers use, ``pipeline`` is the factory function and the call
-    in classify() initialises the pipeline on first use (lazy loading without
-    pre-caching a model object).  Subclasses that need a pre-warmed model object
-    should override load() to call the factory and store the result.
+    two_pass: if True, classify() runs a second pass restricted to the top-2 labels
+    from the first pass, forcing a binary choice.  This typically improves confidence
+    without the accuracy cost of a full 6-label second run.
     """
 
-    def __init__(self, name: str, model_id: str) -> None:
+    def __init__(self, name: str, model_id: str, two_pass: bool = False) -> None:
         self._name = name
         self._model_id = model_id
         self._pipeline: Any = None
+        self._two_pass = two_pass
 
     @property
     def name(self) -> str:
@@ -166,9 +172,9 @@ class ZeroShotAdapter(ClassifierAdapter):
         _pipe_fn = _mod.pipeline
         if _pipe_fn is None:
             raise ImportError("transformers not installed — run: pip install transformers")
-        # Store the pipeline factory/callable so that test patches are honoured.
-        # classify() will call self._pipeline(text, labels, multi_label=False).
-        self._pipeline = _pipe_fn
+        device = 0 if _cuda_available() else -1
+        # Instantiate the pipeline once; classify() calls the resulting object on each text.
+        self._pipeline = _pipe_fn("zero-shot-classification", model=self._model_id, device=device)
 
     def unload(self) -> None:
         self._pipeline = None
@@ -178,6 +184,9 @@ class ZeroShotAdapter(ClassifierAdapter):
             self.load()
         text = f"Subject: {subject}\n\n{body[:600]}"
         result = self._pipeline(text, LABELS, multi_label=False)
+        if self._two_pass and len(result["labels"]) >= 2:
+            top2 = result["labels"][:2]
+            result = self._pipeline(text, top2, multi_label=False)
         return result["labels"][0]
 
 
