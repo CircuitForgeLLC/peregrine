@@ -64,6 +64,31 @@ install_build_tools() {
     success "make installed."
 }
 
+# ── Git safe.directory ─────────────────────────────────────────────────────────
+# Git 2.35.2+ rejects repos where the directory owner != current user.
+# Common when cloned as root into /opt and then run as a regular user.
+# Fix by registering the repo path in the appropriate user's git config.
+configure_git_safe_dir() {
+    local repo_dir
+    repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    # If git is happy already, nothing to do
+    if git -C "$repo_dir" rev-parse --git-dir &>/dev/null 2>&1; then
+        success "Git repository ownership OK."
+        return
+    fi
+
+    info "Configuring git safe.directory for $repo_dir…"
+    if [[ -n "${SUDO_USER:-}" ]]; then
+        # Running under sudo — write into the invoking user's config, not root's
+        sudo -u "$SUDO_USER" git config --global --add safe.directory "$repo_dir"
+        success "safe.directory set for user '${SUDO_USER}'."
+    else
+        git config --global --add safe.directory "$repo_dir"
+        success "safe.directory set."
+    fi
+}
+
 # ── Git ────────────────────────────────────────────────────────────────────────
 install_git() {
     if cmd_exists git; then success "git already installed: $(git --version)"; return; fi
@@ -317,6 +342,7 @@ main() {
 
     install_build_tools
     install_git
+    configure_git_safe_dir
     # Podman takes precedence if already installed; otherwise install Docker
     if ! check_podman; then
         install_docker
