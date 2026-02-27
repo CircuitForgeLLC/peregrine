@@ -73,6 +73,20 @@ _MISSION_SIGNALS: dict[str, list[str]] = {
         "social good", "civic", "public health", "mental health", "food security",
         "housing", "homelessness", "poverty", "workforce development",
     ],
+    # Health is listed last — it's a genuine but lower-priority connection than
+    # music/animals/education/social_impact. detect_mission_alignment returns on first
+    # match, so dict order = preference order.
+    "health": [
+        "patient", "patients", "healthcare", "health tech", "healthtech",
+        "pharma", "pharmaceutical", "clinical", "medical",
+        "hospital", "clinic", "therapy", "therapist",
+        "rare disease", "life sciences", "life science",
+        "treatment", "prescription", "biotech", "biopharma", "medtech",
+        "behavioral health", "population health",
+        "care management", "care coordination", "oncology", "specialty pharmacy",
+        "provider network", "payer", "health plan", "benefits administration",
+        "ehr", "emr", "fhir", "hipaa",
+    ],
 }
 
 _candidate = _profile.name if _profile else "the candidate"
@@ -98,6 +112,15 @@ _MISSION_DEFAULTS: dict[str, str] = {
         f"This organization is mission-driven / social impact focused — exactly the kind of "
         f"cause {_candidate} cares deeply about. Para 3 should warmly reflect their genuine "
         "desire to apply their skills to work that makes a real difference in people's lives."
+    ),
+    "health": (
+        f"This company works in healthcare, life sciences, or patient care. "
+        f"Do NOT write about {_candidate}'s passion for pharmaceuticals or healthcare as an "
+        "industry. Instead, Para 3 should reflect genuine care for the PEOPLE these companies "
+        "exist to serve — those navigating complex, often invisible, or unusual health journeys; "
+        "patients facing rare or poorly understood conditions; individuals whose situations don't "
+        "fit a clean category. The connection is to the humans behind the data, not the industry. "
+        "If the user has provided a personal note, use that to anchor Para 3 specifically."
     ),
 }
 
@@ -189,6 +212,24 @@ def build_prompt(
     return "\n".join(parts)
 
 
+def _trim_to_letter_end(text: str) -> str:
+    """Remove repetitive hallucinated content after the first complete sign-off.
+
+    Fine-tuned models sometimes loop after completing the letter. This cuts at
+    the first closing + candidate name so only the intended letter is saved.
+    """
+    candidate_first = (_profile.name.split()[0] if _profile else "").strip()
+    pattern = (
+        r'(?:Warm regards|Sincerely|Best regards|Kind regards|Thank you)[,.]?\s*\n+\s*'
+        + (re.escape(candidate_first) if candidate_first else r'\w+')
+        + r'\b'
+    )
+    m = re.search(pattern, text, re.IGNORECASE)
+    if m:
+        return text[:m.end()].strip()
+    return text.strip()
+
+
 def generate(
     title: str,
     company: str,
@@ -227,8 +268,10 @@ def generate(
     if feedback:
         print("[cover-letter] Refinement mode: feedback provided", file=sys.stderr)
 
-    result = _router.complete(prompt)
-    return result.strip()
+    # max_tokens=1200 caps generation at ~900 words — enough for any cover letter
+    # and prevents fine-tuned models from looping into repetitive garbage output.
+    result = _router.complete(prompt, max_tokens=1200)
+    return _trim_to_letter_end(result)
 
 
 def main() -> None:
