@@ -258,6 +258,6 @@ class RerankerAdapter(ClassifierAdapter):
         if self._reranker is None:
             self.load()
         text = f"Subject: {subject}\n\n{body[:600]}"
-        pairs = [[text, LABEL_DESCRIPTIONS[label]] for label in LABELS]
+        pairs = [[text, LABEL_DESCRIPTIONS.get(label, label.replace("_", " "))] for label in LABELS]
         scores: list[float] = self._reranker.compute_score(pairs, normalize=True)
         return LABELS[scores.index(max(scores))]
