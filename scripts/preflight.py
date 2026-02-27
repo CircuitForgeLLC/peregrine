@@ -44,26 +44,29 @@ OVERRIDE_YML = ROOT / "compose.override.yml"
 # adoptable     — True if an existing process on this port should be used instead
 #                 of starting a Docker container (and the Docker service disabled)
 _SERVICES: dict[str, tuple[str, int, str, bool, bool]] = {
-    "streamlit": ("streamlit_port", 8501, "STREAMLIT_PORT", True,  False),
-    "searxng":   ("searxng_port",   8888, "SEARXNG_PORT",   True,  True),
-    "vllm":      ("vllm_port",      8000, "VLLM_PORT",      True,  True),
-    "vision":    ("vision_port",    8002, "VISION_PORT",    True,  True),
-    "ollama":    ("ollama_port",  11434,  "OLLAMA_PORT",    True,  True),
+    "streamlit":       ("streamlit_port",       8501,  "STREAMLIT_PORT",       True,  False),
+    "searxng":         ("searxng_port",          8888,  "SEARXNG_PORT",         True,  True),
+    "vllm":            ("vllm_port",             8000,  "VLLM_PORT",            True,  True),
+    "vision":          ("vision_port",           8002,  "VISION_PORT",          True,  True),
+    "ollama":          ("ollama_port",          11434,  "OLLAMA_PORT",          True,  True),
+    "ollama_research": ("ollama_research_port", 11435,  "OLLAMA_RESEARCH_PORT", True,  True),
 }
 
 # LLM yaml backend keys → url suffix, keyed by service name
 _LLM_BACKENDS: dict[str, list[tuple[str, str]]] = {
-    "ollama": [("ollama", "/v1"), ("ollama_research", "/v1")],
-    "vllm":   [("vllm", "/v1")],
-    "vision": [("vision_service", "")],
+    "ollama":          [("ollama", "/v1")],
+    "ollama_research": [("ollama_research", "/v1")],
+    "vllm":            [("vllm", "/v1"), ("vllm_research", "/v1")],
+    "vision":          [("vision_service", "")],
 }
 
 # Docker-internal hostname:port for each service (when running in Docker)
 _DOCKER_INTERNAL: dict[str, tuple[str, int]] = {
-    "ollama":  ("ollama",  11434),
-    "vllm":    ("vllm",    8000),
-    "vision":  ("vision",  8002),
-    "searxng": ("searxng", 8080),   # searxng internal port differs from host port
+    "ollama":          ("ollama",          11434),
+    "ollama_research": ("ollama_research", 11434),  # container-internal port is always 11434
+    "vllm":            ("vllm",             8000),
+    "vision":          ("vision",           8002),
+    "searxng":         ("searxng",          8080),  # searxng internal port differs from host port
 }
 
 
