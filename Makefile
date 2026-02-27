@@ -23,6 +23,7 @@ COMPOSE ?= $(shell \
 # compose.override.yml. We must include it explicitly when present.
 OVERRIDE_FILE := $(wildcard compose.override.yml)
 COMPOSE_OVERRIDE := $(if $(OVERRIDE_FILE),-f compose.override.yml,)
+DUAL_GPU_MODE ?= $(shell grep -m1 '^DUAL_GPU_MODE=' .env 2>/dev/null | cut -d= -f2 || echo ollama)
 
 COMPOSE_FILES := -f compose.yml $(COMPOSE_OVERRIDE)
 ifneq (,$(findstring podman,$(COMPOSE)))
@@ -33,6 +34,9 @@ else
   ifneq (,$(findstring gpu,$(PROFILE)))
     COMPOSE_FILES := -f compose.yml $(COMPOSE_OVERRIDE) -f compose.gpu.yml
   endif
+endif
+ifeq ($(PROFILE),dual-gpu)
+  COMPOSE_FILES += --profile dual-gpu-$(DUAL_GPU_MODE)
 endif
 
 # 'remote' means base services only — no services are tagged 'remote' in compose.yml,
