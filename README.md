@@ -42,13 +42,21 @@ make start PROFILE=single-gpu
 
 ### Installing to `/opt` or other system directories
 
-If you clone into a root-owned directory, fix ownership first so preflight can write `.env` and `compose.override.yml`:
+If you clone into a root-owned directory (e.g. `sudo git clone ... /opt/peregrine`), two things need fixing:
+
+**1. Git ownership warning** (`fatal: detected dubious ownership`) — `./manage.sh setup` fixes this automatically. If you need git to work *before* running setup:
+
+```bash
+git config --global --add safe.directory /opt/peregrine
+```
+
+**2. Preflight write access** — preflight writes `.env` and `compose.override.yml` into the repo directory. Fix ownership once:
 
 ```bash
 sudo chown -R $USER:$USER /opt/peregrine
 ```
 
-Then run without `sudo` — Peregrine doesn't need it.
+After that, run everything without `sudo`.
 
 ### Podman
 
