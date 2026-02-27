@@ -1,5 +1,5 @@
 # compose.yml — Peregrine by Circuit Forge LLC
-# Profiles: remote | cpu | single-gpu | dual-gpu
+# Profiles: remote | cpu | single-gpu | dual-gpu-ollama | dual-gpu-vllm | dual-gpu-mixed
 services:
 
   app:
@@ -52,7 +52,21 @@ services:
       - OLLAMA_MODELS=/root/.ollama
       - DEFAULT_OLLAMA_MODEL=${OLLAMA_DEFAULT_MODEL:-llama3.2:3b}
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
-    profiles: [cpu, single-gpu, dual-gpu]
+    profiles: [cpu, single-gpu, dual-gpu-ollama, dual-gpu-vllm, dual-gpu-mixed]
+    restart: unless-stopped
+
+  ollama_research:
+    image: ollama/ollama:latest
+    ports:
+      - "${OLLAMA_RESEARCH_PORT:-11435}:11434"
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-~/models/ollama}:/root/.ollama
+      - ./docker/ollama/entrypoint.sh:/entrypoint.sh
+    environment:
+      - OLLAMA_MODELS=/root/.ollama
+      - DEFAULT_OLLAMA_MODEL=${OLLAMA_RESEARCH_MODEL:-llama3.2:3b}
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    profiles: [dual-gpu-ollama, dual-gpu-mixed]
     restart: unless-stopped
 
   vision:
@@ -64,7 +78,7 @@ services:
     environment:
       - VISION_MODEL=${VISION_MODEL:-vikhyatk/moondream2}
       - VISION_REVISION=${VISION_REVISION:-2025-01-09}
-    profiles: [single-gpu, dual-gpu]
+    profiles: [single-gpu, dual-gpu-ollama, dual-gpu-vllm, dual-gpu-mixed]
     restart: unless-stopped
 
   vllm:
@@ -81,7 +95,7 @@ services:
       --enforce-eager
       --max-num-seqs 8
       --cpu-offload-gb ${CPU_OFFLOAD_GB:-0}
-    profiles: [dual-gpu]
+    profiles: [dual-gpu-vllm, dual-gpu-mixed]
     restart: unless-stopped
 
   finetune:
