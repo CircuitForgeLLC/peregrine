@@ -534,7 +534,7 @@ with tab_label:
 
         # ── Navigation ────────────────────────────────────────────────────
         st.markdown("")
-        nav_cols = st.columns([2, 1, 1])
+        nav_cols = st.columns([2, 1, 1, 1])
 
         remaining = len(unlabeled) - 1
         nav_cols[0].caption(f"**{remaining}** remaining  ·  Keys: 1–9 = label, 0 = other, S = skip, U = undo")
@@ -554,6 +554,16 @@ with tab_label:
             while next_idx < len(queue) and _entry_key(queue[next_idx]) in labeled_keys:
                 next_idx += 1
             st.session_state.idx = next_idx
+            st.rerun()
+
+        if nav_cols[3].button("🗑️ Discard", use_container_width=True):
+            # Remove from queue entirely — not written to score file
+            st.session_state.queue = [e for e in queue if _entry_key(e) != _entry_key(entry)]
+            _save_jsonl(_QUEUE_FILE, st.session_state.queue)
+            next_idx = min(idx, len(st.session_state.queue) - 1)
+            while next_idx < len(st.session_state.queue) and _entry_key(st.session_state.queue[next_idx]) in labeled_keys:
+                next_idx += 1
+            st.session_state.idx = max(next_idx, 0)
             st.rerun()
 
         # Keyboard shortcut capture (JS → hidden button click)
