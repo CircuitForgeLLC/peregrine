@@ -23,6 +23,7 @@ Exit codes:
   1 — manual action required (unresolvable port conflict on external service)
 """
 import argparse
+import os
 import platform
 import socket
 import subprocess
@@ -112,7 +113,6 @@ def get_ram_gb() -> tuple[float, float]:
 
 
 def get_cpu_cores() -> int:
-    import os
     return os.cpu_count() or 1
 
 
@@ -454,6 +454,38 @@ def main() -> None:
                 info = ports[name]
                 print(f"║    {name} :{info['resolved']}  → app will use host.docker.internal:{info['resolved']}")
 
+        # ── Download size warning ──────────────────────────────────────────────
+        dual_gpu_mode = os.environ.get("DUAL_GPU_MODE", "ollama")
+        sizes = _download_size_mb(profile, dual_gpu_mode)
+        total_mb = sum(sizes.values())
+        print("║")
+        print("║  Download sizes (first-run estimates)")
+        print("║    Docker images")
+        print(f"║      app (Python build)   ~{sizes.get('app', 0):,} MB")
+        if "searxng" in sizes:
+            print(f"║      searxng/searxng       ~{sizes['searxng']:,} MB")
+        if "ollama" in sizes:
+            shared_note = "  (shared by ollama + ollama_research)" if profile == "dual-gpu" and dual_gpu_mode in ("ollama", "mixed") else ""
+            print(f"║      ollama/ollama         ~{sizes['ollama']:,} MB{shared_note}")
+        if "vision_image" in sizes:
+            print(f"║      vision service        ~{sizes['vision_image']:,} MB  (torch + moondream)")
+        if "vllm_image" in sizes:
+            print(f"║      vllm/vllm-openai      ~{sizes['vllm_image']:,} MB")
+        print("║    Model weights  (lazy-loaded on first use)")
+        if "llama3_2_3b" in sizes:
+            print(f"║      llama3.2:3b            ~{sizes['llama3_2_3b']:,} MB  → OLLAMA_MODELS_DIR")
+        if "moondream2" in sizes:
+            print(f"║      moondream2             ~{sizes['moondream2']:,} MB  → vision container cache")
+        if profile == "dual-gpu" and dual_gpu_mode in ("ollama", "mixed"):
+            print("║    Note: ollama + ollama_research share model dir — no double download")
+        print(f"║  ⚠  Total first-run: ~{total_mb / 1024:.1f} GB  (models persist between restarts)")
+
+        # ── Mixed-mode VRAM warning ────────────────────────────────────────────
+        vram_warn = _mixed_mode_vram_warning(gpus, dual_gpu_mode)
+        if vram_warn:
+            print("║")
+            print(f"║  {vram_warn}")
+
         print("╚════════════════════════════════════════════════════╝")
 
     if not args.check_only:
@@ -466,6 +498,16 @@ def main() -> None:
         # GPU info for the app container (which lacks nvidia-smi access)
         env_updates["PEREGRINE_GPU_COUNT"] = str(len(gpus))
         env_updates["PEREGRINE_GPU_NAMES"] = ",".join(g["name"] for g in gpus)
+        # Write DUAL_GPU_MODE default for new 2-GPU setups (don't override user's choice)
+        if len(gpus) >= 2:
+            existing_env: dict[str, str] = {}
+            if ENV_FILE.exists():
+                for line in ENV_FILE.read_text().splitlines():
+                    if "=" in line and not line.startswith("#"):
+                        k, _, v = line.partition("=")
+                        existing_env[k.strip()] = v.strip()
+            if "DUAL_GPU_MODE" not in existing_env:
+                env_updates["DUAL_GPU_MODE"] = "ollama"
         write_env(env_updates)
         update_llm_yaml(ports)
         write_compose_override(ports)
