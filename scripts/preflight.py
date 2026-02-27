@@ -228,6 +228,43 @@ def calc_cpu_offload_gb(gpus: list[dict], ram_available_gb: float) -> int:
     return min(int(headroom * 0.25), 8)
 
 
+def _download_size_mb(profile: str, dual_gpu_mode: str = "ollama") -> dict[str, int]:
+    """
+    Return estimated first-run download sizes in MB, keyed by component name.
+    Profile-aware: only includes components that will actually be pulled.
+    """
+    sizes: dict[str, int] = {
+        "searxng": 300,
+        "app":     1500,
+    }
+    if profile in ("cpu", "single-gpu", "dual-gpu"):
+        sizes["ollama"]      = 800
+        sizes["llama3_2_3b"] = 2000
+    if profile in ("single-gpu", "dual-gpu"):
+        sizes["vision_image"] = 3000
+        sizes["moondream2"]   = 1800
+    if profile == "dual-gpu" and dual_gpu_mode in ("vllm", "mixed"):
+        sizes["vllm_image"] = 10000
+    return sizes
+
+
+def _mixed_mode_vram_warning(gpus: list[dict], dual_gpu_mode: str) -> str | None:
+    """
+    Return a warning string if GPU 1 likely lacks VRAM for mixed mode, else None.
+    Only relevant when dual_gpu_mode == 'mixed' and at least 2 GPUs are present.
+    """
+    if dual_gpu_mode != "mixed" or len(gpus) < 2:
+        return None
+    free = gpus[1]["vram_free_gb"]
+    if free < 12:
+        return (
+            f"⚠  DUAL_GPU_MODE=mixed: GPU 1 has only {free:.1f} GB free — "
+            f"running ollama_research + vllm together may cause OOM. "
+            f"Consider DUAL_GPU_MODE=ollama or DUAL_GPU_MODE=vllm."
+        )
+    return None
+
+
 # ── Config writers ─────────────────────────────────────────────────────────────
 
 def write_env(updates: dict[str, str]) -> None:
