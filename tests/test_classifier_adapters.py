@@ -2,11 +2,14 @@
 import pytest
 
 
-def test_labels_constant_has_six_items():
+def test_labels_constant_has_nine_items():
     from scripts.classifier_adapters import LABELS
-    assert len(LABELS) == 6
+    assert len(LABELS) == 9
     assert "interview_scheduled" in LABELS
     assert "neutral" in LABELS
+    assert "event_rescheduled" in LABELS
+    assert "unrelated" in LABELS
+    assert "digest" in LABELS
 
 
 def test_compute_metrics_perfect_predictions():
@@ -57,20 +60,23 @@ def test_zeroshot_adapter_classify_mocked():
     from unittest.mock import MagicMock, patch
     from scripts.classifier_adapters import ZeroShotAdapter
 
-    mock_pipeline = MagicMock()
-    mock_pipeline.return_value = {
+    # Two-level mock: factory call returns pipeline instance; instance call returns inference result.
+    mock_pipe_factory = MagicMock()
+    mock_pipe_factory.return_value = MagicMock(return_value={
         "labels": ["rejected", "neutral", "interview_scheduled"],
         "scores": [0.85, 0.10, 0.05],
-    }
+    })
 
-    with patch("scripts.classifier_adapters.pipeline", mock_pipeline):
+    with patch("scripts.classifier_adapters.pipeline", mock_pipe_factory):
         adapter = ZeroShotAdapter("test-zs", "some/model")
         adapter.load()
         result = adapter.classify("We went with another candidate", "Thank you for applying.")
 
     assert result == "rejected"
-    call_args = mock_pipeline.call_args
-    assert "We went with another candidate" in call_args[0][0]
+    # Factory was called with the correct task type
+    assert mock_pipe_factory.call_args[0][0] == "zero-shot-classification"
+    # Pipeline instance was called with the email text
+    assert "We went with another candidate" in mock_pipe_factory.return_value.call_args[0][0]
 
 
 def test_zeroshot_adapter_unload_clears_pipeline():
