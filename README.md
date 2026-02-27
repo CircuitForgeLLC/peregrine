@@ -40,6 +40,24 @@ make start PROFILE=single-gpu
 > **macOS:** Docker Desktop must be running before starting.
 > **Windows:** Not supported — use WSL2 with Ubuntu.
 
+### Installing to `/opt` or other system directories
+
+If you clone into a root-owned directory, fix ownership first so preflight can write `.env` and `compose.override.yml`:
+
+```bash
+sudo chown -R $USER:$USER /opt/peregrine
+```
+
+Then run without `sudo` — Peregrine doesn't need it.
+
+### Podman
+
+Podman is rootless by default — **no `sudo` needed.** `./manage.sh setup` will configure `podman-compose` if it isn't already present.
+
+### Docker
+
+After `./manage.sh setup`, log out and back in for docker group membership to take effect. Until then, prefix commands with `sudo`. After re-login, `sudo` is no longer required.
+
 ---
 
 ## Inference Profiles
