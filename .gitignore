@@ -35,3 +35,6 @@ config/user.yaml.working
 
 # Claude context files — kept out of version control
 CLAUDE.md
+
+data/email_score.jsonl
+data/email_compare_sample.jsonl
