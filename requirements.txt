@@ -37,7 +37,8 @@ tiktoken
 # ── Resume matching ───────────────────────────────────────────────────────
 scikit-learn>=1.3
 rapidfuzz
-lib-resume-builder-aihawk
+# lib-resume-builder-aihawk intentionally excluded — pulls torch+CUDA (~7GB).
+# AIHawk runs in its own conda env (aihawk-env) outside the Docker container.
 
 # ── Notion integration ────────────────────────────────────────────────────
 notion-client>=3.0
