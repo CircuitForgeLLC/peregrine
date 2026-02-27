@@ -35,6 +35,11 @@ else
   endif
 endif
 
+# 'remote' means base services only — no services are tagged 'remote' in compose.yml,
+# so --profile remote is a no-op with Docker and a fatal error on old podman-compose.
+# Only pass --profile for profiles that actually activate optional services.
+PROFILE_ARG := $(if $(filter remote,$(PROFILE)),,--profile $(PROFILE))
+
 setup:          ## Install dependencies (Docker or Podman + NVIDIA toolkit)
 	@bash setup.sh
 
@@ -42,7 +47,7 @@ preflight:      ## Check ports + system resources; write .env
 	@$(PYTHON) scripts/preflight.py
 
 start: preflight  ## Preflight check then start Peregrine (PROFILE=remote|cpu|single-gpu|dual-gpu)
-	$(COMPOSE) $(COMPOSE_FILES) --profile $(PROFILE) up -d
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_ARG) up -d
 
 stop:           ## Stop all Peregrine services
 	$(COMPOSE) down
@@ -50,7 +55,7 @@ stop:           ## Stop all Peregrine services
 restart:  ## Stop services, re-run preflight (ports now free), then start
 	$(COMPOSE) down
 	@$(PYTHON) scripts/preflight.py
-	$(COMPOSE) $(COMPOSE_FILES) --profile $(PROFILE) up -d
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_ARG) up -d
 
 logs:           ## Tail app logs
 	$(COMPOSE) logs -f app
