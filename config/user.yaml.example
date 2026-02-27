@@ -20,6 +20,14 @@ mission_preferences:
   music: ""           # e.g. "I've played in bands for 15 years and care deeply about how artists get paid"
   animal_welfare: ""  # e.g. "I volunteer at my local shelter every weekend"
   education: ""       # e.g. "I tutored underserved kids for 3 years and care deeply about literacy"
+  social_impact: ""   # e.g. "I want my work to reach people who need help most"
+  health: ""          # e.g. "I care about people navigating rare or poorly-understood health conditions"
+                      # Note: if left empty, Para 3 defaults to focusing on the people the company
+                      # serves — not the industry. Fill in for a more personal connection.
+
+# Optional: how you write and communicate. Used to shape cover letter voice.
+# e.g. "Warm and direct. Cares about people first. Finds rare and complex situations fascinating."
+candidate_voice: ""
 
 # Set to true to include optional identity-related sections in research briefs.
 # Both are for your personal decision-making only — never included in applications.
