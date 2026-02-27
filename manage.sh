@@ -66,6 +66,13 @@ done
 
 SERVICE="${1:-app}"   # used by `logs` command
 
+# ── Dependency guard ──────────────────────────────────────────────────────────
+# Commands that delegate to make; others (status, logs, update, open, setup) run fine without it.
+_MAKE_CMDS="start stop restart preflight test prepare-training finetune clean"
+if [[ " $_MAKE_CMDS " == *" $CMD "* ]] && ! command -v make &>/dev/null; then
+    error "'make' is not installed. Run:  ./manage.sh setup  then retry: ./manage.sh ${CMD}"
+fi
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 case "$CMD" in
 

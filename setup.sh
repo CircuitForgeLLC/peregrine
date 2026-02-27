@@ -49,6 +49,21 @@ SUDO="$(need_sudo)"
 
 cmd_exists() { command -v "$1" &>/dev/null; }
 
+# ── Build tools (make, etc.) ───────────────────────────────────────────────────
+install_build_tools() {
+    if cmd_exists make; then success "make already installed: $(make --version | head -1)"; return; fi
+    info "Installing build tools (make)…"
+    case "$DISTRO_FAMILY" in
+        debian)  $SUDO apt-get update -q && $SUDO apt-get install -y make ;;
+        fedora)  $SUDO dnf install -y make ;;
+        arch)    $SUDO pacman -Sy --noconfirm make ;;
+        macos)
+            if cmd_exists brew; then brew install make
+            else error "Homebrew not found. Install it from https://brew.sh then re-run this script."; fi ;;
+    esac
+    success "make installed."
+}
+
 # ── Git ────────────────────────────────────────────────────────────────────────
 install_git() {
     if cmd_exists git; then success "git already installed: $(git --version)"; return; fi
@@ -300,6 +315,7 @@ main() {
     echo -e "${BLUE}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
 
+    install_build_tools
     install_git
     # Podman takes precedence if already installed; otherwise install Docker
     if ! check_podman; then
@@ -316,8 +332,8 @@ main() {
     echo ""
     echo -e "  ${GREEN}Next steps:${NC}"
     echo -e "  1. Start Peregrine:"
-    echo -e "     ${YELLOW}make start${NC}             # remote/API-only (no local GPU)"
-    echo -e "     ${YELLOW}make start PROFILE=cpu${NC} # local Ollama inference (CPU)"
+    echo -e "     ${YELLOW}./manage.sh start${NC}                    # remote/API-only (no local GPU)"
+    echo -e "     ${YELLOW}./manage.sh start --profile cpu${NC}      # local Ollama inference (CPU)"
     echo -e "  2. Open ${YELLOW}http://localhost:8501${NC} — the setup wizard will guide you"
     echo -e "  (Tip: edit ${YELLOW}.env${NC} any time to adjust ports or model paths)"
     echo ""
