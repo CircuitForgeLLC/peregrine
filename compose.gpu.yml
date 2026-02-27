@@ -18,6 +18,15 @@ services:
               device_ids: ["0"]
               capabilities: [gpu]
 
+  ollama_research:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+
   vision:
     deploy:
       resources:

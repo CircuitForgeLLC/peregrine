@@ -18,6 +18,14 @@ services:
         reservations:
           devices: []
 
+  ollama_research:
+    devices:
+      - nvidia.com/gpu=1
+    deploy:
+      resources:
+        reservations:
+          devices: []
+
   vision:
     devices:
       - nvidia.com/gpu=0
