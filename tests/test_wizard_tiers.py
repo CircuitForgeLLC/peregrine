@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.wizard.tiers import can_use, tier_label, TIERS, FEATURES
+from app.wizard.tiers import can_use, tier_label, TIERS, FEATURES, BYOK_UNLOCKABLE
 
 
 def test_tiers_list():
@@ -67,3 +67,48 @@ def test_free_integrations_are_accessible():
 def test_paid_integrations_gated():
     assert can_use("free", "notion_sync") is False
     assert can_use("paid", "notion_sync") is True
+
+
+# ── BYOK tests ────────────────────────────────────────────────────────────────
+
+def test_byok_unlocks_llm_features_for_free_tier():
+    # BYOK_UNLOCKABLE features become accessible on free tier when has_byok=True
+    for feature in BYOK_UNLOCKABLE:
+        assert can_use("free", feature, has_byok=True) is True, (
+            f"{feature} should be accessible with BYOK on free tier"
+        )
+
+
+def test_byok_does_not_unlock_integrations():
+    # Integrations stay gated even with BYOK — they depend on CF infrastructure
+    for feature in ["notion_sync", "google_sheets_sync", "slack_notifications"]:
+        assert can_use("free", feature, has_byok=True) is False, (
+            f"{feature} should stay gated even with BYOK"
+        )
+
+
+def test_byok_does_not_unlock_orchestration_features():
+    # These features depend on background pipelines, not just an LLM call
+    for feature in ["llm_keywords_blocklist", "email_classifier", "model_fine_tuning"]:
+        assert can_use("free", feature, has_byok=True) is False, (
+            f"{feature} should stay gated even with BYOK"
+        )
+
+
+def test_tier_label_hidden_when_byok_unlocks():
+    # BYOK_UNLOCKABLE features should show no lock label when has_byok=True
+    for feature in BYOK_UNLOCKABLE:
+        assert tier_label(feature, has_byok=True) == "", (
+            f"{feature} should show no lock label when BYOK is active"
+        )
+
+
+def test_tier_label_still_shows_for_non_unlockable_with_byok():
+    assert tier_label("notion_sync", has_byok=True) != ""
+    assert tier_label("email_classifier", has_byok=True) != ""
+
+
+def test_byok_false_preserves_original_gating():
+    # has_byok=False (default) must not change existing behaviour
+    assert can_use("free", "company_research", has_byok=False) is False
+    assert can_use("paid", "company_research", has_byok=False) is True

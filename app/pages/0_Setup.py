@@ -105,10 +105,11 @@ def _generation_widget(section: str, label: str, tier: str,
     Call this inside a step to add LLM generation support.
     The caller decides whether to auto-populate a field with the result.
     """
-    from app.wizard.tiers import can_use, tier_label as tl
+    from app.wizard.tiers import can_use, tier_label as tl, has_configured_llm
 
-    if not can_use(tier, feature_key):
-        st.caption(f"{tl(feature_key)} {label}")
+    _has_byok = has_configured_llm()
+    if not can_use(tier, feature_key, has_byok=_has_byok):
+        st.caption(f"{tl(feature_key, has_byok=_has_byok)} {label}")
         return None
 
     col_btn, col_fb = st.columns([2, 5])
