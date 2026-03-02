@@ -42,3 +42,5 @@ data/email_compare_sample.jsonl
 
 config/label_tool.yaml
 config/server.yaml
+
+demo/data/*.db
