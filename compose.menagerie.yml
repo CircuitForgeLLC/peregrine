@@ -1,0 +1,52 @@
+# compose.menagerie.yml — Public demo stack for menagerie.circuitforge.tech/peregrine
+#
+# Runs a fully isolated, neutered Peregrine instance:
+#   - DEMO_MODE=true: blocks all LLM inference in llm_router.py
+#   - demo/config/: pre-seeded demo user profile, all backends disabled
+#   - demo/data/: isolated SQLite DB (no personal job data)
+#   - No personal documents mounted
+#   - Port 8503 (separate from the personal instance on 8502)
+#
+# Usage:
+#   docker compose -f compose.menagerie.yml --project-name peregrine-demo up -d
+#   docker compose -f compose.menagerie.yml --project-name peregrine-demo down
+#
+# Caddy menagerie.circuitforge.tech/peregrine* → host port 8504
+
+services:
+
+  app:
+    build: .
+    ports:
+      - "8504:8501"
+    volumes:
+      - ./demo/config:/app/config
+      - ./demo/data:/app/data
+      # No /docs mount — demo has no personal documents
+    environment:
+      - DEMO_MODE=true
+      - STAGING_DB=/app/data/staging.db
+      - DOCS_DIR=/tmp/demo-docs
+      - STREAMLIT_SERVER_BASE_URL_PATH=peregrine
+      - PYTHONUNBUFFERED=1
+      - PYTHONLOGGING=WARNING
+      # No API keys — inference is blocked by DEMO_MODE before any key is needed
+    depends_on:
+      searxng:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    volumes:
+      - ./docker/searxng:/etc/searxng:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    # No host port published — internal only; demo app uses it for job description enrichment
+    # (non-AI scraping is allowed; only LLM inference is blocked)
