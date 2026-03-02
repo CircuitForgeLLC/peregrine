@@ -1,0 +1,68 @@
+# Demo LLM config — all backends disabled.
+# DEMO_MODE=true in the environment blocks the router before any backend is tried,
+# so these values are never actually used. Kept for schema completeness.
+backends:
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+    enabled: false
+    model: claude-sonnet-4-6
+    supports_images: true
+    type: anthropic
+  claude_code:
+    api_key: any
+    base_url: http://localhost:3009/v1
+    enabled: false
+    model: claude-code-terminal
+    supports_images: true
+    type: openai_compat
+  github_copilot:
+    api_key: any
+    base_url: http://localhost:3010/v1
+    enabled: false
+    model: gpt-4o
+    supports_images: false
+    type: openai_compat
+  ollama:
+    api_key: ollama
+    base_url: http://localhost:11434/v1
+    enabled: false
+    model: llama3.2:3b
+    supports_images: false
+    type: openai_compat
+  ollama_research:
+    api_key: ollama
+    base_url: http://localhost:11434/v1
+    enabled: false
+    model: llama3.2:3b
+    supports_images: false
+    type: openai_compat
+  vision_service:
+    base_url: http://localhost:8002
+    enabled: false
+    supports_images: true
+    type: vision_service
+  vllm:
+    api_key: ''
+    base_url: http://localhost:8000/v1
+    enabled: false
+    model: __auto__
+    supports_images: false
+    type: openai_compat
+  vllm_research:
+    api_key: ''
+    base_url: http://localhost:8000/v1
+    enabled: false
+    model: __auto__
+    supports_images: false
+    type: openai_compat
+fallback_order:
+- ollama
+- vllm
+- anthropic
+research_fallback_order:
+- vllm_research
+- ollama_research
+- anthropic
+vision_fallback_order:
+- vision_service
+- anthropic

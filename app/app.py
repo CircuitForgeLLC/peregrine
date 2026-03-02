@@ -8,6 +8,7 @@ Run: streamlit run app/app.py
      bash scripts/manage-ui.sh start
 """
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logging.basicConfig(level=logging.WARNING, format="%(name)s %(levelname)s: %(message)s")
+
+IS_DEMO = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 import streamlit as st
 from scripts.db import DEFAULT_DB, init_db, get_active_tasks
@@ -76,7 +79,7 @@ except Exception:
 from scripts.user_profile import UserProfile as _UserProfile
 _USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
 
-_show_wizard = (
+_show_wizard = not IS_DEMO and (
     not _UserProfile.exists(_USER_YAML)
     or not _UserProfile(_USER_YAML).wizard_complete
 )
@@ -151,6 +154,13 @@ def _get_version() -> str:
         return "dev"
 
 with st.sidebar:
+    if IS_DEMO:
+        st.info(
+            "**Public demo** — read-only sample data. "
+            "AI features and data saves are disabled.\n\n"
+            "[Get your own instance →](https://circuitforge.tech/software/peregrine)",
+            icon="🔒",
+        )
     _task_indicator()
     st.divider()
     st.caption(f"Peregrine {_get_version()}")
