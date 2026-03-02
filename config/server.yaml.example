@@ -1,0 +1,14 @@
+# config/server.yaml — Peregrine deployment / server settings
+# Copy to config/server.yaml and edit. Gitignored — do not commit.
+# Changes require restarting Peregrine to take effect (./manage.sh restart).
+
+# base_url_path: URL prefix when serving Peregrine behind a reverse proxy.
+#   Leave empty ("") for direct access (http://localhost:8502).
+#   Set to "peregrine" when proxied at https://example.com/peregrine.
+#   Maps to STREAMLIT_BASE_URL_PATH in .env → STREAMLIT_SERVER_BASE_URL_PATH
+#   in the container. See: https://docs.streamlit.io/develop/api-reference/configuration/config.toml#server
+base_url_path: ""
+
+# server_port: Port Streamlit listens on inside the container (usually 8501).
+#   The external/host port is set via STREAMLIT_PORT in .env.
+server_port: 8501
