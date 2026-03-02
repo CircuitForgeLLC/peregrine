@@ -4,33 +4,54 @@ Tier definitions and feature gates for Peregrine.
 Tiers: free < paid < premium
 FEATURES maps feature key → minimum tier required.
 Features not in FEATURES are available to all tiers (free).
+
+BYOK policy
+-----------
+Features in BYOK_UNLOCKABLE are gated only because CircuitForge would otherwise
+be providing the LLM compute. When a user has any configured LLM backend (local
+ollama/vllm or their own API key), those features unlock regardless of tier.
+Pass has_byok=has_configured_llm() to can_use() at call sites.
+
+Features that stay gated even with BYOK:
+  - Integrations (Notion sync, calendars, etc.) — infrastructure we run
+  - llm_keywords_blocklist — orchestration pipeline over background keyword data
+  - email_classifier — training pipeline, not a single LLM call
+  - shared_cover_writer_model — our fine-tuned model weights
+  - model_fine_tuning — GPU infrastructure
+  - multi_user — account infrastructure
 """
 from __future__ import annotations
+
+from pathlib import Path
 
 TIERS = ["free", "paid", "premium"]
 
 # Maps feature key → minimum tier string required.
 # Features absent from this dict are free (available to all).
 FEATURES: dict[str, str] = {
-    # Wizard LLM generation
+    # Wizard LLM generation — BYOK-unlockable (pure LLM calls)
     "llm_career_summary":           "paid",
     "llm_expand_bullets":           "paid",
     "llm_suggest_skills":           "paid",
     "llm_voice_guidelines":         "premium",
     "llm_job_titles":               "paid",
-    "llm_keywords_blocklist":       "paid",
     "llm_mission_notes":            "paid",
 
-    # App features
+    # Orchestration — stays gated (background data pipeline, not just an LLM call)
+    "llm_keywords_blocklist":       "paid",
+
+    # App features — BYOK-unlockable (pure LLM calls over job/profile data)
     "company_research":             "paid",
     "interview_prep":               "paid",
-    "email_classifier":             "paid",
     "survey_assistant":             "paid",
+
+    # Orchestration / infrastructure — stays gated
+    "email_classifier":             "paid",
     "model_fine_tuning":            "premium",
     "shared_cover_writer_model":    "paid",
     "multi_user":                   "premium",
 
-    # Integrations (paid)
+    # Integrations — stays gated (infrastructure CircuitForge operates)
     "notion_sync":                  "paid",
     "google_sheets_sync":           "paid",
     "airtable_sync":                "paid",
@@ -39,13 +60,52 @@ FEATURES: dict[str, str] = {
     "slack_notifications":          "paid",
 }
 
+# Features that unlock when the user supplies any LLM backend (local or BYOK).
+# These are pure LLM-call features — the only reason they're behind a tier is
+# because CircuitForge would otherwise be providing the compute.
+BYOK_UNLOCKABLE: frozenset[str] = frozenset({
+    "llm_career_summary",
+    "llm_expand_bullets",
+    "llm_suggest_skills",
+    "llm_voice_guidelines",
+    "llm_job_titles",
+    "llm_mission_notes",
+    "company_research",
+    "interview_prep",
+    "survey_assistant",
+})
+
 # Free integrations (not in FEATURES):
 # google_drive_sync, dropbox_sync, onedrive_sync, mega_sync,
 # nextcloud_sync, discord_notifications, home_assistant
 
+_LLM_CFG = Path(__file__).parent.parent.parent / "config" / "llm.yaml"
 
-def can_use(tier: str, feature: str) -> bool:
+
+def has_configured_llm(config_path: Path | None = None) -> bool:
+    """Return True if at least one non-vision LLM backend is enabled in llm.yaml.
+
+    Local backends (ollama, vllm) count — the policy is "you're providing the
+    compute", whether that's your own hardware or your own API key.
+    """
+    import yaml
+    path = config_path or _LLM_CFG
+    try:
+        with open(path) as f:
+            cfg = yaml.safe_load(f) or {}
+        return any(
+            b.get("enabled", True) and b.get("type") != "vision_service"
+            for b in cfg.get("backends", {}).values()
+        )
+    except Exception:
+        return False
+
+
+def can_use(tier: str, feature: str, has_byok: bool = False) -> bool:
     """Return True if the given tier has access to the feature.
+
+    has_byok: pass has_configured_llm() to unlock BYOK_UNLOCKABLE features
+    for users who supply their own LLM backend regardless of tier.
 
     Returns True for unknown features (not gated).
     Returns False for unknown/invalid tier strings.
@@ -53,14 +113,18 @@ def can_use(tier: str, feature: str) -> bool:
     required = FEATURES.get(feature)
     if required is None:
         return True  # not gated — available to all
+    if has_byok and feature in BYOK_UNLOCKABLE:
+        return True
     try:
         return TIERS.index(tier) >= TIERS.index(required)
     except ValueError:
         return False  # invalid tier string
 
 
-def tier_label(feature: str) -> str:
-    """Return a display label for a locked feature, or '' if free/unknown."""
+def tier_label(feature: str, has_byok: bool = False) -> str:
+    """Return a display label for a locked feature, or '' if free/unlocked."""
+    if has_byok and feature in BYOK_UNLOCKABLE:
+        return ""
     required = FEATURES.get(feature)
     if required is None:
         return ""
