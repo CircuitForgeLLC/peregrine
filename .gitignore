@@ -37,4 +37,8 @@ config/user.yaml.working
 CLAUDE.md
 
 data/email_score.jsonl
+data/email_label_queue.jsonl
 data/email_compare_sample.jsonl
+
+config/label_tool.yaml
+config/server.yaml

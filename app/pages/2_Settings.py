@@ -81,6 +81,8 @@ Return ONLY valid JSON in this exact format:
 _show_finetune = bool(_profile and _profile.inference_profile in ("single-gpu", "dual-gpu"))
 
 USER_CFG = CONFIG_DIR / "user.yaml"
+SERVER_CFG = CONFIG_DIR / "server.yaml"
+SERVER_CFG_EXAMPLE = CONFIG_DIR / "server.yaml.example"
 
 _dev_mode = _os.getenv("DEV_MODE", "").lower() in ("true", "1", "yes")
 _u_for_dev = yaml.safe_load(USER_CFG.read_text()) or {} if USER_CFG.exists() else {}
@@ -88,12 +90,12 @@ _show_dev_tab = _dev_mode or bool(_u_for_dev.get("dev_tier_override"))
 
 _tab_names = [
     "👤 My Profile", "📝 Resume Profile", "🔎 Search",
-    "⚙️ System", "🎯 Fine-Tune", "🔑 License"
+    "⚙️ System", "🎯 Fine-Tune", "🔑 License", "💾 Data"
 ]
 if _show_dev_tab:
     _tab_names.append("🛠️ Developer")
 _all_tabs = st.tabs(_tab_names)
-tab_profile, tab_resume, tab_search, tab_system, tab_finetune, tab_license = _all_tabs[:6]
+tab_profile, tab_resume, tab_search, tab_system, tab_finetune, tab_license, tab_data = _all_tabs[:7]
 
 # ── Inline LLM generate buttons ───────────────────────────────────────────────
 # Paid-tier feature: ✨ Generate buttons sit directly below each injectable field.
@@ -873,6 +875,55 @@ with tab_system:
 
     st.divider()
 
+    # ── Deployment / Server ───────────────────────────────────────────────────
+    with st.expander("🖥️ Deployment / Server", expanded=False):
+        st.caption(
+            "Settings that affect how Peregrine is served. "
+            "Changes require a restart (`./manage.sh restart`) to take effect."
+        )
+
+        _srv = _yaml_up.safe_load(SERVER_CFG.read_text()) if SERVER_CFG.exists() else {}
+        _srv_example = _yaml_up.safe_load(SERVER_CFG_EXAMPLE.read_text()) if SERVER_CFG_EXAMPLE.exists() else {}
+        _srv_defaults = {**_srv_example, **_srv}
+
+        _active_base_url = _os.environ.get("STREAMLIT_SERVER_BASE_URL_PATH", "")
+        if _active_base_url:
+            st.info(f"**Active base URL path:** `/{_active_base_url}` (set via environment)")
+        else:
+            st.info("**Active base URL path:** *(none — serving at root `/`)*")
+
+        s_base_url = st.text_input(
+            "Base URL path",
+            value=_srv_defaults.get("base_url_path", ""),
+            placeholder="e.g. peregrine",
+            help=(
+                "URL prefix when serving behind a reverse proxy at a sub-path. "
+                "Leave empty for direct access. "
+                "Maps to STREAMLIT_BASE_URL_PATH in .env.\n\n"
+                "Docs: https://docs.streamlit.io/develop/api-reference/configuration/config.toml#server.baseUrlPath"
+            ),
+        )
+        s_server_port = st.number_input(
+            "Container port",
+            value=int(_srv_defaults.get("server_port", 8501)),
+            min_value=1024, max_value=65535, step=1,
+            help="Port Streamlit listens on inside the container. The host port is set via STREAMLIT_PORT in .env.",
+        )
+
+        if st.button("💾 Save Deployment Settings", key="save_server"):
+            _new_srv = {"base_url_path": s_base_url.strip(), "server_port": int(s_server_port)}
+            save_yaml(SERVER_CFG, _new_srv)
+            # Mirror base_url_path into .env so compose picks it up on next restart
+            _env_path = Path(__file__).parent.parent.parent / ".env"
+            if _env_path.exists():
+                _env_lines = [l for l in _env_path.read_text().splitlines()
+                               if not l.startswith("STREAMLIT_BASE_URL_PATH=")]
+                _env_lines.append(f"STREAMLIT_BASE_URL_PATH={s_base_url.strip()}")
+                _env_path.write_text("\n".join(_env_lines) + "\n")
+            st.success("Deployment settings saved. Run `./manage.sh restart` to apply.")
+
+    st.divider()
+
     # ── LLM Backends ─────────────────────────────────────────────────────────
     with st.expander("🤖 LLM Backends", expanded=False):
         import requests as _req
@@ -1338,6 +1389,99 @@ with tab_license:
                 except Exception as _e:
                     st.error(f"Activation failed: {_e}")
 
+# ── Data tab — Backup / Restore / Teleport ────────────────────────────────────
+with tab_data:
+    st.subheader("💾 Backup / Restore / Teleport")
+    st.caption(
+        "Export all your personal configs and job data as a portable zip. "
+        "Use to migrate between machines, back up before testing, or transfer to a new Docker volume."
+    )
+
+    from scripts.backup import create_backup, list_backup_contents, restore_backup as _do_restore
+
+    _base_dir = Path(__file__).parent.parent.parent
+
+    # ── Backup ────────────────────────────────────────────────────────────────
+    st.markdown("### 📦 Create Backup")
+    _incl_db = st.checkbox("Include staging.db (job data)", value=True, key="backup_incl_db")
+    if st.button("Create Backup", key="backup_create"):
+        with st.spinner("Creating backup…"):
+            try:
+                _zip_bytes = create_backup(_base_dir, include_db=_incl_db)
+                _info = list_backup_contents(_zip_bytes)
+                from datetime import datetime as _dt
+                _ts = _dt.now().strftime("%Y%m%d-%H%M%S")
+                _fname = f"peregrine-backup-{_ts}.zip"
+                st.success(
+                    f"Backup ready — {len(_info['files'])} files, "
+                    f"{_info['total_bytes'] / 1024:.0f} KB uncompressed"
+                )
+                st.download_button(
+                    label="⬇️ Download backup zip",
+                    data=_zip_bytes,
+                    file_name=_fname,
+                    mime="application/zip",
+                    key="backup_download",
+                )
+                with st.expander("Files included"):
+                    for _fn in _info["files"]:
+                        _sz = _info["sizes"].get(_fn, 0)
+                        st.caption(f"`{_fn}` — {_sz:,} bytes")
+            except Exception as _e:
+                st.error(f"Backup failed: {_e}")
+
+    st.divider()
+
+    # ── Restore ───────────────────────────────────────────────────────────────
+    st.markdown("### 📂 Restore from Backup")
+    st.warning(
+        "Restoring overwrites existing config files and (optionally) staging.db. "
+        "Create a fresh backup first if you want to preserve current settings.",
+        icon="⚠️",
+    )
+    _restore_file = st.file_uploader(
+        "Upload backup zip", type=["zip"], key="restore_upload",
+        help="Select a peregrine-backup-*.zip created by this tool."
+    )
+    _restore_db = st.checkbox("Restore staging.db (job data)", value=True, key="restore_incl_db")
+    _restore_overwrite = st.checkbox("Overwrite existing files", value=True, key="restore_overwrite")
+
+    if _restore_file and st.button("Restore", type="primary", key="restore_go"):
+        with st.spinner("Restoring…"):
+            try:
+                _zip_bytes = _restore_file.read()
+                _result = _do_restore(
+                    _zip_bytes, _base_dir,
+                    include_db=_restore_db,
+                    overwrite=_restore_overwrite,
+                )
+                st.success(f"Restored {len(_result['restored'])} files.")
+                with st.expander("Details"):
+                    for _fn in _result["restored"]:
+                        st.caption(f"✓ `{_fn}`")
+                    for _fn in _result["skipped"]:
+                        st.caption(f"— `{_fn}` (skipped)")
+                st.info("Restart the app for changes to take effect.", icon="ℹ️")
+            except Exception as _e:
+                st.error(f"Restore failed: {_e}")
+
+    st.divider()
+
+    # ── Teleport ──────────────────────────────────────────────────────────────
+    st.markdown("### 🚀 Teleport to Another Machine")
+    st.markdown("""
+**How to move Peregrine to a new machine or Docker volume:**
+
+1. **Here (source):** click **Create Backup** above and download the zip.
+2. **On the target machine:** clone the repo and run `./manage.sh start`.
+3. **In the target Peregrine UI:** go to Settings → 💾 Data → Restore from Backup and upload the zip.
+4. Restart the target app: `./manage.sh restart`.
+
+The zip contains all gitignored configs (email credentials, Notion token, LLM settings, resume YAML)
+and optionally your staging database (all discovered/applied jobs, contacts, cover letters).
+""")
+
+
 # ── Developer tab ─────────────────────────────────────────────────────────────
 if _show_dev_tab:
     with _all_tabs[-1]:
@@ -1409,3 +1553,61 @@ if _show_dev_tab:
                         st.error(f"Invalid token ({resp.status_code})")
                 except Exception as e:
                     st.error(f"Error: {e}")
+
+        st.divider()
+        st.markdown("**📊 Export Classifier Training Data**")
+        st.caption(
+            "Exports inbound emails from `job_contacts` (labeled by the IMAP sync classifier) "
+            "to `data/email_score.jsonl` for use with `scripts/benchmark_classifier.py --score`. "
+            "⚠️ Labels are generated by llama3.1:8b — review before using as ground truth."
+        )
+        _db_candidates = [
+            Path(__file__).parent.parent.parent / "data" / "staging.db",
+            Path(__file__).parent.parent.parent / "staging.db",
+        ]
+        _db_path = next((p for p in _db_candidates if p.exists()), None)
+        _score_out = Path(__file__).parent.parent.parent / "data" / "email_score.jsonl"
+
+        if _db_path is None:
+            st.warning("No `staging.db` found — run discovery first to create the database.")
+        else:
+            st.caption(f"Database: `{_db_path.name}` · Output: `data/email_score.jsonl`")
+            if st.button("📤 Export DB labels → email_score.jsonl", key="dev_export_db"):
+                import sqlite3 as _sqlite3
+                from scripts.benchmark_classifier import LABELS as _BC_LABELS
+                _conn = _sqlite3.connect(_db_path)
+                _cur = _conn.cursor()
+                _cur.execute("""
+                    SELECT subject, body, stage_signal
+                    FROM job_contacts
+                    WHERE stage_signal IS NOT NULL
+                      AND stage_signal != ''
+                      AND direction = 'inbound'
+                    ORDER BY received_at
+                """)
+                _rows = _cur.fetchall()
+                _conn.close()
+
+                if not _rows:
+                    st.warning("No labeled emails in `job_contacts`. Run IMAP sync first.")
+                else:
+                    _score_out.parent.mkdir(parents=True, exist_ok=True)
+                    _written, _skipped = 0, 0
+                    _label_counts: dict = {}
+                    with _score_out.open("w") as _f:
+                        for _subj, _body, _label in _rows:
+                            if _label not in _BC_LABELS:
+                                _skipped += 1
+                                continue
+                            import json as _json_dev
+                            _f.write(_json_dev.dumps({
+                                "subject": _subj or "",
+                                "body": (_body or "")[:800],
+                                "label": _label,
+                            }) + "\n")
+                            _written += 1
+                            _label_counts[_label] = _label_counts.get(_label, 0) + 1
+                    st.success(f"Exported **{_written}** emails → `data/email_score.jsonl` ({_skipped} skipped — unknown labels)")
+                    st.caption("Label distribution:")
+                    for _lbl, _cnt in sorted(_label_counts.items(), key=lambda x: -x[1]):
+                        st.caption(f"  `{_lbl}`: {_cnt}")
