@@ -98,11 +98,12 @@ _all_tabs = st.tabs(_tab_names)
 tab_profile, tab_resume, tab_search, tab_system, tab_finetune, tab_license, tab_data = _all_tabs[:7]
 
 # ── Inline LLM generate buttons ───────────────────────────────────────────────
-# Paid-tier feature: ✨ Generate buttons sit directly below each injectable field.
+# Unlocked when user has a configured LLM backend (BYOK) OR a paid tier.
 # Writes into session state keyed to the widget's `key=` param, then reruns.
-from app.wizard.tiers import can_use as _cu
+from app.wizard.tiers import can_use as _cu, has_configured_llm as _has_llm
+_byok = _has_llm()
 _gen_panel_active = bool(_profile) and _cu(
-    _profile.effective_tier if _profile else "free", "llm_career_summary"
+    _profile.effective_tier if _profile else "free", "llm_career_summary", has_byok=_byok
 )
 
 # Seed session state for LLM-injectable text fields on first load
@@ -251,7 +252,7 @@ with tab_profile:
             st.rerun()
 
         if not _can_generate:
-            st.caption("✨ AI generation requires a paid tier.")
+            st.caption("✨ AI generation requires a paid tier or a configured LLM backend (BYOK).")
 
         _mission_updated = {
             r["key"]: r["value"]
