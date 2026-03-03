@@ -4,14 +4,12 @@ Called directly from app/feedback.py now; wrappable in a FastAPI route later.
 """
 from __future__ import annotations
 
-import os
 import platform
 import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
 import yaml
 
 _ROOT = Path(__file__).parent.parent
