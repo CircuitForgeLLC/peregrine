@@ -178,3 +178,67 @@ def test_build_issue_body_listings_shown():
     body = build_issue_body(form, {}, {"listings": listings})
     assert "CSM" in body
     assert "Acme" in body
+
+
+# ── Forgejo API ───────────────────────────────────────────────────────────────
+
+@patch("scripts.feedback_api.requests.get")
+@patch("scripts.feedback_api.requests.post")
+def test_ensure_labels_uses_existing(mock_post, mock_get):
+    from scripts.feedback_api import _ensure_labels
+    mock_get.return_value.ok = True
+    mock_get.return_value.json.return_value = [
+        {"name": "beta-feedback", "id": 1},
+        {"name": "bug", "id": 2},
+    ]
+    ids = _ensure_labels(
+        ["beta-feedback", "bug"],
+        "https://example.com/api/v1", {"Authorization": "token x"}, "owner/repo"
+    )
+    assert ids == [1, 2]
+    mock_post.assert_not_called()
+
+
+@patch("scripts.feedback_api.requests.get")
+@patch("scripts.feedback_api.requests.post")
+def test_ensure_labels_creates_missing(mock_post, mock_get):
+    from scripts.feedback_api import _ensure_labels
+    mock_get.return_value.ok = True
+    mock_get.return_value.json.return_value = []
+    mock_post.return_value.ok = True
+    mock_post.return_value.json.return_value = {"id": 99}
+    ids = _ensure_labels(
+        ["needs-triage"],
+        "https://example.com/api/v1", {"Authorization": "token x"}, "owner/repo"
+    )
+    assert 99 in ids
+
+
+@patch("scripts.feedback_api._ensure_labels", return_value=[1, 2])
+@patch("scripts.feedback_api.requests.post")
+def test_create_forgejo_issue_success(mock_post, mock_labels, monkeypatch):
+    from scripts.feedback_api import create_forgejo_issue
+    monkeypatch.setenv("FORGEJO_API_TOKEN", "testtoken")
+    monkeypatch.setenv("FORGEJO_REPO", "owner/repo")
+    monkeypatch.setenv("FORGEJO_API_URL", "https://example.com/api/v1")
+    mock_post.return_value.status_code = 201
+    mock_post.return_value.raise_for_status = lambda: None
+    mock_post.return_value.json.return_value = {"number": 42, "html_url": "https://example.com/issues/42"}
+    result = create_forgejo_issue("Test issue", "body text", ["beta-feedback", "bug"])
+    assert result["number"] == 42
+    assert "42" in result["url"]
+
+
+@patch("scripts.feedback_api.requests.post")
+def test_upload_attachment_returns_url(mock_post, monkeypatch):
+    from scripts.feedback_api import upload_attachment
+    monkeypatch.setenv("FORGEJO_API_TOKEN", "testtoken")
+    monkeypatch.setenv("FORGEJO_REPO", "owner/repo")
+    monkeypatch.setenv("FORGEJO_API_URL", "https://example.com/api/v1")
+    mock_post.return_value.status_code = 201
+    mock_post.return_value.raise_for_status = lambda: None
+    mock_post.return_value.json.return_value = {
+        "uuid": "abc", "browser_download_url": "https://example.com/assets/abc"
+    }
+    url = upload_attachment(42, b"\x89PNG", "screenshot.png")
+    assert url == "https://example.com/assets/abc"
