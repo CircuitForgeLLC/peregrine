@@ -59,3 +59,26 @@ def collect_context(page: str) -> dict:
         "os": platform.platform(),
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
+
+
+def collect_logs(n: int = 100, log_path: Path | None = None) -> str:
+    """Return last n lines of the Streamlit log, with PII masked."""
+    path = log_path or (_ROOT / ".streamlit.log")
+    if not path.exists():
+        return "(no log file found)"
+    lines = path.read_text(errors="replace").splitlines()
+    return mask_pii("\n".join(lines[-n:]))
+
+
+def collect_listings(db_path: Path | None = None, n: int = 5) -> list[dict]:
+    """Return the n most-recent job listings — title, company, url only."""
+    import sqlite3
+    from scripts.db import DEFAULT_DB
+    path = db_path or DEFAULT_DB
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT title, company, url FROM jobs ORDER BY id DESC LIMIT ?", (n,)
+    ).fetchall()
+    conn.close()
+    return [{"title": r["title"], "company": r["company"], "url": r["url"]} for r in rows]
