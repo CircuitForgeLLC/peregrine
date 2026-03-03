@@ -4,6 +4,12 @@ services:
 
   app:
     build: .
+    command: >
+      bash -c "streamlit run app/app.py
+      --server.port=8501
+      --server.headless=true
+      --server.fileWatcherType=none
+      2>&1 | tee /app/data/.streamlit.log"
     ports:
       - "${STREAMLIT_PORT:-8501}:8501"
     volumes:
