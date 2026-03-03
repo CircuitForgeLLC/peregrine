@@ -73,14 +73,21 @@ def _feedback_dialog(page: str) -> None:
                 _clear_feedback_state()
                 st.rerun()  # intentionally closes the dialog
         with col_next:
-            if st.button(
-                "Next →",
-                type="primary",
-                disabled=not st.session_state.get("fb_title", "").strip()
-                or not st.session_state.get("fb_desc", "").strip(),
-            ):
-                st.session_state.fb_step = 2
-                # no st.rerun() — button click already re-renders the dialog
+            if st.button("Next →", type="primary"):
+                # Read widget values NOW (same rerun as the click — values are
+                # available here even on first click). Copy to non-widget keys
+                # so they survive step 2's render (Streamlit removes widget
+                # state for widgets that are no longer rendered).
+                title = fb_title.strip()
+                desc = fb_desc.strip()
+                if not title or not desc:
+                    st.error("Please fill in both Title and Description.")
+                else:
+                    st.session_state.fb_data_type = fb_type
+                    st.session_state.fb_data_title = title
+                    st.session_state.fb_data_desc = desc
+                    st.session_state.fb_data_repro = st.session_state.get("fb_repro", "")
+                    st.session_state.fb_step = 2
 
     # ═════════════════════════════════════════════════════════════════════════
     # STEP 2 — Consent + attachments
@@ -178,7 +185,7 @@ def _submit(page, include_diag, submitter, collect_context, collect_logs,
         if submitter:
             attachments["submitter"] = submitter
 
-        fb_type = st.session_state.get("fb_type", "Other")
+        fb_type = st.session_state.get("fb_data_type", "Other")
         type_key = {"Bug": "bug", "Feature Request": "feature", "Other": "other"}.get(
             fb_type, "other"
         )
@@ -189,15 +196,15 @@ def _submit(page, include_diag, submitter, collect_context, collect_logs,
 
         form = {
             "type": type_key,
-            "description": st.session_state.get("fb_desc", ""),
-            "repro": st.session_state.get("fb_repro", "") if type_key == "bug" else "",
+            "description": st.session_state.get("fb_data_desc", ""),
+            "repro": st.session_state.get("fb_data_repro", "") if type_key == "bug" else "",
         }
 
         body = build_issue_body(form, context, attachments)
 
         try:
             result = create_forgejo_issue(
-                st.session_state.get("fb_title", "Feedback"), body, labels
+                st.session_state.get("fb_data_title", "Feedback"), body, labels
             )
             screenshot = st.session_state.get("fb_screenshot")
             if screenshot:
@@ -213,7 +220,9 @@ def _submit(page, include_diag, submitter, collect_context, collect_logs,
 
 def _clear_feedback_state() -> None:
     for key in [
-        "fb_step", "fb_type", "fb_title", "fb_desc", "fb_repro",
+        "fb_step",
+        "fb_type", "fb_title", "fb_desc", "fb_repro",       # widget keys
+        "fb_data_type", "fb_data_title", "fb_data_desc", "fb_data_repro",  # saved data
         "fb_diag", "fb_upload", "fb_attr", "fb_screenshot", "fb_paste_key",
     ]:
         st.session_state.pop(key, None)
