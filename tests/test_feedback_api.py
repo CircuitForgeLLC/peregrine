@@ -242,3 +242,32 @@ def test_upload_attachment_returns_url(mock_post, monkeypatch):
     }
     url = upload_attachment(42, b"\x89PNG", "screenshot.png")
     assert url == "https://example.com/assets/abc"
+
+
+# ── screenshot_page ───────────────────────────────────────────────────────────
+
+def test_screenshot_page_returns_none_on_failure(monkeypatch):
+    """screenshot_page returns None gracefully when capture fails."""
+    from scripts.feedback_api import screenshot_page
+    # Patch sync_playwright to raise an exception (simulates any failure)
+    import scripts.feedback_api as fapi
+    def bad_playwright():
+        raise RuntimeError("browser unavailable")
+    monkeypatch.setattr(fapi, "sync_playwright", bad_playwright)
+    result = screenshot_page(port=9999)
+    assert result is None
+
+
+@patch("scripts.feedback_api.sync_playwright")
+def test_screenshot_page_returns_bytes(mock_pw):
+    """screenshot_page returns PNG bytes when playwright is available."""
+    from scripts.feedback_api import screenshot_page
+    fake_png = b"\x89PNG\r\n\x1a\n"
+    mock_context = MagicMock()
+    mock_pw.return_value.__enter__ = lambda s: mock_context
+    mock_pw.return_value.__exit__ = MagicMock(return_value=False)
+    mock_browser = mock_context.chromium.launch.return_value
+    mock_page = mock_browser.new_page.return_value
+    mock_page.screenshot.return_value = fake_png
+    result = screenshot_page(port=8502)
+    assert result == fake_png
