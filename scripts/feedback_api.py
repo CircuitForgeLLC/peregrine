@@ -13,6 +13,7 @@ from pathlib import Path
 
 import requests
 import yaml
+from playwright.sync_api import sync_playwright
 
 _ROOT = Path(__file__).parent.parent
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
@@ -192,3 +193,24 @@ def upload_attachment(
     )
     resp.raise_for_status()
     return resp.json().get("browser_download_url", "")
+
+
+def screenshot_page(port: int | None = None) -> bytes | None:
+    """
+    Capture a screenshot of the running Peregrine UI using Playwright.
+    Returns PNG bytes, or None if Playwright is not installed or if capture fails.
+    """
+    if port is None:
+        port = int(os.environ.get("STREAMLIT_PORT", os.environ.get("STREAMLIT_SERVER_PORT", "8502")))
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(f"http://localhost:{port}", timeout=10_000)
+            page.wait_for_load_state("networkidle", timeout=10_000)
+            png = page.screenshot(full_page=False)
+            browser.close()
+            return png
+    except Exception:
+        return None
