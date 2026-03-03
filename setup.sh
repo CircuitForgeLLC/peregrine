@@ -89,6 +89,15 @@ configure_git_safe_dir() {
     fi
 }
 
+activate_git_hooks() {
+    local repo_dir
+    repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -d "$repo_dir/.githooks" ]]; then
+        git -C "$repo_dir" config core.hooksPath .githooks
+        success "Git hooks activated (.githooks/)."
+    fi
+}
+
 # ── Git ────────────────────────────────────────────────────────────────────────
 install_git() {
     if cmd_exists git; then success "git already installed: $(git --version)"; return; fi
@@ -128,8 +137,10 @@ check_podman() {
         esac
         success "podman-compose installed."
     fi
-    warn "GPU profiles (single-gpu, dual-gpu) require CDI setup:"
-    warn "  sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml"
+    if [[ "$OS" != "Darwin" ]]; then
+        warn "GPU profiles (single-gpu, dual-gpu) require CDI setup:"
+        warn "  sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml"
+    fi
     return 0
 }
 
@@ -265,6 +276,54 @@ install_nvidia_toolkit() {
     success "NVIDIA Container Toolkit installed."
 }
 
+# ── Ollama (macOS native) ──────────────────────────────────────────────────────
+# On macOS, Docker Desktop runs in a Linux VM that cannot access the Apple GPU.
+# Ollama must run natively on the host to use Metal GPU acceleration.
+# When it's running on :11434, preflight automatically adopts it and stubs out
+# the Docker Ollama container so there's no conflict.
+install_ollama_macos() {
+    [[ "$OS" != "Darwin" ]] && return
+    echo ""
+    info "Ollama (native macOS — enables Apple Silicon Metal GPU acceleration)"
+    echo -e "  Docker cannot pass through the Apple GPU. For GPU-accelerated inference,"
+    echo -e "  Ollama must run natively on the host."
+    echo ""
+
+    if cmd_exists ollama; then
+        success "Ollama already installed: $(ollama --version 2>/dev/null | head -1 || echo 'unknown version')"
+        if pgrep -x ollama &>/dev/null || launchctl print gui/"$(id -u)" 2>/dev/null | grep -q com.ollama; then
+            success "Ollama service is running — preflight will adopt it automatically."
+        else
+            warn "Ollama is installed but not running."
+            warn "Start it with:  brew services start ollama   (or: ollama serve)"
+        fi
+        return
+    fi
+
+    # Non-interactive (e.g. curl | bash) — skip prompt
+    if [[ ! -t 0 ]]; then
+        warn "Non-interactive — skipping Ollama install."
+        warn "Install manually: brew install ollama && brew services start ollama"
+        return
+    fi
+
+    read -rp "  Install Ollama natively for Metal GPU support? [Y/n]: " yn
+    yn="${yn:-Y}"
+    if [[ "$yn" =~ ^[Yy] ]]; then
+        if cmd_exists brew; then
+            brew install ollama
+            brew services start ollama
+            success "Ollama installed and started."
+            success "Preflight will adopt it on next run — no Docker Ollama container will start."
+        else
+            warn "Homebrew not found."
+            warn "Install Ollama manually from https://ollama.com/download/mac then start it."
+        fi
+    else
+        info "Skipped. The 'cpu' profile will use Docker Ollama on CPU instead."
+    fi
+}
+
 # ── Environment setup ──────────────────────────────────────────────────────────
 # Note: Ollama runs as a Docker container — the compose.yml ollama service
 # handles model download automatically on first start (see docker/ollama/entrypoint.sh).
@@ -343,6 +402,7 @@ main() {
     install_build_tools
     install_git
     configure_git_safe_dir
+    activate_git_hooks
     # Podman takes precedence if already installed; otherwise install Docker
     if ! check_podman; then
         install_docker
@@ -350,6 +410,7 @@ main() {
         check_compose
         install_nvidia_toolkit
     fi
+    install_ollama_macos
     setup_env
     configure_model_paths
 
@@ -359,7 +420,11 @@ main() {
     echo -e "  ${GREEN}Next steps:${NC}"
     echo -e "  1. Start Peregrine:"
     echo -e "     ${YELLOW}./manage.sh start${NC}                    # remote/API-only (no local GPU)"
-    echo -e "     ${YELLOW}./manage.sh start --profile cpu${NC}      # local Ollama inference (CPU)"
+    if [[ "$OS" == "Darwin" ]] && cmd_exists ollama; then
+        echo -e "     ${YELLOW}./manage.sh start --profile cpu${NC}      # local Ollama inference (Metal GPU via native Ollama)"
+    else
+        echo -e "     ${YELLOW}./manage.sh start --profile cpu${NC}      # local Ollama inference (CPU)"
+    fi
     echo -e "  2. Open ${YELLOW}http://localhost:8501${NC} — the setup wizard will guide you"
     echo -e "  (Tip: edit ${YELLOW}.env${NC} any time to adjust ports or model paths)"
     echo ""
