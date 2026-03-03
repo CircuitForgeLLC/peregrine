@@ -35,8 +35,7 @@ def _feedback_dialog(page: str) -> None:
     """Two-step feedback dialog: form → consent/attachments → submit."""
     from scripts.feedback_api import (
         collect_context, collect_logs, collect_listings,
-        build_issue_body, create_forgejo_issue,
-        upload_attachment, screenshot_page,
+        build_issue_body, create_forgejo_issue, upload_attachment,
     )
     from scripts.db import DEFAULT_DB
 
@@ -104,29 +103,26 @@ def _feedback_dialog(page: str) -> None:
         # ── Screenshot ────────────────────────────────────────────────────────
         st.divider()
         st.caption("**Screenshot** (optional)")
-        col_cap, col_up = st.columns(2)
 
-        with col_cap:
-            if st.button("📸 Capture current view"):
-                with st.spinner("Capturing page…"):
-                    png = screenshot_page()
-                if png:
-                    st.session_state.fb_screenshot = png
-                else:
-                    st.warning(
-                        "Playwright not available — install it with "
-                        "`playwright install chromium`, or upload a screenshot instead."
-                    )
+        from app.components.paste_image import paste_image_component
 
-        with col_up:
-            uploaded = st.file_uploader(
-                "Upload screenshot",
-                type=["png", "jpg", "jpeg"],
-                label_visibility="collapsed",
-                key="fb_upload",
-            )
-            if uploaded:
-                st.session_state.fb_screenshot = uploaded.read()
+        # Keyed so we can reset the component when the user removes the image
+        if "fb_paste_key" not in st.session_state:
+            st.session_state.fb_paste_key = 0
+
+        pasted = paste_image_component(key=f"fb_paste_{st.session_state.fb_paste_key}")
+        if pasted:
+            st.session_state.fb_screenshot = pasted
+
+        st.caption("or upload a file:")
+        uploaded = st.file_uploader(
+            "Upload screenshot",
+            type=["png", "jpg", "jpeg"],
+            label_visibility="collapsed",
+            key="fb_upload",
+        )
+        if uploaded:
+            st.session_state.fb_screenshot = uploaded.read()
 
         if st.session_state.get("fb_screenshot"):
             st.image(
@@ -136,6 +132,7 @@ def _feedback_dialog(page: str) -> None:
             )
             if st.button("🗑 Remove screenshot"):
                 st.session_state.pop("fb_screenshot", None)
+                st.session_state.fb_paste_key = st.session_state.get("fb_paste_key", 0) + 1
                 # no st.rerun() — button click already re-renders the dialog
 
         # ── Attribution consent ───────────────────────────────────────────────
@@ -217,7 +214,7 @@ def _submit(page, include_diag, submitter, collect_context, collect_logs,
 def _clear_feedback_state() -> None:
     for key in [
         "fb_step", "fb_type", "fb_title", "fb_desc", "fb_repro",
-        "fb_diag", "fb_upload", "fb_attr", "fb_screenshot",
+        "fb_diag", "fb_upload", "fb_attr", "fb_screenshot", "fb_paste_key",
     ]:
         st.session_state.pop(key, None)
 
