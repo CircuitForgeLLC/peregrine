@@ -119,3 +119,62 @@ def test_collect_listings_respects_n(tmp_path):
             "salary": "", "description": "", "date_found": "2026-03-01",
         })
     assert len(collect_listings(db_path=db, n=3)) == 3
+
+
+# ── build_issue_body ──────────────────────────────────────────────────────────
+
+def test_build_issue_body_contains_description():
+    from scripts.feedback_api import build_issue_body
+    form = {"type": "bug", "title": "Test", "description": "it broke", "repro": ""}
+    ctx = {"page": "Home", "version": "v1.0", "tier": "free",
+           "llm_backend": "ollama", "os": "Linux", "timestamp": "2026-03-03T00:00:00Z"}
+    body = build_issue_body(form, ctx, {})
+    assert "it broke" in body
+    assert "Home" in body
+    assert "v1.0" in body
+
+
+def test_build_issue_body_bug_includes_repro():
+    from scripts.feedback_api import build_issue_body
+    form = {"type": "bug", "title": "X", "description": "desc", "repro": "step 1\nstep 2"}
+    body = build_issue_body(form, {}, {})
+    assert "step 1" in body
+    assert "Reproduction" in body
+
+
+def test_build_issue_body_no_repro_for_feature():
+    from scripts.feedback_api import build_issue_body
+    form = {"type": "feature", "title": "X", "description": "add dark mode", "repro": "ignored"}
+    body = build_issue_body(form, {}, {})
+    assert "Reproduction" not in body
+
+
+def test_build_issue_body_logs_in_collapsible():
+    from scripts.feedback_api import build_issue_body
+    form = {"type": "other", "title": "X", "description": "Y", "repro": ""}
+    body = build_issue_body(form, {}, {"logs": "log line 1\nlog line 2"})
+    assert "<details>" in body
+    assert "log line 1" in body
+
+
+def test_build_issue_body_omits_logs_when_not_provided():
+    from scripts.feedback_api import build_issue_body
+    form = {"type": "bug", "title": "X", "description": "Y", "repro": ""}
+    body = build_issue_body(form, {}, {})
+    assert "<details>" not in body
+
+
+def test_build_issue_body_submitter_attribution():
+    from scripts.feedback_api import build_issue_body
+    form = {"type": "bug", "title": "X", "description": "Y", "repro": ""}
+    body = build_issue_body(form, {}, {"submitter": "Jane Doe <jane@example.com>"})
+    assert "Jane Doe" in body
+
+
+def test_build_issue_body_listings_shown():
+    from scripts.feedback_api import build_issue_body
+    form = {"type": "bug", "title": "X", "description": "Y", "repro": ""}
+    listings = [{"title": "CSM", "company": "Acme", "url": "https://example.com/1"}]
+    body = build_issue_body(form, {}, {"listings": listings})
+    assert "CSM" in body
+    assert "Acme" in body
