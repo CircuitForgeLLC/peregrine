@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — blocks sensitive files and API key patterns
+set -euo pipefail
+
+RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
+
+BLOCKED_PATHS=(
+    "config/user.yaml"
+    "config/server.yaml"
+    "config/llm.yaml"
+    "config/notion.yaml"
+    "config/adzuna.yaml"
+    "config/label_tool.yaml"
+    ".env"
+)
+
+BLOCKED_PATTERNS=(
+    "data/.*\.db$"
+    "data/.*\.jsonl$"
+    "demo/data/.*\.db$"
+)
+
+KEY_REGEXES=(
+    'sk-[A-Za-z0-9]{20,}'
+    'Bearer [A-Za-z0-9\-_]{20,}'
+    'api_key:[[:space:]]*["\x27]?[A-Za-z0-9\-_]{16,}'
+)
+
+ERRORS=0
+
+# Get list of staged files
+EMPTY_TREE="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+mapfile -t staged_files < <(git diff-index --cached --name-only HEAD 2>/dev/null || \
+                             git diff-index --cached --name-only "$EMPTY_TREE")
+
+for file in "${staged_files[@]}"; do
+    # Exact path blocklist
+    for blocked in "${BLOCKED_PATHS[@]}"; do
+        if [[ "$file" == "$blocked" ]]; then
+            echo -e "${RED}BLOCKED:${NC} $file is in the sensitive file blocklist."
+            echo -e "  Use: ${YELLOW}git restore --staged $file${NC}"
+            ERRORS=$((ERRORS + 1))
+        fi
+    done
+
+    # Pattern blocklist
+    for pattern in "${BLOCKED_PATTERNS[@]}"; do
+        if echo "$file" | grep -qE "$pattern"; then
+            echo -e "${RED}BLOCKED:${NC} $file matches sensitive path pattern ($pattern)."
+            echo -e "  Add to .gitignore or: ${YELLOW}git restore --staged $file${NC}"
+            ERRORS=$((ERRORS + 1))
+        fi
+    done
+
+    # Content scan for key patterns (only on existing staged files)
+    if [[ -f "$file" ]]; then
+        staged_content=$(git diff --cached -- "$file" 2>/dev/null | grep '^+' | grep -v '^+++' || true)
+        for regex in "${KEY_REGEXES[@]}"; do
+            if echo "$staged_content" | grep -qE "$regex"; then
+                echo -e "${RED}BLOCKED:${NC} $file appears to contain an API key or token."
+                echo -e "  Pattern matched: ${YELLOW}$regex${NC}"
+                echo -e "  Review with: ${YELLOW}git diff --cached -- $file${NC}"
+                echo -e "  Use: ${YELLOW}git restore --staged $file${NC}"
+                ERRORS=$((ERRORS + 1))
+                break
+            fi
+        done
+    fi
+done
+
+if [[ $ERRORS -gt 0 ]]; then
+    echo ""
+    echo -e "${RED}Commit blocked.${NC} Fix the issues above and try again."
+    exit 1
+fi
+exit 0
