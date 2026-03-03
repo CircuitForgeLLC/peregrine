@@ -4,12 +4,14 @@ Called directly from app/feedback.py now; wrappable in a FastAPI route later.
 """
 from __future__ import annotations
 
+import os
 import platform
 import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+import requests
 import yaml
 
 _ROOT = Path(__file__).parent.parent
@@ -125,3 +127,68 @@ def build_issue_body(form: dict, context: dict, attachments: dict) -> str:
         lines += ["---", f"*Submitted by: {attachments['submitter']}*"]
 
     return "\n".join(lines)
+
+
+def _ensure_labels(
+    label_names: list[str], base_url: str, headers: dict, repo: str
+) -> list[int]:
+    """Look up or create Forgejo labels by name. Returns list of IDs."""
+    _COLORS = {
+        "beta-feedback": "#0075ca",
+        "needs-triage": "#e4e669",
+        "bug": "#d73a4a",
+        "feature-request": "#a2eeef",
+        "question": "#d876e3",
+    }
+    resp = requests.get(f"{base_url}/repos/{repo}/labels", headers=headers, timeout=10)
+    existing = {lb["name"]: lb["id"] for lb in resp.json()} if resp.ok else {}
+    ids: list[int] = []
+    for name in label_names:
+        if name in existing:
+            ids.append(existing[name])
+        else:
+            r = requests.post(
+                f"{base_url}/repos/{repo}/labels",
+                headers=headers,
+                json={"name": name, "color": _COLORS.get(name, "#ededed")},
+                timeout=10,
+            )
+            if r.ok:
+                ids.append(r.json()["id"])
+    return ids
+
+
+def create_forgejo_issue(title: str, body: str, labels: list[str]) -> dict:
+    """Create a Forgejo issue. Returns {"number": int, "url": str}."""
+    token = os.environ.get("FORGEJO_API_TOKEN", "")
+    repo = os.environ.get("FORGEJO_REPO", "pyr0ball/peregrine")
+    base = os.environ.get("FORGEJO_API_URL", "https://git.opensourcesolarpunk.com/api/v1")
+    headers = {"Authorization": f"token {token}", "Content-Type": "application/json"}
+    label_ids = _ensure_labels(labels, base, headers, repo)
+    resp = requests.post(
+        f"{base}/repos/{repo}/issues",
+        headers=headers,
+        json={"title": title, "body": body, "labels": label_ids},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return {"number": data["number"], "url": data["html_url"]}
+
+
+def upload_attachment(
+    issue_number: int, image_bytes: bytes, filename: str = "screenshot.png"
+) -> str:
+    """Upload a screenshot to an existing Forgejo issue. Returns attachment URL."""
+    token = os.environ.get("FORGEJO_API_TOKEN", "")
+    repo = os.environ.get("FORGEJO_REPO", "pyr0ball/peregrine")
+    base = os.environ.get("FORGEJO_API_URL", "https://git.opensourcesolarpunk.com/api/v1")
+    headers = {"Authorization": f"token {token}"}
+    resp = requests.post(
+        f"{base}/repos/{repo}/issues/{issue_number}/assets",
+        headers=headers,
+        files={"attachment": (filename, image_bytes, "image/png")},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("browser_download_url", "")
