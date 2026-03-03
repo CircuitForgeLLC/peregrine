@@ -45,11 +45,15 @@ def collect_context(page: str) -> dict:
     except Exception:
         pass
 
-    # LLM backend from llm.yaml
+    # LLM backend from llm.yaml — report first entry in fallback_order that's enabled
     llm_backend = "unknown"
     try:
         llm = yaml.safe_load((_ROOT / "config" / "llm.yaml").read_text()) or {}
-        llm_backend = llm.get("provider", "unknown")
+        backends = llm.get("backends", {})
+        for name in llm.get("fallback_order", []):
+            if backends.get(name, {}).get("enabled", False):
+                llm_backend = name
+                break
     except Exception:
         pass
 
@@ -65,7 +69,7 @@ def collect_context(page: str) -> dict:
 
 def collect_logs(n: int = 100, log_path: Path | None = None) -> str:
     """Return last n lines of the Streamlit log, with PII masked."""
-    path = log_path or (_ROOT / ".streamlit.log")
+    path = log_path or (_ROOT / "data" / ".streamlit.log")
     if not path.exists():
         return "(no log file found)"
     lines = path.read_text(errors="replace").splitlines()
