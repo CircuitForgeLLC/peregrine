@@ -48,3 +48,30 @@ run_hook_with "app/app.py" "import streamlit" && pass "allowed safe file" || \
     fail "should have allowed safe file"
 
 echo "All pre-commit hook tests passed."
+
+# ── commit-msg hook tests ────────────────────────────────────────────────────
+COMMIT_HOOK=".githooks/commit-msg"
+tmpfile=$(mktemp)
+
+echo "Test 5: accepts valid feat message"
+echo "feat: add thing" > "$tmpfile"
+bash "$COMMIT_HOOK" "$tmpfile" && pass "accepted feat" || fail "rejected valid feat"
+
+echo "Test 6: accepts valid fix with scope"
+echo "fix(auth): handle token expiry" > "$tmpfile"
+bash "$COMMIT_HOOK" "$tmpfile" && pass "accepted fix(scope)" || fail "rejected valid fix(scope)"
+
+echo "Test 7: rejects empty message"
+echo "" > "$tmpfile"
+bash "$COMMIT_HOOK" "$tmpfile" && fail "should reject empty" || pass "rejected empty"
+
+echo "Test 8: rejects non-conventional message"
+echo "updated the thing" > "$tmpfile"
+bash "$COMMIT_HOOK" "$tmpfile" && fail "should reject non-conventional" || pass "rejected non-conventional"
+
+echo "Test 9: rejects invalid type"
+echo "yolo: ship it" > "$tmpfile"
+bash "$COMMIT_HOOK" "$tmpfile" && fail "should reject invalid type" || pass "rejected invalid type"
+
+rm -f "$tmpfile"
+echo "All commit-msg hook tests passed."
