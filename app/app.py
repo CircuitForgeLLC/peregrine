@@ -165,6 +165,6 @@ with st.sidebar:
     _task_indicator()
     st.divider()
     st.caption(f"Peregrine {_get_version()}")
-    inject_feedback_button()
+    inject_feedback_button(page=pg.title)
 
 pg.run()
