@@ -82,3 +82,46 @@ def collect_listings(db_path: Path | None = None, n: int = 5) -> list[dict]:
     ).fetchall()
     conn.close()
     return [{"title": r["title"], "company": r["company"], "url": r["url"]} for r in rows]
+
+
+def build_issue_body(form: dict, context: dict, attachments: dict) -> str:
+    """Assemble the Forgejo issue markdown body from form data, context, and attachments."""
+    _TYPE_LABELS = {"bug": "🐛 Bug", "feature": "✨ Feature Request", "other": "💬 Other"}
+    lines: list[str] = [
+        f"## {_TYPE_LABELS.get(form.get('type', 'other'), '💬 Other')}",
+        "",
+        form.get("description", ""),
+        "",
+    ]
+
+    if form.get("type") == "bug" and form.get("repro"):
+        lines += ["### Reproduction Steps", "", form["repro"], ""]
+
+    if context:
+        lines += ["### Context", ""]
+        for k, v in context.items():
+            lines.append(f"- **{k}:** {v}")
+        lines.append("")
+
+    if attachments.get("logs"):
+        lines += [
+            "<details>",
+            "<summary>App Logs (last 100 lines)</summary>",
+            "",
+            "```",
+            attachments["logs"],
+            "```",
+            "</details>",
+            "",
+        ]
+
+    if attachments.get("listings"):
+        lines += ["### Recent Listings", ""]
+        for j in attachments["listings"]:
+            lines.append(f"- [{j['title']} @ {j['company']}]({j['url']})")
+        lines.append("")
+
+    if attachments.get("submitter"):
+        lines += ["---", f"*Submitted by: {attachments['submitter']}*"]
+
+    return "\n".join(lines)
