@@ -1,5 +1,10 @@
 # Peregrine
 
+> **Primary development** happens at [git.opensourcesolarpunk.com](https://git.opensourcesolarpunk.com/pyr0ball/peregrine) — GitHub and Codeberg are push mirrors. Issues and PRs are welcome on either platform.
+
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](./LICENSE-BSL)
+[![CI](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml/badge.svg)](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml)
+
 **AI-powered job search pipeline — by [Circuit Forge LLC](https://circuitforge.io)**
 
 > *"Don't be evil, for real and forever."*
@@ -23,9 +28,9 @@ cd peregrine
 
 ```bash
 ./manage.sh start                          # remote profile (API-only, no GPU)
-./manage.sh start --profile cpu            # local Ollama on CPU
-./manage.sh start --profile single-gpu    # Ollama + Vision on GPU 0
-./manage.sh start --profile dual-gpu      # Ollama + Vision + vLLM (GPU 0 + 1)
+./manage.sh start --profile cpu            # local Ollama (CPU, or Metal GPU on Apple Silicon — see below)
+./manage.sh start --profile single-gpu    # Ollama + Vision on GPU 0  (NVIDIA only)
+./manage.sh start --profile dual-gpu      # Ollama + Vision + vLLM (GPU 0 + 1)  (NVIDIA only)
 ```
 
 Or use `make` directly:
@@ -37,7 +42,7 @@ make start PROFILE=single-gpu
 
 **3.** Open http://localhost:8501 — the setup wizard guides you through the rest.
 
-> **macOS:** Docker Desktop must be running before starting.
+> **macOS / Apple Silicon:** Docker Desktop must be running. For Metal GPU-accelerated inference, install Ollama natively before starting — `setup.sh` will prompt you to do this. See [Apple Silicon GPU](#apple-silicon-gpu) below.
 > **Windows:** Not supported — use WSL2 with Ubuntu.
 
 ### Installing to `/opt` or other system directories
@@ -73,9 +78,25 @@ After `./manage.sh setup`, log out and back in for docker group membership to ta
 | Profile | Services started | Use case |
 |---------|-----------------|----------|
 | `remote` | app + searxng | No GPU; LLM calls go to Anthropic / OpenAI |
-| `cpu` | app + ollama + searxng | No GPU; local models on CPU (slow) |
-| `single-gpu` | app + ollama + vision + searxng | One GPU: cover letters, research, vision |
-| `dual-gpu` | app + ollama + vllm + vision + searxng | GPU 0 = Ollama, GPU 1 = vLLM |
+| `cpu` | app + ollama + searxng | No GPU; local models on CPU. On Apple Silicon, use with native Ollama for Metal acceleration — see below. |
+| `single-gpu` | app + ollama + vision + searxng | One **NVIDIA** GPU: cover letters, research, vision |
+| `dual-gpu` | app + ollama + vllm + vision + searxng | Two **NVIDIA** GPUs: GPU 0 = Ollama, GPU 1 = vLLM |
+
+### Apple Silicon GPU
+
+Docker Desktop on macOS runs in a Linux VM — it cannot access the Apple GPU. Metal-accelerated inference requires Ollama to run **natively** on the host.
+
+`setup.sh` handles this automatically: it offers to install Ollama via Homebrew, starts it as a background service, and explains what happens next. If Ollama is running on port 11434 when you start Peregrine, preflight detects it, stubs out the Docker Ollama container, and routes inference through the native process — which uses Metal automatically.
+
+To do it manually:
+
+```bash
+brew install ollama
+brew services start ollama          # starts at login, uses Metal GPU
+./manage.sh start --profile cpu     # preflight adopts native Ollama; Docker container is skipped
+```
+
+The `cpu` profile label is a slight misnomer in this context — Ollama will be running on the GPU. `single-gpu` and `dual-gpu` profiles are NVIDIA-specific and not applicable on Mac.
 
 ---
 
@@ -83,7 +104,7 @@ After `./manage.sh setup`, log out and back in for docker group membership to ta
 
 On first launch the setup wizard walks through seven steps:
 
-1. **Hardware** — detects NVIDIA GPUs and recommends a profile
+1. **Hardware** — detects NVIDIA GPUs (Linux) or Apple Silicon GPU (macOS) and recommends a profile
 2. **Tier** — choose free, paid, or premium (or use `dev_tier_override` for local testing)
 3. **Identity** — name, email, phone, LinkedIn, career summary
 4. **Resume** — upload a PDF/DOCX for LLM parsing, or use the guided form builder
