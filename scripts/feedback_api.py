@@ -13,7 +13,6 @@ from pathlib import Path
 
 import requests
 import yaml
-from playwright.sync_api import sync_playwright
 
 _ROOT = Path(__file__).parent.parent
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
@@ -78,12 +77,11 @@ def collect_listings(db_path: Path | None = None, n: int = 5) -> list[dict]:
     import sqlite3
     from scripts.db import DEFAULT_DB
     path = db_path or DEFAULT_DB
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT title, company, url FROM jobs ORDER BY id DESC LIMIT ?", (n,)
-    ).fetchall()
-    conn.close()
+    with sqlite3.connect(path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT title, company, url FROM jobs ORDER BY id DESC LIMIT ?", (n,)
+        ).fetchall()
     return [{"title": r["title"], "company": r["company"], "url": r["url"]} for r in rows]
 
 
@@ -198,8 +196,13 @@ def upload_attachment(
 def screenshot_page(port: int | None = None) -> bytes | None:
     """
     Capture a screenshot of the running Peregrine UI using Playwright.
-    Returns PNG bytes, or None if Playwright is not installed or if capture fails.
+    Returns PNG bytes, or None if Playwright is not installed or capture fails.
     """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return None
+
     if port is None:
         port = int(os.environ.get("STREAMLIT_PORT", os.environ.get("STREAMLIT_SERVER_PORT", "8502")))
 
