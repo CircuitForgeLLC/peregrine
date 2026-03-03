@@ -21,6 +21,7 @@ IS_DEMO = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 import streamlit as st
 from scripts.db import DEFAULT_DB, init_db, get_active_tasks
+from app.feedback import inject_feedback_button
 import sqlite3
 
 st.set_page_config(
@@ -164,5 +165,6 @@ with st.sidebar:
     _task_indicator()
     st.divider()
     st.caption(f"Peregrine {_get_version()}")
+    inject_feedback_button()
 
 pg.run()
