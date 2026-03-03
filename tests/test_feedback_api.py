@@ -249,16 +249,16 @@ def test_upload_attachment_returns_url(mock_post, monkeypatch):
 def test_screenshot_page_returns_none_on_failure(monkeypatch):
     """screenshot_page returns None gracefully when capture fails."""
     from scripts.feedback_api import screenshot_page
-    # Patch sync_playwright to raise an exception (simulates any failure)
-    import scripts.feedback_api as fapi
+    import playwright.sync_api as pw_api
+    original = pw_api.sync_playwright
     def bad_playwright():
         raise RuntimeError("browser unavailable")
-    monkeypatch.setattr(fapi, "sync_playwright", bad_playwright)
+    monkeypatch.setattr(pw_api, "sync_playwright", bad_playwright)
     result = screenshot_page(port=9999)
     assert result is None
 
 
-@patch("scripts.feedback_api.sync_playwright")
+@patch("playwright.sync_api.sync_playwright")
 def test_screenshot_page_returns_bytes(mock_pw):
     """screenshot_page returns PNG bytes when playwright is available."""
     from scripts.feedback_api import screenshot_page
