@@ -72,7 +72,7 @@ def _feedback_dialog(page: str) -> None:
         with col_cancel:
             if st.button("Cancel"):
                 _clear_feedback_state()
-                st.rerun()
+                st.rerun()  # intentionally closes the dialog
         with col_next:
             if st.button(
                 "Next →",
@@ -81,7 +81,7 @@ def _feedback_dialog(page: str) -> None:
                 or not st.session_state.get("fb_desc", "").strip(),
             ):
                 st.session_state.fb_step = 2
-                st.rerun()
+                # no st.rerun() — button click already re-renders the dialog
 
     # ═════════════════════════════════════════════════════════════════════════
     # STEP 2 — Consent + attachments
@@ -136,7 +136,7 @@ def _feedback_dialog(page: str) -> None:
             )
             if st.button("🗑 Remove screenshot"):
                 st.session_state.pop("fb_screenshot", None)
-                st.rerun()
+                # no st.rerun() — button click already re-renders the dialog
 
         # ── Attribution consent ───────────────────────────────────────────────
         st.divider()
@@ -159,7 +159,7 @@ def _feedback_dialog(page: str) -> None:
         with col_back:
             if st.button("← Back"):
                 st.session_state.fb_step = 1
-                st.rerun()
+                # no st.rerun() — button click already re-renders the dialog
 
         with col_submit:
             if st.button("Submit Feedback", type="primary"):
