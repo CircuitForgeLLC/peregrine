@@ -16,6 +16,8 @@ services:
       - ./config:/app/config
       - ./data:/app/data
       - ${DOCS_DIR:-~/Documents/JobSearch}:/docs
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
     environment:
       - STAGING_DB=/app/data/staging.db
       - DOCS_DIR=/docs

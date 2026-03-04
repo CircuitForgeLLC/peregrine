@@ -324,6 +324,14 @@ with tab_search:
         st.session_state["_sp_excludes"] = "\n".join(p.get("exclude_keywords", []))
         st.session_state["_sp_hash"] = _sp_hash
 
+    # Apply any pending programmatic updates BEFORE widgets are instantiated.
+    # Streamlit forbids writing to a widget's key after it renders on the same pass;
+    # button handlers write to *_pending keys instead, consumed here on the next pass.
+    for _pend, _wkey in [("_sp_titles_pending", "_sp_titles_multi"),
+                         ("_sp_locs_pending", "_sp_locations_multi")]:
+        if _pend in st.session_state:
+            st.session_state[_wkey] = st.session_state.pop(_pend)
+
     # ── Titles ────────────────────────────────────────────────────────────────
     _title_row, _suggest_btn_col = st.columns([4, 1])
     with _title_row:
@@ -355,7 +363,7 @@ with tab_search:
                     st.session_state["_sp_title_options"] = _opts
                 if _t not in _sel:
                     _sel.append(_t)
-                    st.session_state["_sp_titles_multi"] = _sel
+                    st.session_state["_sp_titles_pending"] = _sel
                 st.session_state["_sp_new_title"] = ""
                 st.rerun()
     with st.expander("📋 Paste a list of titles"):
@@ -371,7 +379,7 @@ with tab_search:
                 if _t not in _sel:
                     _sel.append(_t)
             st.session_state["_sp_title_options"] = _opts
-            st.session_state["_sp_titles_multi"] = _sel
+            st.session_state["_sp_titles_pending"] = _sel
             st.session_state["_sp_paste_titles"] = ""
             st.rerun()
 
