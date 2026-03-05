@@ -36,47 +36,18 @@ def save_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
 
 
-def _suggest_search_terms(current_titles: list[str], resume_path: Path) -> dict:
-    """Call LLM to suggest additional job titles and exclude keywords."""
-    import json
-    import re
-    from scripts.llm_router import LLMRouter
+from scripts.suggest_helpers import (
+    suggest_search_terms as _suggest_search_terms_impl,
+    suggest_resume_keywords as _suggest_resume_keywords,
+)
 
-    resume_context = ""
-    if resume_path.exists():
-        resume = load_yaml(resume_path)
-        lines = []
-        for exp in (resume.get("experience_details") or [])[:3]:
-            pos = exp.get("position", "")
-            co = exp.get("company", "")
-            skills = ", ".join((exp.get("skills_acquired") or [])[:5])
-            lines.append(f"- {pos} at {co}: {skills}")
-        resume_context = "\n".join(lines)
-
-    titles_str = "\n".join(f"- {t}" for t in current_titles)
-    prompt = f"""You are helping a job seeker optimize their search criteria.
-
-Their background (from resume):
-{resume_context or "Customer success and technical account management leader"}
-
-Current job titles being searched:
-{titles_str}
-
-Suggest:
-1. 5-8 additional job titles they might be missing (alternative names, adjacent roles, senior variants)
-2. 3-5 keywords to add to the exclusion filter (to screen out irrelevant postings)
-
-Return ONLY valid JSON in this exact format:
-{{"suggested_titles": ["Title 1", "Title 2"], "suggested_excludes": ["keyword 1", "keyword 2"]}}"""
-
-    result = LLMRouter().complete(prompt).strip()
-    m = re.search(r"\{.*\}", result, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group())
-        except Exception:
-            pass
-    return {"suggested_titles": [], "suggested_excludes": []}
+def _suggest_search_terms(current_titles, resume_path, blocklist=None, user_profile=None):
+    return _suggest_search_terms_impl(
+        current_titles,
+        resume_path,
+        blocklist or {},
+        user_profile or {},
+    )
 
 _show_finetune = bool(_profile and _profile.inference_profile in ("single-gpu", "dual-gpu"))
 
@@ -328,7 +299,11 @@ with tab_search:
     # Streamlit forbids writing to a widget's key after it renders on the same pass;
     # button handlers write to *_pending keys instead, consumed here on the next pass.
     for _pend, _wkey in [("_sp_titles_pending", "_sp_titles_multi"),
-                         ("_sp_locs_pending", "_sp_locations_multi")]:
+                         ("_sp_locs_pending", "_sp_locations_multi"),
+                         ("_sp_new_title_pending", "_sp_new_title"),
+                         ("_sp_paste_titles_pending", "_sp_paste_titles"),
+                         ("_sp_new_loc_pending", "_sp_new_loc"),
+                         ("_sp_paste_locs_pending", "_sp_paste_locs")]:
         if _pend in st.session_state:
             st.session_state[_wkey] = st.session_state.pop(_pend)
 
@@ -339,7 +314,7 @@ with tab_search:
     with _suggest_btn_col:
         st.write("")
         _run_suggest = st.button("✨ Suggest", key="sp_suggest_btn",
-                                  help="Ask the LLM to suggest additional titles and exclude keywords based on your resume")
+                                  help="Ask the LLM to suggest additional titles and smarter exclude keywords — using your blocklist, mission values, and career background.")
 
     st.multiselect(
         "Job titles",
@@ -364,7 +339,7 @@ with tab_search:
                 if _t not in _sel:
                     _sel.append(_t)
                     st.session_state["_sp_titles_pending"] = _sel
-                st.session_state["_sp_new_title"] = ""
+                st.session_state["_sp_new_title_pending"] = ""
                 st.rerun()
     with st.expander("📋 Paste a list of titles"):
         st.text_area("One title per line", key="_sp_paste_titles", height=80, label_visibility="collapsed",
@@ -380,22 +355,33 @@ with tab_search:
                     _sel.append(_t)
             st.session_state["_sp_title_options"] = _opts
             st.session_state["_sp_titles_pending"] = _sel
-            st.session_state["_sp_paste_titles"] = ""
+            st.session_state["_sp_paste_titles_pending"] = ""
             st.rerun()
 
     # ── LLM suggestions panel ────────────────────────────────────────────────
     if _run_suggest:
         _current_titles = list(st.session_state.get("_sp_titles_multi", []))
+        _blocklist = load_yaml(BLOCKLIST_CFG)
+        _user_profile = load_yaml(USER_CFG)
         with st.spinner("Asking LLM for suggestions…"):
-            suggestions = _suggest_search_terms(_current_titles, RESUME_PATH)
-        # Add suggested titles to options list (not auto-selected — user picks from dropdown)
-        _opts = list(st.session_state.get("_sp_title_options", []))
-        for _t in suggestions.get("suggested_titles", []):
-            if _t not in _opts:
-                _opts.append(_t)
-        st.session_state["_sp_title_options"] = _opts
-        st.session_state["_sp_suggestions"] = suggestions
-        st.rerun()
+            try:
+                suggestions = _suggest_search_terms(_current_titles, RESUME_PATH, _blocklist, _user_profile)
+            except RuntimeError as _e:
+                st.warning(
+                    f"No LLM backend available: {_e}. "
+                    "Check that Ollama is running and has GPU access, or enable a cloud backend in Settings → System → LLM.",
+                    icon="⚠️",
+                )
+                suggestions = None
+        if suggestions is not None:
+            # Add suggested titles to options list (not auto-selected — user picks from dropdown)
+            _opts = list(st.session_state.get("_sp_title_options", []))
+            for _t in suggestions.get("suggested_titles", []):
+                if _t not in _opts:
+                    _opts.append(_t)
+            st.session_state["_sp_title_options"] = _opts
+            st.session_state["_sp_suggestions"] = suggestions
+            st.rerun()
 
     if st.session_state.get("_sp_suggestions"):
         sugg = st.session_state["_sp_suggestions"]
@@ -444,8 +430,8 @@ with tab_search:
                     st.session_state["_sp_loc_options"] = _opts
                 if _l not in _sel:
                     _sel.append(_l)
-                    st.session_state["_sp_locations_multi"] = _sel
-                st.session_state["_sp_new_loc"] = ""
+                    st.session_state["_sp_locs_pending"] = _sel
+                st.session_state["_sp_new_loc_pending"] = ""
                 st.rerun()
     with st.expander("📋 Paste a list of locations"):
         st.text_area("One location per line", key="_sp_paste_locs", height=80, label_visibility="collapsed",
@@ -460,8 +446,8 @@ with tab_search:
                 if _l not in _sel:
                     _sel.append(_l)
             st.session_state["_sp_loc_options"] = _opts
-            st.session_state["_sp_locations_multi"] = _sel
-            st.session_state["_sp_paste_locs"] = ""
+            st.session_state["_sp_locs_pending"] = _sel
+            st.session_state["_sp_paste_locs_pending"] = ""
             st.rerun()
 
     st.subheader("Exclude Keywords")
@@ -1023,8 +1009,10 @@ with tab_system:
     with st.expander("🔌 Services", expanded=True):
         import subprocess as _sp
         import shutil as _shutil
+        import os as _os
         TOKENS_CFG = CONFIG_DIR / "tokens.yaml"
         COMPOSE_DIR = str(Path(__file__).parent.parent.parent)
+        _compose_env = {**_os.environ, "COMPOSE_PROJECT_NAME": "peregrine"}
         _docker_available = bool(_shutil.which("docker"))
         _sys_profile_name = _profile.inference_profile if _profile else "remote"
         SYS_SERVICES = [
@@ -1116,7 +1104,7 @@ with tab_system:
                     elif up:
                         if st.button("⏹ Stop", key=f"sys_svc_stop_{svc['port']}", use_container_width=True):
                             with st.spinner(f"Stopping {svc['name']}…"):
-                                r = _sp.run(svc["stop"], capture_output=True, text=True, cwd=svc["cwd"])
+                                r = _sp.run(svc["stop"], capture_output=True, text=True, cwd=svc["cwd"], env=_compose_env)
                             st.success("Stopped.") if r.returncode == 0 else st.error(r.stderr or r.stdout)
                             st.rerun()
                     else:
@@ -1127,7 +1115,7 @@ with tab_system:
                                 _start_cmd.append(_sel)
                         if st.button("▶ Start", key=f"sys_svc_start_{svc['port']}", use_container_width=True, type="primary"):
                             with st.spinner(f"Starting {svc['name']}…"):
-                                r = _sp.run(_start_cmd, capture_output=True, text=True, cwd=svc["cwd"])
+                                r = _sp.run(_start_cmd, capture_output=True, text=True, cwd=svc["cwd"], env=_compose_env)
                             st.success("Started!") if r.returncode == 0 else st.error(r.stderr or r.stdout)
                             st.rerun()
 
