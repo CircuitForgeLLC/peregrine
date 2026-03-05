@@ -62,8 +62,9 @@ def suggest_search_terms(
     nda = ", ".join(user_profile.get("nda_companies", [])) or "none"
     career_summary = user_profile.get("career_summary", "") or "Not provided"
     mission_raw = user_profile.get("mission_preferences", {}) or {}
+    # Three exclude angles are intentionally collapsed into one flat suggested_excludes list
     mission_str = "\n".join(
-        f"  - {k}: {v}" for k, v in mission_raw.items() if v and v.strip()
+        f"  - {k}: {v}" for k, v in mission_raw.items() if v and isinstance(v, str) and v.strip()
     ) or "  (none specified)"
 
     prompt = f"""You are helping a job seeker optimise their search configuration.
