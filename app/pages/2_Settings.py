@@ -741,11 +741,33 @@ with tab_resume:
         st.balloons()
 
     st.divider()
-    st.subheader("🏷️ Skills & Keywords")
-    st.caption(
-        f"Matched against job descriptions to surface {_name}'s most relevant experience "
-        "and highlight keyword overlap in research briefs. Search the bundled list or add your own."
-    )
+    _kw_header_col, _kw_btn_col = st.columns([5, 1])
+    with _kw_header_col:
+        st.subheader("🏷️ Skills & Keywords")
+        st.caption(
+            f"Matched against job descriptions to surface {_name}'s most relevant experience "
+            "and highlight keyword overlap in research briefs. Search the bundled list or add your own."
+        )
+    with _kw_btn_col:
+        st.write("")
+        st.write("")
+        _run_kw_suggest = st.button(
+            "✨ Suggest", key="kw_suggest_btn",
+            help="Ask the LLM to suggest skills, domains, and keywords based on your resume.",
+        )
+
+    if _run_kw_suggest:
+        _kw_current = load_yaml(KEYWORDS_CFG) if KEYWORDS_CFG.exists() else {}
+        with st.spinner("Asking LLM for keyword suggestions…"):
+            try:
+                _kw_sugg = _suggest_resume_keywords(RESUME_PATH, _kw_current)
+                st.session_state["_kw_suggestions"] = _kw_sugg
+            except RuntimeError as _e:
+                st.warning(
+                    f"No LLM backend available: {_e}. "
+                    "Check that Ollama is running and has GPU access, or enable a cloud backend in Settings → System → LLM.",
+                    icon="⚠️",
+                )
 
     from scripts.skills_utils import load_suggestions as _load_sugg, filter_tag as _filter_tag
 
@@ -808,6 +830,33 @@ with tab_resume:
         if kw_changed:
             save_yaml(KEYWORDS_CFG, kw_data)
             st.rerun()
+
+        # ── LLM keyword suggestion chips ──────────────────────────────────────
+        _kw_sugg_data = st.session_state.get("_kw_suggestions")
+        if _kw_sugg_data:
+            _KW_ICONS = {"skills": "🛠️", "domains": "🏢", "keywords": "🔑"}
+            _any_shown = False
+            for _cat, _icon in _KW_ICONS.items():
+                _cat_sugg = [t for t in _kw_sugg_data.get(_cat, [])
+                             if t not in kw_data.get(_cat, [])]
+                if not _cat_sugg:
+                    continue
+                _any_shown = True
+                st.caption(f"**{_icon} {_cat.capitalize()} suggestions** — click to add:")
+                _chip_cols = st.columns(min(len(_cat_sugg), 4))
+                for _i, _tag in enumerate(_cat_sugg):
+                    with _chip_cols[_i % 4]:
+                        if st.button(f"+ {_tag}", key=f"kw_sugg_{_cat}_{_i}"):
+                            _new_list = list(kw_data.get(_cat, [])) + [_tag]
+                            kw_data[_cat] = _new_list
+                            save_yaml(KEYWORDS_CFG, kw_data)
+                            _kw_sugg_data[_cat] = [t for t in _kw_sugg_data[_cat] if t != _tag]
+                            st.session_state["_kw_suggestions"] = _kw_sugg_data
+                            st.rerun()
+            if _any_shown:
+                if st.button("✕ Clear suggestions", key="kw_clear_sugg"):
+                    st.session_state.pop("_kw_suggestions", None)
+                    st.rerun()
 
 # ── System tab ────────────────────────────────────────────────────────────────
 with tab_system:
