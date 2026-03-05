@@ -95,3 +95,54 @@ def test_suggest_search_terms_raises_on_llm_exhausted():
     with patch("scripts.suggest_helpers.LLMRouter", return_value=mock_router):
         with pytest.raises(RuntimeError, match="All LLM backends exhausted"):
             suggest_search_terms(["CSM"], RESUME_PATH, BLOCKLIST, USER_PROFILE)
+
+
+# ── suggest_resume_keywords ───────────────────────────────────────────────────
+
+CURRENT_KW = {
+    "skills": ["Customer Success", "SQL"],
+    "domains": ["B2B SaaS"],
+    "keywords": ["NPS"],
+}
+
+
+def test_suggest_resume_keywords_returns_all_three_categories():
+    from scripts.suggest_helpers import suggest_resume_keywords
+    payload = {
+        "skills": ["Project Management"],
+        "domains": ["EdTech"],
+        "keywords": ["churn prevention"],
+    }
+    with _mock_llm(payload):
+        result = suggest_resume_keywords(RESUME_PATH, CURRENT_KW)
+    assert "skills" in result
+    assert "domains" in result
+    assert "keywords" in result
+
+
+def test_suggest_resume_keywords_excludes_already_selected():
+    from scripts.suggest_helpers import suggest_resume_keywords
+    with _mock_llm({"skills": [], "domains": [], "keywords": []}) as mock_cls:
+        suggest_resume_keywords(RESUME_PATH, CURRENT_KW)
+    prompt_sent = mock_cls.return_value.complete.call_args[0][0]
+    # Already-selected tags should appear in the prompt so LLM knows to skip them
+    assert "Customer Success" in prompt_sent
+    assert "NPS" in prompt_sent
+
+
+def test_suggest_resume_keywords_returns_empty_on_bad_json():
+    from scripts.suggest_helpers import suggest_resume_keywords
+    mock_router = MagicMock()
+    mock_router.complete.return_value = "I cannot assist."
+    with patch("scripts.suggest_helpers.LLMRouter", return_value=mock_router):
+        result = suggest_resume_keywords(RESUME_PATH, CURRENT_KW)
+    assert result == {"skills": [], "domains": [], "keywords": []}
+
+
+def test_suggest_resume_keywords_raises_on_llm_exhausted():
+    from scripts.suggest_helpers import suggest_resume_keywords
+    mock_router = MagicMock()
+    mock_router.complete.side_effect = RuntimeError("All LLM backends exhausted")
+    with patch("scripts.suggest_helpers.LLMRouter", return_value=mock_router):
+        with pytest.raises(RuntimeError, match="All LLM backends exhausted"):
+            suggest_resume_keywords(RESUME_PATH, CURRENT_KW)

@@ -124,4 +124,37 @@ def suggest_resume_keywords(
 
     Returns: {"skills": [...], "domains": [...], "keywords": [...]}
     """
-    raise NotImplementedError
+    resume_context = _load_resume_context(resume_path)
+
+    already_skills   = ", ".join(current_kw.get("skills", []))   or "none"
+    already_domains  = ", ".join(current_kw.get("domains", []))  or "none"
+    already_keywords = ", ".join(current_kw.get("keywords", [])) or "none"
+
+    prompt = f"""You are helping a job seeker build a keyword profile used to score job description matches.
+
+--- RESUME BACKGROUND ---
+{resume_context or "Not provided"}
+
+--- ALREADY SELECTED (do not repeat these) ---
+Skills:   {already_skills}
+Domains:  {already_domains}
+Keywords: {already_keywords}
+
+Suggest additional tags in each of the three categories below. Only suggest tags NOT already in the lists above.
+
+SKILLS — specific technical or soft skills (e.g. "Salesforce", "Executive Communication", "SQL", "Stakeholder Management")
+DOMAINS — industry verticals, company types, or functional areas (e.g. "B2B SaaS", "EdTech", "Non-profit", "Series A-C")
+KEYWORDS — specific terms, methodologies, metrics, or JD phrases (e.g. "NPS", "churn prevention", "QBR", "cross-functional")
+
+Return ONLY valid JSON in exactly this format (no extra text):
+{{"skills": ["Skill A", "Skill B"],
+  "domains": ["Domain A"],
+  "keywords": ["Keyword A", "Keyword B"]}}"""
+
+    raw = LLMRouter().complete(prompt).strip()
+    parsed = _parse_json(raw)
+    return {
+        "skills":   parsed.get("skills", []),
+        "domains":  parsed.get("domains", []),
+        "keywords": parsed.get("keywords", []),
+    }
