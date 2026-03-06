@@ -21,7 +21,7 @@ class TestGenerateRefinement:
         """Call generate() with a mock router and return the captured prompt."""
         captured = {}
         mock_router = MagicMock()
-        mock_router.complete.side_effect = lambda p: (captured.update({"prompt": p}), "result")[1]
+        mock_router.complete.side_effect = lambda p, **kwargs: (captured.update({"prompt": p}), "result")[1]
         with patch("scripts.generate_cover_letter.load_corpus", return_value=[]), \
              patch("scripts.generate_cover_letter.find_similar_letters", return_value=[]):
             from scripts.generate_cover_letter import generate
