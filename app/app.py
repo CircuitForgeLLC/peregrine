@@ -169,7 +169,7 @@ with st.sidebar:
     try:
         import yaml as _yaml
         from scripts.byok_guard import cloud_backends as _cloud_backends
-        _active_cloud = _cloud_backends(_yaml.safe_load(_llm_cfg_path.read_text()) or {})
+        _active_cloud = _cloud_backends(_yaml.safe_load(_llm_cfg_path.read_text(encoding="utf-8")) or {})
     except Exception:
         _active_cloud = []
     if _active_cloud:
