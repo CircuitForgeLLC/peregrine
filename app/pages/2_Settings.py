@@ -1048,11 +1048,76 @@ with tab_system:
             f"{'✓' if llm_backends.get(n, {}).get('enabled', True) else '✗'} {n}"
             for n in llm_new_order
         ))
-        if st.button("💾 Save LLM settings", type="primary", key="sys_save_llm"):
-            save_yaml(LLM_CFG, {**llm_cfg, "backends": llm_updated_backends, "fallback_order": llm_new_order})
+        # ── Cloud backend warning + acknowledgment ─────────────────────────────
+        from scripts.byok_guard import cloud_backends as _cloud_backends
+
+        _pending_cfg = {**llm_cfg, "backends": llm_updated_backends, "fallback_order": llm_new_order}
+        _pending_cloud = set(_cloud_backends(_pending_cfg))
+
+        _user_cfg_for_ack = yaml.safe_load(USER_CFG.read_text(encoding="utf-8")) or {} if USER_CFG.exists() else {}
+        _already_acked = set(_user_cfg_for_ack.get("byok_acknowledged_backends", []))
+        _unacknowledged = _pending_cloud - _already_acked
+
+        def _do_save_llm(ack_backends: set) -> None:
+            """Write llm.yaml and update acknowledgment in user.yaml."""
+            save_yaml(LLM_CFG, _pending_cfg)
             st.session_state.pop("_llm_order", None)
             st.session_state.pop("_llm_order_cfg_key", None)
+            if ack_backends:
+                _uy = yaml.safe_load(USER_CFG.read_text(encoding="utf-8")) or {} if USER_CFG.exists() else {}
+                _uy["byok_cloud_acknowledged"] = True
+                _uy["byok_acknowledged_backends"] = sorted(_already_acked | ack_backends)
+                save_yaml(USER_CFG, _uy)
             st.success("LLM settings saved!")
+
+        if _unacknowledged:
+            _provider_labels = ", ".join(b.replace("_", " ").title() for b in sorted(_unacknowledged))
+            _policy_links = []
+            for _b in sorted(_unacknowledged):
+                if _b in ("anthropic", "claude_code"):
+                    _policy_links.append("[Anthropic privacy policy](https://www.anthropic.com/privacy)")
+                elif _b == "openai":
+                    _policy_links.append("[OpenAI privacy policy](https://openai.com/policies/privacy-policy)")
+            _policy_str = " · ".join(_policy_links) if _policy_links else "Review your provider's documentation."
+
+            st.warning(
+                f"**Cloud LLM active — your data will leave this machine**\n\n"
+                f"Enabling **{_provider_labels}** means AI features will send content "
+                f"directly to that provider. CircuitForge does not receive or log it, "
+                f"but their privacy policy governs it — not ours.\n\n"
+                f"**What leaves your machine:**\n"
+                f"- Cover letter generation: your resume, job description, and profile\n"
+                f"- Keyword suggestions: your skills list and resume summary\n"
+                f"- Survey assistant: survey question text\n"
+                f"- Company research / Interview prep: company name and role only\n\n"
+                f"**What stays local always:** your jobs database, email credentials, "
+                f"license key, and Notion token.\n\n"
+                f"For sensitive data (disability, immigration, medical), a local model is "
+                f"strongly recommended. These tools assist with paperwork — they don't "
+                f"replace professional advice.\n\n"
+                f"{_policy_str} · "
+                f"[CircuitForge privacy policy](https://circuitforge.tech/privacy)",
+                icon="⚠️",
+            )
+
+            _ack = st.checkbox(
+                f"I understand — content will be sent to **{_provider_labels}** when I use AI features",
+                key="byok_ack_checkbox",
+            )
+            _col_cancel, _col_save = st.columns(2)
+            if _col_cancel.button("Cancel", key="byok_cancel"):
+                st.session_state.pop("byok_ack_checkbox", None)
+                st.rerun()
+            if _col_save.button(
+                "💾 Save with cloud LLM",
+                type="primary",
+                key="sys_save_llm_cloud",
+                disabled=not _ack,
+            ):
+                _do_save_llm(_unacknowledged)
+        else:
+            if st.button("💾 Save LLM settings", type="primary", key="sys_save_llm"):
+                _do_save_llm(set())
 
     # ── Services ──────────────────────────────────────────────────────────────
     with st.expander("🔌 Services", expanded=True):
