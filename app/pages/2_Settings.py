@@ -1056,6 +1056,8 @@ with tab_system:
 
         _user_cfg_for_ack = yaml.safe_load(USER_CFG.read_text(encoding="utf-8")) or {} if USER_CFG.exists() else {}
         _already_acked = set(_user_cfg_for_ack.get("byok_acknowledged_backends", []))
+        # Intentional: once a backend is acknowledged, it stays acknowledged even if
+        # temporarily disabled and re-enabled. This avoids nagging returning users.
         _unacknowledged = _pending_cloud - _already_acked
 
         def _do_save_llm(ack_backends: set) -> None:
@@ -1064,6 +1066,8 @@ with tab_system:
             st.session_state.pop("_llm_order", None)
             st.session_state.pop("_llm_order_cfg_key", None)
             if ack_backends:
+                # Re-read user.yaml at save time (not at render time) to avoid
+                # overwriting changes made by other processes between render and save.
                 _uy = yaml.safe_load(USER_CFG.read_text(encoding="utf-8")) or {} if USER_CFG.exists() else {}
                 _uy["byok_cloud_acknowledged"] = True
                 _uy["byok_acknowledged_backends"] = sorted(_already_acked | ack_backends)
