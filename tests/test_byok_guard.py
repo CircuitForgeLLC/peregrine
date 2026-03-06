@@ -41,6 +41,11 @@ class TestIsCloudBackend:
         cfg = {"type": "anthropic", "local": True}
         assert is_cloud_backend("anthropic", cfg) is False
 
+    def test_openai_compat_missing_base_url_treated_as_cloud(self):
+        # No base_url → unknown destination → defensively treated as cloud
+        cfg = {"type": "openai_compat"}
+        assert is_cloud_backend("unknown", cfg) is True
+
     def test_unknown_type_without_url_is_local(self):
         assert is_cloud_backend("mystery", {"type": "unknown_type"}) is False
 

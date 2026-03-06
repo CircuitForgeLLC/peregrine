@@ -7,6 +7,8 @@ providers. Used by Settings (activation warning) and app.py (sidebar indicator).
 No Streamlit dependency — pure Python so it's unit-testable and reusable.
 """
 
+# 0.0.0.0 is a bind address (all interfaces), not a true loopback, but a backend
+# configured to call it is talking to the local machine — treat as local.
 LOCAL_URL_MARKERS = ("localhost", "127.0.0.1", "0.0.0.0")
 
 
