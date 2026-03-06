@@ -1069,7 +1069,6 @@ with tab_system:
                 # Re-read user.yaml at save time (not at render time) to avoid
                 # overwriting changes made by other processes between render and save.
                 _uy = yaml.safe_load(USER_CFG.read_text(encoding="utf-8")) or {} if USER_CFG.exists() else {}
-                _uy["byok_cloud_acknowledged"] = True
                 _uy["byok_acknowledged_backends"] = sorted(_already_acked | ack_backends)
                 save_yaml(USER_CFG, _uy)
             st.success("LLM settings saved!")
