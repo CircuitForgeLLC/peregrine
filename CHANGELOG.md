@@ -7,8 +7,54 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] — 2026-03-06
+
 ### Added
-- Cover letter iterative refinement: "Refine with Feedback" expander in Apply Workspace; `generate()` accepts `previous_result`/`feedback`; task params passed through `submit_task`
+- **Feedback button** — in-app issue reporting with screenshot paste support; posts
+  directly to Forgejo as structured issues; available from sidebar on all pages
+  (`app/feedback.py`, `scripts/feedback_api.py`, `app/components/paste_image.py`)
+- **BYOK cloud backend detection** — `scripts/byok_guard.py`: pure Python detection
+  engine with full unit test coverage (18 tests); classifies backends as cloud or local
+  based on type, `base_url` heuristic, and opt-out `local: true` flag
+- **BYOK activation warning** — one-time acknowledgment required in Settings when a
+  new cloud LLM backend is enabled; shows data inventory (what leaves your machine,
+  what stays local), provider policy links; ack state persisted to `config/user.yaml`
+  under `byok_acknowledged_backends`
+- **Sidebar cloud LLM indicator** — amber badge on every page when any cloud backend
+  is active; links to Settings; disappears when reverted to local-only config
+- **LLM suggest: search terms** — three-angle analysis from resume (job titles,
+  skills keywords, and exclude terms to filter irrelevant listings)
+- **LLM suggest: resume keywords** — skills gap analysis against job descriptions
+- **LLM Suggest button** in Settings → Search → Skills & Keywords section
+- **Backup/restore script** (`scripts/backup.py`) — multi-instance and legacy support
+- `PRIVACY.md` — short-form privacy notice linked from Settings
+
+### Changed
+- Settings save button for LLM Backends now gates on cloud acknowledgment before
+  writing `config/llm.yaml`
+
+### Fixed
+- Settings widget crash on certain rerun paths
+- Docker service controls in Settings → System tab
+- `DEFAULT_DB` now respects `STAGING_DB` environment variable (was silently ignoring it)
+- `generate()` in cover letter refinement now correctly passes `max_tokens` kwarg
+
+### Security / Privacy
+- Full test suite anonymized — fictional "Alex Rivera" replaces all real personal data
+  in test fixtures (`tests/test_cover_letter.py`, `test_imap_sync.py`,
+  `test_classifier_adapters.py`, `test_db.py`)
+- Complete PII scrub from git history: real name, email address, and phone number
+  removed from all 161 commits across both branches via `git filter-repo`
+
+---
+
+## [0.2.0] — 2026-02-26
+
+### Added
+- Cover letter iterative refinement: "Refine with Feedback" expander in Apply Workspace;
+  `generate()` accepts `previous_result`/`feedback`; task params passed through `submit_task`
 - Expanded first-run wizard: 7-step onboarding with GPU detection, tier selection,
   resume upload/parsing, LLM inference test, search profile builder, integration cards
 - Tier system: free / paid / premium feature gates (`app/wizard/tiers.py`)
