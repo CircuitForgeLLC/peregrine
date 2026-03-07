@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Source Sans Pro", sans-serif;
+      background: transparent;
+    }
+    .zone {
+      width: 100%;
+      min-height: 72px;
+      border: 2px dashed var(--border, #ccc);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 6px;
+      padding: 12px 16px;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+      color: var(--text-muted, #888);
+      font-size: 13px;
+      text-align: center;
+      user-select: none;
+    }
+    .zone:focus { border-color: var(--primary, #ff4b4b); background: var(--primary-faint, rgba(255,75,75,0.06)); }
+    .zone.dragover { border-color: var(--primary, #ff4b4b); background: var(--primary-faint, rgba(255,75,75,0.06)); }
+    .zone.done { border-style: solid; border-color: #00c853; color: #00c853; }
+    .icon { font-size: 22px; line-height: 1; }
+    .hint { font-size: 11px; opacity: 0.7; }
+    .status { margin-top: 5px; font-size: 11px; text-align: center; color: var(--text-muted, #888); min-height: 16px; }
+  </style>
+</head>
+<body>
+  <div class="zone" id="zone" tabindex="0" role="button"
+       aria-label="Click to focus, then paste with Ctrl+V, or drag and drop an image">
+    <span class="icon">📋</span>
+    <span id="mainMsg"><strong>Click here</strong>, then <strong>Ctrl+V</strong> to paste</span>
+    <span class="hint" id="hint">or drag &amp; drop an image file</span>
+  </div>
+  <div class="status" id="status"></div>
+
+  <script>
+    const zone = document.getElementById('zone');
+    const status = document.getElementById('status');
+    const mainMsg = document.getElementById('mainMsg');
+    const hint = document.getElementById('hint');
+
+    // ── Streamlit handshake ─────────────────────────────────────────────────
+    window.parent.postMessage({ type: "streamlit:componentReady", apiVersion: 1 }, "*");
+
+    function setHeight() {
+      const h = document.body.scrollHeight + 4;
+      window.parent.postMessage({ type: "streamlit:setFrameHeight", height: h }, "*");
+    }
+    setHeight();
+
+    // ── Theme ───────────────────────────────────────────────────────────────
+    window.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "streamlit:render") {
+        const t = e.data.args && e.data.args.theme;
+        if (!t) return;
+        const r = document.documentElement;
+        r.style.setProperty("--primary", t.primaryColor || "#ff4b4b");
+        r.style.setProperty("--primary-faint", (t.primaryColor || "#ff4b4b") + "10");
+        r.style.setProperty("--text-muted", t.textColor ? t.textColor + "99" : "#888");
+        r.style.setProperty("--border", t.textColor ? t.textColor + "33" : "#ccc");
+        document.body.style.background = t.backgroundColor || "transparent";
+      }
+    });
+
+    // ── Image handling ──────────────────────────────────────────────────────
+    function markDone() {
+      zone.classList.add('done');
+      // Clear children and rebuild with safe DOM methods
+      while (zone.firstChild) zone.removeChild(zone.firstChild);
+      const icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.textContent = '\u2705';
+      const msg = document.createElement('span');
+      msg.textContent = 'Image ready \u2014 remove or replace below';
+      zone.appendChild(icon);
+      zone.appendChild(msg);
+      setHeight();
+    }
+
+    function sendImage(blob) {
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const dataUrl = ev.target.result;
+        const b64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+        window.parent.postMessage({ type: "streamlit:setComponentValue", value: b64 }, "*");
+        markDone();
+      };
+      reader.readAsDataURL(blob);
+    }
+
+    function findImageItem(items) {
+      if (!items) return null;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf('image/') === 0) return items[i];
+      }
+      return null;
+    }
+
+    // Ctrl+V paste (works over HTTP — uses paste event, not Clipboard API)
+    document.addEventListener('paste', function(e) {
+      const item = findImageItem(e.clipboardData && e.clipboardData.items);
+      if (item) { sendImage(item.getAsFile()); e.preventDefault(); }
+    });
+
+    // Drag and drop
+    zone.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      zone.classList.add('dragover');
+    });
+    zone.addEventListener('dragleave', function() {
+      zone.classList.remove('dragover');
+    });
+    zone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) {
+        for (let i = 0; i < files.length; i++) {
+          if (files[i].type.indexOf('image/') === 0) { sendImage(files[i]); return; }
+        }
+      }
+      // Fallback: dataTransfer items (e.g. dragged from browser)
+      const item = findImageItem(e.dataTransfer && e.dataTransfer.items);
+      if (item) sendImage(item.getAsFile());
+    });
+
+    // Click to focus so Ctrl+V lands in this iframe
+    zone.addEventListener('click', function() { zone.focus(); });
+  </script>
+</body>
+</html>

@@ -4,12 +4,20 @@ services:
 
   app:
     build: .
+    command: >
+      bash -c "streamlit run app/app.py
+      --server.port=8501
+      --server.headless=true
+      --server.fileWatcherType=none
+      2>&1 | tee /app/data/.streamlit.log"
     ports:
       - "${STREAMLIT_PORT:-8501}:8501"
     volumes:
       - ./config:/app/config
       - ./data:/app/data
       - ${DOCS_DIR:-~/Documents/JobSearch}:/docs
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
     environment:
       - STAGING_DB=/app/data/staging.db
       - DOCS_DIR=/docs
@@ -20,6 +28,9 @@ services:
       - PEREGRINE_GPU_NAMES=${PEREGRINE_GPU_NAMES:-}
       - RECOMMENDED_PROFILE=${RECOMMENDED_PROFILE:-remote}
       - STREAMLIT_SERVER_BASE_URL_PATH=${STREAMLIT_BASE_URL_PATH:-}
+      - FORGEJO_API_TOKEN=${FORGEJO_API_TOKEN:-}
+      - FORGEJO_REPO=${FORGEJO_REPO:-}
+      - FORGEJO_API_URL=${FORGEJO_API_URL:-}
       - PYTHONUNBUFFERED=1
       - PYTHONLOGGING=WARNING
     depends_on:
