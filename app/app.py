@@ -21,6 +21,7 @@ IS_DEMO = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 import streamlit as st
 from scripts.db import DEFAULT_DB, init_db, get_active_tasks
+from app.feedback import inject_feedback_button
 import sqlite3
 
 st.set_page_config(
@@ -162,7 +163,27 @@ with st.sidebar:
             icon="🔒",
         )
     _task_indicator()
+
+    # Cloud LLM indicator — shown whenever any cloud backend is active
+    _llm_cfg_path = Path(__file__).parent.parent / "config" / "llm.yaml"
+    try:
+        import yaml as _yaml
+        from scripts.byok_guard import cloud_backends as _cloud_backends
+        _active_cloud = _cloud_backends(_yaml.safe_load(_llm_cfg_path.read_text(encoding="utf-8")) or {})
+    except Exception:
+        _active_cloud = []
+    if _active_cloud:
+        _provider_names = ", ".join(b.replace("_", " ").title() for b in _active_cloud)
+        st.warning(
+            f"**Cloud LLM active**\n\n"
+            f"{_provider_names}\n\n"
+            "AI features send content to this provider. "
+            "[Change in Settings](2_Settings)",
+            icon="🔓",
+        )
+
     st.divider()
     st.caption(f"Peregrine {_get_version()}")
+    inject_feedback_button(page=pg.title)
 
 pg.run()

@@ -36,47 +36,18 @@ def save_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
 
 
-def _suggest_search_terms(current_titles: list[str], resume_path: Path) -> dict:
-    """Call LLM to suggest additional job titles and exclude keywords."""
-    import json
-    import re
-    from scripts.llm_router import LLMRouter
+from scripts.suggest_helpers import (
+    suggest_search_terms as _suggest_search_terms_impl,
+    suggest_resume_keywords as _suggest_resume_keywords,
+)
 
-    resume_context = ""
-    if resume_path.exists():
-        resume = load_yaml(resume_path)
-        lines = []
-        for exp in (resume.get("experience_details") or [])[:3]:
-            pos = exp.get("position", "")
-            co = exp.get("company", "")
-            skills = ", ".join((exp.get("skills_acquired") or [])[:5])
-            lines.append(f"- {pos} at {co}: {skills}")
-        resume_context = "\n".join(lines)
-
-    titles_str = "\n".join(f"- {t}" for t in current_titles)
-    prompt = f"""You are helping a job seeker optimize their search criteria.
-
-Their background (from resume):
-{resume_context or "Customer success and technical account management leader"}
-
-Current job titles being searched:
-{titles_str}
-
-Suggest:
-1. 5-8 additional job titles they might be missing (alternative names, adjacent roles, senior variants)
-2. 3-5 keywords to add to the exclusion filter (to screen out irrelevant postings)
-
-Return ONLY valid JSON in this exact format:
-{{"suggested_titles": ["Title 1", "Title 2"], "suggested_excludes": ["keyword 1", "keyword 2"]}}"""
-
-    result = LLMRouter().complete(prompt).strip()
-    m = re.search(r"\{.*\}", result, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group())
-        except Exception:
-            pass
-    return {"suggested_titles": [], "suggested_excludes": []}
+def _suggest_search_terms(current_titles, resume_path, blocklist=None, user_profile=None):
+    return _suggest_search_terms_impl(
+        current_titles,
+        resume_path,
+        blocklist or {},
+        user_profile or {},
+    )
 
 _show_finetune = bool(_profile and _profile.inference_profile in ("single-gpu", "dual-gpu"))
 
@@ -324,6 +295,18 @@ with tab_search:
         st.session_state["_sp_excludes"] = "\n".join(p.get("exclude_keywords", []))
         st.session_state["_sp_hash"] = _sp_hash
 
+    # Apply any pending programmatic updates BEFORE widgets are instantiated.
+    # Streamlit forbids writing to a widget's key after it renders on the same pass;
+    # button handlers write to *_pending keys instead, consumed here on the next pass.
+    for _pend, _wkey in [("_sp_titles_pending", "_sp_titles_multi"),
+                         ("_sp_locs_pending", "_sp_locations_multi"),
+                         ("_sp_new_title_pending", "_sp_new_title"),
+                         ("_sp_paste_titles_pending", "_sp_paste_titles"),
+                         ("_sp_new_loc_pending", "_sp_new_loc"),
+                         ("_sp_paste_locs_pending", "_sp_paste_locs")]:
+        if _pend in st.session_state:
+            st.session_state[_wkey] = st.session_state.pop(_pend)
+
     # ── Titles ────────────────────────────────────────────────────────────────
     _title_row, _suggest_btn_col = st.columns([4, 1])
     with _title_row:
@@ -331,7 +314,7 @@ with tab_search:
     with _suggest_btn_col:
         st.write("")
         _run_suggest = st.button("✨ Suggest", key="sp_suggest_btn",
-                                  help="Ask the LLM to suggest additional titles and exclude keywords based on your resume")
+                                  help="Ask the LLM to suggest additional titles and smarter exclude keywords — using your blocklist, mission values, and career background.")
 
     st.multiselect(
         "Job titles",
@@ -355,8 +338,8 @@ with tab_search:
                     st.session_state["_sp_title_options"] = _opts
                 if _t not in _sel:
                     _sel.append(_t)
-                    st.session_state["_sp_titles_multi"] = _sel
-                st.session_state["_sp_new_title"] = ""
+                    st.session_state["_sp_titles_pending"] = _sel
+                st.session_state["_sp_new_title_pending"] = ""
                 st.rerun()
     with st.expander("📋 Paste a list of titles"):
         st.text_area("One title per line", key="_sp_paste_titles", height=80, label_visibility="collapsed",
@@ -371,23 +354,34 @@ with tab_search:
                 if _t not in _sel:
                     _sel.append(_t)
             st.session_state["_sp_title_options"] = _opts
-            st.session_state["_sp_titles_multi"] = _sel
-            st.session_state["_sp_paste_titles"] = ""
+            st.session_state["_sp_titles_pending"] = _sel
+            st.session_state["_sp_paste_titles_pending"] = ""
             st.rerun()
 
     # ── LLM suggestions panel ────────────────────────────────────────────────
     if _run_suggest:
         _current_titles = list(st.session_state.get("_sp_titles_multi", []))
+        _blocklist = load_yaml(BLOCKLIST_CFG)
+        _user_profile = load_yaml(USER_CFG)
         with st.spinner("Asking LLM for suggestions…"):
-            suggestions = _suggest_search_terms(_current_titles, RESUME_PATH)
-        # Add suggested titles to options list (not auto-selected — user picks from dropdown)
-        _opts = list(st.session_state.get("_sp_title_options", []))
-        for _t in suggestions.get("suggested_titles", []):
-            if _t not in _opts:
-                _opts.append(_t)
-        st.session_state["_sp_title_options"] = _opts
-        st.session_state["_sp_suggestions"] = suggestions
-        st.rerun()
+            try:
+                suggestions = _suggest_search_terms(_current_titles, RESUME_PATH, _blocklist, _user_profile)
+            except RuntimeError as _e:
+                st.warning(
+                    f"No LLM backend available: {_e}. "
+                    "Check that Ollama is running and has GPU access, or enable a cloud backend in Settings → System → LLM.",
+                    icon="⚠️",
+                )
+                suggestions = None
+        if suggestions is not None:
+            # Add suggested titles to options list (not auto-selected — user picks from dropdown)
+            _opts = list(st.session_state.get("_sp_title_options", []))
+            for _t in suggestions.get("suggested_titles", []):
+                if _t not in _opts:
+                    _opts.append(_t)
+            st.session_state["_sp_title_options"] = _opts
+            st.session_state["_sp_suggestions"] = suggestions
+            st.rerun()
 
     if st.session_state.get("_sp_suggestions"):
         sugg = st.session_state["_sp_suggestions"]
@@ -436,8 +430,8 @@ with tab_search:
                     st.session_state["_sp_loc_options"] = _opts
                 if _l not in _sel:
                     _sel.append(_l)
-                    st.session_state["_sp_locations_multi"] = _sel
-                st.session_state["_sp_new_loc"] = ""
+                    st.session_state["_sp_locs_pending"] = _sel
+                st.session_state["_sp_new_loc_pending"] = ""
                 st.rerun()
     with st.expander("📋 Paste a list of locations"):
         st.text_area("One location per line", key="_sp_paste_locs", height=80, label_visibility="collapsed",
@@ -452,8 +446,8 @@ with tab_search:
                 if _l not in _sel:
                     _sel.append(_l)
             st.session_state["_sp_loc_options"] = _opts
-            st.session_state["_sp_locations_multi"] = _sel
-            st.session_state["_sp_paste_locs"] = ""
+            st.session_state["_sp_locs_pending"] = _sel
+            st.session_state["_sp_paste_locs_pending"] = ""
             st.rerun()
 
     st.subheader("Exclude Keywords")
@@ -747,11 +741,33 @@ with tab_resume:
         st.balloons()
 
     st.divider()
-    st.subheader("🏷️ Skills & Keywords")
-    st.caption(
-        f"Matched against job descriptions to surface {_name}'s most relevant experience "
-        "and highlight keyword overlap in research briefs. Search the bundled list or add your own."
-    )
+    _kw_header_col, _kw_btn_col = st.columns([5, 1])
+    with _kw_header_col:
+        st.subheader("🏷️ Skills & Keywords")
+        st.caption(
+            f"Matched against job descriptions to surface {_name}'s most relevant experience "
+            "and highlight keyword overlap in research briefs. Search the bundled list or add your own."
+        )
+    with _kw_btn_col:
+        st.write("")
+        st.write("")
+        _run_kw_suggest = st.button(
+            "✨ Suggest", key="kw_suggest_btn",
+            help="Ask the LLM to suggest skills, domains, and keywords based on your resume.",
+        )
+
+    if _run_kw_suggest:
+        _kw_current = load_yaml(KEYWORDS_CFG) if KEYWORDS_CFG.exists() else {}
+        with st.spinner("Asking LLM for keyword suggestions…"):
+            try:
+                _kw_sugg = _suggest_resume_keywords(RESUME_PATH, _kw_current)
+                st.session_state["_kw_suggestions"] = _kw_sugg
+            except RuntimeError as _e:
+                st.warning(
+                    f"No LLM backend available: {_e}. "
+                    "Check that Ollama is running and has GPU access, or enable a cloud backend in Settings → System → LLM.",
+                    icon="⚠️",
+                )
 
     from scripts.skills_utils import load_suggestions as _load_sugg, filter_tag as _filter_tag
 
@@ -814,6 +830,33 @@ with tab_resume:
         if kw_changed:
             save_yaml(KEYWORDS_CFG, kw_data)
             st.rerun()
+
+        # ── LLM keyword suggestion chips ──────────────────────────────────────
+        _kw_sugg_data = st.session_state.get("_kw_suggestions")
+        if _kw_sugg_data:
+            _KW_ICONS = {"skills": "🛠️", "domains": "🏢", "keywords": "🔑"}
+            _any_shown = False
+            for _cat, _icon in _KW_ICONS.items():
+                _cat_sugg = [t for t in _kw_sugg_data.get(_cat, [])
+                             if t not in kw_data.get(_cat, [])]
+                if not _cat_sugg:
+                    continue
+                _any_shown = True
+                st.caption(f"**{_icon} {_cat.capitalize()} suggestions** — click to add:")
+                _chip_cols = st.columns(min(len(_cat_sugg), 4))
+                for _i, _tag in enumerate(_cat_sugg):
+                    with _chip_cols[_i % 4]:
+                        if st.button(f"+ {_tag}", key=f"kw_sugg_{_cat}_{_i}"):
+                            _new_list = list(kw_data.get(_cat, [])) + [_tag]
+                            kw_data[_cat] = _new_list
+                            save_yaml(KEYWORDS_CFG, kw_data)
+                            _kw_sugg_data[_cat] = [t for t in _kw_sugg_data[_cat] if t != _tag]
+                            st.session_state["_kw_suggestions"] = _kw_sugg_data
+                            st.rerun()
+            if _any_shown:
+                if st.button("✕ Clear suggestions", key="kw_clear_sugg"):
+                    st.session_state.pop("_kw_suggestions", None)
+                    st.rerun()
 
 # ── System tab ────────────────────────────────────────────────────────────────
 with tab_system:
@@ -1005,18 +1048,88 @@ with tab_system:
             f"{'✓' if llm_backends.get(n, {}).get('enabled', True) else '✗'} {n}"
             for n in llm_new_order
         ))
-        if st.button("💾 Save LLM settings", type="primary", key="sys_save_llm"):
-            save_yaml(LLM_CFG, {**llm_cfg, "backends": llm_updated_backends, "fallback_order": llm_new_order})
+        # ── Cloud backend warning + acknowledgment ─────────────────────────────
+        from scripts.byok_guard import cloud_backends as _cloud_backends
+
+        _pending_cfg = {**llm_cfg, "backends": llm_updated_backends, "fallback_order": llm_new_order}
+        _pending_cloud = set(_cloud_backends(_pending_cfg))
+
+        _user_cfg_for_ack = yaml.safe_load(USER_CFG.read_text(encoding="utf-8")) or {} if USER_CFG.exists() else {}
+        _already_acked = set(_user_cfg_for_ack.get("byok_acknowledged_backends", []))
+        # Intentional: once a backend is acknowledged, it stays acknowledged even if
+        # temporarily disabled and re-enabled. This avoids nagging returning users.
+        _unacknowledged = _pending_cloud - _already_acked
+
+        def _do_save_llm(ack_backends: set) -> None:
+            """Write llm.yaml and update acknowledgment in user.yaml."""
+            save_yaml(LLM_CFG, _pending_cfg)
             st.session_state.pop("_llm_order", None)
             st.session_state.pop("_llm_order_cfg_key", None)
+            if ack_backends:
+                # Re-read user.yaml at save time (not at render time) to avoid
+                # overwriting changes made by other processes between render and save.
+                _uy = yaml.safe_load(USER_CFG.read_text(encoding="utf-8")) or {} if USER_CFG.exists() else {}
+                _uy["byok_acknowledged_backends"] = sorted(_already_acked | ack_backends)
+                save_yaml(USER_CFG, _uy)
             st.success("LLM settings saved!")
+
+        if _unacknowledged:
+            _provider_labels = ", ".join(b.replace("_", " ").title() for b in sorted(_unacknowledged))
+            _policy_links = []
+            for _b in sorted(_unacknowledged):
+                if _b in ("anthropic", "claude_code"):
+                    _policy_links.append("[Anthropic privacy policy](https://www.anthropic.com/privacy)")
+                elif _b == "openai":
+                    _policy_links.append("[OpenAI privacy policy](https://openai.com/policies/privacy-policy)")
+            _policy_str = " · ".join(_policy_links) if _policy_links else "Review your provider's documentation."
+
+            st.warning(
+                f"**Cloud LLM active — your data will leave this machine**\n\n"
+                f"Enabling **{_provider_labels}** means AI features will send content "
+                f"directly to that provider. CircuitForge does not receive or log it, "
+                f"but their privacy policy governs it — not ours.\n\n"
+                f"**What leaves your machine:**\n"
+                f"- Cover letter generation: your resume, job description, and profile\n"
+                f"- Keyword suggestions: your skills list and resume summary\n"
+                f"- Survey assistant: survey question text\n"
+                f"- Company research / Interview prep: company name and role only\n\n"
+                f"**What stays local always:** your jobs database, email credentials, "
+                f"license key, and Notion token.\n\n"
+                f"For sensitive data (disability, immigration, medical), a local model is "
+                f"strongly recommended. These tools assist with paperwork — they don't "
+                f"replace professional advice.\n\n"
+                f"{_policy_str} · "
+                f"[CircuitForge privacy policy](https://circuitforge.tech/privacy)",
+                icon="⚠️",
+            )
+
+            _ack = st.checkbox(
+                f"I understand — content will be sent to **{_provider_labels}** when I use AI features",
+                key="byok_ack_checkbox",
+            )
+            _col_cancel, _col_save = st.columns(2)
+            if _col_cancel.button("Cancel", key="byok_cancel"):
+                st.session_state.pop("byok_ack_checkbox", None)
+                st.rerun()
+            if _col_save.button(
+                "💾 Save with cloud LLM",
+                type="primary",
+                key="sys_save_llm_cloud",
+                disabled=not _ack,
+            ):
+                _do_save_llm(_unacknowledged)
+        else:
+            if st.button("💾 Save LLM settings", type="primary", key="sys_save_llm"):
+                _do_save_llm(set())
 
     # ── Services ──────────────────────────────────────────────────────────────
     with st.expander("🔌 Services", expanded=True):
         import subprocess as _sp
         import shutil as _shutil
+        import os as _os
         TOKENS_CFG = CONFIG_DIR / "tokens.yaml"
         COMPOSE_DIR = str(Path(__file__).parent.parent.parent)
+        _compose_env = {**_os.environ, "COMPOSE_PROJECT_NAME": "peregrine"}
         _docker_available = bool(_shutil.which("docker"))
         _sys_profile_name = _profile.inference_profile if _profile else "remote"
         SYS_SERVICES = [
@@ -1108,7 +1221,7 @@ with tab_system:
                     elif up:
                         if st.button("⏹ Stop", key=f"sys_svc_stop_{svc['port']}", use_container_width=True):
                             with st.spinner(f"Stopping {svc['name']}…"):
-                                r = _sp.run(svc["stop"], capture_output=True, text=True, cwd=svc["cwd"])
+                                r = _sp.run(svc["stop"], capture_output=True, text=True, cwd=svc["cwd"], env=_compose_env)
                             st.success("Stopped.") if r.returncode == 0 else st.error(r.stderr or r.stdout)
                             st.rerun()
                     else:
@@ -1119,7 +1232,7 @@ with tab_system:
                                 _start_cmd.append(_sel)
                         if st.button("▶ Start", key=f"sys_svc_start_{svc['port']}", use_container_width=True, type="primary"):
                             with st.spinner(f"Starting {svc['name']}…"):
-                                r = _sp.run(_start_cmd, capture_output=True, text=True, cwd=svc["cwd"])
+                                r = _sp.run(_start_cmd, capture_output=True, text=True, cwd=svc["cwd"], env=_compose_env)
                             st.success("Started!") if r.returncode == 0 else st.error(r.stderr or r.stdout)
                             st.rerun()
 

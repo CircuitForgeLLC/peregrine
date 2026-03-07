@@ -391,7 +391,7 @@ def test_rejection_uppercase_lowercased():
 def test_rejection_phrase_in_quoted_thread_beyond_limit_not_blocked():
     """Rejection phrase beyond 1500-char body window does not block the email."""
     from scripts.imap_sync import _has_rejection_or_ats_signal
-    clean_intro = "Hi Alex, we'd love to schedule a call with you. " * 30  # ~1500 chars
+    clean_intro = "Hi Alex, we'd love to schedule a call with you. " * 32  # ~1500 chars
     quoted_footer = "\n\nOn Mon, Jan 1 wrote:\n> Unfortunately we went with another candidate."
     body = clean_intro + quoted_footer
     # The phrase lands after the 1500-char cutoff — should NOT be blocked
