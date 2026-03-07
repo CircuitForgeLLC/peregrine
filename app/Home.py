@@ -25,17 +25,45 @@ from scripts.task_runner import submit_task
 
 init_db(DEFAULT_DB)
 
+def _email_configured() -> bool:
+    _e = Path(__file__).parent.parent / "config" / "email.yaml"
+    if not _e.exists():
+        return False
+    import yaml as _yaml
+    _cfg = _yaml.safe_load(_e.read_text()) or {}
+    return bool(_cfg.get("username") or _cfg.get("user") or _cfg.get("imap_host"))
+
+def _notion_configured() -> bool:
+    _n = Path(__file__).parent.parent / "config" / "notion.yaml"
+    if not _n.exists():
+        return False
+    import yaml as _yaml
+    _cfg = _yaml.safe_load(_n.read_text()) or {}
+    return bool(_cfg.get("token"))
+
+def _keywords_configured() -> bool:
+    _k = Path(__file__).parent.parent / "config" / "resume_keywords.yaml"
+    if not _k.exists():
+        return False
+    import yaml as _yaml
+    _cfg = _yaml.safe_load(_k.read_text()) or {}
+    return bool(_cfg.get("keywords") or _cfg.get("required") or _cfg.get("preferred"))
+
 _SETUP_BANNERS = [
     {"key": "connect_cloud",       "text": "Connect a cloud service for resume/cover letter storage",
-     "link_label": "Settings → Integrations"},
+     "link_label": "Settings → Integrations",
+     "done": _notion_configured},
     {"key": "setup_email",         "text": "Set up email sync to catch recruiter outreach",
-     "link_label": "Settings → Email"},
+     "link_label": "Settings → Email",
+     "done": _email_configured},
     {"key": "setup_email_labels",  "text": "Set up email label filters for auto-classification",
-     "link_label": "Settings → Email (label guide)"},
+     "link_label": "Settings → Email (label guide)",
+     "done": _email_configured},
     {"key": "tune_mission",        "text": "Tune your mission preferences for better cover letters",
      "link_label": "Settings → My Profile"},
     {"key": "configure_keywords",  "text": "Configure keywords and blocklist for smarter search",
-     "link_label": "Settings → Search"},
+     "link_label": "Settings → Search",
+     "done": _keywords_configured},
     {"key": "upload_corpus",       "text": "Upload your cover letter corpus for voice fine-tuning",
      "link_label": "Settings → Fine-Tune"},
     {"key": "configure_linkedin",  "text": "Configure LinkedIn Easy Apply automation",
@@ -513,7 +541,10 @@ with st.expander("⚠️ Danger Zone", expanded=False):
 # ── Setup banners ─────────────────────────────────────────────────────────────
 if _profile and _profile.wizard_complete:
     _dismissed = set(_profile.dismissed_banners)
-    _pending_banners = [b for b in _SETUP_BANNERS if b["key"] not in _dismissed]
+    _pending_banners = [
+        b for b in _SETUP_BANNERS
+        if b["key"] not in _dismissed and not b.get("done", lambda: False)()
+    ]
     if _pending_banners:
         st.divider()
         st.markdown("#### Finish setting up Peregrine")
