@@ -1,0 +1,11 @@
+# peregrine/.gitleaks.toml — per-repo allowlists extending the shared base config
+[extend]
+path = "/Library/Development/CircuitForge/circuitforge-hooks/gitleaks.toml"
+
+[allowlist]
+description = "Peregrine-specific allowlists"
+regexes = [
+    '\d{10}\.html',      # Craigslist listing IDs (10-digit paths, look like phone numbers)
+    '\d{10}\/',          # LinkedIn job IDs in URLs
+    'localhost:\d{4,5}', # port numbers that could trip phone pattern
+]
