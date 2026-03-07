@@ -90,11 +90,15 @@ configure_git_safe_dir() {
 }
 
 activate_git_hooks() {
-    local repo_dir
+    local repo_dir hooks_installer
     repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if [[ -d "$repo_dir/.githooks" ]]; then
+    hooks_installer="/Library/Development/CircuitForge/circuitforge-hooks/install.sh"
+    if [[ -f "$hooks_installer" ]]; then
+        bash "$hooks_installer" --quiet
+        success "CircuitForge hooks activated (circuitforge-hooks)."
+    elif [[ -d "$repo_dir/.githooks" ]]; then
         git -C "$repo_dir" config core.hooksPath .githooks
-        success "Git hooks activated (.githooks/)."
+        success "Git hooks activated (.githooks/) — circuitforge-hooks not found, using local fallback."
     fi
 }
 
