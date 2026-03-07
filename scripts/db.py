@@ -3,12 +3,13 @@ SQLite staging layer for job listings.
 Jobs flow: pending → approved/rejected → applied → synced
           applied → phone_screen → interviewing → offer → hired (or rejected)
 """
+import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_DB = Path(__file__).parent.parent / "staging.db"
+DEFAULT_DB = Path(os.environ.get("STAGING_DB", Path(__file__).parent.parent / "staging.db"))
 
 CREATE_JOBS = """
 CREATE TABLE IF NOT EXISTS jobs (
