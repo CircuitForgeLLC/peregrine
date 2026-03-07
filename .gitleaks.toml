@@ -4,8 +4,29 @@ path = "/Library/Development/CircuitForge/circuitforge-hooks/gitleaks.toml"
 
 [allowlist]
 description = "Peregrine-specific allowlists"
+paths = [
+    'docs/plans/.*',                              # plan docs contain example tokens and placeholders
+    'docs/reference/.*',                          # reference docs (globally excluded in base config)
+    'tests/.*',                                   # test fixtures use fake phone numbers as job IDs
+    'scripts/integrations/apple_calendar\.py',    # you@icloud.com is a placeholder comment
+    # Streamlit app files: key= params are widget identifiers, not secrets
+    'app/feedback\.py',
+    'app/pages/2_Settings\.py',
+    'app/pages/7_Survey\.py',
+    # SearXNG default config: change-me-in-production is a well-known public placeholder
+    'docker/searxng/settings\.yml',
+]
 regexes = [
-    '\d{10}\.html',      # Craigslist listing IDs (10-digit paths, look like phone numbers)
-    '\d{10}\/',          # LinkedIn job IDs in URLs
-    'localhost:\d{4,5}', # port numbers that could trip phone pattern
+    # Job listing numeric IDs (look like phone numbers to the phone rule)
+    '\d{10}\.html',                               # Craigslist listing IDs
+    '\d{10}\/',                                   # LinkedIn job IDs in URLs
+    # Localhost port patterns (look like phone numbers)
+    'localhost:\d{4,5}',
+    # Unix epoch timestamps in the 2025–2026 range (10-digit, look like phone numbers)
+    '174\d{7}',
+    # Example / placeholder license key patterns
+    'CFG-[A-Z]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}',
+    # Phone number false positives: 555 area code variants not caught by base allowlist
+    '555\) \d{3}-\d{4}',
+    '555-\d{3}-\d{4}',
 ]
