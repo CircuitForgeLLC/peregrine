@@ -5,7 +5,7 @@
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](./LICENSE-BSL)
 [![CI](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml/badge.svg)](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml)
 
-**AI-powered job search pipeline — by [Circuit Forge LLC](https://circuitforge.io)**
+**AI-powered job search pipeline — by [Circuit Forge LLC](https://circuitforge.tech)**
 
 > *"Don't be evil, for real and forever."*
 
@@ -122,16 +122,27 @@ Re-enter the wizard any time via **Settings → Developer → Reset wizard**.
 | Feature | Tier |
 |---------|------|
 | Job discovery (JobSpy + custom boards) | Free |
-| Resume keyword matching | Free |
-| Cover letter generation | Paid |
-| Company research briefs | Paid |
-| Interview prep & practice Q&A | Paid |
+| Resume keyword matching & gap analysis | Free |
+| Document storage sync (Google Drive, Dropbox, OneDrive, MEGA, Nextcloud) | Free |
+| Webhook notifications (Discord, Home Assistant) | Free |
+| **Cover letter generation** | Free with LLM¹ |
+| **Company research briefs** | Free with LLM¹ |
+| **Interview prep & practice Q&A** | Free with LLM¹ |
+| **Survey assistant** (culture-fit Q&A, screenshot analysis) | Free with LLM¹ |
+| **AI wizard helpers** (career summary, bullet expansion, skill suggestions) | Free with LLM¹ |
+| Managed cloud LLM (no API key needed) | Paid |
 | Email sync & auto-classification | Paid |
-| Survey assistant (culture-fit Q&A) | Paid |
-| Integration connectors (Notion, Airtable, Google Sheets, etc.) | Paid |
+| Job tracking integrations (Notion, Airtable, Google Sheets) | Paid |
 | Calendar sync (Google, Apple) | Paid |
-| Cover letter model fine-tuning | Premium |
+| Slack notifications | Paid |
+| CircuitForge shared cover-letter model | Paid |
+| Cover letter model fine-tuning (your writing, your model) | Premium |
 | Multi-user support | Premium |
+
+¹ **BYOK unlock:** configure any LLM backend — a local [Ollama](https://ollama.com) or vLLM instance,
+or your own API key (Anthropic, OpenAI-compatible) — and all AI features marked **Free with LLM**
+unlock at no charge. The paid tier earns its price by providing managed cloud inference so you
+don't need a key at all, plus integrations and email sync.
 
 ---
 
@@ -178,12 +189,12 @@ Connect external services in **Settings → Integrations**:
 
 ## Developer Docs
 
-Full documentation at: https://docs.circuitforge.io/peregrine
+Full documentation at: https://docs.circuitforge.tech/peregrine
 
-- [Installation guide](https://docs.circuitforge.io/peregrine/getting-started/installation/)
-- [Adding a custom job board scraper](https://docs.circuitforge.io/peregrine/developer-guide/adding-scrapers/)
-- [Adding an integration](https://docs.circuitforge.io/peregrine/developer-guide/adding-integrations/)
-- [Contributing](https://docs.circuitforge.io/peregrine/developer-guide/contributing/)
+- [Installation guide](https://docs.circuitforge.tech/peregrine/getting-started/installation/)
+- [Adding a custom job board scraper](https://docs.circuitforge.tech/peregrine/developer-guide/adding-scrapers/)
+- [Adding an integration](https://docs.circuitforge.tech/peregrine/developer-guide/adding-integrations/)
+- [Contributing](https://docs.circuitforge.tech/peregrine/developer-guide/contributing/)
 
 ---
 
