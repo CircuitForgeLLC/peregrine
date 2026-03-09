@@ -5,7 +5,7 @@
 #   - demo/config/: pre-seeded demo user profile, all backends disabled
 #   - demo/data/: isolated SQLite DB (no personal job data)
 #   - No personal documents mounted
-#   - Port 8503 (separate from the personal instance on 8502)
+#   - Port 8504 (separate from the personal instance on 8502)
 #
 # Usage:
 #   docker compose -f compose.demo.yml --project-name peregrine-demo up -d
