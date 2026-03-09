@@ -1,4 +1,4 @@
-# compose.menagerie.yml — Public demo stack for menagerie.circuitforge.tech/peregrine
+# compose.demo.yml — Public demo stack for demo.circuitforge.tech/peregrine
 #
 # Runs a fully isolated, neutered Peregrine instance:
 #   - DEMO_MODE=true: blocks all LLM inference in llm_router.py
@@ -8,10 +8,10 @@
 #   - Port 8503 (separate from the personal instance on 8502)
 #
 # Usage:
-#   docker compose -f compose.menagerie.yml --project-name peregrine-demo up -d
-#   docker compose -f compose.menagerie.yml --project-name peregrine-demo down
+#   docker compose -f compose.demo.yml --project-name peregrine-demo up -d
+#   docker compose -f compose.demo.yml --project-name peregrine-demo down
 #
-# Caddy menagerie.circuitforge.tech/peregrine* → host port 8504
+# Caddy demo.circuitforge.tech/peregrine* → host port 8504
 
 services:
 
