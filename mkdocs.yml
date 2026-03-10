@@ -1,9 +1,9 @@
 site_name: Peregrine
 site_description: AI-powered job search pipeline
 site_author: Circuit Forge LLC
-site_url: https://docs.circuitforge.io/peregrine
-repo_url: https://git.circuitforge.io/circuitforge/peregrine
-repo_name: circuitforge/peregrine
+site_url: https://docs.circuitforge.tech/peregrine
+repo_url: https://git.opensourcesolarpunk.com/pyr0ball/peregrine
+repo_name: pyr0ball/peregrine
 
 theme:
   name: material
@@ -32,7 +32,11 @@ theme:
 markdown_extensions:
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.tabbed:
@@ -58,6 +62,7 @@ nav:
   - Developer Guide:
     - Contributing: developer-guide/contributing.md
     - Architecture: developer-guide/architecture.md
+    - Cloud Deployment: developer-guide/cloud-deployment.md
     - Adding a Scraper: developer-guide/adding-scrapers.md
     - Adding an Integration: developer-guide/adding-integrations.md
     - Testing: developer-guide/testing.md
