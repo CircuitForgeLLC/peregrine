@@ -25,6 +25,8 @@ services:
       - DIRECTUS_JWT_SECRET=${DIRECTUS_JWT_SECRET}
       - CF_SERVER_SECRET=${CF_SERVER_SECRET}
       - PLATFORM_DB_URL=${PLATFORM_DB_URL}
+      - HEIMDALL_URL=${HEIMDALL_URL:-http://cf-license:8000}
+      - HEIMDALL_ADMIN_TOKEN=${HEIMDALL_ADMIN_TOKEN}
       - STAGING_DB=/devl/menagerie-data/cloud-default.db  # fallback only — never used
       - DOCS_DIR=/tmp/cloud-docs
       - STREAMLIT_SERVER_BASE_URL_PATH=peregrine
