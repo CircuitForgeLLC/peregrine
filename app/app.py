@@ -22,6 +22,7 @@ IS_DEMO = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 import streamlit as st
 from scripts.db import DEFAULT_DB, init_db, get_active_tasks
 from app.feedback import inject_feedback_button
+from app.cloud_session import resolve_session, get_db_path
 import sqlite3
 
 st.set_page_config(
@@ -30,7 +31,8 @@ st.set_page_config(
     layout="wide",
 )
 
-init_db(DEFAULT_DB)
+resolve_session("peregrine")
+init_db(get_db_path())
 
 # ── Startup cleanup — runs once per server process via cache_resource ──────────
 @st.cache_resource
@@ -40,7 +42,7 @@ def _startup() -> None:
     2. Auto-queues re-runs for any research generated without SearXNG data,
        if SearXNG is now reachable.
     """
-    conn = sqlite3.connect(DEFAULT_DB)
+    conn = sqlite3.connect(get_db_path())
     conn.execute(
         "UPDATE background_tasks SET status='failed', error='Interrupted by server restart',"
         " finished_at=datetime('now') WHERE status IN ('queued','running')"
@@ -61,7 +63,7 @@ def _startup() -> None:
                 _ACTIVE_STAGES,
             ).fetchall()
             for (job_id,) in rows:
-                submit_task(str(DEFAULT_DB), "company_research", job_id)
+                submit_task(str(get_db_path()), "company_research", job_id)
     except Exception:
         pass  # never block startup
 
@@ -113,7 +115,7 @@ pg = st.navigation(pages)
 # The sidebar context WRAPS the fragment call — do not write to st.sidebar inside it.
 @st.fragment(run_every=3)
 def _task_indicator():
-    tasks = get_active_tasks(DEFAULT_DB)
+    tasks = get_active_tasks(get_db_path())
     if not tasks:
         return
     st.divider()
