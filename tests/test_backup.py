@@ -4,11 +4,14 @@ from __future__ import annotations
 import json
 import zipfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from scripts.backup import (
+    _decrypt_db_to_bytes,
     _detect_source_label,
+    _encrypt_db_from_bytes,
     create_backup,
     list_backup_contents,
     restore_backup,
@@ -229,3 +232,141 @@ class TestDetectSourceLabel:
         base = tmp_path / "job-seeker"
         base.mkdir()
         assert _detect_source_label(base) == "job-seeker"
+
+
+# ---------------------------------------------------------------------------
+# Cloud mode — SQLCipher encrypt / decrypt (pysqlcipher3 mocked)
+# ---------------------------------------------------------------------------
+
+class _FakeCursor:
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def execute(self, *a): pass
+    def fetchone(self): return None
+
+
+def _make_mock_sqlcipher_conn(plain_bytes: bytes, tmp_path: Path):
+    """Return a mock pysqlcipher3 connection that writes plain_bytes to the
+    first 'ATTACH DATABASE' path it sees (simulating sqlcipher_export)."""
+    attached: dict = {}
+
+    conn = MagicMock()
+
+    def fake_execute(sql, *args):
+        if "ATTACH DATABASE" in sql:
+            # Extract path between first pair of quotes
+            parts = sql.split("'")
+            path = parts[1]
+            attached["path"] = path
+        elif "sqlcipher_export" in sql:
+            # Simulate export: write plain_bytes to the attached path
+            Path(attached["path"]).write_bytes(plain_bytes)
+
+    conn.execute.side_effect = fake_execute
+    conn.close = MagicMock()
+    return conn
+
+
+class TestCloudBackup:
+    """Backup/restore with SQLCipher encryption — pysqlcipher3 mocked out."""
+
+    def test_create_backup_decrypts_db_when_key_set(self, tmp_path):
+        """With db_key, _decrypt_db_to_bytes is called and plain bytes go into zip."""
+        base = _make_instance(tmp_path, "cloud-user")
+        plain_db = b"SQLite format 3\x00plain-content"
+
+        with patch("scripts.backup._decrypt_db_to_bytes", return_value=plain_db) as mock_dec:
+            data = create_backup(base, include_db=True, db_key="testkey")
+
+        mock_dec.assert_called_once()
+        # The zip should contain the plain bytes, not the raw encrypted file
+        with zipfile.ZipFile(__import__("io").BytesIO(data)) as zf:
+            db_files = [n for n in zf.namelist() if n.endswith(".db")]
+            assert len(db_files) == 1
+            assert zf.read(db_files[0]) == plain_db
+
+    def test_create_backup_no_key_reads_file_directly(self, tmp_path):
+        """Without db_key, _decrypt_db_to_bytes is NOT called."""
+        base = _make_instance(tmp_path, "local-user")
+
+        with patch("scripts.backup._decrypt_db_to_bytes") as mock_dec:
+            create_backup(base, include_db=True, db_key="")
+
+        mock_dec.assert_not_called()
+
+    def test_restore_backup_encrypts_db_when_key_set(self, tmp_path):
+        """With db_key, _encrypt_db_from_bytes is called for .db files."""
+        src = _make_instance(tmp_path, "cloud-src")
+        dst = tmp_path / "cloud-dst"
+        dst.mkdir()
+        plain_db = b"SQLite format 3\x00plain-content"
+
+        # Create a backup with plain DB bytes
+        with patch("scripts.backup._decrypt_db_to_bytes", return_value=plain_db):
+            data = create_backup(src, include_db=True, db_key="testkey")
+
+        with patch("scripts.backup._encrypt_db_from_bytes") as mock_enc:
+            restore_backup(data, dst, include_db=True, db_key="testkey")
+
+        mock_enc.assert_called_once()
+        call_args = mock_enc.call_args
+        assert call_args[0][0] == plain_db      # plain_bytes
+        assert call_args[0][2] == "testkey"     # db_key
+
+    def test_restore_backup_no_key_writes_file_directly(self, tmp_path):
+        """Without db_key, _encrypt_db_from_bytes is NOT called."""
+        src = _make_instance(tmp_path, "local-src")
+        dst = tmp_path / "local-dst"
+        dst.mkdir()
+        data = create_backup(src, include_db=True, db_key="")
+
+        with patch("scripts.backup._encrypt_db_from_bytes") as mock_enc:
+            restore_backup(data, dst, include_db=True, db_key="")
+
+        mock_enc.assert_not_called()
+
+    def test_decrypt_db_to_bytes_calls_sqlcipher(self, tmp_path):
+        """_decrypt_db_to_bytes imports pysqlcipher3.dbapi2 and calls sqlcipher_export."""
+        fake_db = tmp_path / "staging.db"
+        fake_db.write_bytes(b"encrypted")
+        plain_bytes = b"SQLite format 3\x00"
+
+        mock_conn = _make_mock_sqlcipher_conn(plain_bytes, tmp_path)
+        mock_module = MagicMock()
+        mock_module.connect.return_value = mock_conn
+
+        # Must set dbapi2 explicitly on the package mock so `from pysqlcipher3 import
+        # dbapi2` resolves to mock_module (not a new auto-created MagicMock attr).
+        mock_pkg = MagicMock()
+        mock_pkg.dbapi2 = mock_module
+
+        with patch.dict("sys.modules", {"pysqlcipher3": mock_pkg, "pysqlcipher3.dbapi2": mock_module}):
+            result = _decrypt_db_to_bytes(fake_db, "testkey")
+
+        mock_module.connect.assert_called_once_with(str(fake_db))
+        assert result == plain_bytes
+
+    def test_encrypt_db_from_bytes_calls_sqlcipher(self, tmp_path):
+        """_encrypt_db_from_bytes imports pysqlcipher3.dbapi2 and calls sqlcipher_export."""
+        dest = tmp_path / "staging.db"
+        plain_bytes = b"SQLite format 3\x00"
+
+        mock_conn = MagicMock()
+        mock_module = MagicMock()
+        mock_module.connect.return_value = mock_conn
+
+        mock_pkg = MagicMock()
+        mock_pkg.dbapi2 = mock_module
+
+        with patch.dict("sys.modules", {"pysqlcipher3": mock_pkg, "pysqlcipher3.dbapi2": mock_module}):
+            _encrypt_db_from_bytes(plain_bytes, dest, "testkey")
+
+        mock_module.connect.assert_called_once()
+        # Verify ATTACH DATABASE call included the dest path and key
+        attach_calls = [
+            call for call in mock_conn.execute.call_args_list
+            if "ATTACH DATABASE" in str(call)
+        ]
+        assert len(attach_calls) == 1
+        assert str(dest) in str(attach_calls[0])
+        assert "testkey" in str(attach_calls[0])
