@@ -4,8 +4,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # System deps for companyScraper (beautifulsoup4, fake-useragent, lxml) and PDF gen
+# libsqlcipher-dev: required to build pysqlcipher3 (SQLCipher AES-256 encryption for cloud mode)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libffi-dev curl \
+    gcc libffi-dev curl libsqlcipher-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
