@@ -12,11 +12,13 @@ import yaml
 import os as _os
 
 from scripts.user_profile import UserProfile
+from app.cloud_session import resolve_session, get_db_path
 
 _USER_YAML = Path(__file__).parent.parent.parent / "config" / "user.yaml"
 _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
 _name = _profile.name if _profile else "Job Seeker"
 
+resolve_session("peregrine")
 st.title("⚙️ Settings")
 
 CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
@@ -1371,12 +1373,11 @@ with tab_finetune:
             st.markdown("**Step 2: Extract Training Pairs**")
             import json as _json
             import sqlite3 as _sqlite3
-            from scripts.db import DEFAULT_DB as _FT_DB
 
             jsonl_path = _profile.docs_dir / "training_data" / "cover_letters.jsonl"
 
             # Show task status
-            _ft_conn = _sqlite3.connect(_FT_DB)
+            _ft_conn = _sqlite3.connect(get_db_path())
             _ft_conn.row_factory = _sqlite3.Row
             _ft_task = _ft_conn.execute(
                 "SELECT * FROM background_tasks WHERE task_type='prepare_training' ORDER BY id DESC LIMIT 1"

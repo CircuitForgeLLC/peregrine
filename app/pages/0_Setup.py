@@ -15,6 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import streamlit as st
 import yaml
 
+from app.cloud_session import resolve_session, get_db_path
+resolve_session("peregrine")
+
 _ROOT       = Path(__file__).parent.parent.parent
 CONFIG_DIR  = _ROOT / "config"
 USER_YAML   = CONFIG_DIR / "user.yaml"
@@ -74,18 +77,16 @@ def _suggest_profile(gpus: list[str]) -> str:
 
 def _submit_wizard_task(section: str, input_data: dict) -> int:
     """Submit a wizard_generate background task. Returns task_id."""
-    from scripts.db import DEFAULT_DB
     from scripts.task_runner import submit_task
     params = json.dumps({"section": section, "input": input_data})
-    task_id, _ = submit_task(DEFAULT_DB, "wizard_generate", 0, params=params)
+    task_id, _ = submit_task(get_db_path(), "wizard_generate", 0, params=params)
     return task_id
 
 
 def _poll_wizard_task(section: str) -> dict | None:
     """Return the most recent wizard_generate task row for a given section, or None."""
     import sqlite3
-    from scripts.db import DEFAULT_DB
-    conn = sqlite3.connect(DEFAULT_DB)
+    conn = sqlite3.connect(get_db_path())
     conn.row_factory = sqlite3.Row
     row = conn.execute(
         "SELECT * FROM background_tasks "

@@ -26,13 +26,15 @@ from scripts.db import (
     get_task_for_job,
 )
 from scripts.task_runner import submit_task
+from app.cloud_session import resolve_session, get_db_path
 
 DOCS_DIR = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
 RESUME_YAML = Path(__file__).parent.parent.parent / "config" / "plain_text_resume.yaml"
 
 st.title("🚀 Apply Workspace")
 
-init_db(DEFAULT_DB)
+resolve_session("peregrine")
+init_db(get_db_path())
 
 # ── PDF generation ─────────────────────────────────────────────────────────────
 def _make_cover_letter_pdf(job: dict, cover_letter: str, output_dir: Path) -> Path:
@@ -156,7 +158,7 @@ def _copy_btn(text: str, label: str = "📋 Copy", done: str = "✅ Copied!", he
     )
 
 # ── Job selection ──────────────────────────────────────────────────────────────
-approved = get_jobs_by_status(DEFAULT_DB, "approved")
+approved = get_jobs_by_status(get_db_path(), "approved")
 if not approved:
     st.info("No approved jobs — head to Job Review to approve some listings first.")
     st.stop()
@@ -219,17 +221,17 @@ with col_tools:
     if _cl_key not in st.session_state:
         st.session_state[_cl_key] = job.get("cover_letter") or ""
 
-    _cl_task = get_task_for_job(DEFAULT_DB, "cover_letter", selected_id)
+    _cl_task = get_task_for_job(get_db_path(), "cover_letter", selected_id)
     _cl_running = _cl_task and _cl_task["status"] in ("queued", "running")
 
     if st.button("✨ Generate / Regenerate", use_container_width=True, disabled=bool(_cl_running)):
-        submit_task(DEFAULT_DB, "cover_letter", selected_id)
+        submit_task(get_db_path(), "cover_letter", selected_id)
         st.rerun()
 
     if _cl_running:
         @st.fragment(run_every=3)
         def _cl_status_fragment():
-            t = get_task_for_job(DEFAULT_DB, "cover_letter", selected_id)
+            t = get_task_for_job(get_db_path(), "cover_letter", selected_id)
             if t and t["status"] in ("queued", "running"):
                 lbl = "Queued…" if t["status"] == "queued" else "Generating via LLM…"
                 st.info(f"⏳ {lbl}")
@@ -272,7 +274,7 @@ with col_tools:
                          key=f"cl_refine_{selected_id}"):
                 import json as _json
                 submit_task(
-                    DEFAULT_DB, "cover_letter", selected_id,
+                    get_db_path(), "cover_letter", selected_id,
                     params=_json.dumps({
                         "previous_result": cl_text,
                         "feedback": feedback_text.strip(),
@@ -288,7 +290,7 @@ with col_tools:
             _copy_btn(cl_text, label="📋 Copy Letter")
     with c2:
         if st.button("💾 Save draft", use_container_width=True):
-            update_cover_letter(DEFAULT_DB, selected_id, cl_text)
+            update_cover_letter(get_db_path(), selected_id, cl_text)
             st.success("Saved!")
 
     # PDF generation
@@ -297,7 +299,7 @@ with col_tools:
             with st.spinner("Generating PDF…"):
                 try:
                     pdf_path = _make_cover_letter_pdf(job, cl_text, DOCS_DIR)
-                    update_cover_letter(DEFAULT_DB, selected_id, cl_text)
+                    update_cover_letter(get_db_path(), selected_id, cl_text)
                     st.success(f"Saved: `{pdf_path.name}`")
                 except Exception as e:
                     st.error(f"PDF error: {e}")
@@ -312,13 +314,13 @@ with col_tools:
     with c4:
         if st.button("✅ Mark as Applied", use_container_width=True, type="primary"):
             if cl_text:
-                update_cover_letter(DEFAULT_DB, selected_id, cl_text)
-            mark_applied(DEFAULT_DB, [selected_id])
+                update_cover_letter(get_db_path(), selected_id, cl_text)
+            mark_applied(get_db_path(), [selected_id])
             st.success("Marked as applied!")
             st.rerun()
 
     if st.button("🚫 Reject listing", use_container_width=True):
-        update_job_status(DEFAULT_DB, [selected_id], "rejected")
+        update_job_status(get_db_path(), [selected_id], "rejected")
         # Advance selectbox to next job so list doesn't snap to first item
         current_idx = ids.index(selected_id) if selected_id in ids else 0
         if current_idx + 1 < len(ids):
