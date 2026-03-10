@@ -1517,7 +1517,10 @@ with tab_data:
 
     from scripts.backup import create_backup, list_backup_contents, restore_backup as _do_restore
 
-    _base_dir = Path(__file__).parent.parent.parent
+    # Cloud mode: per-user data lives at get_db_path().parent — not the app root.
+    # db_key is used to transparently decrypt on export and re-encrypt on import.
+    _db_key = st.session_state.get("db_key", "") if CLOUD_MODE else ""
+    _base_dir = get_db_path().parent if (CLOUD_MODE and st.session_state.get("db_path")) else Path(__file__).parent.parent.parent
 
     # ── Backup ────────────────────────────────────────────────────────────────
     st.markdown("### 📦 Create Backup")
@@ -1525,7 +1528,7 @@ with tab_data:
     if st.button("Create Backup", key="backup_create"):
         with st.spinner("Creating backup…"):
             try:
-                _zip_bytes = create_backup(_base_dir, include_db=_incl_db)
+                _zip_bytes = create_backup(_base_dir, include_db=_incl_db, db_key=_db_key)
                 _info = list_backup_contents(_zip_bytes)
                 from datetime import datetime as _dt
                 _ts = _dt.now().strftime("%Y%m%d-%H%M%S")
@@ -1572,6 +1575,7 @@ with tab_data:
                     _zip_bytes, _base_dir,
                     include_db=_restore_db,
                     overwrite=_restore_overwrite,
+                    db_key=_db_key,
                 )
                 st.success(f"Restored {len(_result['restored'])} files.")
                 with st.expander("Details"):
