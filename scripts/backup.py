@@ -4,6 +4,16 @@ Creates a portable zip of all gitignored configs + optionally the staging DB.
 Intended for: machine migrations, Docker volume transfers, and safe wizard testing.
 Supports both the Peregrine Docker instance and the legacy /devl/job-seeker install.
 
+Cloud mode notes
+----------------
+In cloud mode (CLOUD_MODE=true), the staging DB is SQLCipher-encrypted.
+Pass the per-user ``db_key`` to ``create_backup()`` to have it transparently
+decrypt the DB before archiving — producing a portable, plain SQLite file
+that works with any local Docker install.
+
+Pass the same ``db_key`` to ``restore_backup()`` and it will re-encrypt the
+plain DB on its way in, so the cloud app can open it normally.
+
 Usage (CLI):
     conda run -n job-seeker python scripts/backup.py --create backup.zip
     conda run -n job-seeker python scripts/backup.py --create backup.zip --no-db
@@ -21,6 +31,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -63,6 +75,63 @@ _MANIFEST_NAME = "backup-manifest.json"
 
 
 # ---------------------------------------------------------------------------
+# SQLCipher helpers (cloud mode only — only called when db_key is set)
+# ---------------------------------------------------------------------------
+
+def _decrypt_db_to_bytes(db_path: Path, db_key: str) -> bytes:
+    """Open a SQLCipher-encrypted DB and return plain SQLite bytes.
+
+    Uses SQLCipher's ATTACH + sqlcipher_export() to produce a portable
+    unencrypted copy. Only called in cloud mode (db_key non-empty).
+    pysqlcipher3 is available in the Docker image (Dockerfile installs
+    libsqlcipher-dev); never called in local-mode tests.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        from pysqlcipher3 import dbapi2 as _sqlcipher  # type: ignore[import]
+        conn = _sqlcipher.connect(str(db_path))
+        conn.execute(f"PRAGMA key='{db_key}'")
+        conn.execute(f"ATTACH DATABASE '{tmp_path}' AS plaintext KEY ''")
+        conn.execute("SELECT sqlcipher_export('plaintext')")
+        conn.execute("DETACH DATABASE plaintext")
+        conn.close()
+        return Path(tmp_path).read_bytes()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+def _encrypt_db_from_bytes(plain_bytes: bytes, dest_path: Path, db_key: str) -> None:
+    """Write plain SQLite bytes as a SQLCipher-encrypted DB at dest_path.
+
+    Used on restore in cloud mode to convert a portable plain backup into
+    the per-user encrypted format the app expects.
+    """
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        tmp.write(plain_bytes)
+        tmp_path = tmp.name
+    try:
+        from pysqlcipher3 import dbapi2 as _sqlcipher  # type: ignore[import]
+        # Open the plain DB (empty key = no encryption in SQLCipher)
+        conn = _sqlcipher.connect(tmp_path)
+        conn.execute("PRAGMA key=''")
+        # Attach the encrypted destination and export there
+        conn.execute(f"ATTACH DATABASE '{dest_path}' AS encrypted KEY '{db_key}'")
+        conn.execute("SELECT sqlcipher_export('encrypted')")
+        conn.execute("DETACH DATABASE encrypted")
+        conn.close()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Source detection
 # ---------------------------------------------------------------------------
 
@@ -90,6 +159,7 @@ def create_backup(
     base_dir: Path,
     include_db: bool = True,
     source_label: str | None = None,
+    db_key: str = "",
 ) -> bytes:
     """Return a zip archive as raw bytes.
 
@@ -98,6 +168,9 @@ def create_backup(
         include_db:   If True, include staging.db in the archive.
         source_label: Human-readable instance name stored in the manifest
                       (e.g. "peregrine", "job-seeker"). Auto-detected if None.
+        db_key:       SQLCipher key for the DB (cloud mode). When set, the DB
+                      is decrypted before archiving so the backup is portable
+                      to any local Docker install.
     """
     buf = io.BytesIO()
     included: list[str] = []
@@ -128,7 +201,12 @@ def create_backup(
             for candidate in _DB_CANDIDATES:
                 p = base_dir / candidate
                 if p.exists():
-                    zf.write(p, candidate)
+                    if db_key:
+                        # Cloud mode: decrypt to plain SQLite before archiving
+                        plain_bytes = _decrypt_db_to_bytes(p, db_key)
+                        zf.writestr(candidate, plain_bytes)
+                    else:
+                        zf.write(p, candidate)
                     included.append(candidate)
                     break
 
@@ -167,6 +245,7 @@ def restore_backup(
     base_dir: Path,
     include_db: bool = True,
     overwrite: bool = True,
+    db_key: str = "",
 ) -> dict[str, list[str]]:
     """Extract a backup zip into base_dir.
 
@@ -175,6 +254,9 @@ def restore_backup(
         base_dir:   Repo root to restore into.
         include_db: If False, skip any .db files.
         overwrite:  If False, skip files that already exist.
+        db_key:     SQLCipher key (cloud mode). When set, any .db file in the
+                    zip (plain SQLite) is re-encrypted on the way in so the
+                    cloud app can open it normally.
 
     Returns:
         {"restored": [...], "skipped": [...]}
@@ -194,7 +276,12 @@ def restore_backup(
                 skipped.append(name)
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(zf.read(name))
+            raw = zf.read(name)
+            if db_key and name.endswith(".db"):
+                # Cloud mode: the zip contains plain SQLite — re-encrypt on restore
+                _encrypt_db_from_bytes(raw, dest, db_key)
+            else:
+                dest.write_bytes(raw)
             restored.append(name)
 
     return {"restored": restored, "skipped": skipped}
