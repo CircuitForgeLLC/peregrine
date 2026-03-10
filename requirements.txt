@@ -56,6 +56,9 @@ python-dotenv
 PyJWT>=2.8
 pysqlcipher3
 
+# ── Cloud / telemetry ─────────────────────────────────────────────────────────
+psycopg2-binary
+
 # ── Utilities ─────────────────────────────────────────────────────────────
 sqlalchemy
 tqdm

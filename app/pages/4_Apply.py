@@ -27,6 +27,7 @@ from scripts.db import (
 )
 from scripts.task_runner import submit_task
 from app.cloud_session import resolve_session, get_db_path
+from app.telemetry import log_usage_event
 
 DOCS_DIR = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
 RESUME_YAML = Path(__file__).parent.parent.parent / "config" / "plain_text_resume.yaml"
@@ -301,6 +302,8 @@ with col_tools:
                     pdf_path = _make_cover_letter_pdf(job, cl_text, DOCS_DIR)
                     update_cover_letter(get_db_path(), selected_id, cl_text)
                     st.success(f"Saved: `{pdf_path.name}`")
+                    if user_id := st.session_state.get("user_id"):
+                        log_usage_event(user_id, "peregrine", "cover_letter_generated")
                 except Exception as e:
                     st.error(f"PDF error: {e}")
 
@@ -317,6 +320,8 @@ with col_tools:
                 update_cover_letter(get_db_path(), selected_id, cl_text)
             mark_applied(get_db_path(), [selected_id])
             st.success("Marked as applied!")
+            if user_id := st.session_state.get("user_id"):
+                log_usage_event(user_id, "peregrine", "job_applied")
             st.rerun()
 
     if st.button("🚫 Reject listing", use_container_width=True):
