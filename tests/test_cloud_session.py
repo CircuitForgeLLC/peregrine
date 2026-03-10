@@ -27,7 +27,7 @@ def test_resolve_session_sets_db_path(tmp_path, monkeypatch):
          patch.object(cs, "st") as mock_st, \
          patch.object(cs, "CLOUD_DATA_ROOT", tmp_path):
         mock_st.session_state = mock_state
-        mock_st.context.headers = {"x-cf-session": "valid.jwt.token"}
+        mock_st.context.headers = {"x-cf-session": "cf_session=valid.jwt.token"}
         cs.resolve_session("peregrine")
 
     assert mock_state["user_id"] == "user-uuid-123"
@@ -46,7 +46,7 @@ def test_resolve_session_creates_user_dir(tmp_path, monkeypatch):
          patch.object(cs, "st") as mock_st, \
          patch.object(cs, "CLOUD_DATA_ROOT", tmp_path):
         mock_st.session_state = mock_state
-        mock_st.context.headers = {"x-cf-session": "valid.jwt.token"}
+        mock_st.context.headers = {"x-cf-session": "cf_session=valid.jwt.token"}
         cs.resolve_session("peregrine")
 
     assert (tmp_path / "new-user" / "peregrine").is_dir()
