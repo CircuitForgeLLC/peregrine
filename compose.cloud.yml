@@ -1,0 +1,55 @@
+# compose.cloud.yml — Multi-tenant cloud stack for menagerie.circuitforge.tech/peregrine
+#
+# Each authenticated user gets their own encrypted SQLite data tree at
+# /devl/menagerie-data/<user-id>/peregrine/
+#
+# Caddy injects the Directus session cookie as X-CF-Session header before forwarding.
+# cloud_session.py resolves user_id → per-user db_path at session init.
+#
+# Usage:
+#   docker compose -f compose.cloud.yml --project-name peregrine-cloud up -d
+#   docker compose -f compose.cloud.yml --project-name peregrine-cloud down
+#   docker compose -f compose.cloud.yml --project-name peregrine-cloud logs app -f
+
+services:
+  app:
+    build: .
+    container_name: peregrine-cloud
+    ports:
+      - "8505:8501"
+    volumes:
+      - /devl/menagerie-data:/devl/menagerie-data  # per-user data trees
+    environment:
+      - CLOUD_MODE=true
+      - CLOUD_DATA_ROOT=/devl/menagerie-data
+      - DIRECTUS_JWT_SECRET=${DIRECTUS_JWT_SECRET}
+      - CF_SERVER_SECRET=${CF_SERVER_SECRET}
+      - PLATFORM_DB_URL=${PLATFORM_DB_URL}
+      - STAGING_DB=/devl/menagerie-data/cloud-default.db  # fallback only — never used
+      - DOCS_DIR=/tmp/cloud-docs
+      - STREAMLIT_SERVER_BASE_URL_PATH=peregrine
+      - PYTHONUNBUFFERED=1
+      - DEMO_MODE=false
+    depends_on:
+      searxng:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    volumes:
+      - ./docker/searxng:/etc/searxng:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    # No host port — internal only
+
+networks:
+  default:
+    external: true
+    name: caddy-proxy_caddy-internal
