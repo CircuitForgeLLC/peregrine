@@ -11,6 +11,7 @@ All Peregrine pages call get_db_path() instead of DEFAULT_DB directly to
 transparently support both local and cloud deployments.
 """
 import os
+import re
 import hmac
 import hashlib
 from pathlib import Path
@@ -20,6 +21,12 @@ import streamlit as st
 from scripts.db import DEFAULT_DB
 
 CLOUD_MODE: bool = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true", "yes")
+
+
+def _extract_session_token(cookie_header: str) -> str:
+    """Extract cf_session value from a Cookie header string."""
+    m = re.search(r'(?:^|;)\s*cf_session=([^;]+)', cookie_header)
+    return m.group(1).strip() if m else ""
 CLOUD_DATA_ROOT: Path = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
 DIRECTUS_JWT_SECRET: str = os.environ.get("DIRECTUS_JWT_SECRET", "")
 SERVER_SECRET: str = os.environ.get("CF_SERVER_SECRET", "")
@@ -64,13 +71,14 @@ def resolve_session(app: str = "peregrine") -> None:
     if st.session_state.get("user_id"):
         return
 
-    token = st.context.headers.get("x-cf-session", "")
-    if not token:
+    cookie_header = st.context.headers.get("x-cf-session", "")
+    session_jwt = _extract_session_token(cookie_header)
+    if not session_jwt:
         st.error("Session token missing. Please log in at circuitforge.tech.")
         st.stop()
 
     try:
-        user_id = validate_session_jwt(token)
+        user_id = validate_session_jwt(session_jwt)
     except Exception as exc:
         st.error(f"Invalid session — please log in again. ({exc})")
         st.stop()
