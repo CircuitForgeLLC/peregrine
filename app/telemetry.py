@@ -88,3 +88,40 @@ def log_usage_event(
     except Exception:
         # Telemetry must never crash the app
         pass
+
+
+def update_consent(user_id: str, **fields) -> None:
+    """
+    UPSERT telemetry consent for a user.
+
+    Accepted keyword args (all optional, any subset may be provided):
+        all_disabled: bool
+        usage_events_enabled: bool
+        content_sharing_enabled: bool
+        support_access_enabled: bool
+
+    Safe to call in cloud mode only — no-op in local mode.
+    Swallows all exceptions so the Settings UI is never broken by a DB hiccup.
+    """
+    if not CLOUD_MODE:
+        return
+    allowed = {"all_disabled", "usage_events_enabled", "content_sharing_enabled", "support_access_enabled"}
+    cols = {k: v for k, v in fields.items() if k in allowed}
+    if not cols:
+        return
+    try:
+        conn = get_platform_conn()
+        col_names = ", ".join(cols)
+        placeholders = ", ".join(["%s"] * len(cols))
+        set_clause = ", ".join(f"{k} = EXCLUDED.{k}" for k in cols)
+        col_vals = list(cols.values())
+        with conn.cursor() as cur:
+            cur.execute(
+                f"INSERT INTO telemetry_consent (user_id, {col_names}) "
+                f"VALUES (%s, {placeholders}) "
+                f"ON CONFLICT (user_id) DO UPDATE SET {set_clause}, updated_at = NOW()",
+                [user_id] + col_vals,
+            )
+        conn.commit()
+    except Exception:
+        pass

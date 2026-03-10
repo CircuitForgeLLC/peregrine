@@ -12,7 +12,7 @@ import yaml
 import os as _os
 
 from scripts.user_profile import UserProfile
-from app.cloud_session import resolve_session, get_db_path
+from app.cloud_session import resolve_session, get_db_path, CLOUD_MODE
 
 _USER_YAML = Path(__file__).parent.parent.parent / "config" / "user.yaml"
 _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
@@ -65,10 +65,13 @@ _tab_names = [
     "👤 My Profile", "📝 Resume Profile", "🔎 Search",
     "⚙️ System", "🎯 Fine-Tune", "🔑 License", "💾 Data"
 ]
+if CLOUD_MODE:
+    _tab_names.append("🔒 Privacy")
 if _show_dev_tab:
     _tab_names.append("🛠️ Developer")
 _all_tabs = st.tabs(_tab_names)
 tab_profile, tab_resume, tab_search, tab_system, tab_finetune, tab_license, tab_data = _all_tabs[:7]
+tab_privacy = _all_tabs[7] if CLOUD_MODE else None
 
 # ── Inline LLM generate buttons ───────────────────────────────────────────────
 # Unlocked when user has a configured LLM backend (BYOK) OR a paid tier.
@@ -1726,3 +1729,103 @@ if _show_dev_tab:
                     st.caption("Label distribution:")
                     for _lbl, _cnt in sorted(_label_counts.items(), key=lambda x: -x[1]):
                         st.caption(f"  `{_lbl}`: {_cnt}")
+
+# ── Privacy & Telemetry (cloud mode only) ─────────────────────────────────────
+if CLOUD_MODE and tab_privacy is not None:
+    with tab_privacy:
+        from app.telemetry import get_consent as _get_consent, update_consent as _update_consent
+
+        st.subheader("🔒 Privacy & Telemetry")
+        st.caption(
+            "You have full, unconditional control over what data leaves your session. "
+            "Changes take effect immediately."
+        )
+
+        _uid = st.session_state.get("user_id", "")
+        _consent = _get_consent(_uid) if _uid else {
+            "all_disabled": False,
+            "usage_events_enabled": True,
+            "content_sharing_enabled": False,
+            "support_access_enabled": False,
+        }
+
+        with st.expander("📊 Usage & Telemetry", expanded=True):
+            st.markdown(
+                "CircuitForge is built by a tiny team. Anonymous usage data helps us fix the "
+                "parts of the job search that are broken. You can opt out at any time."
+            )
+
+            _all_off = st.toggle(
+                "🚫 Disable ALL telemetry",
+                value=bool(_consent.get("all_disabled", False)),
+                key="privacy_all_disabled",
+                help="Hard kill switch — overrides all options below. Nothing is written or transmitted.",
+            )
+            if _all_off != _consent.get("all_disabled", False) and _uid:
+                _update_consent(_uid, all_disabled=_all_off)
+                st.rerun()
+
+            st.divider()
+
+            _disabled = _all_off  # grey out individual toggles when master switch is on
+
+            _usage_on = st.toggle(
+                "📈 Share anonymous usage statistics",
+                value=bool(_consent.get("usage_events_enabled", True)),
+                disabled=_disabled,
+                key="privacy_usage_events",
+                help="Feature usage, error rates, completion counts — no content, no PII.",
+            )
+            if not _disabled and _usage_on != _consent.get("usage_events_enabled", True) and _uid:
+                _update_consent(_uid, usage_events_enabled=_usage_on)
+                st.rerun()
+
+            _content_on = st.toggle(
+                "📝 Share de-identified content for model improvement",
+                value=bool(_consent.get("content_sharing_enabled", False)),
+                disabled=_disabled,
+                key="privacy_content_sharing",
+                help=(
+                    "Opt-in: anonymised cover letters (PII stripped) may be used to improve "
+                    "the CircuitForge fine-tuned model. Never shared with third parties."
+                ),
+            )
+            if not _disabled and _content_on != _consent.get("content_sharing_enabled", False) and _uid:
+                _update_consent(_uid, content_sharing_enabled=_content_on)
+                st.rerun()
+
+            st.divider()
+            with st.expander("🎫 Temporary Support Access", expanded=False):
+                st.caption(
+                    "Grant CircuitForge support read-only access to your session for a specific "
+                    "support ticket. Time-limited and revocable. You will be notified when access "
+                    "expires or is used."
+                )
+                from datetime import datetime as _dt, timedelta as _td
+                _hours = st.selectbox(
+                    "Access duration", [4, 8, 24, 48, 72],
+                    format_func=lambda h: f"{h} hours",
+                    key="privacy_support_hours",
+                )
+                _ticket = st.text_input("Support ticket reference (optional)", key="privacy_ticket_ref")
+                if st.button("Grant temporary support access", key="privacy_support_grant"):
+                    if _uid:
+                        try:
+                            from app.telemetry import get_platform_conn as _get_pc
+                            _pc = _get_pc()
+                            _expires = _dt.utcnow() + _td(hours=_hours)
+                            with _pc.cursor() as _cur:
+                                _cur.execute(
+                                    "INSERT INTO support_access_grants "
+                                    "(user_id, expires_at, ticket_ref) VALUES (%s, %s, %s)",
+                                    (_uid, _expires, _ticket or None),
+                                )
+                            _pc.commit()
+                            st.success(
+                                f"Support access granted until {_expires.strftime('%Y-%m-%d %H:%M')} UTC. "
+                                "You can revoke it here at any time."
+                            )
+                        except Exception as _e:
+                            st.error(f"Could not save grant: {_e}")
+                    else:
+                        st.warning("Session not resolved — please reload the page.")
