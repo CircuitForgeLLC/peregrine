@@ -576,3 +576,17 @@ def test_insert_task_with_params(tmp_path):
     params2 = json.dumps({"section": "job_titles"})
     task_id3, is_new3 = insert_task(db, "wizard_generate", 0, params=params2)
     assert is_new3 is True
+
+
+def test_get_connection_local_mode(tmp_path):
+    """get_connection() returns a working sqlite3 connection in local mode (no key)."""
+    from scripts.db import get_connection
+    db = tmp_path / "test_conn.db"
+    conn = get_connection(db)
+    conn.execute("CREATE TABLE t (x INTEGER)")
+    conn.execute("INSERT INTO t VALUES (42)")
+    conn.commit()
+    result = conn.execute("SELECT x FROM t").fetchone()
+    conn.close()
+    assert result[0] == 42
+    assert db.exists()
