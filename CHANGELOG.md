@@ -9,6 +9,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.0] — 2026-03-13
+
+### Added
+- **LinkedIn profile import** — one-click import from a public LinkedIn profile URL
+  (Playwright headless Chrome, no login required) or from a LinkedIn data export zip.
+  Staged to `linkedin_stage.json` so the profile is parsed once and reused across
+  sessions without repeated network requests. Available on all tiers including Free.
+  - `scripts/linkedin_utils.py` — HTML parser with ordered CSS selector fallbacks;
+    extracts name, experience, education, skills, certifications, summary
+  - `scripts/linkedin_scraper.py` — Playwright URL scraper + export zip CSV parser;
+    atomic staging file write; URL validation; robust error handling
+  - `scripts/linkedin_parser.py` — staging file reader; re-runs HTML parser on stored
+    raw HTML so selector improvements apply without re-scraping
+  - `app/components/linkedin_import.py` — shared Streamlit widget (status bar, preview,
+    URL import, advanced zip upload) used by both wizard and Settings
+  - Wizard step 3: new "🔗 LinkedIn" tab alongside Upload and Build Manually
+  - Settings → Resume Profile: collapsible "Import from LinkedIn" expander
+  - Dockerfile: Playwright Chromium install added to Docker image
+
+### Fixed
+- **Cloud mode perpetual onboarding loop** — wizard gate in `app.py` now reads
+  `get_config_dir()/user.yaml` (per-user in cloud, repo-level locally) instead of a
+  hardcoded repo path; completing the wizard now correctly exits it in cloud mode
+- **Cloud resume YAML path** — wizard step 3 writes resume to per-user `CONFIG_DIR`
+  instead of the shared repo `config/` (would have merged all cloud users' data)
+- **Cloud session redirect** — missing/invalid session token now JS-redirects to
+  `circuitforge.tech/login` instead of showing a raw error message
+- Removed remaining AIHawk UI references (`Home.py`, `4_Apply.py`, `migrate.py`)
+
+---
+
 ## [0.3.0] — 2026-03-06
 
 ### Added
