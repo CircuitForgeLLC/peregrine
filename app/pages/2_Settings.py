@@ -12,22 +12,23 @@ import yaml
 import os as _os
 
 from scripts.user_profile import UserProfile
-from app.cloud_session import resolve_session, get_db_path, CLOUD_MODE
-
-_USER_YAML = Path(__file__).parent.parent.parent / "config" / "user.yaml"
-_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
-_name = _profile.name if _profile else "Job Seeker"
+from app.cloud_session import resolve_session, get_db_path, get_config_dir, CLOUD_MODE
 
 resolve_session("peregrine")
 st.title("⚙️ Settings")
 
-CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
+# Config paths — per-user directory in cloud mode, shared repo config/ locally
+CONFIG_DIR = get_config_dir()
 SEARCH_CFG = CONFIG_DIR / "search_profiles.yaml"
 BLOCKLIST_CFG = CONFIG_DIR / "blocklist.yaml"
 LLM_CFG = CONFIG_DIR / "llm.yaml"
 NOTION_CFG = CONFIG_DIR / "notion.yaml"
-RESUME_PATH = Path(__file__).parent.parent.parent / "config" / "plain_text_resume.yaml"
+RESUME_PATH = CONFIG_DIR / "plain_text_resume.yaml"
 KEYWORDS_CFG = CONFIG_DIR / "resume_keywords.yaml"
+
+_USER_YAML = CONFIG_DIR / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+_name = _profile.name if _profile else "Peregrine User"
 
 def load_yaml(path: Path) -> dict:
     if path.exists():
@@ -54,8 +55,9 @@ def _suggest_search_terms(current_titles, resume_path, blocklist=None, user_prof
 _show_finetune = bool(_profile and _profile.inference_profile in ("single-gpu", "dual-gpu"))
 
 USER_CFG = CONFIG_DIR / "user.yaml"
-SERVER_CFG = CONFIG_DIR / "server.yaml"
-SERVER_CFG_EXAMPLE = CONFIG_DIR / "server.yaml.example"
+# Server config is always repo-level — it controls the container, not the user
+SERVER_CFG = Path(__file__).parent.parent.parent / "config" / "server.yaml"
+SERVER_CFG_EXAMPLE = Path(__file__).parent.parent.parent / "config" / "server.yaml.example"
 
 _dev_mode = _os.getenv("DEV_MODE", "").lower() in ("true", "1", "yes")
 _u_for_dev = yaml.safe_load(USER_CFG.read_text()) or {} if USER_CFG.exists() else {}
@@ -587,6 +589,20 @@ def _upload_resume_widget(key_prefix: str) -> None:
             )
 
 with tab_resume:
+    # ── LinkedIn import ───────────────────────────────────────────────────────
+    _li_data = st.session_state.pop("_linkedin_extracted", None)
+    if _li_data:
+        # Merge imported data into resume YAML
+        existing = load_yaml(RESUME_PATH)
+        existing.update({k: v for k, v in _li_data.items() if v})
+        save_yaml(RESUME_PATH, existing)
+        st.success("LinkedIn data applied to resume profile.")
+
+    with st.expander("🔗 Import from LinkedIn", expanded=False):
+        from app.components.linkedin_import import render_linkedin_tab
+        _tab_tier = _profile.tier if _profile else "free"
+        render_linkedin_tab(config_dir=CONFIG_DIR, tier=_tab_tier)
+
     st.caption(
         f"Edit {_name}'s application profile. "
         "Bullets are used as paste-able shortcuts in the Apply Workspace."
@@ -866,6 +882,14 @@ with tab_resume:
 # ── System tab ────────────────────────────────────────────────────────────────
 with tab_system:
     st.caption("Infrastructure, LLM backends, integrations, and service connections.")
+
+    if CLOUD_MODE:
+        st.info(
+            "**Your instance is managed by CircuitForge.**\n\n"
+            "Infrastructure, LLM backends, and service settings are configured by the platform. "
+            "To change your plan or billing, visit your [account page](https://circuitforge.tech/account)."
+        )
+        st.stop()
 
     # ── File Paths & Inference ────────────────────────────────────────────────
     with st.expander("📁 File Paths & Inference Profile"):
@@ -1463,6 +1487,13 @@ with tab_finetune:
 # ── License tab ───────────────────────────────────────────────────────────────
 with tab_license:
     st.subheader("🔑 License")
+
+    if CLOUD_MODE:
+        _cloud_tier = st.session_state.get("cloud_tier", "free")
+        st.success(f"**{_cloud_tier.title()} tier** — managed via your CircuitForge account")
+        st.caption("Your plan is tied to your account and applied automatically.")
+        st.page_link("https://circuitforge.tech/account", label="Manage plan →", icon="🔗")
+        st.stop()
 
     from scripts.license import (
         verify_local as _verify_local,
