@@ -22,11 +22,11 @@ IS_DEMO = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 import streamlit as st
 from scripts.db import DEFAULT_DB, init_db, get_active_tasks
 from app.feedback import inject_feedback_button
-from app.cloud_session import resolve_session, get_db_path
+from app.cloud_session import resolve_session, get_db_path, get_config_dir
 import sqlite3
 
 st.set_page_config(
-    page_title="Job Seeker",
+    page_title="Peregrine",
     page_icon="💼",
     layout="wide",
 )
@@ -80,7 +80,7 @@ except Exception:
 
 # ── First-run wizard gate ───────────────────────────────────────────────────────
 from scripts.user_profile import UserProfile as _UserProfile
-_USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
+_USER_YAML = get_config_dir() / "user.yaml"
 
 _show_wizard = not IS_DEMO and (
     not _UserProfile.exists(_USER_YAML)
