@@ -597,6 +597,7 @@ with tab_resume:
         existing.update({k: v for k, v in _li_data.items() if v})
         save_yaml(RESUME_PATH, existing)
         st.success("LinkedIn data applied to resume profile.")
+        st.rerun()
 
     with st.expander("🔗 Import from LinkedIn", expanded=False):
         from app.components.linkedin_import import render_linkedin_tab
