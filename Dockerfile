@@ -10,9 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && \
-    playwright install chromium && \
-    playwright install-deps chromium
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright browser (cached separately from Python deps so requirements
+# changes don't bust the ~600–900 MB Chromium layer and vice versa)
+RUN playwright install chromium && playwright install-deps chromium
 
 # Bundle companyScraper (company research web scraper)
 COPY scrapers/ /app/scrapers/

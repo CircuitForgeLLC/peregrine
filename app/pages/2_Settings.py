@@ -592,9 +592,11 @@ with tab_resume:
     # ── LinkedIn import ───────────────────────────────────────────────────────
     _li_data = st.session_state.pop("_linkedin_extracted", None)
     if _li_data:
-        # Merge imported data into resume YAML
+        # Merge imported data into resume YAML — only bootstrap empty fields,
+        # never overwrite existing detail with sparse LinkedIn data
         existing = load_yaml(RESUME_PATH)
-        existing.update({k: v for k, v in _li_data.items() if v})
+        existing.update({k: v for k, v in _li_data.items() if v and not existing.get(k)})
+        RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
         save_yaml(RESUME_PATH, existing)
         st.success("LinkedIn data applied to resume profile.")
         st.rerun()
