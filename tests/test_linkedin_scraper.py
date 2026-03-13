@@ -163,3 +163,51 @@ def test_parse_export_zip_writes_staging_file():
         data = json.loads(stage.read_text())
     assert data["source"] == "export_zip"
     assert data["raw_html"] is None
+
+
+def test_scrape_profile_sets_linkedin_url():
+    from scripts.linkedin_scraper import scrape_profile
+    with tempfile.TemporaryDirectory() as tmp:
+        stage = Path(tmp) / "stage.json"
+        fixture_html = (Path(__file__).parent / "fixtures" / "linkedin_profile.html").read_text()
+        mock_page = MagicMock()
+        mock_page.content.return_value = fixture_html
+        mock_browser = MagicMock()
+        mock_browser.new_page.return_value = mock_page
+        mock_playwright = MagicMock()
+        mock_playwright.chromium.launch.return_value = mock_browser
+        with patch("scripts.linkedin_scraper.sync_playwright") as mock_sync_pw:
+            mock_sync_pw.return_value.__enter__ = MagicMock(return_value=mock_playwright)
+            mock_sync_pw.return_value.__exit__ = MagicMock(return_value=False)
+            result = scrape_profile("https://linkedin.com/in/alanw", stage)
+        assert result["linkedin"] == "https://linkedin.com/in/alanw"
+
+
+def test_parse_export_zip_bad_zip_raises():
+    from scripts.linkedin_scraper import parse_export_zip
+    with tempfile.TemporaryDirectory() as tmp:
+        stage = Path(tmp) / "stage.json"
+        try:
+            parse_export_zip(b"not a zip file at all", stage)
+            assert False, "should have raised"
+        except ValueError as e:
+            assert "zip" in str(e).lower()
+
+
+def test_parse_export_zip_current_job_shows_present():
+    """Empty Finished On renders as '– Present', not truncated."""
+    from scripts.linkedin_scraper import parse_export_zip
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("Position.csv",
+            "Company Name,Title,Description,Started On,Finished On\n"
+            "Acme Corp,Staff Engineer,,Jan 2022,\n"
+        )
+        zf.writestr("Profile.csv",
+            "First Name,Last Name,Headline,Summary,Email Address\n"
+            "Alan,Weinstock,Engineer,,\n"
+        )
+    with tempfile.TemporaryDirectory() as tmp:
+        stage = Path(tmp) / "stage.json"
+        result = parse_export_zip(buf.getvalue(), stage)
+    assert result["experience"][0]["date_range"] == "Jan 2022 – Present"

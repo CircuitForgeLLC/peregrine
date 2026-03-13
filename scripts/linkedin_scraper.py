@@ -65,6 +65,8 @@ def scrape_profile(url: str, stage_path: Path) -> dict:
             "LinkedIn did not load in time — the request may have been blocked. "
             "Try the data export option instead."
         )
+    except Exception as e:
+        raise RuntimeError(f"LinkedIn scrape failed: {e}") from e
 
     extracted = parse_html(raw_html)
     extracted["linkedin"] = url
@@ -94,68 +96,68 @@ def parse_export_zip(zip_bytes: bytes, stage_path: Path) -> dict:
     }
 
     try:
-        zf_handle = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            names_in_zip = {n.lower(): n for n in zf.namelist()}
+
+            def _read_csv(filename: str) -> list[dict]:
+                key = filename.lower()
+                if key not in names_in_zip:
+                    return []
+                text = zf.read(names_in_zip[key]).decode("utf-8-sig", errors="replace")
+                return list(csv.DictReader(io.StringIO(text)))
+
+            for row in _read_csv("Profile.csv"):
+                first = row.get("First Name", "").strip()
+                last  = row.get("Last Name", "").strip()
+                extracted["name"]           = f"{first} {last}".strip()
+                extracted["email"]          = row.get("Email Address", "").strip()
+                extracted["career_summary"] = row.get("Summary", "").strip()
+                break
+
+            for row in _read_csv("Position.csv"):
+                company    = row.get("Company Name", "").strip()
+                title      = row.get("Title", "").strip()
+                desc       = row.get("Description", "").strip()
+                start      = row.get("Started On", "").strip()
+                end        = row.get("Finished On", "").strip()
+                end_label  = end if end else ("Present" if start else "")
+                date_range = f"{start} – {end_label}".strip(" –") if (start or end) else ""
+                bullets    = [d.strip() for d in re.split(r"[.•\n]+", desc) if d.strip() and len(d.strip()) > 3]
+                if company or title:
+                    extracted["experience"].append({
+                        "company":    company,
+                        "title":      title,
+                        "date_range": date_range,
+                        "bullets":    bullets,
+                    })
+
+            for row in _read_csv("Education.csv"):
+                school = row.get("School Name", "").strip()
+                degree = row.get("Degree Name", "").strip()
+                field  = row.get("Field Of Study", "").strip()
+                start  = row.get("Start Date", "").strip()
+                end    = row.get("End Date", "").strip()
+                dates  = f"{start} – {end}".strip(" –") if start or end else ""
+                if school or degree:
+                    extracted["education"].append({
+                        "school": school,
+                        "degree": degree,
+                        "field":  field,
+                        "dates":  dates,
+                    })
+
+            for row in _read_csv("Skills.csv"):
+                skill = row.get("Name", "").strip()
+                if skill:
+                    extracted["skills"].append(skill)
+
+            for row in _read_csv("Certifications.csv"):
+                name = row.get("Name", "").strip()
+                if name:
+                    extracted["achievements"].append(name)
+
     except zipfile.BadZipFile as e:
         raise ValueError(f"Not a valid zip file: {e}")
-
-    with zf_handle as zf:
-        names_in_zip = {n.lower(): n for n in zf.namelist()}
-
-        def _read_csv(filename: str) -> list[dict]:
-            key = filename.lower()
-            if key not in names_in_zip:
-                return []
-            text = zf.read(names_in_zip[key]).decode("utf-8-sig", errors="replace")
-            return list(csv.DictReader(io.StringIO(text)))
-
-        for row in _read_csv("Profile.csv"):
-            first = row.get("First Name", "").strip()
-            last  = row.get("Last Name", "").strip()
-            extracted["name"]           = f"{first} {last}".strip()
-            extracted["email"]          = row.get("Email Address", "").strip()
-            extracted["career_summary"] = row.get("Summary", "").strip()
-            break
-
-        for row in _read_csv("Position.csv"):
-            company    = row.get("Company Name", "").strip()
-            title      = row.get("Title", "").strip()
-            desc       = row.get("Description", "").strip()
-            start      = row.get("Started On", "").strip()
-            end        = row.get("Finished On", "").strip()
-            date_range = f"{start} – {end}".strip(" –") if start or end else ""
-            bullets    = [d.strip() for d in re.split(r"[.•\n]+", desc) if d.strip() and len(d.strip()) > 3]
-            if company or title:
-                extracted["experience"].append({
-                    "company":    company,
-                    "title":      title,
-                    "date_range": date_range,
-                    "bullets":    bullets,
-                })
-
-        for row in _read_csv("Education.csv"):
-            school = row.get("School Name", "").strip()
-            degree = row.get("Degree Name", "").strip()
-            field  = row.get("Field Of Study", "").strip()
-            start  = row.get("Start Date", "").strip()
-            end    = row.get("End Date", "").strip()
-            dates  = f"{start} – {end}".strip(" –") if start or end else ""
-            if school or degree:
-                extracted["education"].append({
-                    "school": school,
-                    "degree": degree,
-                    "field":  field,
-                    "dates":  dates,
-                })
-
-        for row in _read_csv("Skills.csv"):
-            skill = row.get("Name", "").strip()
-            if skill:
-                extracted["skills"].append(skill)
-
-        for row in _read_csv("Certifications.csv"):
-            name = row.get("Name", "").strip()
-            if name:
-                extracted["achievements"].append(name)
 
     _write_stage(stage_path, {
         "url":        None,
