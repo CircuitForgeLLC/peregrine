@@ -2,6 +2,52 @@
 
 Unscheduled ideas and deferred features. Roughly grouped by area.
 
+See also: `circuitforge-plans/shared/2026-03-07-launch-checklist.md` for pre-launch blockers
+(legal docs, Stripe live keys, website deployment, demo DB ownership fix).
+
+---
+
+## Launch Blockers (tracked in shared launch checklist)
+
+- **ToS + Refund Policy** — required before live Stripe charges. Files go in `website/content/legal/`.
+- **Stripe live key rotation** — swap test keys to live in `website/.env` (zero code changes).
+- **Website deployment to bastion** — Caddy route for Nuxt frontend at `circuitforge.tech`.
+- **Demo DB ownership** — `demo/data/staging.db` is root-owned (Docker artifact); fix with `sudo chown alan:alan` then re-run `demo/seed_demo.py`.
+
+---
+
+## Post-Launch / Infrastructure
+
+- **Accessibility Statement** — WCAG 2.1 conformance doc at `website/content/legal/accessibility.md`. High credibility value for ND audience.
+- **Data deletion request process** — published procedure at `website/content/legal/data-deletion.md` (GDPR/CCPA; references `privacy@circuitforge.tech`).
+- **Uptime Kuma monitors** — 6 monitors need to be added manually (website, Heimdall, demo, Directus, Forgejo, Peregrine container health).
+- **Directus admin password rotation** — change from `changeme-set-via-ui-on-first-run` before website goes public.
+
+---
+
+## Discovery — Community Scraper Plugin System
+
+Design doc: `circuitforge-plans/peregrine/2026-03-07-community-scraper-plugin-design.md`
+
+**Summary:** Add a `scripts/plugins/` directory with auto-discovery and a documented MIT-licensed
+plugin API. Separates CF-built custom scrapers (paid, BSL 1.1, in `scripts/custom_boards/`) from
+community-contributed and CF-freebie scrapers (free, MIT, in `scripts/plugins/`).
+
+**Implementation tasks:**
+- [ ] Add `scripts/plugins/` with `__init__.py`, `README.md`, and `example_plugin.py`
+- [ ] Add `config/plugins/` directory with `.gitkeep`; gitignore `config/plugins/*.yaml` (not `.example`)
+- [ ] Update `discover.py`: `load_plugins()` auto-discovery + tier gate (`custom_boards` = paid, `plugins` = free)
+- [ ] Update `search_profiles.yaml` schema: add `plugins:` list + `plugin_config:` block
+- [ ] Migrate `scripts/custom_boards/craigslist.py` → `scripts/plugins/craigslist.py` (CF freebie)
+- [ ] Settings UI: render `CONFIG_SCHEMA` fields for installed plugins (Settings → Search)
+- [ ] Rewrite `docs/developer-guide/adding-scrapers.md` to document the plugin API
+- [ ] Add `scripts/plugins/LICENSE` (MIT) to make the dual-license split explicit
+
+**CF freebie candidates** (future, after plugin system ships):
+- Dice.com (tech-focused, no API key)
+- We Work Remotely (remote-only, clean HTML)
+- Wellfound / AngelList (startup roles)
+
 ---
 
 ## Settings / Data Management
