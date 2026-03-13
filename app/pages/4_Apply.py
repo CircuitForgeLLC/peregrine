@@ -389,7 +389,7 @@ with col_tools:
 
                 st.markdown("---")
         else:
-            st.warning("Resume YAML not found — check that AIHawk is cloned.")
+            st.warning("Resume profile not found — complete setup or upload a resume in Settings → Resume Profile.")
 
     # ── Application Q&A ───────────────────────────────────────────────────────
     with st.expander("💬 Answer Application Questions"):

@@ -112,13 +112,19 @@ def resolve_session(app: str = "peregrine") -> None:
     cookie_header = st.context.headers.get("x-cf-session", "")
     session_jwt = _extract_session_token(cookie_header)
     if not session_jwt:
-        st.error("Session token missing. Please log in at circuitforge.tech.")
+        st.components.v1.html(
+            '<script>window.top.location.href = "https://circuitforge.tech/login";</script>',
+            height=0,
+        )
         st.stop()
 
     try:
         user_id = validate_session_jwt(session_jwt)
-    except Exception as exc:
-        st.error(f"Invalid session — please log in again. ({exc})")
+    except Exception:
+        st.components.v1.html(
+            '<script>window.top.location.href = "https://circuitforge.tech/login";</script>',
+            height=0,
+        )
         st.stop()
 
     user_path = _user_data_path(user_id, app)
@@ -139,6 +145,19 @@ def get_db_path() -> Path:
     Local: DEFAULT_DB (from STAGING_DB env var or repo default).
     """
     return st.session_state.get("db_path", DEFAULT_DB)
+
+
+def get_config_dir() -> Path:
+    """
+    Return the config directory for this session.
+    Cloud: per-user path (<data_root>/<user_id>/peregrine/config/) so each
+           user's YAML files (user.yaml, plain_text_resume.yaml, etc.) are
+           isolated and never shared across tenants.
+    Local: repo-level config/ directory.
+    """
+    if CLOUD_MODE and st.session_state.get("db_path"):
+        return Path(st.session_state["db_path"]).parent / "config"
+    return Path(__file__).parent.parent.parent / "config"
 
 
 def get_cloud_tier() -> str:
