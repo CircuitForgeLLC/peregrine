@@ -83,10 +83,10 @@ def _extract_career_summary(source: Path) -> str:
 
 
 def _extract_personal_info(source: Path) -> dict:
-    """Extract personal info from aihawk resume yaml."""
+    """Extract personal info from resume yaml."""
     resume = source / "config" / "plain_text_resume.yaml"
     if not resume.exists():
-        resume = source / "aihawk" / "data_folder" / "plain_text_resume.yaml"
+        resume = source / "aihawk" / "data_folder" / "plain_text_resume.yaml"  # legacy path
     if not resume.exists():
         return {}
     data = _load_yaml(resume)
@@ -196,7 +196,7 @@ def _copy_configs(source: Path, dest: Path, apply: bool) -> None:
 
 
 def _copy_aihawk_resume(source: Path, dest: Path, apply: bool) -> None:
-    print("\n── Copying AIHawk resume profile")
+    print("\n── Copying resume profile")
     src = source / "config" / "plain_text_resume.yaml"
     if not src.exists():
         src = source / "aihawk" / "data_folder" / "plain_text_resume.yaml"
