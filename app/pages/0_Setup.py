@@ -15,14 +15,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import streamlit as st
 import yaml
 
-from app.cloud_session import resolve_session, get_db_path
+from app.cloud_session import resolve_session, get_db_path, get_config_dir
 resolve_session("peregrine")
 
 _ROOT       = Path(__file__).parent.parent.parent
-CONFIG_DIR  = _ROOT / "config"
+CONFIG_DIR  = get_config_dir()   # per-user dir in cloud; repo config/ locally
 USER_YAML   = CONFIG_DIR / "user.yaml"
 STEPS       = 6  # mandatory steps
-STEP_LABELS = ["Hardware", "Tier", "Identity", "Resume", "Inference", "Search"]
+STEP_LABELS = ["Hardware", "Tier", "Resume", "Identity", "Inference", "Search"]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -179,6 +179,13 @@ st.divider()
 
 # ── Step 1: Hardware ───────────────────────────────────────────────────────────
 if step == 1:
+    from app.cloud_session import CLOUD_MODE as _CLOUD_MODE
+    if _CLOUD_MODE:
+        # Cloud deployment: always single-gpu (Heimdall), skip hardware selection
+        _save_yaml({"inference_profile": "single-gpu", "wizard_step": 1})
+        st.session_state.wizard_step = 2
+        st.rerun()
+
     from app.wizard.step_hardware import validate, PROFILES
 
     st.subheader("Step 1 \u2014 Hardware Detection")
@@ -212,6 +219,14 @@ if step == 1:
 
 # ── Step 2: Tier ───────────────────────────────────────────────────────────────
 elif step == 2:
+    from app.cloud_session import CLOUD_MODE as _CLOUD_MODE
+    if _CLOUD_MODE:
+        # Cloud mode: tier already resolved from Heimdall at session init
+        cloud_tier = st.session_state.get("cloud_tier", "free")
+        _save_yaml({"tier": cloud_tier, "wizard_step": 2})
+        st.session_state.wizard_step = 3
+        st.rerun()
+
     from app.wizard.step_tier import validate
 
     st.subheader("Step 2 \u2014 Choose Your Plan")
@@ -248,63 +263,16 @@ elif step == 2:
             st.rerun()
 
 
-# ── Step 3: Identity ───────────────────────────────────────────────────────────
+# ── Step 3: Resume ─────────────────────────────────────────────────────────────
 elif step == 3:
-    from app.wizard.step_identity import validate
-
-    st.subheader("Step 3 \u2014 Your Identity")
-    st.caption("Used in cover letter PDFs, LLM prompts, and the app header.")
-
-    c1, c2 = st.columns(2)
-    name     = c1.text_input("Full Name *",  saved_yaml.get("name", ""))
-    email    = c1.text_input("Email *",      saved_yaml.get("email", ""))
-    phone    = c2.text_input("Phone",        saved_yaml.get("phone", ""))
-    linkedin = c2.text_input("LinkedIn URL", saved_yaml.get("linkedin", ""))
-
-    # Career summary with optional LLM generation
-    summary_default = st.session_state.get("_gen_result_career_summary") or saved_yaml.get("career_summary", "")
-    summary = st.text_area(
-        "Career Summary *", value=summary_default, height=120,
-        placeholder="Experienced professional with X years in [field]. Specialise in [skills].",
-        help="Injected into cover letter and research prompts as your professional context.",
-    )
-
-    gen_result = _generation_widget(
-        section="career_summary",
-        label="Generate from resume",
-        tier=_tier,
-        feature_key="llm_career_summary",
-        input_data={"resume_text": saved_yaml.get("_raw_resume_text", "")},
-    )
-    if gen_result and gen_result != summary:
-        st.info(f"\u2728 Suggested summary \u2014 paste it above if it looks good:\n\n{gen_result}")
-
-    col_back, col_next = st.columns([1, 4])
-    if col_back.button("\u2190 Back", key="ident_back"):
-        st.session_state.wizard_step = 2
-        st.rerun()
-    if col_next.button("Next \u2192", type="primary", key="ident_next"):
-        errs = validate({"name": name, "email": email, "career_summary": summary})
-        if errs:
-            st.error("\n".join(errs))
-        else:
-            _save_yaml({
-                "name": name, "email": email, "phone": phone,
-                "linkedin": linkedin, "career_summary": summary,
-                "wizard_complete": False, "wizard_step": 3,
-            })
-            st.session_state.wizard_step = 4
-            st.rerun()
-
-
-# ── Step 4: Resume ─────────────────────────────────────────────────────────────
-elif step == 4:
     from app.wizard.step_resume import validate
 
-    st.subheader("Step 4 \u2014 Resume")
+    st.subheader("Step 3 \u2014 Resume")
     st.caption("Upload your resume for fast parsing, or build it section by section.")
 
-    tab_upload, tab_builder = st.tabs(["\U0001f4ce Upload", "\U0001f4dd Build manually"])
+    tab_upload, tab_builder, tab_linkedin = st.tabs([
+        "\U0001f4ce Upload", "\U0001f4dd Build manually", "\U0001f517 LinkedIn"
+    ])
 
     with tab_upload:
         uploaded = st.file_uploader("Upload PDF, DOCX, or ODT", type=["pdf", "docx", "odt"])
@@ -393,9 +361,19 @@ elif step == 4:
                 input_data={"bullet_notes": all_bullets},
             )
 
+    with tab_linkedin:
+        # Check for pending LinkedIn import from previous rerun
+        _li_data = st.session_state.pop("_linkedin_extracted", None)
+        if _li_data:
+            st.session_state["_parsed_resume"] = _li_data
+            st.rerun()  # re-render so tab_builder reads the newly populated _parsed_resume
+
+        from app.components.linkedin_import import render_linkedin_tab
+        render_linkedin_tab(config_dir=CONFIG_DIR, tier=_tier)
+
     col_back, col_next = st.columns([1, 4])
     if col_back.button("\u2190 Back", key="resume_back"):
-        st.session_state.wizard_step = 3
+        st.session_state.wizard_step = 2
         st.rerun()
     if col_next.button("Next \u2192", type="primary", key="resume_next"):
         parsed = st.session_state.get("_parsed_resume", {})
@@ -407,19 +385,75 @@ elif step == 4:
         if errs:
             st.error("\n".join(errs))
         else:
-            resume_yaml_path = _ROOT / "config" / "plain_text_resume.yaml"
+            resume_yaml_path = CONFIG_DIR / "plain_text_resume.yaml"
             resume_yaml_path.parent.mkdir(parents=True, exist_ok=True)
             resume_data = {**parsed, "experience": experience} if parsed else {"experience": experience}
             resume_yaml_path.write_text(
                 yaml.dump(resume_data, default_flow_style=False, allow_unicode=True)
             )
-            _save_yaml({"wizard_step": 4})
+            _save_yaml({"wizard_step": 3})
+            st.session_state.wizard_step = 4
+            st.rerun()
+
+
+# ── Step 4: Identity ───────────────────────────────────────────────────────────
+elif step == 4:
+    from app.wizard.step_identity import validate
+
+    st.subheader("Step 4 \u2014 Your Identity")
+    st.caption("Used in cover letter PDFs, LLM prompts, and the app header.")
+
+    c1, c2 = st.columns(2)
+    name     = c1.text_input("Full Name *",  saved_yaml.get("name", ""))
+    email    = c1.text_input("Email *",      saved_yaml.get("email", ""))
+    phone    = c2.text_input("Phone",        saved_yaml.get("phone", ""))
+    linkedin = c2.text_input("LinkedIn URL", saved_yaml.get("linkedin", ""))
+
+    # Career summary with optional LLM generation — resume text available now (step 3 ran first)
+    summary_default = st.session_state.get("_gen_result_career_summary") or saved_yaml.get("career_summary", "")
+    summary = st.text_area(
+        "Career Summary *", value=summary_default, height=120,
+        placeholder="Experienced professional with X years in [field]. Specialise in [skills].",
+        help="Injected into cover letter and research prompts as your professional context.",
+    )
+
+    gen_result = _generation_widget(
+        section="career_summary",
+        label="Generate from resume",
+        tier=_tier,
+        feature_key="llm_career_summary",
+        input_data={"resume_text": saved_yaml.get("_raw_resume_text", "")},
+    )
+    if gen_result and gen_result != summary:
+        st.info(f"\u2728 Suggested summary \u2014 paste it above if it looks good:\n\n{gen_result}")
+
+    col_back, col_next = st.columns([1, 4])
+    if col_back.button("\u2190 Back", key="ident_back"):
+        st.session_state.wizard_step = 3
+        st.rerun()
+    if col_next.button("Next \u2192", type="primary", key="ident_next"):
+        errs = validate({"name": name, "email": email, "career_summary": summary})
+        if errs:
+            st.error("\n".join(errs))
+        else:
+            _save_yaml({
+                "name": name, "email": email, "phone": phone,
+                "linkedin": linkedin, "career_summary": summary,
+                "wizard_complete": False, "wizard_step": 4,
+            })
             st.session_state.wizard_step = 5
             st.rerun()
 
 
 # ── Step 5: Inference ──────────────────────────────────────────────────────────
 elif step == 5:
+    from app.cloud_session import CLOUD_MODE as _CLOUD_MODE
+    if _CLOUD_MODE:
+        # Cloud deployment: inference is managed server-side; skip this step
+        _save_yaml({"wizard_step": 5})
+        st.session_state.wizard_step = 6
+        st.rerun()
+
     from app.wizard.step_inference import validate
 
     st.subheader("Step 5 \u2014 Inference & API Keys")
