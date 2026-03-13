@@ -270,8 +270,13 @@ elif step == 3:
     st.subheader("Step 3 \u2014 Resume")
     st.caption("Upload your resume for fast parsing, or build it section by section.")
 
+    # Read LinkedIn import result before tabs render (spec: "at step render time")
+    _li_data = st.session_state.pop("_linkedin_extracted", None)
+    if _li_data:
+        st.session_state["_parsed_resume"] = _li_data
+
     tab_upload, tab_builder, tab_linkedin = st.tabs([
-        "\U0001f4ce Upload", "\U0001f4dd Build manually", "\U0001f517 LinkedIn"
+        "\U0001f4ce Upload", "\U0001f4dd Build Manually", "\U0001f517 LinkedIn"
     ])
 
     with tab_upload:
@@ -362,12 +367,6 @@ elif step == 3:
             )
 
     with tab_linkedin:
-        # Check for pending LinkedIn import from previous rerun
-        _li_data = st.session_state.pop("_linkedin_extracted", None)
-        if _li_data:
-            st.session_state["_parsed_resume"] = _li_data
-            st.rerun()  # re-render so tab_builder reads the newly populated _parsed_resume
-
         from app.components.linkedin_import import render_linkedin_tab
         render_linkedin_tab(config_dir=CONFIG_DIR, tier=_tier)
 
