@@ -69,7 +69,7 @@ _SETUP_BANNERS = [
     {"key": "upload_corpus",       "text": "Upload your cover letter corpus for voice fine-tuning",
      "link_label": "Settings → Fine-Tune"},
     {"key": "configure_linkedin",  "text": "Configure LinkedIn Easy Apply automation",
-     "link_label": "Settings → AIHawk"},
+     "link_label": "Settings → Integrations"},
     {"key": "setup_searxng",       "text": "Set up company research with SearXNG",
      "link_label": "Settings → Services"},
     {"key": "target_companies",    "text": "Build a target company list for focused outreach",
