@@ -117,6 +117,13 @@ def render_linkedin_tab(config_dir: Path, tier: str) -> None:
         "Imports from your public LinkedIn profile. No login or credentials required. "
         "Scraping typically takes 10–20 seconds."
     )
+    st.info(
+        "**LinkedIn limits public profile data.** Without logging in, LinkedIn only "
+        "exposes your name, About summary, current employer, and certifications — "
+        "past roles, education, and skills are hidden behind their login wall. "
+        "For your full career history use the **data export zip** option below.",
+        icon="ℹ️",
+    )
 
     # ── Section preview + use button ─────────────────────────────────────────
     if stage:
