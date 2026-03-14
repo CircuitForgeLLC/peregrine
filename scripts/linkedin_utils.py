@@ -5,7 +5,18 @@ LinkedIn profile HTML parser.
 Extracts structured profile data from a raw LinkedIn public profile page.
 No Playwright dependency — importable by both linkedin_scraper and linkedin_parser.
 
-Selectors target the 2024-2025 LinkedIn public profile DOM.
+** LinkedIn public profile limitations (2025) **
+Unauthenticated requests receive a degraded page where experience titles, past
+roles, education detail, and skills are replaced with blur placeholders or omitted
+entirely.  Only the following are reliably available without login:
+  - Name + headline (top card)
+  - About/summary (truncated; login prompt injected after "see more")
+  - Current employer name only (no title, dates, or description)
+  - Certifications/licenses (if publicly listed)
+  - Volunteer experience, publications, projects (if public)
+For full profile data use the LinkedIn data export zip path instead.
+
+Selectors target the 2025 LinkedIn public profile DOM.
 When LinkedIn changes their markup, update the selector lists here only.
 Each section uses ordered fallbacks — first matching selector wins.
 """
@@ -13,6 +24,11 @@ from __future__ import annotations
 import re
 from bs4 import BeautifulSoup
 
+# Noise phrases injected by LinkedIn's login wall — stripped from summary text
+_LOGIN_NOISE = re.compile(
+    r"see more.*$|welcome back.*$|sign in.*$|by clicking.*$|new to linkedin.*$",
+    re.I | re.S,
+)
 
 # ── Selector fallback lists ────────────────────────────────────────────────────
 
@@ -23,25 +39,31 @@ _NAME_SELECTORS = [
     "h1",
 ]
 
+# 2025 DOM: data-section="summary" (not "about")
+_SUMMARY_SECTION_SELECTOR = "section[data-section='summary'] .core-section-container__content"
 _SUMMARY_SELECTORS = [
+    "section[data-section='summary'] .core-section-container__content",
+    "section[data-section='about'] .core-section-container__content",
     "section[data-section='about'] .show-more-less-text__text--less",
     "section[data-section='about'] p",
-    "#about ~ * p.show-more-less-text__text--less",
     ".pv-about-section p",
 ]
 
+# 2025 DOM: experience lives in .visible-list inside .experience-education section.
+# Only the current employer h3 is unblurred; past roles use aria-hidden blurred-list.
 _EXPERIENCE_ITEM_SELECTORS = [
+    "section.experience-education .visible-list li.profile-section-card",
     "section[data-section='experience'] li.experience-item",
     "section[data-section='experience'] li",
     "#experience-section li",
-    "#experience ~ * li",
 ]
 
-_EXP_TITLE_SELECTORS   = ["span.experience-item__title", "span[class*='title']", "h3"]
-_EXP_COMPANY_SELECTORS = ["span.experience-item__subtitle", "span[class*='subtitle']", "p[class*='company']"]
+_EXP_TITLE_SELECTORS   = ["span.experience-item__title", "span[class*='title']"]
+_EXP_COMPANY_SELECTORS = ["h3", "span.experience-item__subtitle", "span[class*='subtitle']"]
 _EXP_DATE_SELECTORS    = ["span.date-range", "[class*='date-range']", "span[class*='duration']"]
-_EXP_DESC_SELECTORS    = [".show-more-less-text__text--less", "p[class*='description']", "p"]
+_EXP_DESC_SELECTORS    = [".show-more-less-text__text--less", "p[class*='description']"]
 
+# 2025 DOM: education is also blurred; top-card shows most recent school only
 _EDUCATION_ITEM_SELECTORS = [
     "section[data-section='education'] li.education__list-item",
     "section[data-section='education'] li",
@@ -52,6 +74,7 @@ _EDU_SCHOOL_SELECTORS = ["h3.education__school-name", "h3[class*='school']", "h3
 _EDU_DEGREE_SELECTORS = ["span.education__item--degree-name", "span[class*='degree']", "p[class*='degree']"]
 _EDU_DATES_SELECTORS  = ["span.education__item--duration", "span[class*='duration']", "time"]
 
+# Skills are not present on the 2025 unauthenticated public profile page
 _SKILLS_SELECTORS = [
     "section[data-section='skills'] span.mr1",
     "section[data-section='skills'] li span[class*='bold']",
@@ -59,12 +82,14 @@ _SKILLS_SELECTORS = [
     "#skills ~ * li span",
 ]
 
+# 2025 DOM: certifications use li.profile-section-card with h3 for name
 _CERT_ITEM_SELECTORS = [
+    "section[data-section='certifications'] li.profile-section-card",
     "section[data-section='certifications'] li",
     "#certifications ~ * li",
     "#licenses_and_certifications ~ * li",
 ]
-_CERT_NAME_SELECTORS = ["h3.certifications__name", "h3[class*='name']", "h3", "span[class*='title']"]
+_CERT_NAME_SELECTORS = ["h3", "h3.certifications__name", "h3[class*='name']", "span[class*='title']"]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -126,12 +151,30 @@ def parse_html(raw_html: str) -> dict:
     soup = BeautifulSoup(raw_html, "lxml")
 
     name = _select_first(soup, _NAME_SELECTORS)
-    career_summary = _select_first(soup, _SUMMARY_SELECTORS)
+
+    # Summary: strip login-wall noise injected after "see more"
+    career_summary = ""
+    for sel in _SUMMARY_SELECTORS:
+        try:
+            el = soup.select_one(sel)
+            if el:
+                raw_text = el.get_text(" ", strip=True)
+                career_summary = _LOGIN_NOISE.sub("", raw_text).strip()
+                if career_summary:
+                    break
+        except Exception:
+            continue
 
     experience = []
     for item in _select_all(soup, _EXPERIENCE_ITEM_SELECTORS):
+        # Skip blurred items (aria-hidden list shown as decorative background)
+        if item.get("aria-hidden") == "true":
+            continue
         title   = _select_first(item, _EXP_TITLE_SELECTORS)
         company = _select_first(item, _EXP_COMPANY_SELECTORS)
+        # Skip entries where the title text is pure asterisks (blurred placeholder)
+        if title and re.fullmatch(r"[\*\s]+", title):
+            title = ""
         dates   = _date_range_text(item)
         desc_el = None
         for sel in _EXP_DESC_SELECTORS:
