@@ -44,3 +44,7 @@ config/label_tool.yaml
 config/server.yaml
 
 demo/data/*.db
+demo/seed_demo.py
+
+# Git worktrees
+.worktrees/
