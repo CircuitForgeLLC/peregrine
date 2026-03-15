@@ -1,9 +1,6 @@
 # tests/test_task_scheduler.py
 """Tests for scripts/task_scheduler.py and related db helpers."""
 import sqlite3
-import threading
-import time
-from collections import deque
 from pathlib import Path
 
 import pytest
