@@ -6,6 +6,14 @@ from unittest.mock import patch
 import sqlite3
 
 
+@pytest.fixture(autouse=True)
+def clean_scheduler():
+    """Reset the TaskScheduler singleton between tests to prevent cross-test contamination."""
+    yield
+    from scripts.task_scheduler import reset_scheduler
+    reset_scheduler()
+
+
 def _make_db(tmp_path):
     from scripts.db import init_db, insert_job
     db = tmp_path / "test.db"
@@ -143,14 +151,20 @@ def test_run_task_email_sync_file_not_found(tmp_path):
 
 
 def test_submit_task_actually_completes(tmp_path):
-    """Integration: submit_task spawns a thread that completes asynchronously."""
+    """Integration: submit_task routes LLM tasks through the scheduler and they complete."""
     db, job_id = _make_db(tmp_path)
     from scripts.db import get_task_for_job
+    from scripts.task_scheduler import get_scheduler
+    from scripts.task_runner import _run_task
+
+    # Prime the singleton with the correct db_path before submit_task runs.
+    # get_scheduler() already calls start() internally.
+    get_scheduler(db, run_task_fn=_run_task)
 
     with patch("scripts.generate_cover_letter.generate", return_value="Cover letter text"):
         from scripts.task_runner import submit_task
         task_id, _ = submit_task(db, "cover_letter", job_id)
-        # Wait for thread to complete (max 5s)
+        # Wait for scheduler to complete the task (max 5s)
         for _ in range(50):
             task = get_task_for_job(db, "cover_letter", job_id)
             if task and task["status"] in ("completed", "failed"):
