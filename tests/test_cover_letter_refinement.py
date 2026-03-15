@@ -79,10 +79,12 @@ class TestTaskRunnerCoverLetterParams:
         """Invoke _run_task for cover_letter and return captured generate() kwargs."""
         captured = {}
 
-        def mock_generate(title, company, description="", previous_result="", feedback="", _router=None):
+        def mock_generate(title, company, description="", previous_result="", feedback="",
+                          is_jobgether=False, _router=None):
             captured.update({
                 "title": title, "company": company,
                 "previous_result": previous_result, "feedback": feedback,
+                "is_jobgether": is_jobgether,
             })
             return "Generated letter"
 

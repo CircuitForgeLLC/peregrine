@@ -169,6 +169,7 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 job.get("description", ""),
                 previous_result=p.get("previous_result", ""),
                 feedback=p.get("feedback", ""),
+                is_jobgether=job.get("source") == "jobgether",
             )
             update_cover_letter(db_path, job_id, result)
 

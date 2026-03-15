@@ -189,6 +189,7 @@ def build_prompt(
     description: str,
     examples: list[dict],
     mission_hint: str | None = None,
+    is_jobgether: bool = False,
 ) -> str:
     parts = [SYSTEM_CONTEXT.strip(), ""]
     if examples:
@@ -201,6 +202,24 @@ def build_prompt(
 
     if mission_hint:
         parts.append(f"⭐ Mission alignment note (for Para 3): {mission_hint}\n")
+
+    if is_jobgether:
+        if company and company.lower() != "jobgether":
+            recruiter_note = (
+                f"🤝 Recruiter context: This listing is posted by Jobgether on behalf of "
+                f"{company}. Address the cover letter to the Jobgether recruiter, not directly "
+                f"to the hiring company. Use framing like 'Your client at {company} will "
+                f"appreciate...' rather than addressing {company} directly. The role "
+                f"requirements are those of the actual employer."
+            )
+        else:
+            recruiter_note = (
+                "🤝 Recruiter context: This listing is posted by Jobgether on behalf of an "
+                "undisclosed employer. Address the cover letter to the Jobgether recruiter. "
+                "Use framing like 'Your client will appreciate...' rather than addressing "
+                "the company directly."
+            )
+        parts.append(f"{recruiter_note}\n")
 
     parts.append(f"Now write a new cover letter for:")
     parts.append(f"  Role: {title}")
@@ -236,6 +255,7 @@ def generate(
     description: str = "",
     previous_result: str = "",
     feedback: str = "",
+    is_jobgether: bool = False,
     _router=None,
 ) -> str:
     """Generate a cover letter and return it as a string.
@@ -251,7 +271,8 @@ def generate(
     mission_hint = detect_mission_alignment(company, description)
     if mission_hint:
         print(f"[cover-letter] Mission alignment detected for {company}", file=sys.stderr)
-    prompt = build_prompt(title, company, description, examples, mission_hint=mission_hint)
+    prompt = build_prompt(title, company, description, examples,
+                          mission_hint=mission_hint, is_jobgether=is_jobgether)
 
     if previous_result:
         prompt += f"\n\n---\nPrevious draft:\n{previous_result}"
