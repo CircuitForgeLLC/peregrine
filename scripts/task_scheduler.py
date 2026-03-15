@@ -91,6 +91,9 @@ class TaskScheduler:
         except Exception:
             self._available_vram = 999.0
 
+        # Durability: reload surviving 'queued' LLM tasks from prior run
+        self._load_queued_tasks()
+
     def enqueue(self, task_id: int, task_type: str, job_id: int,
                 params: Optional[str]) -> None:
         """Add an LLM task to the scheduler queue.
@@ -185,6 +188,26 @@ class TaskScheduler:
                 self._active.pop(task_type, None)
                 self._reserved_vram -= self._budgets.get(task_type, 0.0)
             self._wake.set()
+
+    def _load_queued_tasks(self) -> None:
+        """Load pre-existing queued LLM tasks from SQLite into deques (called once in __init__)."""
+        llm_types = sorted(LLM_TASK_TYPES)  # sorted for deterministic SQL params in logs
+        placeholders = ",".join("?" * len(llm_types))
+        conn = sqlite3.connect(self._db_path)
+        rows = conn.execute(
+            f"SELECT id, task_type, job_id, params FROM background_tasks"
+            f" WHERE status='queued' AND task_type IN ({placeholders})"
+            f" ORDER BY created_at ASC",
+            llm_types,
+        ).fetchall()
+        conn.close()
+
+        for row_id, task_type, job_id, params in rows:
+            q = self._queues.setdefault(task_type, deque())
+            q.append(TaskSpec(row_id, job_id, params))
+
+        if rows:
+            logger.info("Scheduler: resumed %d queued task(s) from prior run", len(rows))
 
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
