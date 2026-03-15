@@ -50,6 +50,36 @@ community-contributed and CF-freebie scrapers (free, MIT, in `scripts/plugins/`)
 
 ---
 
+## Discovery — Jobgether Non-Headless Scraper
+
+Design doc: `peregrine/docs/superpowers/specs/2026-03-15-jobgether-integration-design.md`
+
+**Background:** Headless Playwright is blocked by Cloudflare Turnstile on all `jobgether.com` pages.
+A non-headless Playwright instance backed by `Xvfb` (virtual framebuffer) renders as a real browser and
+bypasses Turnstile. Heimdall already has Xvfb available.
+
+**Live-inspection findings (2026-03-15):**
+- Search URL: `https://jobgether.com/search-offers?keyword=<query>`
+- Job cards: `div.new-opportunity` — one per listing
+- Card URL: `div.new-opportunity > a[href*="/offer/"]` (`href` attr)
+- Title: `#offer-body h3`
+- Company: `#offer-body p.font-medium`
+- Dedup: existing URL-based dedup in `discover.py` covers Jobgether↔other-board overlap
+
+**Implementation tasks (blocked until Xvfb-Playwright integration is in place):**
+- [ ] Add `Xvfb` launch helper to `scripts/custom_boards/` (shared util, or inline in scraper)
+- [ ] Implement `scripts/custom_boards/jobgether.py` using `p.chromium.launch(headless=False)` with `DISPLAY=:99`
+- [ ] Pre-launch `Xvfb :99 -screen 0 1280x720x24` (or assert `DISPLAY` is already set)
+- [ ] Register `jobgether` in `discover.py` `CUSTOM_SCRAPERS` (currently omitted — no viable scraper)
+- [ ] Add `jobgether` to `custom_boards` in remote-eligible profiles in `config/search_profiles.yaml`
+- [ ] Remove or update the "Jobgether discovery scraper — decided against" note in the design spec
+
+**Pre-condition:** Validate Xvfb approach manually (headless=False + `DISPLAY=:99`) before implementing.
+The `filter-api.jobgether.com` endpoint still requires auth and `robots.txt` still blocks bots —
+confirm Turnstile acceptance is the only remaining blocker before beginning.
+
+---
+
 ## Settings / Data Management
 
 - **Backup / Restore / Teleport** — Settings panel option to export a full config snapshot (user.yaml + all gitignored configs) as a zip, restore from a snapshot, and "teleport" (export + import to a new machine or Docker volume). Useful for migrations, multi-machine setups, and safe wizard testing.
@@ -60,6 +90,31 @@ community-contributed and CF-freebie scrapers (free, MIT, in `scripts/plugins/`)
 ## First-Run Wizard
 
 - **Wire real LLM test in Step 5 (Inference)** — `app/wizard/step_inference.py` validates an `endpoint_confirmed` boolean flag only. Replace with an actual LLM call: submit a minimal prompt to the configured endpoint, show pass/fail, and only set `endpoint_confirmed: true` on success. Should test whichever backend the user selected (Ollama, vLLM, Anthropic, etc.).
+
+---
+
+## LinkedIn Import
+
+Shipped in v0.4.0. Ongoing maintenance and known decisions:
+
+- **Selector maintenance** — LinkedIn changes their DOM periodically. When import stops working, update
+  CSS selectors in `scripts/linkedin_utils.py` only (all other files import from there). Real `data-section`
+  attribute values (as of 2025 DOM): `summary`, `currentPositionsDetails`, `educationsDetails`,
+  `certifications`, `posts`, `volunteering`, `publications`, `projects`.
+
+- **Data export zip is the recommended path for full history** — LinkedIn's unauthenticated public profile
+  page is server-side degraded: experience titles, past roles, education, and skills are blurred/omitted.
+  Only available without login: name, About summary (truncated), current employer name, certifications.
+  The "Import from LinkedIn data export zip" expander (Settings → Resume Profile and Wizard step 3) is the
+  correct path for full career history. UI already shows an `ℹ️` callout explaining this.
+
+- **LinkedIn OAuth — decided: not viable** — LinkedIn's OAuth API is restricted to approved partner
+  programs. Even if approved, it only grants name + email (not career history, experience, or skills).
+  This is a deliberate LinkedIn platform restriction, not a technical gap. Do not pursue this path.
+
+- **Selector test harness** (future) — A lightweight test that fetches a known-public LinkedIn profile
+  and asserts at least N fields non-empty would catch DOM breakage before users report it. Low priority
+  until selector breakage becomes a recurring support issue.
 
 ---
 
