@@ -91,6 +91,29 @@ class TaskScheduler:
         except Exception:
             self._available_vram = 999.0
 
+    def enqueue(self, task_id: int, task_type: str, job_id: int,
+                params: Optional[str]) -> None:
+        """Add an LLM task to the scheduler queue.
+
+        If the queue for this type is at max_queue_depth, the task is marked
+        failed in SQLite immediately (no ghost queued rows) and a warning is logged.
+        """
+        from scripts.db import update_task_status
+
+        with self._lock:
+            q = self._queues.setdefault(task_type, deque())
+            if len(q) >= self._max_queue_depth:
+                logger.warning(
+                    "Queue depth limit reached for %s (max=%d) — task %d dropped",
+                    task_type, self._max_queue_depth, task_id,
+                )
+                update_task_status(self._db_path, task_id, "failed",
+                                   error="Queue depth limit reached")
+                return
+            q.append(TaskSpec(task_id, job_id, params))
+
+        self._wake.set()
+
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
 
