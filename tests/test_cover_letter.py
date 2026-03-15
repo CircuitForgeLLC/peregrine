@@ -115,3 +115,41 @@ def test_generate_calls_llm_router():
 
     mock_router.complete.assert_called_once()
     assert "Alex Rivera" in result
+
+
+# ── Jobgether recruiter framing tests ─────────────────────────────────────────
+
+def test_build_prompt_jobgether_framing_unknown_company():
+    from scripts.generate_cover_letter import build_prompt
+    prompt = build_prompt(
+        title="Customer Success Manager",
+        company="Jobgether",
+        description="CSM role at an undisclosed company.",
+        examples=[],
+        is_jobgether=True,
+    )
+    assert "Your client" in prompt
+    assert "jobgether" in prompt.lower()
+
+
+def test_build_prompt_jobgether_framing_known_company():
+    from scripts.generate_cover_letter import build_prompt
+    prompt = build_prompt(
+        title="Customer Success Manager",
+        company="Resware",
+        description="CSM role at Resware.",
+        examples=[],
+        is_jobgether=True,
+    )
+    assert "Your client at Resware" in prompt
+
+
+def test_build_prompt_no_jobgether_framing_by_default():
+    from scripts.generate_cover_letter import build_prompt
+    prompt = build_prompt(
+        title="Customer Success Manager",
+        company="Acme Corp",
+        description="CSM role.",
+        examples=[],
+    )
+    assert "Your client" not in prompt
