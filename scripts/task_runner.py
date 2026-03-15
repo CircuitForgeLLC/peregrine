@@ -26,19 +26,29 @@ from scripts.db import (
 def submit_task(db_path: Path = DEFAULT_DB, task_type: str = "",
                 job_id: int = None,
                 params: str | None = None) -> tuple[int, bool]:
-    """Submit a background LLM task.
+    """Submit a background task.
 
-    Returns (task_id, True) if a new task was queued and a thread spawned.
+    LLM task types (cover_letter, company_research, wizard_generate) are routed
+    through the TaskScheduler for VRAM-aware batch scheduling.
+    All other types spawn a free daemon thread as before.
+
+    Returns (task_id, True) if a new task was queued.
     Returns (existing_id, False) if an identical task is already in-flight.
     """
     task_id, is_new = insert_task(db_path, task_type, job_id or 0, params=params)
     if is_new:
-        t = threading.Thread(
-            target=_run_task,
-            args=(db_path, task_id, task_type, job_id or 0, params),
-            daemon=True,
-        )
-        t.start()
+        from scripts.task_scheduler import get_scheduler, LLM_TASK_TYPES
+        if task_type in LLM_TASK_TYPES:
+            get_scheduler(db_path, run_task_fn=_run_task).enqueue(
+                task_id, task_type, job_id or 0, params
+            )
+        else:
+            t = threading.Thread(
+                target=_run_task,
+                args=(db_path, task_id, task_type, job_id or 0, params),
+                daemon=True,
+            )
+            t.start()
     return task_id, is_new
 
 
