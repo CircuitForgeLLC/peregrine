@@ -196,12 +196,25 @@ _scheduler_lock = threading.Lock()
 def get_scheduler(db_path: Path, run_task_fn: Callable = None) -> TaskScheduler:
     """Return the process-level TaskScheduler singleton, constructing it if needed.
 
-    run_task_fn is required on the first call (when the singleton is constructed);
-    ignored on subsequent calls. Pass scripts.task_runner._run_task.
+    run_task_fn is required on the first call; ignored on subsequent calls.
+    Safety: inner lock + double-check prevents double-construction under races.
+    The outer None check is a fast-path performance optimisation only.
     """
-    raise NotImplementedError
+    global _scheduler
+    if _scheduler is None:                      # fast path — avoids lock on steady state
+        with _scheduler_lock:
+            if _scheduler is None:              # re-check under lock (double-checked locking)
+                if run_task_fn is None:
+                    raise ValueError("run_task_fn required on first get_scheduler() call")
+                _scheduler = TaskScheduler(db_path, run_task_fn)
+                _scheduler.start()
+    return _scheduler
 
 
 def reset_scheduler() -> None:
-    """Shut down and clear the singleton. TEST TEARDOWN ONLY — not for production use."""
-    raise NotImplementedError
+    """Shut down and clear the singleton. TEST TEARDOWN ONLY."""
+    global _scheduler
+    with _scheduler_lock:
+        if _scheduler is not None:
+            _scheduler.shutdown()
+            _scheduler = None

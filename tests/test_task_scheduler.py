@@ -72,10 +72,7 @@ def _noop_run_task(*args, **kwargs):
 def clean_scheduler():
     """Reset singleton between every test."""
     yield
-    try:
-        reset_scheduler()
-    except NotImplementedError:
-        pass
+    reset_scheduler()
 
 
 def test_default_budgets_used_when_no_config(tmp_db):
@@ -330,3 +327,47 @@ def test_worker_crash_releases_vram(tmp_db):
     # Second task still ran, VRAM was released
     assert 2 in log
     assert s._reserved_vram == 0.0
+
+
+def test_get_scheduler_returns_singleton(tmp_db):
+    """Multiple calls to get_scheduler() return the same instance."""
+    s1 = get_scheduler(tmp_db, _noop_run_task)
+    s2 = get_scheduler(tmp_db, _noop_run_task)
+    assert s1 is s2
+
+
+def test_singleton_thread_safe(tmp_db):
+    """Concurrent get_scheduler() calls produce exactly one instance."""
+    instances = []
+    errors = []
+
+    def _get():
+        try:
+            instances.append(get_scheduler(tmp_db, _noop_run_task))
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=_get) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+    assert len(set(id(s) for s in instances)) == 1  # all the same object
+
+
+def test_reset_scheduler_cleans_up(tmp_db):
+    """reset_scheduler() shuts down the scheduler; no threads linger."""
+    s = get_scheduler(tmp_db, _noop_run_task)
+    thread = s._thread
+    assert thread.is_alive()
+
+    reset_scheduler()
+
+    thread.join(timeout=2.0)
+    assert not thread.is_alive()
+
+    # After reset, get_scheduler creates a fresh instance
+    s2 = get_scheduler(tmp_db, _noop_run_task)
+    assert s2 is not s
