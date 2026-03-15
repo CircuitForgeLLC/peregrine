@@ -84,8 +84,7 @@ class TaskScheduler:
         # Detect total GPU VRAM; fall back to unlimited (999) on CPU-only systems.
         # Uses module-level _get_gpus so tests can monkeypatch scripts.task_scheduler._get_gpus.
         try:
-            from scripts import task_scheduler as _ts_mod
-            gpus = _ts_mod._get_gpus()
+            gpus = _get_gpus()
             self._available_vram: float = (
                 sum(g["vram_total_gb"] for g in gpus) if gpus else 999.0
             )
