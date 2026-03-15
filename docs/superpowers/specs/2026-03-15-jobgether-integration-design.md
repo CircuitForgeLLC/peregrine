@@ -154,9 +154,10 @@ Implementation: add an `is_jobgether` flag to the cover letter prompt context (s
 ## Out of Scope
 
 - Retroactively fixing existing `company = "Jobgether"` rows in the DB (left for manual review/rejection)
+- Jobgether discovery scraper — **decided against during implementation (2026-03-15)**: Cloudflare Turnstile blocks all headless browsers on all Jobgether pages; `filter-api.jobgether.com` requires auth; `robots.txt` blocks all bots. The email digest → manual URL paste → slug company extraction flow covers the actual use case.
 - Jobgether authentication / logged-in scraping
-- Pagination beyond `results_wanted` cap
-- Dedup between Jobgether scraper and other boards (existing URL dedup in `discover.py` handles this)
+- Pagination
+- Dedup between Jobgether and other boards (existing URL dedup handles this)
 
 ---
 
