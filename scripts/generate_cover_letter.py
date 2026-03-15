@@ -240,7 +240,7 @@ def _trim_to_letter_end(text: str) -> str:
     candidate_first = (_profile.name.split()[0] if _profile else "").strip()
     pattern = (
         r'(?:Warm regards|Sincerely|Best regards|Kind regards|Thank you)[,.]?\s*\n+\s*'
-        + (re.escape(candidate_first) if candidate_first else r'\w+')
+        + (re.escape(candidate_first) if candidate_first else r'\w+(?:\s+\w+)?')
         + r'\b'
     )
     m = re.search(pattern, text, re.IGNORECASE)
