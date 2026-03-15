@@ -424,3 +424,49 @@ def test_durability_preserves_fifo_order(tmp_db):
 
     loaded_ids = [t.id for t in s._queues["cover_letter"]]
     assert loaded_ids == ids
+
+
+def test_non_llm_tasks_bypass_scheduler(tmp_db):
+    """submit_task() for non-LLM types invoke _run_task directly, not enqueue()."""
+    from scripts import task_runner
+
+    # Initialize the singleton properly so submit_task routes correctly
+    s = get_scheduler(tmp_db, _noop_run_task)
+
+    run_task_calls = []
+    enqueue_calls = []
+
+    original_run_task = task_runner._run_task
+    original_enqueue = s.enqueue
+
+    def recording_run_task(*args, **kwargs):
+        run_task_calls.append(args[2])  # task_type is 3rd arg
+
+    def recording_enqueue(task_id, task_type, job_id, params):
+        enqueue_calls.append(task_type)
+
+    import unittest.mock as mock
+    with mock.patch.object(task_runner, "_run_task", recording_run_task), \
+         mock.patch.object(s, "enqueue", recording_enqueue):
+        task_runner.submit_task(tmp_db, "discovery", 0)
+
+    # discovery goes directly to _run_task; enqueue is never called
+    assert "discovery" not in enqueue_calls
+    # The scheduler deque is untouched
+    assert "discovery" not in s._queues or len(s._queues["discovery"]) == 0
+
+
+def test_llm_tasks_routed_to_scheduler(tmp_db):
+    """submit_task() for LLM types calls enqueue(), not _run_task directly."""
+    from scripts import task_runner
+
+    s = get_scheduler(tmp_db, _noop_run_task)
+
+    enqueue_calls = []
+    original_enqueue = s.enqueue
+
+    import unittest.mock as mock
+    with mock.patch.object(s, "enqueue", side_effect=lambda *a, **kw: enqueue_calls.append(a[1]) or original_enqueue(*a, **kw)):
+        task_runner.submit_task(tmp_db, "cover_letter", 1)
+
+    assert "cover_letter" in enqueue_calls
