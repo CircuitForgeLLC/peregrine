@@ -138,6 +138,19 @@ scrape_url.py
 - **Slug fallback None-guard:** The regex `r'---([^/?]+)$'` returns a wrong value (not `None`) if the URL slug doesn't follow the expected format. Add a logged warning and return `""` rather than title-casing garbage.
 - **Import guard in `discover.py`:** Wrap the `jobgether` import with `try/except ImportError`, setting `_jobgether = None`, and gate the `CUSTOM_SCRAPERS` registration with `if _jobgether is not None`. This ensures the graceful ImportError in `jobgether.py` (for missing Playwright) propagates cleanly to the caller rather than crashing discovery.
 
+### 5. Cover letter recruiter framing — `scripts/generate_cover_letter.py`
+
+When `source = "jobgether"`, inject a system hint that shifts the cover letter addressee from the employer to the Jobgether recruiter. Use Policy A: recruiter framing applies for all Jobgether-sourced jobs regardless of whether the real company name was resolved.
+
+- If company is known (e.g. "Resware"): *"Your client at Resware will appreciate..."*
+- If company is unknown: *"Your client will appreciate..."*
+
+The real company name is always stored in the DB as resolved by the scraper — this is internal knowledge only. The framing shift is purely in the generated letter text, not in how the job is stored or displayed.
+
+Implementation: add an `is_jobgether` flag to the cover letter prompt context (same pattern as `mission_hint` injection). Add a conditional block in the system prompt / Para 1 instructions when the flag is true.
+
+---
+
 ## Out of Scope
 
 - Retroactively fixing existing `company = "Jobgether"` rows in the DB (left for manual review/rejection)
