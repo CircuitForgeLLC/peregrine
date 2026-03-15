@@ -114,6 +114,78 @@ class TaskScheduler:
 
         self._wake.set()
 
+    def start(self) -> None:
+        """Start the background scheduler loop thread. Call once after construction."""
+        self._thread = threading.Thread(
+            target=self._scheduler_loop, name="task-scheduler", daemon=True
+        )
+        self._thread.start()
+
+    def shutdown(self, timeout: float = 5.0) -> None:
+        """Signal the scheduler to stop and wait for it to exit."""
+        self._stop.set()
+        self._wake.set()  # unblock any wait()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=timeout)
+
+    def _scheduler_loop(self) -> None:
+        """Main scheduler daemon — wakes on enqueue or batch completion."""
+        while not self._stop.is_set():
+            self._wake.wait(timeout=30)
+            self._wake.clear()
+
+            with self._lock:
+                # Defense in depth: reap externally-killed batch threads.
+                # In normal operation _active.pop() runs in finally before _wake fires,
+                # so this reap finds nothing — no double-decrement risk.
+                for t, thread in list(self._active.items()):
+                    if not thread.is_alive():
+                        self._reserved_vram -= self._budgets.get(t, 0.0)
+                        del self._active[t]
+
+                # Start new type batches while VRAM allows
+                candidates = sorted(
+                    [t for t in self._queues if self._queues[t] and t not in self._active],
+                    key=lambda t: len(self._queues[t]),
+                    reverse=True,
+                )
+                for task_type in candidates:
+                    budget = self._budgets.get(task_type, 0.0)
+                    # Always allow at least one batch to run even if its budget
+                    # exceeds _available_vram (prevents permanent starvation when
+                    # a single type's budget is larger than the VRAM ceiling).
+                    if self._reserved_vram == 0.0 or self._reserved_vram + budget <= self._available_vram:
+                        thread = threading.Thread(
+                            target=self._batch_worker,
+                            args=(task_type,),
+                            name=f"batch-{task_type}",
+                            daemon=True,
+                        )
+                        self._active[task_type] = thread
+                        self._reserved_vram += budget
+                        thread.start()
+
+    def _batch_worker(self, task_type: str) -> None:
+        """Serial consumer for one task type. Runs until the type's deque is empty."""
+        try:
+            while True:
+                with self._lock:
+                    q = self._queues.get(task_type)
+                    if not q:
+                        break
+                    task = q.popleft()
+                # _run_task is scripts.task_runner._run_task (passed at construction)
+                self._run_task(
+                    self._db_path, task.id, task_type, task.job_id, task.params
+                )
+        finally:
+            # Always release — even if _run_task raises.
+            # _active.pop here prevents the scheduler loop reap from double-decrementing.
+            with self._lock:
+                self._active.pop(task_type, None)
+                self._reserved_vram -= self._budgets.get(task_type, 0.0)
+            self._wake.set()
+
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
 
