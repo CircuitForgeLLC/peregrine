@@ -183,3 +183,14 @@ def test_discover_custom_board_deduplicates(tmp_path):
 
     assert count == 0  # duplicate skipped
     assert len(get_jobs_by_status(db_path, "pending")) == 1
+
+
+# ── Blocklist integration ─────────────────────────────────────────────────────
+
+def test_is_blocklisted_jobgether():
+    """_is_blocklisted filters jobs from Jobgether (case-insensitive)."""
+    from scripts.discover import _is_blocklisted
+    blocklist = {"companies": ["jobgether"], "industries": [], "locations": []}
+    assert _is_blocklisted({"company": "Jobgether", "location": "", "description": ""}, blocklist)
+    assert _is_blocklisted({"company": "jobgether inc", "location": "", "description": ""}, blocklist)
+    assert not _is_blocklisted({"company": "Acme Corp", "location": "", "description": ""}, blocklist)
