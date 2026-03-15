@@ -45,7 +45,52 @@ TaskSpec = namedtuple("TaskSpec", ["id", "job_id", "params"])
 
 class TaskScheduler:
     """Resource-aware LLM task batch scheduler. Use get_scheduler() — not direct construction."""
-    pass
+
+    def __init__(self, db_path: Path, run_task_fn: Callable) -> None:
+        self._db_path = db_path
+        self._run_task = run_task_fn
+
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        self._stop = threading.Event()
+        self._queues: dict[str, deque] = {}
+        self._active: dict[str, threading.Thread] = {}
+        self._reserved_vram: float = 0.0
+        self._thread: Optional[threading.Thread] = None
+
+        # Load VRAM budgets: defaults + optional config overrides
+        self._budgets: dict[str, float] = dict(DEFAULT_VRAM_BUDGETS)
+        config_path = db_path.parent.parent / "config" / "llm.yaml"
+        self._max_queue_depth: int = 500
+        if config_path.exists():
+            try:
+                import yaml
+                with open(config_path) as f:
+                    cfg = yaml.safe_load(f) or {}
+                sched_cfg = cfg.get("scheduler", {})
+                self._budgets.update(sched_cfg.get("vram_budgets", {}))
+                self._max_queue_depth = sched_cfg.get("max_queue_depth", 500)
+            except Exception as exc:
+                logger.warning("Failed to load scheduler config from %s: %s", config_path, exc)
+
+        # Warn on LLM types with no budget entry after merge
+        for t in LLM_TASK_TYPES:
+            if t not in self._budgets:
+                logger.warning(
+                    "No VRAM budget defined for LLM task type %r — "
+                    "defaulting to 0.0 GB (unlimited concurrency for this type)", t
+                )
+
+        # Detect total GPU VRAM; fall back to unlimited (999) on CPU-only systems.
+        # Uses module-level _get_gpus so tests can monkeypatch scripts.task_scheduler._get_gpus.
+        try:
+            from scripts import task_scheduler as _ts_mod
+            gpus = _ts_mod._get_gpus()
+            self._available_vram: float = (
+                sum(g["vram_total_gb"] for g in gpus) if gpus else 999.0
+            )
+        except Exception:
+            self._available_vram = 999.0
 
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
