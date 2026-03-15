@@ -42,12 +42,12 @@ def _startup() -> None:
     2. Auto-queues re-runs for any research generated without SearXNG data,
        if SearXNG is now reachable.
     """
+    # Reset only in-flight tasks — queued tasks survive for the scheduler to resume.
+    # MUST run before any submit_task() call in this function.
+    from scripts.db import reset_running_tasks
+    reset_running_tasks(get_db_path())
+
     conn = sqlite3.connect(get_db_path())
-    conn.execute(
-        "UPDATE background_tasks SET status='failed', error='Interrupted by server restart',"
-        " finished_at=datetime('now') WHERE status IN ('queued','running')"
-    )
-    conn.commit()
 
     # Auto-recovery: re-run LLM-only research when SearXNG is available
     try:
