@@ -33,6 +33,20 @@ _STRIP_PARAMS = {
     "eid", "otpToken", "ssid", "fmid",
 }
 
+def _company_from_jobgether_url(url: str) -> str:
+    """Extract company name from Jobgether offer URL slug.
+
+    Slug format: /offer/{24-hex-hash}-{title-slug}---{company-slug}
+    Triple-dash separator delimits title from company.
+    Returns title-cased company name, or "" if pattern not found.
+    """
+    m = re.search(r"---([^/?]+)$", urlparse(url).path)
+    if not m:
+        print(f"[scrape_url] Jobgether URL slug: no company separator found in {url}")
+        return ""
+    return m.group(1).replace("-", " ").title()
+
+
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -51,6 +65,8 @@ def _detect_board(url: str) -> str:
         return "indeed"
     if "glassdoor.com" in url_lower:
         return "glassdoor"
+    if "jobgether.com" in url_lower:
+        return "jobgether"
     return "generic"
 
 
@@ -136,6 +152,55 @@ def _scrape_glassdoor(url: str) -> dict:
         return {}
 
 
+def _scrape_jobgether(url: str) -> dict:
+    """Scrape a Jobgether offer page using Playwright to bypass 403.
+
+    Falls back to URL slug for company name when Playwright is unavailable.
+    Does not use requests — no raise_for_status().
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        company = _company_from_jobgether_url(url)
+        if company:
+            print(f"[scrape_url] Jobgether: Playwright not installed, using slug fallback → {company}")
+        return {"company": company, "source": "jobgether"} if company else {}
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                ctx = browser.new_context(user_agent=_HEADERS["User-Agent"])
+                page = ctx.new_page()
+                page.goto(url, timeout=30_000)
+                page.wait_for_load_state("networkidle", timeout=20_000)
+
+                result = page.evaluate("""() => {
+                    const title = document.querySelector('h1')?.textContent?.trim() || '';
+                    const company = document.querySelector('[class*="company"], [class*="employer"], [data-testid*="company"]')
+                        ?.textContent?.trim() || '';
+                    const location = document.querySelector('[class*="location"], [data-testid*="location"]')
+                        ?.textContent?.trim() || '';
+                    const desc = document.querySelector('[class*="description"], [class*="job-desc"], article')
+                        ?.innerText?.trim() || '';
+                    return { title, company, location, description: desc };
+                }""")
+            finally:
+                browser.close()
+
+        # Fall back to slug for company if DOM extraction missed it
+        if not result.get("company"):
+            result["company"] = _company_from_jobgether_url(url)
+
+        result["source"] = "jobgether"
+        return {k: v for k, v in result.items() if v}
+
+    except Exception as exc:
+        print(f"[scrape_url] Jobgether Playwright error for {url}: {exc}")
+        company = _company_from_jobgether_url(url)
+        return {"company": company, "source": "jobgether"} if company else {}
+
+
 def _parse_json_ld_or_og(html: str) -> dict:
     """Extract job fields from JSON-LD structured data, then og: meta tags."""
     soup = BeautifulSoup(html, "html.parser")
@@ -211,6 +276,8 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict:
             fields = _scrape_indeed(url)
         elif board == "glassdoor":
             fields = _scrape_glassdoor(url)
+        elif board == "jobgether":
+            fields = _scrape_jobgether(url)
         else:
             fields = _scrape_generic(url)
     except requests.RequestException as exc:

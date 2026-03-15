@@ -133,3 +133,36 @@ def test_scrape_url_graceful_on_http_error(tmp_path):
     row = conn.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
     conn.close()
     assert row is not None
+
+
+def test_detect_board_jobgether():
+    from scripts.scrape_url import _detect_board
+    assert _detect_board("https://jobgether.com/offer/69b42d9d24d79271ee0618e8-csm---resware") == "jobgether"
+    assert _detect_board("https://www.jobgether.com/offer/abc-role---company") == "jobgether"
+
+
+def test_jobgether_slug_company_extraction():
+    from scripts.scrape_url import _company_from_jobgether_url
+    assert _company_from_jobgether_url(
+        "https://jobgether.com/offer/69b42d9d24d79271ee0618e8-customer-success-manager---resware"
+    ) == "Resware"
+    assert _company_from_jobgether_url(
+        "https://jobgether.com/offer/abc123-director-of-cs---acme-corp"
+    ) == "Acme Corp"
+    assert _company_from_jobgether_url(
+        "https://jobgether.com/offer/abc123-no-separator-here"
+    ) == ""
+
+
+def test_scrape_jobgether_no_playwright(tmp_path):
+    """When Playwright is unavailable, _scrape_jobgether falls back to URL slug for company."""
+    import sys
+    import unittest.mock as mock
+
+    url = "https://jobgether.com/offer/69b42d9d24d79271ee0618e8-customer-success-manager---resware"
+    with mock.patch.dict(sys.modules, {"playwright": None, "playwright.sync_api": None}):
+        from scripts.scrape_url import _scrape_jobgether
+        result = _scrape_jobgether(url)
+
+    assert result.get("company") == "Resware"
+    assert result.get("source") == "jobgether"
