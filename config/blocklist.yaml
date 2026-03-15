@@ -3,7 +3,8 @@
 
 # Company name blocklist — partial case-insensitive match on the company field.
 # e.g. "Amazon" blocks any listing where company contains "amazon".
-companies: []
+companies:
+  - jobgether
 
 # Industry/content blocklist — blocked if company name OR job description contains any keyword.
 # Use this for industries you will never work in regardless of company.
