@@ -366,6 +366,18 @@ def kill_stuck_tasks(db_path: Path = DEFAULT_DB) -> int:
     return count
 
 
+def reset_running_tasks(db_path: Path = DEFAULT_DB) -> int:
+    """On restart: mark in-flight tasks failed. Queued tasks survive for the scheduler."""
+    conn = sqlite3.connect(db_path)
+    count = conn.execute(
+        "UPDATE background_tasks SET status='failed', error='Interrupted by restart',"
+        " finished_at=datetime('now') WHERE status='running'"
+    ).rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+
 def purge_email_data(db_path: Path = DEFAULT_DB) -> tuple[int, int]:
     """Delete all job_contacts rows and email-sourced pending jobs.
     Returns (contacts_deleted, jobs_deleted).
