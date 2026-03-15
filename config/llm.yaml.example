@@ -64,3 +64,14 @@ vision_fallback_order:
 # Note: 'ollama' (alex-cover-writer) intentionally excluded — research
 # must never use the fine-tuned writer model, and this also avoids evicting
 # the writer from GPU memory while a cover letter task is in flight.
+
+# ── Scheduler — LLM batch queue optimizer ─────────────────────────────────────
+# The scheduler batches LLM tasks by model type to avoid GPU model switching.
+# VRAM budgets are conservative peak estimates (GB) for each task type.
+# Increase if your models are larger; decrease if tasks share GPU memory well.
+scheduler:
+  vram_budgets:
+    cover_letter: 2.5       # alex-cover-writer:latest (~2GB GGUF + headroom)
+    company_research: 5.0   # llama3.1:8b or vllm model
+    wizard_generate: 2.5    # same model family as cover_letter
+  max_queue_depth: 500      # max pending tasks per type before drops (with logged warning)
