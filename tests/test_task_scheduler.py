@@ -371,3 +371,56 @@ def test_reset_scheduler_cleans_up(tmp_db):
     # After reset, get_scheduler creates a fresh instance
     s2 = get_scheduler(tmp_db, _noop_run_task)
     assert s2 is not s
+
+
+def test_durability_loads_queued_llm_tasks_on_startup(tmp_db):
+    """Scheduler loads pre-existing queued LLM tasks into deques at construction."""
+    from scripts.db import insert_task
+
+    # Pre-insert queued rows simulating a prior run
+    id1, _ = insert_task(tmp_db, "cover_letter", 1)
+    id2, _ = insert_task(tmp_db, "company_research", 2)
+
+    s = TaskScheduler(tmp_db, _noop_run_task)
+
+    assert len(s._queues.get("cover_letter", [])) == 1
+    assert s._queues["cover_letter"][0].id == id1
+    assert len(s._queues.get("company_research", [])) == 1
+    assert s._queues["company_research"][0].id == id2
+
+
+def test_durability_excludes_non_llm_queued_tasks(tmp_db):
+    """Non-LLM queued tasks are not loaded into the scheduler deques."""
+    from scripts.db import insert_task
+
+    insert_task(tmp_db, "discovery", 0)
+    insert_task(tmp_db, "email_sync", 0)
+
+    s = TaskScheduler(tmp_db, _noop_run_task)
+
+    assert "discovery" not in s._queues or len(s._queues["discovery"]) == 0
+    assert "email_sync" not in s._queues or len(s._queues["email_sync"]) == 0
+
+
+def test_durability_preserves_fifo_order(tmp_db):
+    """Queued tasks are loaded in created_at (FIFO) order."""
+    conn = sqlite3.connect(tmp_db)
+    # Insert with explicit timestamps to control order
+    conn.execute(
+        "INSERT INTO background_tasks (task_type, job_id, params, status, created_at)"
+        " VALUES (?,?,?,?,?)", ("cover_letter", 1, None, "queued", "2026-01-01 10:00:00")
+    )
+    conn.execute(
+        "INSERT INTO background_tasks (task_type, job_id, params, status, created_at)"
+        " VALUES (?,?,?,?,?)", ("cover_letter", 2, None, "queued", "2026-01-01 09:00:00")
+    )
+    conn.commit()
+    ids = [r[0] for r in conn.execute(
+        "SELECT id FROM background_tasks ORDER BY created_at ASC"
+    ).fetchall()]
+    conn.close()
+
+    s = TaskScheduler(tmp_db, _noop_run_task)
+
+    loaded_ids = [t.id for t in s._queues["cover_letter"]]
+    assert loaded_ids == ids
