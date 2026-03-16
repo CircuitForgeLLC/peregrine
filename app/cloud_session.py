@@ -40,6 +40,26 @@ def _extract_session_token(cookie_header: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def _ensure_provisioned(user_id: str, product: str) -> None:
+    """Call Heimdall /admin/provision for this user if no key exists yet.
+
+    Idempotent — Heimdall does nothing if a key already exists for this
+    (user_id, product) pair. Called once per session start so new Google
+    OAuth signups get a free key created automatically.
+    """
+    if not HEIMDALL_ADMIN_TOKEN:
+        return
+    try:
+        requests.post(
+            f"{HEIMDALL_URL}/admin/provision",
+            json={"directus_user_id": user_id, "product": product, "tier": "free"},
+            headers={"Authorization": f"Bearer {HEIMDALL_ADMIN_TOKEN}"},
+            timeout=5,
+        )
+    except Exception as exc:
+        log.warning("Heimdall provision failed for user %s: %s", user_id, exc)
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _fetch_cloud_tier(user_id: str, product: str) -> str:
     """Call Heimdall to resolve the current cloud tier for this user.
@@ -151,6 +171,7 @@ def resolve_session(app: str = "peregrine") -> None:
     st.session_state["user_id"] = user_id
     st.session_state["db_path"] = user_path / "staging.db"
     st.session_state["db_key"] = derive_db_key(user_id)
+    _ensure_provisioned(user_id, app)
     st.session_state["cloud_tier"] = _fetch_cloud_tier(user_id, app)
 
 
