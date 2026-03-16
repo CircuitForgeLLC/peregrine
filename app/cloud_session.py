@@ -165,8 +165,14 @@ def resolve_session(app: str = "peregrine") -> None:
 
     user_path = _user_data_path(user_id, app)
     user_path.mkdir(parents=True, exist_ok=True)
-    (user_path / "config").mkdir(exist_ok=True)
+    config_path = user_path / "config"
+    config_path.mkdir(exist_ok=True)
     (user_path / "data").mkdir(exist_ok=True)
+
+    # Bootstrap config files that the UI requires to exist — never overwrite
+    _kw = config_path / "resume_keywords.yaml"
+    if not _kw.exists():
+        _kw.write_text("skills: []\ndomains: []\nkeywords: []\n")
 
     st.session_state["user_id"] = user_id
     st.session_state["db_path"] = user_path / "staging.db"
