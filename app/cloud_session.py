@@ -92,6 +92,28 @@ def derive_db_key(user_id: str) -> str:
     ).hexdigest()
 
 
+def _render_auth_wall(message: str = "Please sign in to continue.") -> None:
+    """Render a branded sign-in prompt and halt the page."""
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] { display: none; }
+        [data-testid="collapsedControl"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    col = st.columns([1, 2, 1])[1]
+    with col:
+        st.markdown("## 🦅 Peregrine")
+        st.info(message, icon="🔒")
+        st.link_button(
+            "Sign in to CircuitForge",
+            url=f"https://circuitforge.tech/login?next=/peregrine",
+            use_container_width=True,
+        )
+
+
 def resolve_session(app: str = "peregrine") -> None:
     """
     Call at the top of each Streamlit page.
@@ -112,19 +134,13 @@ def resolve_session(app: str = "peregrine") -> None:
     cookie_header = st.context.headers.get("x-cf-session", "")
     session_jwt = _extract_session_token(cookie_header)
     if not session_jwt:
-        st.components.v1.html(
-            '<script>window.top.location.href = "https://circuitforge.tech/login";</script>',
-            height=0,
-        )
+        _render_auth_wall("Please sign in to access Peregrine.")
         st.stop()
 
     try:
         user_id = validate_session_jwt(session_jwt)
     except Exception:
-        st.components.v1.html(
-            '<script>window.top.location.href = "https://circuitforge.tech/login";</script>',
-            height=0,
-        )
+        _render_auth_wall("Your session has expired. Please sign in again.")
         st.stop()
 
     user_path = _user_data_path(user_id, app)
@@ -157,7 +173,7 @@ def get_config_dir() -> Path:
     """
     if CLOUD_MODE and st.session_state.get("db_path"):
         return Path(st.session_state["db_path"]).parent / "config"
-    return Path(__file__).parent.parent.parent / "config"
+    return Path(__file__).parent.parent / "config"
 
 
 def get_cloud_tier() -> str:
