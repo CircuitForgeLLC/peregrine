@@ -24,6 +24,9 @@ from scripts.db import init_db, get_job_counts, purge_jobs, purge_email_data, \
 from scripts.task_runner import submit_task
 from app.cloud_session import resolve_session, get_db_path
 
+_CONFIG_DIR = Path(__file__).parent.parent / "config"
+_NOTION_CONNECTED = (_CONFIG_DIR / "integrations" / "notion.yaml").exists()
+
 resolve_session("peregrine")
 init_db(get_db_path())
 
@@ -234,20 +237,26 @@ with mid:
 
 with right:
     approved_count = get_job_counts(get_db_path()).get("approved", 0)
-    st.subheader("Send to Notion")
-    st.caption("Push all approved jobs to your Notion tracking database.")
-    if approved_count == 0:
-        st.info("No approved jobs yet. Review and approve some listings first.")
+    if _NOTION_CONNECTED:
+        st.subheader("Send to Notion")
+        st.caption("Push all approved jobs to your Notion tracking database.")
+        if approved_count == 0:
+            st.info("No approved jobs yet. Review and approve some listings first.")
+        else:
+            if st.button(
+                f"📤 Sync {approved_count} approved job{'s' if approved_count != 1 else ''} → Notion",
+                use_container_width=True, type="primary",
+            ):
+                with st.spinner("Syncing to Notion…"):
+                    from scripts.sync import sync_to_notion
+                    count = sync_to_notion(get_db_path())
+                st.success(f"Synced {count} job{'s' if count != 1 else ''} to Notion!")
+                st.rerun()
     else:
-        if st.button(
-            f"📤 Sync {approved_count} approved job{'s' if approved_count != 1 else ''} → Notion",
-            use_container_width=True, type="primary",
-        ):
-            with st.spinner("Syncing to Notion…"):
-                from scripts.sync import sync_to_notion
-                count = sync_to_notion(get_db_path())
-            st.success(f"Synced {count} job{'s' if count != 1 else ''} to Notion!")
-            st.rerun()
+        st.subheader("Set up a sync integration")
+        st.caption("Connect an integration to push approved jobs to your tracking database.")
+        if st.button("⚙️ Go to Integrations", use_container_width=True):
+            st.switch_page("pages/2_Settings.py")
 
 st.divider()
 

@@ -403,9 +403,10 @@ elif step == 4:
     st.caption("Used in cover letter PDFs, LLM prompts, and the app header.")
 
     c1, c2 = st.columns(2)
-    name     = c1.text_input("Full Name *",  saved_yaml.get("name", ""))
-    email    = c1.text_input("Email *",      saved_yaml.get("email", ""))
-    phone    = c2.text_input("Phone",        saved_yaml.get("phone", ""))
+    _parsed = st.session_state.get("_parsed_resume", {})
+    name     = c1.text_input("Full Name *",  saved_yaml.get("name") or _parsed.get("name", ""))
+    email    = c1.text_input("Email *",      saved_yaml.get("email") or _parsed.get("email", ""))
+    phone    = c2.text_input("Phone",        saved_yaml.get("phone") or _parsed.get("phone", ""))
     linkedin = c2.text_input("LinkedIn URL", saved_yaml.get("linkedin", ""))
 
     # Career summary with optional LLM generation — resume text available now (step 3 ran first)

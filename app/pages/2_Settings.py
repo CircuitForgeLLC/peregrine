@@ -786,6 +786,7 @@ with tab_resume:
             try:
                 _kw_sugg = _suggest_resume_keywords(RESUME_PATH, _kw_current)
                 st.session_state["_kw_suggestions"] = _kw_sugg
+                st.rerun()
             except RuntimeError as _e:
                 st.warning(
                     f"No LLM backend available: {_e}. "
