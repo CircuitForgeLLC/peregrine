@@ -220,7 +220,7 @@ with mid:
                  disabled=unscored == 0):
         with st.spinner("Scoring…"):
             result = subprocess.run(
-                ["conda", "run", "-n", "job-seeker", "python", "scripts/match.py"],
+                [sys.executable, "scripts/match.py"],
                 capture_output=True, text=True,
                 cwd=str(Path(__file__).parent.parent),
             )
