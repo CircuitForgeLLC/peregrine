@@ -138,15 +138,16 @@ CREATE TABLE IF NOT EXISTS survey_responses (
 """
 
 _MIGRATIONS = [
-    ("cover_letter",    "TEXT"),
-    ("applied_at",      "TEXT"),
-    ("interview_date",  "TEXT"),
-    ("rejection_stage", "TEXT"),
-    ("phone_screen_at", "TEXT"),
-    ("interviewing_at", "TEXT"),
-    ("offer_at",        "TEXT"),
-    ("hired_at",        "TEXT"),
-    ("survey_at",       "TEXT"),
+    ("cover_letter",       "TEXT"),
+    ("applied_at",         "TEXT"),
+    ("interview_date",     "TEXT"),
+    ("rejection_stage",    "TEXT"),
+    ("phone_screen_at",    "TEXT"),
+    ("interviewing_at",    "TEXT"),
+    ("offer_at",           "TEXT"),
+    ("hired_at",           "TEXT"),
+    ("survey_at",          "TEXT"),
+    ("calendar_event_id",  "TEXT"),
 ]
 
 
@@ -504,6 +505,15 @@ def set_interview_date(db_path: Path = DEFAULT_DB, job_id: int = None,
     """Persist an interview date for a job."""
     conn = sqlite3.connect(db_path)
     conn.execute("UPDATE jobs SET interview_date = ? WHERE id = ?", (date_str, job_id))
+    conn.commit()
+    conn.close()
+
+
+def set_calendar_event_id(db_path: Path = DEFAULT_DB, job_id: int = None,
+                          event_id: str = "") -> None:
+    """Persist the calendar event ID returned after a successful push."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE jobs SET calendar_event_id = ? WHERE id = ?", (event_id, job_id))
     conn.commit()
     conn.close()
 
