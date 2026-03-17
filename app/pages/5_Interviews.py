@@ -31,11 +31,18 @@ _name = _profile.name if _profile else "Job Seeker"
 from scripts.db import (
     DEFAULT_DB, init_db,
     get_interview_jobs, advance_to_stage, reject_at_stage,
-    set_interview_date, add_contact, get_contacts,
+    set_interview_date, set_calendar_event_id, add_contact, get_contacts,
     get_research, get_task_for_job, get_job_by_id,
     get_unread_stage_signals, dismiss_stage_signal,
 )
 from scripts.task_runner import submit_task
+
+_CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
+_CALENDAR_INTEGRATIONS = ("apple_calendar", "google_calendar")
+_calendar_connected = any(
+    (_CONFIG_DIR / "integrations" / f"{n}.yaml").exists()
+    for n in _CALENDAR_INTEGRATIONS
+)
 
 st.title("🎯 Interviews")
 
@@ -274,6 +281,19 @@ def _render_card(job: dict, stage: str, compact: bool = False) -> None:
                     set_interview_date(DEFAULT_DB, job_id=job_id, date_str=str(new_date))
                     st.success("Saved!")
                     st.rerun()
+
+            # Calendar push — only shown when a date is saved and an integration is connected
+            if current_idate and _calendar_connected:
+                _has_event = bool(job.get("calendar_event_id"))
+                _cal_label = "🔄 Update Calendar" if _has_event else "📅 Add to Calendar"
+                if st.button(_cal_label, key=f"cal_push_{job_id}", use_container_width=True):
+                    from scripts.calendar_push import push_interview_event
+                    result = push_interview_event(DEFAULT_DB, job_id=job_id, config_dir=_CONFIG_DIR)
+                    if result["ok"]:
+                        st.success(f"Event {'updated' if _has_event else 'added'} ({result['provider'].replace('_', ' ').title()})")
+                        st.rerun()
+                    else:
+                        st.error(result["error"])
 
         if not compact:
             if stage in ("applied", "phone_screen", "interviewing"):

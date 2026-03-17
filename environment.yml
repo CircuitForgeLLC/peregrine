@@ -48,6 +48,12 @@ dependencies:
     # ── Notion integration ────────────────────────────────────────────────────
     - notion-client>=3.0
 
+    # ── Calendar integrations ─────────────────────────────────────────────────
+    - caldav>=1.3
+    - icalendar>=5.0
+    - google-api-python-client>=2.0
+    - google-auth>=2.0
+
     # ── Document handling ─────────────────────────────────────────────────────
     - pypdf
     - pdfminer-six
