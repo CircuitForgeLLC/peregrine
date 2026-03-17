@@ -13,6 +13,8 @@ streamlit-paste-button>=0.1.0
 # ── Job scraping ──────────────────────────────────────────────────────────
 python-jobspy>=1.1
 playwright>=1.40
+pytest-playwright>=0.4
+pytest-json-report>=1.5
 selenium
 undetected-chromedriver
 webdriver-manager

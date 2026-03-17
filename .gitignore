@@ -49,3 +49,8 @@ demo/seed_demo.py
 # Git worktrees
 .worktrees/
 .env.e2e
+
+# E2E test result artifacts
+tests/e2e/results/demo/
+tests/e2e/results/cloud/
+tests/e2e/results/local/
