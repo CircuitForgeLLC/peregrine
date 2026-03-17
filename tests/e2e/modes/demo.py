@@ -9,7 +9,7 @@ _BASE_SETTINGS_TABS = [
 
 DEMO = ModeConfig(
     name="demo",
-    base_url="http://localhost:8504",
+    base_url="http://localhost:8504/peregrine",
     auth_setup=lambda ctx: None,
     expected_failures=[
         "Fetch*",
