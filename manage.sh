@@ -33,6 +33,8 @@ usage() {
     echo -e "    ${GREEN}update${NC}              Pull latest images + rebuild app"
     echo -e "    ${GREEN}preflight${NC}           Check ports + resources; write .env"
     echo -e "    ${GREEN}test${NC}                Run test suite"
+    echo -e "    ${GREEN}e2e [mode]${NC}          Run E2E tests (mode: demo|cloud|local, default: demo)"
+    echo -e "                        Set E2E_HEADLESS=false to run headed via Xvfb"
     echo -e "    ${GREEN}prepare-training${NC}    Extract cover letters → training JSONL"
     echo -e "    ${GREEN}finetune${NC}            Run LoRA fine-tune (needs GPU profile)"
     echo -e "    ${GREEN}clean${NC}               Remove containers, images, volumes (DESTRUCTIVE)"
@@ -168,6 +170,24 @@ case "$CMD" in
         else
             echo "$URL"
         fi
+        ;;
+
+    e2e)
+        MODE="${2:-demo}"
+        RESULTS_DIR="tests/e2e/results/${MODE}"
+        mkdir -p "${RESULTS_DIR}"
+        HEADLESS="${E2E_HEADLESS:-true}"
+        if [ "$HEADLESS" = "false" ]; then
+            RUNNER="xvfb-run --auto-servernum --server-args='-screen 0 1280x900x24'"
+        else
+            RUNNER=""
+        fi
+        info "Running E2E tests (mode=${MODE}, headless=${HEADLESS})..."
+        $RUNNER conda run -n job-seeker pytest tests/e2e/ \
+            --mode="${MODE}" \
+            --json-report \
+            --json-report-file="${RESULTS_DIR}/report.json" \
+            -v "${@:3}"
         ;;
 
     help|--help|-h)
