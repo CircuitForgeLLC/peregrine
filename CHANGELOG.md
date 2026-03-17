@@ -9,7 +9,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [0.4.0] — 2026-03-13
+## [0.6.1] — 2026-03-16
+
+### Fixed
+- **Keyword suggestions not visible on first render** — `✨ Suggest` in
+  Settings → Search now calls `st.rerun()` after storing results; chips appear
+  immediately without requiring a tab switch (#18)
+- **Wizard identity step required manual re-entry of resume data** — step 4
+  (Identity) now prefills name, email, and phone from the parsed resume when
+  those fields are blank; existing saved values are not overwritten (#17)
+- **"Send to Notion" hardcoded on Home dashboard** — sync section now shows the
+  connected provider name, or a "Set up a sync integration" prompt with a
+  Settings link when no integration is configured (#16)
+- **`test_generate_calls_llm_router` flaky in full suite** — resolved by queue
+  optimizer merge; mock state pollution eliminated (#12)
+
+---
+
+## [0.6.0] — 2026-03-16
+
+### Added
+- **Calendar integration** — push interview events to Apple Calendar (CalDAV) or
+  Google Calendar directly from the Interviews kanban. Idempotent: a second push
+  updates the existing event rather than creating a duplicate. Button shows
+  "📅 Add to Calendar" on first push and "🔄 Update Calendar" thereafter.
+  Event title: `{Stage}: {Job Title} @ {Company}`; 1hr duration at noon UTC;
+  job URL and company research brief included in event description.
+  - `scripts/calendar_push.py` — push/update orchestration
+  - `scripts/integrations/apple_calendar.py` — `create_event()` / `update_event()`
+    via `caldav` + `icalendar`
+  - `scripts/integrations/google_calendar.py` — `create_event()` / `update_event()`
+    via `google-api-python-client` (service account); `test()` now makes a real API call
+  - `scripts/db.py` — `calendar_event_id TEXT` column (auto-migration) +
+    `set_calendar_event_id()` helper
+  - `environment.yml` — pin `caldav>=1.3`, `icalendar>=5.0`,
+    `google-api-python-client>=2.0`, `google-auth>=2.0`
+
+---
+
+## [0.4.1] — 2026-03-13
 
 ### Added
 - **LinkedIn profile import** — one-click import from a public LinkedIn profile URL
