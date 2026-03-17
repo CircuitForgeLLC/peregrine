@@ -48,3 +48,4 @@ demo/seed_demo.py
 
 # Git worktrees
 .worktrees/
+.env.e2e
