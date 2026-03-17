@@ -150,6 +150,13 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
     try:
         if task_type == "discovery":
+            import os as _os
+            if _os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes"):
+                update_task_status(
+                    db_path, task_id, "failed",
+                    error="Discovery is disabled in the public demo. Run your own instance to use this feature.",
+                )
+                return
             from scripts.discover import run_discovery
             new_count = run_discovery(db_path)
             n = new_count or 0

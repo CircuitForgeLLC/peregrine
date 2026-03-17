@@ -224,7 +224,11 @@ with col_prep:
                 st.markdown(msg["content"])
 
         # Initial question if session is empty
-        if not st.session_state[qa_key]:
+        import os as _os
+        _is_demo = _os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
+        if not st.session_state[qa_key] and _is_demo:
+            st.info("AI features are disabled in the public demo. Run your own instance to use Practice Q&A.")
+        elif not st.session_state[qa_key]:
             with st.spinner("Setting up your mock interview…"):
                 try:
                     from scripts.llm_router import complete

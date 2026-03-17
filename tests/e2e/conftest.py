@@ -131,9 +131,11 @@ def get_page_errors(page) -> list[ErrorRecord]:
     errors: list[ErrorRecord] = []
 
     for el in page.query_selector_all('[data-testid="stException"]'):
+        # text_content() includes text from CSS-hidden elements (e.g. collapsed expanders)
+        msg = (el.text_content() or "").strip()[:500]
         errors.append(ErrorRecord(
             type="exception",
-            message=el.inner_text()[:500],
+            message=msg,
             element_html=el.inner_html()[:1000],
         ))
 
@@ -141,9 +143,10 @@ def get_page_errors(page) -> list[ErrorRecord]:
         # Streamlit 1.35+: st.error() renders child [data-testid="stAlertContentError"]
         # kind is a React prop — NOT a DOM attribute. Child detection is authoritative.
         if el.query_selector('[data-testid="stAlertContentError"]'):
+            msg = (el.text_content() or "").strip()[:500]
             errors.append(ErrorRecord(
                 type="alert",
-                message=el.inner_text()[:500],
+                message=msg,
                 element_html=el.inner_html()[:1000],
             ))
 
