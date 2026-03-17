@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import datetime, timedelta, timezone
 from scripts.integrations.base import IntegrationBase
 
 
@@ -46,3 +47,60 @@ class AppleCalendarIntegration(IntegrationBase):
             return principal is not None
         except Exception:
             return False
+
+    def _get_calendar(self):
+        """Return the configured caldav Calendar object."""
+        import caldav
+        client = caldav.DAVClient(
+            url=self._config["caldav_url"],
+            username=self._config["username"],
+            password=self._config["app_password"],
+        )
+        principal = client.principal()
+        cal_name = self._config.get("calendar_name", "Interviews")
+        for cal in principal.calendars():
+            if cal.name == cal_name:
+                return cal
+        # Calendar not found — create it
+        return principal.make_calendar(name=cal_name)
+
+    def create_event(self, uid: str, title: str, start_dt: datetime,
+                     end_dt: datetime, description: str = "") -> str:
+        """Create a calendar event. Returns the UID (used as calendar_event_id)."""
+        from icalendar import Calendar, Event
+        cal = Calendar()
+        cal.add("prodid", "-//CircuitForge Peregrine//EN")
+        cal.add("version", "2.0")
+        event = Event()
+        event.add("uid", uid)
+        event.add("summary", title)
+        event.add("dtstart", start_dt)
+        event.add("dtend", end_dt)
+        event.add("description", description)
+        cal.add_component(event)
+        dav_cal = self._get_calendar()
+        dav_cal.add_event(cal.to_ical().decode())
+        return uid
+
+    def update_event(self, uid: str, title: str, start_dt: datetime,
+                     end_dt: datetime, description: str = "") -> str:
+        """Update an existing event by UID, or create it if not found."""
+        from icalendar import Calendar, Event
+        dav_cal = self._get_calendar()
+        try:
+            existing = dav_cal.event_by_uid(uid)
+            cal = Calendar()
+            cal.add("prodid", "-//CircuitForge Peregrine//EN")
+            cal.add("version", "2.0")
+            event = Event()
+            event.add("uid", uid)
+            event.add("summary", title)
+            event.add("dtstart", start_dt)
+            event.add("dtend", end_dt)
+            event.add("description", description)
+            cal.add_component(event)
+            existing.data = cal.to_ical().decode()
+            existing.save()
+        except Exception:
+            return self.create_event(uid, title, start_dt, end_dt, description)
+        return uid
