@@ -109,3 +109,73 @@ def test_get_jwt_uses_cache(monkeypatch):
         token = cloud_mod._get_jwt()
     assert token == "cached.jwt"
     mock_post.assert_not_called()
+
+
+def test_get_page_errors_finds_exceptions(monkeypatch):
+    """get_page_errors returns ErrorRecord for stException elements."""
+    from tests.e2e.conftest import get_page_errors
+
+    mock_el = MagicMock()
+    mock_el.get_attribute.return_value = None
+    mock_el.inner_text.return_value = "RuntimeError: boom"
+    mock_el.inner_html.return_value = "<div>RuntimeError: boom</div>"
+
+    mock_page = MagicMock()
+    mock_page.query_selector_all.side_effect = lambda sel: (
+        [mock_el] if "stException" in sel else []
+    )
+
+    errors = get_page_errors(mock_page)
+    assert len(errors) == 1
+    assert errors[0].type == "exception"
+    assert "boom" in errors[0].message
+
+
+def test_get_page_errors_finds_alert_errors(monkeypatch):
+    """get_page_errors returns ErrorRecord for stAlert with stAlertContentError child."""
+    from tests.e2e.conftest import get_page_errors
+
+    mock_child = MagicMock()
+    mock_el = MagicMock()
+    mock_el.query_selector.return_value = mock_child
+    mock_el.inner_text.return_value = "Something went wrong"
+    mock_el.inner_html.return_value = "<div>Something went wrong</div>"
+
+    mock_page = MagicMock()
+    mock_page.query_selector_all.side_effect = lambda sel: (
+        [] if "stException" in sel else [mock_el]
+    )
+
+    errors = get_page_errors(mock_page)
+    assert len(errors) == 1
+    assert errors[0].type == "alert"
+
+
+def test_get_page_errors_ignores_non_error_alerts(monkeypatch):
+    """get_page_errors does NOT flag st.warning() or st.info() alerts."""
+    from tests.e2e.conftest import get_page_errors
+
+    mock_el = MagicMock()
+    mock_el.query_selector.return_value = None
+    mock_el.inner_text.return_value = "Just a warning"
+
+    mock_page = MagicMock()
+    mock_page.query_selector_all.side_effect = lambda sel: (
+        [] if "stException" in sel else [mock_el]
+    )
+
+    errors = get_page_errors(mock_page)
+    assert errors == []
+
+
+def test_get_console_errors_filters_noise():
+    """get_console_errors filters benign Streamlit WebSocket reconnect messages."""
+    from tests.e2e.conftest import get_console_errors
+
+    messages = [
+        MagicMock(type="error", text="WebSocket connection closed"),
+        MagicMock(type="error", text="TypeError: cannot read property"),
+        MagicMock(type="log", text="irrelevant"),
+    ]
+    errors = get_console_errors(messages)
+    assert errors == ["TypeError: cannot read property"]
