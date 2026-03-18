@@ -68,7 +68,7 @@ def _cloud_auth_setup(context: Any) -> None:
 
 CLOUD = ModeConfig(
     name="cloud",
-    base_url="http://localhost:8505",
+    base_url="http://localhost:8505/peregrine",
     auth_setup=_cloud_auth_setup,
     expected_failures=[],
     results_dir=Path("tests/e2e/results/cloud"),

@@ -93,11 +93,17 @@ def mode_contexts(active_modes, playwright) -> dict[str, BrowserContext]:
     for mode in active_modes:
         ctx = browser.new_context(viewport={"width": 1280, "height": 900})
         if mode.name == "cloud":
-            def _inject_jwt(route, request):
-                jwt = _get_jwt()
-                headers = {**request.headers, "x-cf-session": f"cf_session={jwt}"}
-                route.continue_(headers=headers)
-            ctx.route(f"{mode.base_url}/**", _inject_jwt)
+            # Cookies are sent on WebSocket upgrade requests; set_extra_http_headers
+            # and ctx.route() are both HTTP-only and miss st.context.headers.
+            # cloud_session.py falls back to the Cookie header when X-CF-Session
+            # is absent (direct access without Caddy).
+            jwt = _get_jwt()
+            ctx.add_cookies([{
+                "name": "cf_session",
+                "value": jwt,
+                "domain": "localhost",
+                "path": "/",
+            }])
         else:
             mode.auth_setup(ctx)
         contexts[mode.name] = ctx
