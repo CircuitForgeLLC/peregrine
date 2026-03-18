@@ -1,52 +1,113 @@
 /* web/src/assets/peregrine.css
-   Peregrine token overrides — imported AFTER theme.css.
-   Only overrides what is genuinely different from the CircuitForge base theme.
+   Peregrine-specific token overrides — imported AFTER theme.css.
+   Source of truth: circuitforge-plans/peregrine/2026-03-03-nuxt-design-system.md
 
-   App colors:
-     Primary — Forest Green  (#2d5a27) — inherited from theme.css --color-primary
-     Accent  — Amber/Copper  (#c4732a) — inherited from theme.css --color-accent
+   Brand:
+     Falcon Blue  (#2B6CB0) — slate-blue back plumage of the peregrine falcon
+     Talon Orange (#E06820) — vivid orange-yellow talons and cere
 */
 
-/* ── Page-level overrides ───────────────────────────── */
+/* ── Page-level ─────────────────────────────────────── */
 html {
-  /* Prevent Mac Chrome horizontal swipe-to-navigate on viewport edge */
   overscroll-behavior-x: none;
-  /* clip (not hidden) — no BFC scroll-container side effect. Gotcha #3. */
-  overflow-x: clip;
+  overflow-x: clip;  /* clip (not hidden) — no BFC scroll-container side effect. Gotcha #3. */
 }
 
 body {
-  /* Suppress horizontal scroll from animated transitions */
   overflow-x: hidden;
 }
 
 /* ── Light mode (default) ──────────────────────────── */
 :root {
-  /* Alias map — component-expected names → theme.css canonical names. Gotcha #5.
-     Components should prefer the theme.css names; add aliases only when needed. */
+  /* ── Peregrine brand colors ── */
+  --app-primary:       #2B6CB0;   /* Falcon Blue — 4.70:1 on #eaeff8 ✅ AA */
+  --app-primary-hover: #245A9E;
+  --app-primary-light: #EBF4FF;   /* subtle tint — background use only */
+
+  --app-accent:        #E06820;   /* Talon Orange — use dark text on top */
+  --app-accent-hover:  #C05415;
+  --app-accent-light:  #FFF3EB;   /* subtle tint — background use only */
+  --app-accent-text:   #1a2338;   /* on-button text — dark navy, NEVER white (only 2.8:1) */
+
+  /* ── CSS variable aliases (component names → theme.css canonical names. Gotcha #5.) ── */
   --color-bg:             var(--color-surface);
   --color-text-secondary: var(--color-text-muted);
 
-  /* Nav height token — consumed by .app-main padding-top in App.vue */
-  --nav-height: 4rem;
+  /* ── Layout ── */
+  --nav-height:     4rem;         /* top bar height (mobile) */
+  --sidebar-width:  220px;        /* persistent sidebar (≥1024px) */
 
-  /* Motion tokens for future animated components (inspired by avocet bucket pattern) */
+  /* ── Pipeline status colors ── */
+  /* Always pair with text label or icon — never color alone (accessibility) */
+  --status-pending:   var(--color-warning);
+  --status-approve:   var(--color-success);
+  --status-reject:    var(--color-error);
+  --status-applied:   var(--color-info);
+  --status-synced:    #5b4fa8;
+  --status-archived:  var(--color-text-muted);
+  --status-survey:    #6d3fa8;
+  --status-phone:     #1a7a6e;
+  --status-interview: var(--color-info);
+  --status-offer:     #b8620a;
+  --status-hired:     var(--color-success);
+
+  /* ── Match score thresholds ── */
+  --score-high: var(--color-success);   /* ≥ 70% */
+  --score-mid:  var(--color-warning);   /* 40–69% */
+  --score-low:  var(--color-error);     /* < 40% */
+  --score-none: var(--color-text-muted);
+
+  /* ── Motion tokens ── */
+  --swipe-exit:         300ms;
+  --swipe-spring:       400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --confetti-dur:       3500ms;
   --transition-spring:  400ms cubic-bezier(0.34, 1.56, 0.64, 1);
   --transition-dismiss: 350ms ease-in;
   --transition-enter:   250ms ease-out;
+
+  /* ── Type scale ── */
+  --text-xs:   0.75rem;    /* 12px — badge labels, timestamps, keyboard hints */
+  --text-sm:   0.875rem;   /* 14px — card secondary, captions */
+  --text-base: 1rem;       /* 16px — body, card descriptions */
+  --text-lg:   1.125rem;   /* 18px — card title, section headers */
+  --text-xl:   1.25rem;    /* 20px — page section headings */
+  --text-2xl:  1.5rem;     /* 24px — page titles */
+  --text-3xl:  1.875rem;   /* 30px — dashboard greeting */
 }
 
 /* ── Dark mode ─────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="hacker"]) {
-    /* Aliases inherit dark values from theme.css automatically */
+    --app-primary:       #68A8D8;   /* Falcon Blue (dark) — 6.54:1 on #16202e ✅ AA */
+    --app-primary-hover: #7BBDE6;
+    --app-primary-light: #0D1F35;
+
+    --app-accent:        #F6872A;   /* Talon Orange (dark) — 5.22:1 on #16202e ✅ AA */
+    --app-accent-hover:  #FF9840;
+    --app-accent-light:  #2D1505;
+    --app-accent-text:   #1a2338;
+
+    --status-synced:    #9b8fea;
+    --status-survey:    #b08fea;
+    --status-phone:     #4ec9be;
+    --status-offer:     #f5a43a;
   }
 }
 
 /* ── Hacker mode (Konami easter egg) ──────────────── */
-/* Applied via document.documentElement.dataset.theme = 'hacker' */
-/* Full token overrides live in theme.css [data-theme="hacker"] block */
 [data-theme="hacker"] {
-  /* Cursor trail uses this color — override for hacker palette */
-  --color-accent: #00ff41;
+  --app-primary:       #00ff41;
+  --app-primary-hover: #00cc33;
+  --app-primary-light: #001a00;
+  --app-accent:        #00ff41;
+  --app-accent-hover:  #00cc33;
+  --app-accent-light:  #001a00;
+  --app-accent-text:   #0a0c0a;
+}
+
+/* ── Focus style — keyboard nav (accessibility requirement) ── */
+:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
 }
