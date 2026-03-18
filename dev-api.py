@@ -274,6 +274,76 @@ def download_pdf(job_id: int):
         raise HTTPException(501, "reportlab not installed — install it to generate PDFs")
 
 
+# ── GET /api/interviews ────────────────────────────────────────────────────────
+
+PIPELINE_STATUSES = {
+    "applied", "survey",
+    "phone_screen", "interviewing",
+    "offer", "hired",
+    "interview_rejected",
+}
+
+@app.get("/api/interviews")
+def list_interviews():
+    db = _get_db()
+    placeholders = ",".join("?" * len(PIPELINE_STATUSES))
+    rows = db.execute(
+        f"SELECT id, title, company, url, location, is_remote, salary, "
+        f"match_score, keyword_gaps, status, "
+        f"interview_date, rejection_stage, "
+        f"applied_at, phone_screen_at, interviewing_at, offer_at, hired_at, survey_at "
+        f"FROM jobs WHERE status IN ({placeholders}) "
+        f"ORDER BY match_score DESC NULLS LAST",
+        list(PIPELINE_STATUSES),
+    ).fetchall()
+    db.close()
+    # Cast is_remote to bool for consistency with other endpoints
+    return [{**dict(r), "is_remote": bool(r["is_remote"])} for r in rows]
+
+
+# ── POST /api/jobs/{id}/move ───────────────────────────────────────────────────
+
+STATUS_TIMESTAMP_COL = {
+    "applied":            "applied_at",
+    "survey":             "survey_at",
+    "phone_screen":       "phone_screen_at",
+    "interviewing":       "interviewing_at",
+    "offer":              "offer_at",
+    "hired":              "hired_at",
+    "interview_rejected": None,  # uses rejection_stage instead
+}
+
+class MoveBody(BaseModel):
+    status:           str
+    interview_date:   str | None = None
+    rejection_stage:  str | None = None
+
+@app.post("/api/jobs/{job_id}/move")
+def move_job(job_id: int, body: MoveBody):
+    if body.status not in STATUS_TIMESTAMP_COL:
+        raise HTTPException(400, f"Invalid pipeline status: {body.status}")
+    db = _get_db()
+    ts_col = STATUS_TIMESTAMP_COL[body.status]
+    if ts_col:
+        db.execute(
+            f"UPDATE jobs SET status = ?, {ts_col} = datetime('now') WHERE id = ?",
+            (body.status, job_id),
+        )
+    else:
+        db.execute(
+            "UPDATE jobs SET status = ?, rejection_stage = ? WHERE id = ?",
+            (body.status, body.rejection_stage, job_id),
+        )
+    if body.interview_date is not None:
+        db.execute(
+            "UPDATE jobs SET interview_date = ? WHERE id = ?",
+            (body.interview_date, job_id),
+        )
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+
 # ── GET /api/config/user ──────────────────────────────────────────────────────
 
 @app.get("/api/config/user")
