@@ -151,7 +151,12 @@ def resolve_session(app: str = "peregrine") -> None:
     if st.session_state.get("user_id"):
         return
 
-    cookie_header = st.context.headers.get("x-cf-session", "")
+    # Primary: Caddy injects X-CF-Session header in production.
+    # Fallback: direct access (E2E tests, dev without Caddy) reads the cookie header.
+    cookie_header = (
+        st.context.headers.get("x-cf-session", "")
+        or st.context.headers.get("cookie", "")
+    )
     session_jwt = _extract_session_token(cookie_header)
     if not session_jwt:
         _render_auth_wall("Please sign in to access Peregrine.")

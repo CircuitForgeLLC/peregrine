@@ -9,7 +9,7 @@ _BASE_SETTINGS_TABS = [
 
 LOCAL = ModeConfig(
     name="local",
-    base_url="http://localhost:8502",
+    base_url="http://localhost:8501/peregrine",
     auth_setup=lambda ctx: None,
     expected_failures=[],
     results_dir=Path("tests/e2e/results/local"),
