@@ -116,8 +116,7 @@ def test_get_page_errors_finds_exceptions(monkeypatch):
     from tests.e2e.conftest import get_page_errors
 
     mock_el = MagicMock()
-    mock_el.get_attribute.return_value = None
-    mock_el.inner_text.return_value = "RuntimeError: boom"
+    mock_el.text_content.return_value = "RuntimeError: boom"
     mock_el.inner_html.return_value = "<div>RuntimeError: boom</div>"
 
     mock_page = MagicMock()
@@ -138,7 +137,7 @@ def test_get_page_errors_finds_alert_errors(monkeypatch):
     mock_child = MagicMock()
     mock_el = MagicMock()
     mock_el.query_selector.return_value = mock_child
-    mock_el.inner_text.return_value = "Something went wrong"
+    mock_el.text_content.return_value = "Something went wrong"
     mock_el.inner_html.return_value = "<div>Something went wrong</div>"
 
     mock_page = MagicMock()
