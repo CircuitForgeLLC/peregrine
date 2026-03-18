@@ -1,0 +1,268 @@
+/* assets/styles/theme.css — CENTRAL THEME FILE
+   Accessible Solarpunk: warm, earthy, humanist, trustworthy.
+   Hacker mode: terminal green circuit-trace dark (Konami code).
+   ALL color/font/spacing tokens live here — nowhere else.
+*/
+
+/* ── Accessible Solarpunk — light (default) ──────── */
+:root {
+  /* Brand */
+  --color-primary: #2d5a27;
+  --color-primary-hover: #234820;
+  --color-primary-light: #e8f2e7;
+
+  /* Surfaces — cool blue-slate, crisp and legible */
+  --color-surface: #eaeff8;
+  --color-surface-alt: #dde4f0;
+  --color-surface-raised: #f5f7fc;
+
+  /* Borders — cool blue-gray */
+  --color-border: #a8b8d0;
+  --color-border-light: #ccd5e6;
+
+  /* Text — dark navy, cool undertone */
+  --color-text: #1a2338;
+  --color-text-muted: #4a5c7a;
+  --color-text-inverse: #eaeff8;
+
+  /* Accent — amber/terracotta (action, links, CTAs) */
+  --color-accent: #c4732a;
+  --color-accent-hover: #a85c1f;
+  --color-accent-light: #fdf0e4;
+
+  /* Semantic */
+  --color-success: #3a7a32;
+  --color-error: #c0392b;
+  --color-warning: #d4891a;
+  --color-info: #1e6091;
+
+  /* Typography */
+  --font-display: 'Fraunces', Georgia, serif;        /* Headings — optical humanist serif */
+  --font-body: 'Atkinson Hyperlegible', system-ui, sans-serif; /* Body — designed for accessibility */
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace; /* Code, hacker mode */
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-24: 6rem;
+
+  /* Radii */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-full: 9999px;
+
+  /* Shadows — cool blue-navy base */
+  --shadow-sm: 0 1px 3px rgba(26, 35, 56, 0.08), 0 1px 2px rgba(26, 35, 56, 0.04);
+  --shadow-md: 0 4px 12px rgba(26, 35, 56, 0.1),  0 2px 4px rgba(26, 35, 56, 0.06);
+  --shadow-lg: 0 10px 30px rgba(26, 35, 56, 0.12), 0 4px 8px rgba(26, 35, 56, 0.06);
+
+  /* Transitions */
+  --transition: 200ms ease;
+  --transition-slow: 400ms ease;
+
+  /* Header */
+  --header-height: 4rem;
+  --header-border: 2px solid var(--color-border);
+}
+
+/* ── Accessible Solarpunk — dark (system dark mode) ─
+   Activates when OS/browser is in dark mode.
+   Uses :not([data-theme="hacker"]) so the Konami easter
+   egg always wins over the system preference.            */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="hacker"]) {
+    /* Brand — lighter greens readable on dark surfaces */
+    --color-primary: #6ab870;
+    --color-primary-hover: #7ecb84;
+    --color-primary-light: #162616;
+
+    /* Surfaces — deep blue-slate, not pure black */
+    --color-surface: #16202e;
+    --color-surface-alt: #1e2a3a;
+    --color-surface-raised: #263547;
+
+    /* Borders */
+    --color-border: #2d4060;
+    --color-border-light: #233352;
+
+    /* Text */
+    --color-text: #e4eaf5;
+    --color-text-muted: #8da0bc;
+    --color-text-inverse: #16202e;
+
+    /* Accent — lighter amber for dark bg contrast (WCAG AA) */
+    --color-accent: #e8a84a;
+    --color-accent-hover: #f5bc60;
+    --color-accent-light: #2d1e0a;
+
+    /* Semantic */
+    --color-success: #5eb85e;
+    --color-error: #e05252;
+    --color-warning: #e8a84a;
+    --color-info: #4da6e8;
+
+    /* Shadows — darker base for dark bg */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3),  0 1px 2px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* ── Hacker/maker easter egg theme ──────────────── */
+/* Activated by Konami code: ↑↑↓↓←→←→BA            */
+/* Stored in localStorage: 'cf-hacker-mode'          */
+/* Applied: document.documentElement.dataset.theme   */
+[data-theme="hacker"] {
+  --color-primary: #00ff41;
+  --color-primary-hover: #00cc33;
+  --color-primary-light: #001a00;
+
+  --color-surface: #0a0c0a;
+  --color-surface-alt: #0d120d;
+  --color-surface-raised: #111811;
+
+  --color-border: #1a3d1a;
+  --color-border-light: #123012;
+
+  --color-text: #b8f5b8;
+  --color-text-muted: #5a9a5a;
+  --color-text-inverse: #0a0c0a;
+
+  --color-accent: #00ff41;
+  --color-accent-hover: #00cc33;
+  --color-accent-light: #001a0a;
+
+  --color-success: #00ff41;
+  --color-error: #ff3333;
+  --color-warning: #ffaa00;
+  --color-info: #00aaff;
+
+  /* Hacker mode: mono font everywhere */
+  --font-display: 'JetBrains Mono', monospace;
+  --font-body: 'JetBrains Mono', monospace;
+
+  --shadow-sm: 0 1px 3px rgba(0, 255, 65, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 255, 65, 0.12);
+  --shadow-lg: 0 10px 30px rgba(0, 255, 65, 0.15);
+
+  --header-border: 2px solid var(--color-border);
+
+  /* Hacker glow variants — for box-shadow, text-shadow, bg overlays */
+  --color-accent-glow-xs: rgba(0, 255, 65, 0.08);
+  --color-accent-glow-sm: rgba(0, 255, 65, 0.15);
+  --color-accent-glow-md: rgba(0, 255, 65, 0.4);
+  --color-accent-glow-lg: rgba(0, 255, 65, 0.6);
+}
+
+/* ── Base resets ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-surface);
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body { margin: 0; min-height: 100vh; }
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  color: var(--color-primary);
+  line-height: 1.2;
+  margin: 0;
+}
+
+/* Focus visible — keyboard nav — accessibility requirement */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Prose — CMS rich text ───────────────────────── */
+.prose {
+  font-family: var(--font-body);
+  line-height: 1.75;
+  color: var(--color-text);
+  max-width: 65ch;
+}
+.prose h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 2rem 0 0.75rem;
+  color: var(--color-primary);
+}
+.prose h3 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+  color: var(--color-primary);
+}
+.prose p { margin: 0 0 1rem; }
+.prose ul, .prose ol { margin: 0 0 1rem; padding-left: 1.5rem; }
+.prose li { margin-bottom: 0.4rem; }
+.prose a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 3px; }
+.prose strong { font-weight: 700; }
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border-light);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+}
+.prose blockquote {
+  border-left: 3px solid var(--color-accent);
+  margin: 1.5rem 0;
+  padding: 0.5rem 0 0.5rem 1.25rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* ── Utility: screen reader only ────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.sr-only:focus-visible {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  width: auto;
+  height: auto;
+  padding: 0.5rem 1rem;
+  clip: auto;
+  white-space: normal;
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  z-index: 9999;
+}
