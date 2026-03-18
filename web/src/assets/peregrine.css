@@ -1,0 +1,52 @@
+/* web/src/assets/peregrine.css
+   Peregrine token overrides — imported AFTER theme.css.
+   Only overrides what is genuinely different from the CircuitForge base theme.
+
+   App colors:
+     Primary — Forest Green  (#2d5a27) — inherited from theme.css --color-primary
+     Accent  — Amber/Copper  (#c4732a) — inherited from theme.css --color-accent
+*/
+
+/* ── Page-level overrides ───────────────────────────── */
+html {
+  /* Prevent Mac Chrome horizontal swipe-to-navigate on viewport edge */
+  overscroll-behavior-x: none;
+  /* clip (not hidden) — no BFC scroll-container side effect. Gotcha #3. */
+  overflow-x: clip;
+}
+
+body {
+  /* Suppress horizontal scroll from animated transitions */
+  overflow-x: hidden;
+}
+
+/* ── Light mode (default) ──────────────────────────── */
+:root {
+  /* Alias map — component-expected names → theme.css canonical names. Gotcha #5.
+     Components should prefer the theme.css names; add aliases only when needed. */
+  --color-bg:             var(--color-surface);
+  --color-text-secondary: var(--color-text-muted);
+
+  /* Nav height token — consumed by .app-main padding-top in App.vue */
+  --nav-height: 4rem;
+
+  /* Motion tokens for future animated components (inspired by avocet bucket pattern) */
+  --transition-spring:  400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-dismiss: 350ms ease-in;
+  --transition-enter:   250ms ease-out;
+}
+
+/* ── Dark mode ─────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="hacker"]) {
+    /* Aliases inherit dark values from theme.css automatically */
+  }
+}
+
+/* ── Hacker mode (Konami easter egg) ──────────────── */
+/* Applied via document.documentElement.dataset.theme = 'hacker' */
+/* Full token overrides live in theme.css [data-theme="hacker"] block */
+[data-theme="hacker"] {
+  /* Cursor trail uses this color — override for hacker palette */
+  --color-accent: #00ff41;
+}
