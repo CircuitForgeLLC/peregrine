@@ -95,13 +95,24 @@
         listings.
       </p>
       <div class="home__actions home__actions--secondary">
-        <button class="action-btn action-btn--secondary" @click="archivePendingRejected">
-          📦 Archive Pending + Rejected
+        <button
+          v-if="(store.counts?.pending ?? 0) > 0"
+          class="action-btn action-btn--secondary"
+          @click="archiveByStatus(['pending'])"
+        >
+          📦 Archive Pending
+        </button>
+        <button
+          v-if="(store.counts?.rejected ?? 0) > 0"
+          class="action-btn action-btn--secondary"
+          @click="archiveByStatus(['rejected'])"
+        >
+          📦 Archive Rejected
         </button>
         <button
           v-if="(store.counts?.approved ?? 0) > 0"
           class="action-btn action-btn--secondary"
-          @click="archiveApproved"
+          @click="archiveByStatus(['approved'])"
         >
           📦 Archive Approved (unapplied)
         </button>
@@ -258,20 +269,11 @@ function handleCsvUpload(e: Event) {
   useApiFetch('/api/jobs/upload-csv', { method: 'POST', body: form })
 }
 
-async function archivePendingRejected() {
+async function archiveByStatus(statuses: string[]) {
   await useApiFetch('/api/jobs/archive', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ statuses: ['pending', 'rejected'] }),
-  })
-  store.refresh()
-}
-
-async function archiveApproved() {
-  await useApiFetch('/api/jobs/archive', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ statuses: ['approved'] }),
+    body: JSON.stringify({ statuses }),
   })
   store.refresh()
 }

@@ -6,6 +6,7 @@ export const router = createRouter({
     { path: '/',           component: () => import('../views/HomeView.vue') },
     { path: '/review',     component: () => import('../views/JobReviewView.vue') },
     { path: '/apply',      component: () => import('../views/ApplyView.vue') },
+    { path: '/apply/:id', component: () => import('../views/ApplyWorkspaceView.vue') },
     { path: '/interviews', component: () => import('../views/InterviewsView.vue') },
     { path: '/prep',       component: () => import('../views/InterviewPrepView.vue') },
     { path: '/survey',     component: () => import('../views/SurveyView.vue') },
