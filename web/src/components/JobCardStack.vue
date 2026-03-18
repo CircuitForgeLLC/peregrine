@@ -204,8 +204,15 @@ watch(() => props.job.id, () => {
   isHeld.value     = false
   isExpanded.value = false
   if (wrapperEl.value) {
-    wrapperEl.value.style.transform = ''
-    wrapperEl.value.style.opacity   = ''
+    // Suppress the spring transition for this frame — without this the card
+    // spring-animates from its exit position back to center before the new
+    // job renders (the "snap-back on processed cards" glitch).
+    wrapperEl.value.style.transition = 'none'
+    wrapperEl.value.style.transform  = ''
+    wrapperEl.value.style.opacity    = ''
+    requestAnimationFrame(() => {
+      if (wrapperEl.value) wrapperEl.value.style.transition = ''
+    })
   }
 })
 
