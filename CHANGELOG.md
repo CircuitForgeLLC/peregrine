@@ -9,6 +9,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.6.2] — 2026-03-18
+
+### Added
+- **Playwright E2E test harness** — smoke + interaction test suite covering all
+  three Peregrine instances (demo / cloud / local). Navigates every page, checks
+  for DOM errors on load, clicks every interactable element, diffs errors
+  before/after each click, and XFAIL-marks expected demo-mode failures so
+  neutering-guard regressions are surfaced as XPASSes. Screenshots on failure.
+  - `tests/e2e/test_smoke.py` — page-load error detection
+  - `tests/e2e/test_interactions.py` — full click-through with XFAIL/XPASS bucketing
+  - `tests/e2e/conftest.py` — Streamlit-aware wait helpers, error scanner, fixtures
+  - `tests/e2e/models.py` — `ErrorRecord`, `ModeConfig`, `diff_errors`
+  - `tests/e2e/modes/` — per-mode configs (demo / cloud / local)
+  - `tests/e2e/pages/` — page objects for all 7 pages including Settings tabs
+
+### Fixed
+- **Demo: "Discovery failed" error on Home page load** — `task_runner.py` now
+  checks `DEMO_MODE` before importing `discover.py`; returns a friendly error
+  immediately instead of crashing on missing `search_profiles.yaml` (#21)
+- **Demo: silent `st.error()` in collapsed Practice Q&A expander** — Interview
+  Prep no longer auto-triggers the LLM on page render in demo mode; shows an
+  `st.info` placeholder instead, eliminating the hidden error element (#22)
+- **Cloud: auth wall shown to E2E test browser** — `cloud_session.py` now falls
+  back to the `Cookie` header when `X-CF-Session` is absent (direct access
+  without Caddy). Playwright's `set_extra_http_headers()` does not propagate to
+  WebSocket handshakes; cookies do. Test harness uses `ctx.add_cookies()`.
+- **E2E error scanner returned empty text for collapsed expanders** — switched
+  from `inner_text()` (respects CSS `display:none`) to `text_content()` so
+  errors inside collapsed Streamlit expanders are captured with their full text.
+
+---
+
 ## [0.6.1] — 2026-03-16
 
 ### Fixed
