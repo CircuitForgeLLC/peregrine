@@ -140,6 +140,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (_mq && _mqHandler) _mq.removeEventListener('change', _mqHandler)
+  clearTimeout(toastTimer)
 })
 
 // ── Job list data ─────────────────────────────────────────────────────────────
@@ -160,11 +161,14 @@ const loading = ref(true)
 
 async function fetchJobs() {
   loading.value = true
-  const { data } = await useApiFetch<ApprovedJob[]>(
-    '/api/jobs?status=approved&limit=100&fields=id,title,company,location,is_remote,salary,match_score,has_cover_letter'
-  )
-  loading.value = false
-  if (data) jobs.value = data
+  try {
+    const { data } = await useApiFetch<ApprovedJob[]>(
+      '/api/jobs?status=approved&limit=100&fields=id,title,company,location,is_remote,salary,match_score,has_cover_letter'
+    )
+    if (data) jobs.value = data
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(fetchJobs)
