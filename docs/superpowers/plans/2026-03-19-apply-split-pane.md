@@ -114,8 +114,9 @@ const emit = defineEmits<{
 
 // Remove: const route = useRoute()
 // Remove: const router = useRouter()
-// Remove: RouterLink import
+// Remove: RouterLink import (it is used in template only for the back-link — remove that element too)
 // Remove: const jobId = Number(route.params.id)
+// KEEP: onUnmounted(() => { stopPolling(); clearTimeout(toastTimer) })  ← do NOT remove this
 
 // jobId is now: props.jobId — update all references from `jobId` to `props.jobId`
 
@@ -400,9 +401,17 @@ import ApplyWorkspace from '../components/ApplyWorkspace.vue'
 
 const isMobile = ref(window.innerWidth < 1024)
 
+let _mq: MediaQueryList | null = null
+let _mqHandler: ((e: MediaQueryListEvent) => void) | null = null
+
 onMounted(() => {
-  const mq = window.matchMedia('(max-width: 1023px)')
-  mq.addEventListener('change', e => { isMobile.value = e.matches })
+  _mq = window.matchMedia('(max-width: 1023px)')
+  _mqHandler = (e: MediaQueryListEvent) => { isMobile.value = e.matches }
+  _mq.addEventListener('change', _mqHandler)
+})
+
+onUnmounted(() => {
+  if (_mq && _mqHandler) _mq.removeEventListener('change', _mqHandler)
 })
 
 // ── Job list data ─────────────────────────────────────────────────────────────
@@ -605,6 +614,7 @@ function fireSpeedDemon() {
 .job-row__meta   { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
 .job-row__salary { font-size: var(--text-xs); color: var(--color-success); font-weight: 600; white-space: nowrap; }
 .job-row__arrow  { font-size: 1.25rem; color: var(--color-text-muted); line-height: 1; }
+.job-row__sep    { color: var(--color-border); }
 .cl-badge { padding: 1px var(--space-2); border-radius: 999px; font-size: var(--text-xs); font-weight: 600; }
 .cl-badge--done    { background: rgba(39,174,96,0.10); color: var(--color-success); }
 .cl-badge--pending { background: var(--color-surface-alt); color: var(--color-text-muted); }
