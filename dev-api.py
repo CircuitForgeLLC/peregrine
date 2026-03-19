@@ -283,6 +283,8 @@ PIPELINE_STATUSES = {
     "interview_rejected",
 }
 
+SIGNAL_EXCLUDED = ("neutral", "unrelated", "digest", "event_rescheduled")
+
 @app.get("/api/interviews")
 def list_interviews():
     db = _get_db()
@@ -296,9 +298,90 @@ def list_interviews():
         f"ORDER BY match_score DESC NULLS LAST",
         list(PIPELINE_STATUSES),
     ).fetchall()
+
+    job_ids = [r["id"] for r in rows]
+    signals_by_job: dict[int, list] = {r["id"]: [] for r in rows}
+
+    if job_ids:
+        sig_placeholders = ",".join("?" * len(job_ids))
+        excl_placeholders = ",".join("?" * len(SIGNAL_EXCLUDED))
+        sig_rows = db.execute(
+            f"SELECT id, job_id, subject, received_at, stage_signal "
+            f"FROM job_contacts "
+            f"WHERE job_id IN ({sig_placeholders}) "
+            f"  AND suggestion_dismissed = 0 "
+            f"  AND stage_signal NOT IN ({excl_placeholders}) "
+            f"  AND stage_signal IS NOT NULL "
+            f"ORDER BY received_at DESC",
+            job_ids + list(SIGNAL_EXCLUDED),
+        ).fetchall()
+        for sr in sig_rows:
+            signals_by_job[sr["job_id"]].append({
+                "id":           sr["id"],
+                "subject":      sr["subject"],
+                "received_at":  sr["received_at"],
+                "stage_signal": sr["stage_signal"],
+            })
+
     db.close()
-    # Cast is_remote to bool for consistency with other endpoints
-    return [{**dict(r), "is_remote": bool(r["is_remote"])} for r in rows]
+    return [
+        {**dict(r), "is_remote": bool(r["is_remote"]), "stage_signals": signals_by_job[r["id"]]}
+        for r in rows
+    ]
+
+
+# ── POST /api/email/sync ──────────────────────────────────────────────────
+
+@app.post("/api/email/sync", status_code=202)
+def trigger_email_sync():
+    db = _get_db()
+    cursor = db.execute(
+        "INSERT INTO background_tasks (task_type, job_id, status) VALUES ('email_sync', 0, 'queued')"
+    )
+    db.commit()
+    task_id = cursor.lastrowid
+    db.close()
+    return {"task_id": task_id}
+
+
+# ── GET /api/email/sync/status ────────────────────────────────────────────
+
+@app.get("/api/email/sync/status")
+def email_sync_status():
+    db = _get_db()
+    row = db.execute(
+        "SELECT status, finished_at AS last_completed_at "
+        "FROM background_tasks "
+        "WHERE task_type = 'email_sync' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    db.close()
+    if row is None:
+        return {"status": "idle", "last_completed_at": None, "error": None}
+    # background_tasks may not have an error column in staging — guard with dict access
+    row_dict = dict(row)
+    return {
+        "status":            row_dict["status"],
+        "last_completed_at": row_dict["last_completed_at"],
+        "error":             row_dict.get("error"),
+    }
+
+
+# ── POST /api/stage-signals/{id}/dismiss ─────────────────────────────────
+
+@app.post("/api/stage-signals/{signal_id}/dismiss")
+def dismiss_signal(signal_id: int):
+    db = _get_db()
+    result = db.execute(
+        "UPDATE job_contacts SET suggestion_dismissed = 1 WHERE id = ?",
+        (signal_id,),
+    )
+    db.commit()
+    rowcount = result.rowcount
+    db.close()
+    if rowcount == 0:
+        raise HTTPException(404, "Signal not found")
+    return {"ok": True}
 
 
 # ── POST /api/jobs/{id}/move ───────────────────────────────────────────────────
