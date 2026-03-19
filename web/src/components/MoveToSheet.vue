@@ -30,6 +30,7 @@ function select(stage: PipelineStage) {
 
 function confirm() {
   if (!selectedStage.value) return
+  if (!stages.value.includes(selectedStage.value)) return  // guard: preSelectedStage was filtered out
   const opts: { interview_date?: string; rejection_stage?: string } = {}
   if (interviewDate.value) opts.interview_date = new Date(interviewDate.value).toISOString()
   if (rejectionStage.value) opts.rejection_stage = rejectionStage.value
