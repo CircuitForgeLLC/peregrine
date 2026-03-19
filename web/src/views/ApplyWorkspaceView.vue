@@ -1,4 +1,8 @@
 <template>
+  <!--
+    @cover-letter-generated is intentionally not forwarded here.
+    The Marathon badge lives in ApplyView.vue (desktop split-pane only) — the full-page route is mobile-only.
+  -->
   <ApplyWorkspace
     :job-id="jobId"
     @job-removed="router.push('/apply')"

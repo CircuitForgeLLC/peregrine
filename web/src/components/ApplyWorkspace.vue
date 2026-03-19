@@ -288,12 +288,16 @@ async function generate() {
 
 async function saveCoverLetter() {
   saving.value = true
-  await useApiFetch(`/api/jobs/${props.jobId}/cover_letter`, {
+  const { error } = await useApiFetch(`/api/jobs/${props.jobId}/cover_letter`, {
     method:  'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ text: clText.value }),
   })
   saving.value = false
+  if (error) {
+    showToast('Save failed — please try again')
+    return
+  }
   isSaved.value = true
 }
 
