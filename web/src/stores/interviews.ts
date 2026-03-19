@@ -2,6 +2,13 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useApiFetch } from '../composables/useApi'
 
+export interface StageSignal {
+  id: number              // job_contacts.id — used for POST /api/stage-signals/{id}/dismiss
+  subject: string
+  received_at: string     // ISO timestamp
+  stage_signal: 'interview_scheduled' | 'positive_response' | 'offer_received' | 'survey_received' | 'rejected'
+}
+
 export interface PipelineJob {
   id:               number
   title:            string
@@ -21,6 +28,7 @@ export interface PipelineJob {
   offer_at:         string | null
   hired_at:         string | null
   survey_at:        string | null
+  stage_signals:    StageSignal[]  // undismissed signals, newest first
 }
 
 export const PIPELINE_STAGES = ['applied', 'survey', 'phone_screen', 'interviewing', 'offer', 'hired', 'interview_rejected'] as const
