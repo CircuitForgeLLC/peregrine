@@ -9,6 +9,7 @@ export const router = createRouter({
     { path: '/apply/:id', component: () => import('../views/ApplyWorkspaceView.vue') },
     { path: '/interviews', component: () => import('../views/InterviewsView.vue') },
     { path: '/prep',       component: () => import('../views/InterviewPrepView.vue') },
+    { path: '/prep/:id',   component: () => import('../views/InterviewPrepView.vue') },
     { path: '/survey',     component: () => import('../views/SurveyView.vue') },
     { path: '/settings',   component: () => import('../views/SettingsView.vue') },
     // Catch-all — FastAPI serves index.html for all unknown routes (SPA mode)
