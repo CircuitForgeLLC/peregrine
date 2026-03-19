@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useInterviewsStore } from '../stores/interviews'
 import type { PipelineJob, PipelineStage } from '../stores/interviews'
+import type { StageSignal } from '../stores/interviews'
+import { useApiFetch } from '../composables/useApi'
 import InterviewCard from '../components/InterviewCard.vue'
 import MoveToSheet from '../components/MoveToSheet.vue'
 
@@ -10,10 +12,12 @@ const router = useRouter()
 const store  = useInterviewsStore()
 
 // ── Move sheet ────────────────────────────────────────────────────────────────
-const moveTarget = ref<PipelineJob | null>(null)
+const moveTarget      = ref<PipelineJob | null>(null)
+const movePreSelected = ref<PipelineStage | undefined>(undefined)
 
-function openMove(jobId: number) {
-  moveTarget.value = store.jobs.find(j => j.id === jobId) ?? null
+function openMove(jobId: number, preSelectedStage?: PipelineStage) {
+  moveTarget.value      = store.jobs.find(j => j.id === jobId) ?? null
+  movePreSelected.value = preSelectedStage
 }
 
 async function onMove(stage: PipelineStage, opts: { interview_date?: string; rejection_stage?: string }) {
@@ -22,6 +26,105 @@ async function onMove(stage: PipelineStage, opts: { interview_date?: string; rej
   await store.move(moveTarget.value.id, stage, opts)
   moveTarget.value = null
   if (wasHired) triggerConfetti()
+}
+
+// ── Collapsible Applied section ────────────────────────────────────────────
+const APPLIED_EXPANDED_KEY = 'peregrine.interviews.appliedExpanded'
+const appliedExpanded = ref(localStorage.getItem(APPLIED_EXPANDED_KEY) === 'true')
+watch(appliedExpanded, v => localStorage.setItem(APPLIED_EXPANDED_KEY, String(v)))
+
+const appliedSignalCount = computed(() =>
+  [...store.applied, ...store.survey]
+    .reduce((n, job) => n + (job.stage_signals?.length ?? 0), 0)
+)
+
+// ── Signal metadata (pre-list rows) ───────────────────────────────────────
+const SIGNAL_META_PRE = {
+  interview_scheduled: { label: 'Move to Phone Screen', stage: 'phone_screen'       as PipelineStage, color: 'amber' },
+  positive_response:   { label: 'Move to Phone Screen', stage: 'phone_screen'       as PipelineStage, color: 'amber' },
+  offer_received:      { label: 'Move to Offer',        stage: 'offer'              as PipelineStage, color: 'green' },
+  survey_received:     { label: 'Move to Survey',       stage: 'survey'             as PipelineStage, color: 'amber' },
+  rejected:            { label: 'Mark Rejected',        stage: 'interview_rejected' as PipelineStage, color: 'red'   },
+} as const
+
+const sigExpandedIds = ref(new Set<number>())
+// IMPORTANT: must reassign .value (not mutate in place) to trigger Vue reactivity
+function togglePreSigExpand(jobId: number) {
+  const next = new Set(sigExpandedIds.value)
+  if (next.has(jobId)) next.delete(jobId)
+  else next.add(jobId)
+  sigExpandedIds.value = next
+}
+
+async function dismissPreSignal(job: PipelineJob, sig: StageSignal) {
+  const idx = job.stage_signals.findIndex(s => s.id === sig.id)
+  if (idx !== -1) job.stage_signals.splice(idx, 1)
+  await useApiFetch(`/api/stage-signals/${sig.id}/dismiss`, { method: 'POST' })
+}
+
+// ── Email sync status ──────────────────────────────────────────────────────
+interface SyncStatus {
+  state: 'idle' | 'queued' | 'running' | 'completed' | 'failed' | 'not_configured'
+  lastCompletedAt: string | null
+  error: string | null
+}
+
+const syncStatus = ref<SyncStatus>({ state: 'idle', lastCompletedAt: null, error: null })
+const now        = ref(Date.now())
+let   syncPollId: ReturnType<typeof setInterval> | null = null
+let   nowTickId:  ReturnType<typeof setInterval> | null = null
+
+function elapsedLabel(isoTs: string | null): string {
+  if (!isoTs) return ''
+  const diffMs = now.value - new Date(isoTs).getTime()
+  const mins   = Math.floor(diffMs / 60000)
+  if (mins < 1)   return 'just now'
+  if (mins < 60)  return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)   return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+async function fetchSyncStatus() {
+  const { data } = await useApiFetch<{
+    status: string; last_completed_at: string | null; error: string | null
+  }>('/api/email/sync/status')
+  if (!data) return
+  syncStatus.value = {
+    state:           data.status as SyncStatus['state'],
+    lastCompletedAt: data.last_completed_at,
+    error:           data.error,
+  }
+}
+
+function startSyncPoll() {
+  if (syncPollId) return
+  syncPollId = setInterval(async () => {
+    await fetchSyncStatus()
+    if (syncStatus.value.state === 'completed' || syncStatus.value.state === 'failed') {
+      clearInterval(syncPollId!); syncPollId = null
+      if (syncStatus.value.state === 'completed') store.fetchAll()
+    }
+  }, 3000)
+}
+
+async function triggerSync() {
+  if (syncStatus.value.state === 'queued' || syncStatus.value.state === 'running') return
+  const { data, error } = await useApiFetch<{ task_id: number }>('/api/email/sync', { method: 'POST' })
+  if (error) {
+    if (error.kind === 'http' && error.status === 503) {
+      // Email integration not configured — set permanently for this session
+      syncStatus.value = { state: 'not_configured', lastCompletedAt: null, error: null }
+    } else {
+      // Transient error (network, server 5xx etc.) — show failed but allow retry
+      syncStatus.value = { ...syncStatus.value, state: 'failed', error: error.kind === 'http' ? error.detail : error.message }
+    }
+    return
+  }
+  if (data) {
+    syncStatus.value = { ...syncStatus.value, state: 'queued' }
+    startSyncPoll()
+  }
 }
 
 // ── Confetti (easter egg 9.5) ─────────────────────────────────────────────────
@@ -100,8 +203,21 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(async () => { await store.fetchAll(); document.addEventListener('keydown', onKeydown) })
-onUnmounted(() => document.removeEventListener('keydown', onKeydown))
+onMounted(async () => {
+  await store.fetchAll()
+  document.addEventListener('keydown', onKeydown)
+  await fetchSyncStatus()
+  if (syncStatus.value.state === 'queued' || syncStatus.value.state === 'running') {
+    startSyncPoll()
+  }
+  nowTickId = setInterval(() => { now.value = Date.now() }, 60000)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onKeydown)
+  if (syncPollId) { clearInterval(syncPollId); syncPollId = null }
+  if (nowTickId)  { clearInterval(nowTickId);  nowTickId  = null }
+})
 
 function daysSince(dateStr: string | null) {
   if (!dateStr) return null
@@ -121,33 +237,109 @@ function daysSince(dateStr: string | null) {
 
     <header class="view-header">
       <h1 class="view-title">Interviews</h1>
-      <button class="btn-refresh" @click="store.fetchAll()" :disabled="store.loading" aria-label="Refresh">
-        {{ store.loading ? '⟳' : '↺' }}
-      </button>
+      <div class="header-actions">
+        <!-- Email sync pill -->
+        <button
+          v-if="syncStatus.state === 'not_configured'"
+          class="sync-pill sync-pill--muted"
+          disabled
+          aria-label="Email not configured"
+        >📧 Email not configured</button>
+        <button
+          v-else-if="syncStatus.state === 'queued' || syncStatus.state === 'running'"
+          class="sync-pill sync-pill--syncing"
+          disabled
+          aria-label="Syncing emails"
+        >⏳ Syncing…</button>
+        <button
+          v-else-if="(syncStatus.state === 'completed' || syncStatus.state === 'idle') && syncStatus.lastCompletedAt"
+          class="sync-pill sync-pill--synced"
+          @click="triggerSync"
+          :aria-label="`Email synced ${elapsedLabel(syncStatus.lastCompletedAt)} — click to re-sync`"
+        >📧 Synced {{ elapsedLabel(syncStatus.lastCompletedAt) }}</button>
+        <button
+          v-else-if="syncStatus.state === 'failed'"
+          class="sync-pill sync-pill--failed"
+          @click="triggerSync"
+          aria-label="Sync failed — click to retry"
+        >⚠ Sync failed</button>
+        <button
+          v-else
+          class="sync-pill sync-pill--idle"
+          @click="triggerSync"
+          aria-label="Sync emails"
+        >📧 Sync Emails</button>
+
+        <button class="btn-refresh" @click="store.fetchAll()" :disabled="store.loading" aria-label="Refresh">
+          {{ store.loading ? '⟳' : '↺' }}
+        </button>
+      </div>
     </header>
 
     <div v-if="store.error" class="error-banner">{{ store.error }}</div>
 
-    <!-- Pre-list: Applied + Survey -->
+    <!-- Pre-list: Applied + Survey (collapsible) -->
     <section class="pre-list" aria-label="Applied jobs">
-      <div class="pre-list-header">
-        <span>Applied ({{ store.applied.length + store.survey.length }})</span>
-        <span class="pre-list-hint">Move here when a recruiter reaches out →</span>
-      </div>
-      <div v-if="store.applied.length === 0 && store.survey.length === 0" class="pre-list-empty">
-        <span class="empty-bird">🦅</span>
-        <span>No applied jobs yet. <RouterLink to="/apply">Go to Apply</RouterLink> to submit applications.</span>
-      </div>
-      <div v-for="job in [...store.applied, ...store.survey]" :key="job.id" class="pre-list-row">
-        <div class="pre-row-info">
-          <span class="pre-row-title">{{ job.title }}</span>
-          <span class="pre-row-company">{{ job.company }}</span>
-          <span v-if="job.status === 'survey'" class="survey-badge">Survey</span>
+      <button
+        class="pre-list-toggle"
+        @click="appliedExpanded = !appliedExpanded"
+        :aria-expanded="appliedExpanded"
+        aria-controls="pre-list-body"
+      >
+        <span class="pre-list-chevron" :class="{ 'is-expanded': appliedExpanded }">▶</span>
+        <span class="pre-list-toggle-title">
+          Applied
+          <span class="pre-list-count">{{ store.applied.length + store.survey.length }}</span>
+        </span>
+        <span v-if="appliedSignalCount > 0" class="pre-list-signal-count">⚡ {{ appliedSignalCount }} signal{{ appliedSignalCount !== 1 ? 's' : '' }}</span>
+      </button>
+
+      <div
+        id="pre-list-body"
+        class="pre-list-body"
+        :class="{ 'is-expanded': appliedExpanded }"
+      >
+        <div v-if="store.applied.length === 0 && store.survey.length === 0" class="pre-list-empty">
+          <span class="empty-bird">🦅</span>
+          <span>No applied jobs yet. <RouterLink to="/apply">Go to Apply</RouterLink> to submit applications.</span>
         </div>
-        <div class="pre-row-meta">
-          <span v-if="daysSince(job.applied_at) !== null" class="pre-row-days">{{ daysSince(job.applied_at) }}d ago</span>
-          <button class="btn-move-pre" @click="openMove(job.id)" :aria-label="`Move ${job.title}`">Move to… ›</button>
-        </div>
+        <template v-for="job in [...store.applied, ...store.survey]" :key="job.id">
+          <div class="pre-list-row">
+            <div class="pre-row-info">
+              <span class="pre-row-title">{{ job.title }}</span>
+              <span class="pre-row-company">{{ job.company }}</span>
+              <span v-if="job.status === 'survey'" class="survey-badge">Survey</span>
+            </div>
+            <div class="pre-row-meta">
+              <span v-if="daysSince(job.applied_at) !== null" class="pre-row-days">{{ daysSince(job.applied_at) }}d ago</span>
+              <button class="btn-move-pre" @click="openMove(job.id)" :aria-label="`Move ${job.title}`">Move to… ›</button>
+            </div>
+          </div>
+          <!-- Signal banners for pre-list rows -->
+          <template v-if="job.stage_signals?.length">
+            <div
+              v-for="sig in (job.stage_signals ?? []).slice(0, sigExpandedIds.has(job.id) ? undefined : 1)"
+              :key="sig.id"
+              class="pre-signal-banner"
+              :data-color="SIGNAL_META_PRE[sig.stage_signal]?.color"
+            >
+              <span class="signal-label">📧 Email suggests: <strong>{{ SIGNAL_META_PRE[sig.stage_signal]?.label }}</strong></span>
+              <span class="signal-subject">{{ sig.subject.slice(0, 60) }}{{ sig.subject.length > 60 ? '…' : '' }}</span>
+              <div class="signal-actions">
+                <button
+                  class="btn-signal-move"
+                  @click="openMove(job.id, SIGNAL_META_PRE[sig.stage_signal]?.stage)"
+                >→ {{ SIGNAL_META_PRE[sig.stage_signal]?.label }}</button>
+                <button class="btn-signal-dismiss" @click="dismissPreSignal(job, sig)">✕</button>
+              </div>
+            </div>
+            <button
+              v-if="(job.stage_signals?.length ?? 0) > 1"
+              class="btn-sig-expand"
+              @click="togglePreSigExpand(job.id)"
+            >{{ sigExpandedIds.has(job.id) ? '− less' : `+${(job.stage_signals?.length ?? 1) - 1} more` }}</button>
+          </template>
+        </template>
       </div>
     </section>
 
@@ -218,8 +410,9 @@ function daysSince(dateStr: string | null) {
       v-if="moveTarget"
       :currentStatus="moveTarget.status"
       :jobTitle="`${moveTarget.title} at ${moveTarget.company}`"
+      :preSelectedStage="movePreSelected"
       @move="onMove"
-      @close="moveTarget = null"
+      @close="moveTarget = null; movePreSelected = undefined"
     />
   </div>
 </template>
@@ -243,9 +436,52 @@ function daysSince(dateStr: string | null) {
 .view-title   { font-size: 1.5rem; font-weight: 700; margin: 0; }
 .btn-refresh  { background: none; border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer; padding: 4px 10px; font-size: 1rem; color: var(--color-text-muted); }
 .error-banner { background: color-mix(in srgb, var(--color-error) 10%, var(--color-surface)); color: var(--color-error); padding: var(--space-2) var(--space-3); border-radius: 8px; margin-bottom: var(--space-4); }
+
+/* Header actions */
+.header-actions { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
+
+/* Email sync pill */
+.sync-pill {
+  border-radius: 999px; padding: 3px 10px; font-size: 0.78em; font-weight: 600; cursor: pointer;
+  border: 1px solid transparent; transition: opacity 150ms;
+}
+.sync-pill:disabled { cursor: default; opacity: 0.8; }
+.sync-pill--idle   { border-color: var(--color-border); background: none; color: var(--color-text-muted); }
+.sync-pill--syncing { background: color-mix(in srgb, var(--color-info) 10%, var(--color-surface)); color: var(--color-info); border-color: color-mix(in srgb, var(--color-info) 30%, transparent); animation: pulse 1.5s ease-in-out infinite; }
+.sync-pill--synced  { background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface)); color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 30%, transparent); }
+.sync-pill--failed  { background: color-mix(in srgb, var(--color-error) 10%, var(--color-surface)); color: var(--color-error); border-color: color-mix(in srgb, var(--color-error) 30%, transparent); }
+.sync-pill--muted   { background: var(--color-surface-alt); color: var(--color-text-muted); border-color: var(--color-border-light); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
+
+/* Collapsible pre-list toggle header */
+.pre-list-toggle {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%;
+  background: none; border: none; cursor: pointer; padding: var(--space-1) 0;
+  font-size: 0.9rem; font-weight: 700; color: var(--color-text);
+  text-align: left;
+}
+.pre-list-chevron { font-size: 0.7em; color: var(--color-text-muted); transition: transform 200ms; display: inline-block; }
+.pre-list-chevron.is-expanded { transform: rotate(90deg); }
+.pre-list-count {
+  display: inline-block; background: var(--color-surface-raised); border-radius: 999px;
+  padding: 1px 8px; font-size: 0.75em; font-weight: 700; margin-left: var(--space-1);
+  color: var(--color-text-muted);
+}
+.pre-list-signal-count { margin-left: auto; font-size: 0.75em; font-weight: 700; color: #e67e22; }
+
+/* Collapsible pre-list body */
+.pre-list-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 300ms ease;
+}
+.pre-list-body.is-expanded { max-height: 800px; }
+@media (prefers-reduced-motion: reduce) {
+  .pre-list-body, .pre-list-chevron { transition: none; }
+}
+
 .pre-list         { background: var(--color-surface); border-radius: 10px; padding: var(--space-3) var(--space-4); margin-bottom: var(--space-6); }
-.pre-list-header  { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: var(--space-2); }
-.pre-list-hint    { font-weight: 400; font-size: 0.75rem; }
+.pre-list-toggle-title { display: flex; align-items: center; }
 .pre-list-empty   { display: flex; align-items: center; gap: var(--space-2); font-size: 0.85rem; color: var(--color-text-muted); padding: var(--space-2) 0; }
 .pre-list-row     { display: flex; align-items: center; justify-content: space-between; padding: var(--space-2) 0; border-top: 1px solid var(--color-border-light); gap: var(--space-3); }
 .pre-row-info     { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; }
@@ -255,6 +491,33 @@ function daysSince(dateStr: string | null) {
 .pre-row-meta     { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
 .pre-row-days     { font-size: 0.75rem; color: var(--color-text-muted); }
 .btn-move-pre     { background: none; border: 1px solid var(--color-border); border-radius: 6px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; color: var(--color-info); cursor: pointer; }
+
+/* Pre-list signal banners */
+.pre-signal-banner {
+  padding: 8px 12px; border-radius: 6px; margin: 4px 0;
+  border-top: 1px solid transparent;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.pre-signal-banner[data-color="amber"] { background: rgba(245,158,11,0.08); border-top-color: rgba(245,158,11,0.4); }
+.pre-signal-banner[data-color="green"] { background: rgba(39,174,96,0.08);  border-top-color: rgba(39,174,96,0.4);  }
+.pre-signal-banner[data-color="red"]   { background: rgba(192,57,43,0.08);  border-top-color: rgba(192,57,43,0.4);  }
+
+.signal-label   { font-size: 0.82em; }
+.signal-subject { font-size: 0.78em; color: var(--color-text-muted); }
+.signal-actions { display: flex; gap: 6px; align-items: center; }
+.btn-signal-move {
+  background: var(--color-primary); color: #fff;
+  border: none; border-radius: 4px; padding: 2px 8px; font-size: 0.78em; cursor: pointer;
+}
+.btn-signal-dismiss {
+  background: none; border: none; color: var(--color-text-muted); font-size: 0.85em; cursor: pointer;
+  padding: 2px 4px;
+}
+.btn-sig-expand {
+  background: none; border: none; font-size: 0.75em; color: var(--color-info); cursor: pointer;
+  padding: 4px 12px; text-align: left;
+}
+
 .kanban {
   display: grid; grid-template-columns: repeat(3, 1fr);
   gap: var(--space-4); margin-bottom: var(--space-6);
