@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import type { PipelineJob } from '../stores/interviews'
+import type { StageSignal, PipelineStage } from '../stores/interviews'
+import { useApiFetch } from '../composables/useApi'
 
 const props = defineProps<{
   job: PipelineJob
@@ -8,9 +10,50 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  move: [jobId: number]
+  move: [jobId: number, preSelectedStage?: PipelineStage]
   prep: [jobId: number]
 }>()
+
+// Signal state
+const sigExpanded = ref(false)
+
+interface SignalMeta {
+  label: string
+  stage: PipelineStage
+  color: 'amber' | 'green' | 'red'
+}
+
+const SIGNAL_META: Record<StageSignal['stage_signal'], SignalMeta> = {
+  interview_scheduled: { label: 'Move to Phone Screen', stage: 'phone_screen',       color: 'amber' },
+  positive_response:   { label: 'Move to Phone Screen', stage: 'phone_screen',       color: 'amber' },
+  offer_received:      { label: 'Move to Offer',        stage: 'offer',              color: 'green' },
+  survey_received:     { label: 'Move to Survey',       stage: 'survey',             color: 'amber' },
+  rejected:            { label: 'Mark Rejected',        stage: 'interview_rejected', color: 'red'   },
+}
+
+const COLOR_BG: Record<'amber' | 'green' | 'red', string> = {
+  amber: 'rgba(245,158,11,0.08)',
+  green: 'rgba(39,174,96,0.08)',
+  red:   'rgba(192,57,43,0.08)',
+}
+const COLOR_BORDER: Record<'amber' | 'green' | 'red', string> = {
+  amber: 'rgba(245,158,11,0.4)',
+  green: 'rgba(39,174,96,0.4)',
+  red:   'rgba(192,57,43,0.4)',
+}
+
+function visibleSignals(): StageSignal[] {
+  const sigs = props.job.stage_signals ?? []
+  return sigExpanded.value ? sigs : sigs.slice(0, 1)
+}
+
+async function dismissSignal(sig: StageSignal) {
+  // Optimistic removal
+  const arr = props.job.stage_signals
+  const idx = arr.findIndex(s => s.id === sig.id)
+  if (idx !== -1) arr.splice(idx, 1)
+  await useApiFetch(`/api/stage-signals/${sig.id}/dismiss`, { method: 'POST' })
+}
 
 const scoreClass = computed(() => {
   const s = (props.job.match_score ?? 0) * 100
@@ -84,6 +127,40 @@ const columnColor = computed(() => {
       <button class="card-action" @click.stop="emit('move', job.id)">Move to… ›</button>
       <button class="card-action" @click.stop="emit('prep', job.id)">Prep →</button>
     </footer>
+    <!-- Signal banners -->
+    <template v-if="job.stage_signals?.length">
+      <div
+        v-for="sig in visibleSignals()"
+        :key="sig.id"
+        class="signal-banner"
+        :style="{
+          background: COLOR_BG[SIGNAL_META[sig.stage_signal].color],
+          borderTopColor: COLOR_BORDER[SIGNAL_META[sig.stage_signal].color],
+        }"
+      >
+        <span class="signal-label">
+          📧 Email suggests: <strong>{{ SIGNAL_META[sig.stage_signal].label }}</strong>
+        </span>
+        <span class="signal-subject">{{ sig.subject.slice(0, 60) }}{{ sig.subject.length > 60 ? '…' : '' }}</span>
+        <div class="signal-actions">
+          <button
+            class="btn-signal-move"
+            @click.stop="emit('move', props.job.id, SIGNAL_META[sig.stage_signal].stage)"
+            :aria-label="`${SIGNAL_META[sig.stage_signal].label} for ${props.job.title}`"
+          >→ {{ SIGNAL_META[sig.stage_signal].label }}</button>
+          <button
+            class="btn-signal-dismiss"
+            @click.stop="dismissSignal(sig)"
+            aria-label="Dismiss signal"
+          >✕</button>
+        </div>
+      </div>
+      <button
+        v-if="(job.stage_signals?.length ?? 0) > 1"
+        class="btn-sig-expand"
+        @click.stop="sigExpanded = !sigExpanded"
+      >{{ sigExpanded ? '− less' : `+${(job.stage_signals?.length ?? 1) - 1} more` }}</button>
+    </template>
   </article>
 </template>
 
@@ -93,7 +170,6 @@ const columnColor = computed(() => {
   border-radius: 10px;
   border-left: 4px solid var(--card-accent, var(--color-border));
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.07);
-  overflow: hidden;
   cursor: pointer;
   outline: none;
   transition: box-shadow 150ms;
@@ -219,5 +295,26 @@ const columnColor = computed(() => {
 
 .card-action:hover {
   background: var(--color-surface);
+}
+
+.signal-banner {
+  border-top: 1px solid transparent; /* color set inline */
+  padding: 8px 12px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.signal-label  { font-size: 0.82em; }
+.signal-subject { font-size: 0.78em; color: var(--color-text-muted); }
+.signal-actions { display: flex; gap: 6px; align-items: center; }
+.btn-signal-move {
+  background: var(--color-primary); color: #fff;
+  border: none; border-radius: 4px; padding: 2px 8px; font-size: 0.78em; cursor: pointer;
+}
+.btn-signal-dismiss {
+  background: none; border: none; color: var(--color-text-muted); font-size: 0.85em; cursor: pointer;
+  padding: 2px 4px;
+}
+.btn-sig-expand {
+  background: none; border: none; font-size: 0.75em; color: var(--color-info); cursor: pointer;
+  padding: 4px 12px; text-align: left;
 }
 </style>
