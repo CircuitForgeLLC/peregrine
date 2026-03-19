@@ -52,10 +52,11 @@ body {
   --status-hired:     var(--color-success);
 
   /* ── Match score thresholds ── */
-  --score-high: var(--color-success);   /* ≥ 70% */
-  --score-mid:  var(--color-warning);   /* 40–69% */
-  --score-low:  var(--color-error);     /* < 40% */
-  --score-none: var(--color-text-muted);
+  --score-high:     var(--color-success);   /* ≥ 70% */
+  --score-mid-high: #2b7cb8;                /* 50–69% — Falcon Blue variant */
+  --score-mid:      var(--color-warning);   /* 30–49% */
+  --score-low:      var(--color-error);     /* < 30% */
+  --score-none:     var(--color-text-muted);
 
   /* ── Motion tokens ── */
   --swipe-exit:         300ms;
@@ -86,6 +87,8 @@ body {
     --app-accent-hover:  #FF9840;
     --app-accent-light:  #2D1505;
     --app-accent-text:   #1a2338;
+
+    --score-mid-high:   #5ba3d9;  /* lighter blue for dark bg */
 
     --status-synced:    #9b8fea;
     --status-survey:    #b08fea;
