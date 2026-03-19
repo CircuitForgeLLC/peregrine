@@ -4,8 +4,9 @@ import { STAGE_LABELS, PIPELINE_STAGES } from '../stores/interviews'
 import type { PipelineStage } from '../stores/interviews'
 
 const props = defineProps<{
-  currentStatus: string
-  jobTitle:      string
+  currentStatus:     string
+  jobTitle:          string
+  preSelectedStage?: PipelineStage
 }>()
 
 const emit = defineEmits<{
@@ -13,7 +14,7 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const selectedStage  = ref<PipelineStage | null>(null)
+const selectedStage  = ref<PipelineStage | null>(props.preSelectedStage ?? null)
 const interviewDate  = ref('')
 const rejectionStage = ref('')
 const focusIndex     = ref(0)
