@@ -90,6 +90,14 @@ async function reclassifySignal(sig: StageSignal, newLabel: StageSignal['stage_s
       body: JSON.stringify({ stage_signal: newLabel }),
     })
     await useApiFetch(`/api/stage-signals/${sig.id}/dismiss`, { method: 'POST' })
+    // Digest-only: add to browsable queue (fire-and-forget; sig.id === job_contacts.id)
+    if (newLabel === 'digest') {
+      useApiFetch('/api/digest-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_contact_id: sig.id }),
+      }).catch(() => {})
+    }
   } else {
     const prev = sig.stage_signal
     sig.stage_signal = newLabel
