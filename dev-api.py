@@ -483,19 +483,20 @@ def list_digest_queue():
 @app.post("/api/digest-queue")
 def add_to_digest_queue(body: DigestQueueBody):
     db = _get_db()
-    exists = db.execute(
-        "SELECT 1 FROM job_contacts WHERE id = ?", (body.job_contact_id,)
-    ).fetchone()
-    if not exists:
+    try:
+        exists = db.execute(
+            "SELECT 1 FROM job_contacts WHERE id = ?", (body.job_contact_id,)
+        ).fetchone()
+        if not exists:
+            raise HTTPException(404, "job_contact_id not found")
+        result = db.execute(
+            "INSERT OR IGNORE INTO digest_queue (job_contact_id) VALUES (?)",
+            (body.job_contact_id,),
+        )
+        db.commit()
+        created = result.rowcount > 0
+    finally:
         db.close()
-        raise HTTPException(404, "job_contact_id not found")
-    result = db.execute(
-        "INSERT OR IGNORE INTO digest_queue (job_contact_id) VALUES (?)",
-        (body.job_contact_id,),
-    )
-    db.commit()
-    created = result.rowcount > 0
-    db.close()
     return {"ok": True, "created": created}
 
 
