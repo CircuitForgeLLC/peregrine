@@ -108,3 +108,47 @@ def test_digest_queue_add_duplicate(client):
 def test_digest_queue_add_missing_contact(client):
     resp = client.post("/api/digest-queue", json={"job_contact_id": 9999})
     assert resp.status_code == 404
+
+
+# ── POST /api/digest-queue/{id}/extract-links ───────────────────────────────
+
+def _add_digest_entry(tmp_db, contact_id=10):
+    """Helper: insert a digest_queue row and return its id."""
+    con = sqlite3.connect(tmp_db)
+    cur = con.execute("INSERT INTO digest_queue (job_contact_id) VALUES (?)", (contact_id,))
+    entry_id = cur.lastrowid
+    con.commit()
+    con.close()
+    return entry_id
+
+
+def test_digest_extract_links(client, tmp_db):
+    entry_id = _add_digest_entry(tmp_db)
+    resp = client.post(f"/api/digest-queue/{entry_id}/extract-links")
+    assert resp.status_code == 200
+    links = resp.json()["links"]
+
+    # greenhouse.io link should be present with score=2
+    gh_links = [l for l in links if "greenhouse.io" in l["url"]]
+    assert len(gh_links) == 1
+    assert gh_links[0]["score"] == 2
+
+    # lever.co link should be present with score=2
+    lever_links = [l for l in links if "lever.co" in l["url"]]
+    assert len(lever_links) == 1
+    assert lever_links[0]["score"] == 2
+
+
+def test_digest_extract_links_filters_trackers(client, tmp_db):
+    entry_id = _add_digest_entry(tmp_db)
+    resp = client.post(f"/api/digest-queue/{entry_id}/extract-links")
+    assert resp.status_code == 200
+    links = resp.json()["links"]
+    urls = [l["url"] for l in links]
+    # Unsubscribe URL should be excluded
+    assert not any("unsubscribe" in u for u in urls)
+
+
+def test_digest_extract_links_404(client):
+    resp = client.post("/api/digest-queue/9999/extract-links")
+    assert resp.status_code == 404
