@@ -22,7 +22,7 @@
         >
           <component :is="link.icon" class="sidebar__icon" aria-hidden="true" />
           <span class="sidebar__label">{{ link.label }}</span>
-          <span v-if="link.badge" class="sidebar__badge" aria-label="`${link.badge} items`">{{ link.badge }}</span>
+          <span v-if="link.badge" class="sidebar__badge" :aria-label="`${link.badge} items`">{{ link.badge }}</span>
         </RouterLink>
       </li>
     </ul>
