@@ -156,3 +156,84 @@ def test_digest_extract_links_filters_trackers(client, tmp_db):
 def test_digest_extract_links_404(client):
     resp = client.post("/api/digest-queue/9999/extract-links")
     assert resp.status_code == 404
+
+
+# ── POST /api/digest-queue/{id}/queue-jobs ──────────────────────────────────
+
+def test_digest_queue_jobs(client, tmp_db):
+    entry_id = _add_digest_entry(tmp_db)
+    resp = client.post(
+        f"/api/digest-queue/{entry_id}/queue-jobs",
+        json={"urls": ["https://greenhouse.io/acme/jobs/456"]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["queued"] == 1
+    assert data["skipped"] == 0
+
+    con = sqlite3.connect(tmp_db)
+    row = con.execute(
+        "SELECT source, status FROM jobs WHERE url = 'https://greenhouse.io/acme/jobs/456'"
+    ).fetchone()
+    con.close()
+    assert row is not None
+    assert row[0] == "digest"
+    assert row[1] == "pending"
+
+
+def test_digest_queue_jobs_skips_duplicates(client, tmp_db):
+    entry_id = _add_digest_entry(tmp_db)
+    resp = client.post(
+        f"/api/digest-queue/{entry_id}/queue-jobs",
+        json={"urls": [
+            "https://greenhouse.io/acme/jobs/789",
+            "https://greenhouse.io/acme/jobs/789",  # same URL twice in one call
+        ]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["queued"] == 1
+    assert data["skipped"] == 1
+
+    con = sqlite3.connect(tmp_db)
+    count = con.execute(
+        "SELECT COUNT(*) FROM jobs WHERE url = 'https://greenhouse.io/acme/jobs/789'"
+    ).fetchone()[0]
+    con.close()
+    assert count == 1
+
+
+def test_digest_queue_jobs_skips_invalid_urls(client, tmp_db):
+    entry_id = _add_digest_entry(tmp_db)
+    resp = client.post(
+        f"/api/digest-queue/{entry_id}/queue-jobs",
+        json={"urls": ["", "ftp://bad.example.com", "https://valid.greenhouse.io/job/1"]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["queued"] == 1
+    assert data["skipped"] == 2
+
+
+def test_digest_queue_jobs_empty_urls(client, tmp_db):
+    entry_id = _add_digest_entry(tmp_db)
+    resp = client.post(f"/api/digest-queue/{entry_id}/queue-jobs", json={"urls": []})
+    assert resp.status_code == 400
+
+
+def test_digest_queue_jobs_404(client):
+    resp = client.post("/api/digest-queue/9999/queue-jobs", json={"urls": ["https://example.com"]})
+    assert resp.status_code == 404
+
+
+# ── DELETE /api/digest-queue/{id} ───────────────────────────────────────────
+
+def test_digest_delete(client, tmp_db):
+    entry_id = _add_digest_entry(tmp_db)
+    resp = client.delete(f"/api/digest-queue/{entry_id}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    # Second delete → 404
+    resp2 = client.delete(f"/api/digest-queue/{entry_id}")
+    assert resp2.status_code == 404

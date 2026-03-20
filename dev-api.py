@@ -578,6 +578,66 @@ def extract_digest_links(digest_id: int):
     return {"links": _extract_links(row["body"] or "")}
 
 
+# ── POST /api/digest-queue/{id}/queue-jobs ────────────────────────────────
+
+class QueueJobsBody(BaseModel):
+    urls: list[str]
+
+
+@app.post("/api/digest-queue/{digest_id}/queue-jobs")
+def queue_digest_jobs(digest_id: int, body: QueueJobsBody):
+    if not body.urls:
+        raise HTTPException(400, "urls must not be empty")
+    db = _get_db()
+    try:
+        exists = db.execute(
+            "SELECT 1 FROM digest_queue WHERE id = ?", (digest_id,)
+        ).fetchone()
+    finally:
+        db.close()
+    if not exists:
+        raise HTTPException(404, "Digest entry not found")
+
+    try:
+        from scripts.db import insert_job
+    except ImportError:
+        raise HTTPException(500, "scripts.db not available")
+    queued = 0
+    skipped = 0
+    for url in body.urls:
+        if not url or not url.startswith(('http://', 'https://')):
+            skipped += 1
+            continue
+        result = insert_job(DB_PATH, {
+            'url': url,
+            'title': '',
+            'company': '',
+            'source': 'digest',
+            'date_found': datetime.utcnow().isoformat(),
+        })
+        if result:
+            queued += 1
+        else:
+            skipped += 1
+    return {"ok": True, "queued": queued, "skipped": skipped}
+
+
+# ── DELETE /api/digest-queue/{id} ────────────────────────────────────────
+
+@app.delete("/api/digest-queue/{digest_id}")
+def delete_digest_entry(digest_id: int):
+    db = _get_db()
+    try:
+        result = db.execute("DELETE FROM digest_queue WHERE id = ?", (digest_id,))
+        db.commit()
+        rowcount = result.rowcount
+    finally:
+        db.close()
+    if rowcount == 0:
+        raise HTTPException(404, "Digest entry not found")
+    return {"ok": True}
+
+
 # ── POST /api/jobs/{id}/move ───────────────────────────────────────────────────
 
 STATUS_TIMESTAMP_COL = {
