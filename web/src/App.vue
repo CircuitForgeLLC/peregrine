@@ -17,14 +17,17 @@ import { RouterView } from 'vue-router'
 import { useMotion } from './composables/useMotion'
 import { useHackerMode, useKonamiCode } from './composables/useEasterEgg'
 import AppNav from './components/AppNav.vue'
+import { useDigestStore } from './stores/digest'
 
 const motion = useMotion()
 const { toggle, restore } = useHackerMode()
+const digestStore = useDigestStore()
 
 useKonamiCode(toggle)
 
 onMounted(() => {
   restore()  // re-apply hacker mode from localStorage on hard reload
+  digestStore.fetchAll()  // populate badge immediately, before user visits Digest tab
 })
 </script>
 
