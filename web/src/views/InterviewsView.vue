@@ -62,6 +62,43 @@ async function dismissPreSignal(job: PipelineJob, sig: StageSignal) {
   await useApiFetch(`/api/stage-signals/${sig.id}/dismiss`, { method: 'POST' })
 }
 
+const bodyExpandedMap = ref<Record<number, boolean>>({})
+
+function toggleBodyExpand(sigId: number) {
+  bodyExpandedMap.value = { ...bodyExpandedMap.value, [sigId]: !bodyExpandedMap.value[sigId] }
+}
+
+const PRE_RECLASSIFY_CHIPS = [
+  { label: '🟡 Interview', value: 'interview_scheduled' as const },
+  { label: '✅ Positive',  value: 'positive_response'   as const },
+  { label: '🟢 Offer',     value: 'offer_received'      as const },
+  { label: '📋 Survey',    value: 'survey_received'     as const },
+  { label: '✖ Rejected',   value: 'rejected'            as const },
+  { label: '— Neutral',    value: 'neutral' },
+] as const
+
+async function reclassifyPreSignal(job: PipelineJob, sig: StageSignal, newLabel: StageSignal['stage_signal'] | 'neutral') {
+  if (newLabel === 'neutral') {
+    const idx = job.stage_signals.findIndex(s => s.id === sig.id)
+    if (idx !== -1) job.stage_signals.splice(idx, 1)
+    await useApiFetch(`/api/stage-signals/${sig.id}/reclassify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage_signal: 'neutral' }),
+    })
+    await useApiFetch(`/api/stage-signals/${sig.id}/dismiss`, { method: 'POST' })
+  } else {
+    const prev = sig.stage_signal
+    sig.stage_signal = newLabel
+    const { error } = await useApiFetch(`/api/stage-signals/${sig.id}/reclassify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage_signal: newLabel }),
+    })
+    if (error) sig.stage_signal = prev
+  }
+}
+
 // ── Email sync status ──────────────────────────────────────────────────────
 interface SyncStatus {
   state: 'idle' | 'queued' | 'running' | 'completed' | 'failed' | 'not_configured'
@@ -323,14 +360,35 @@ function daysSince(dateStr: string | null) {
               class="pre-signal-banner"
               :data-color="SIGNAL_META_PRE[sig.stage_signal]?.color"
             >
-              <span class="signal-label">📧 Email suggests: <strong>{{ SIGNAL_META_PRE[sig.stage_signal]?.label }}</strong></span>
-              <span class="signal-subject">{{ sig.subject.slice(0, 60) }}{{ sig.subject.length > 60 ? '…' : '' }}</span>
-              <div class="signal-actions">
-                <button
-                  class="btn-signal-move"
-                  @click="openMove(job.id, SIGNAL_META_PRE[sig.stage_signal]?.stage)"
-                >→ {{ SIGNAL_META_PRE[sig.stage_signal]?.label }}</button>
-                <button class="btn-signal-dismiss" @click="dismissPreSignal(job, sig)">✕</button>
+              <div class="signal-header">
+                <span class="signal-label">📧 <strong>{{ SIGNAL_META_PRE[sig.stage_signal]?.label?.replace('Move to ', '') ?? sig.stage_signal }}</strong></span>
+                <span class="signal-subject">{{ sig.subject.slice(0, 60) }}{{ sig.subject.length > 60 ? '…' : '' }}</span>
+                <div class="signal-header-actions">
+                  <button class="btn-signal-read" @click="toggleBodyExpand(sig.id)">
+                    {{ bodyExpandedMap[sig.id] ? '▾ Hide' : '▸ Read' }}
+                  </button>
+                  <button
+                    class="btn-signal-move"
+                    @click="openMove(job.id, SIGNAL_META_PRE[sig.stage_signal]?.stage)"
+                  >→ Move</button>
+                  <button class="btn-signal-dismiss" @click="dismissPreSignal(job, sig)">✕</button>
+                </div>
+              </div>
+              <!-- Expanded body + reclassify chips -->
+              <div v-if="bodyExpandedMap[sig.id]" class="signal-body-expanded">
+                <div v-if="sig.from_addr" class="signal-from">From: {{ sig.from_addr }}</div>
+                <div v-if="sig.body" class="signal-body-text">{{ sig.body }}</div>
+                <div v-else class="signal-body-empty">No email body available.</div>
+                <div class="signal-reclassify">
+                  <span class="signal-reclassify-label">Re-classify:</span>
+                  <button
+                    v-for="chip in PRE_RECLASSIFY_CHIPS"
+                    :key="chip.value"
+                    class="btn-chip"
+                    :class="{ 'btn-chip-active': sig.stage_signal === chip.value }"
+                    @click="reclassifyPreSignal(job, sig, chip.value)"
+                  >{{ chip.label }}</button>
+                </div>
               </div>
             </div>
             <button
@@ -512,6 +570,49 @@ function daysSince(dateStr: string | null) {
 .btn-signal-dismiss {
   background: none; border: none; color: var(--color-text-muted); font-size: 0.85em; cursor: pointer;
   padding: 2px 4px;
+}
+.btn-signal-read {
+  background: none; border: none; color: var(--color-text-muted); font-size: 0.82em;
+  cursor: pointer; padding: 2px 6px; white-space: nowrap;
+}
+.signal-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.signal-header-actions {
+  margin-left: auto; display: flex; gap: 6px; align-items: center;
+}
+.signal-body-expanded {
+  margin-top: 8px; font-size: 0.8em; border-top: 1px dashed var(--color-border);
+  padding-top: 8px;
+}
+.signal-from {
+  color: var(--color-text-muted); margin-bottom: 4px;
+}
+.signal-body-text {
+  white-space: pre-wrap; color: var(--color-text); line-height: 1.5;
+  max-height: 200px; overflow-y: auto;
+}
+.signal-body-empty {
+  color: var(--color-text-muted); font-style: italic;
+}
+.signal-reclassify {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px;
+}
+.signal-reclassify-label {
+  font-size: 0.75em; color: var(--color-text-muted);
+}
+.btn-chip {
+  background: var(--color-surface); color: var(--color-text-muted);
+  border: 1px solid var(--color-border); border-radius: 4px;
+  padding: 2px 7px; font-size: 0.75em; cursor: pointer;
+}
+.btn-chip:hover {
+  background: var(--color-hover);
+}
+.btn-chip-active {
+  background: var(--color-primary-muted, #e8f0ff);
+  color: var(--color-primary); border-color: var(--color-primary);
+  font-weight: 600;
 }
 .btn-sig-expand {
   background: none; border: none; font-size: 0.75em; color: var(--color-info); cursor: pointer;
