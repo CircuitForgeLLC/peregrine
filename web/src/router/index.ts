@@ -8,6 +8,7 @@ export const router = createRouter({
     { path: '/apply',      component: () => import('../views/ApplyView.vue') },
     { path: '/apply/:id', component: () => import('../views/ApplyWorkspaceView.vue') },
     { path: '/interviews', component: () => import('../views/InterviewsView.vue') },
+    { path: '/digest',     component: () => import('../views/DigestView.vue') },
     { path: '/prep',       component: () => import('../views/InterviewPrepView.vue') },
     { path: '/prep/:id',   component: () => import('../views/InterviewPrepView.vue') },
     { path: '/survey',     component: () => import('../views/SurveyView.vue') },
