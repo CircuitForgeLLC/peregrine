@@ -53,6 +53,22 @@ def _strip_html(text: str | None) -> str | None:
     return cleaned.strip() or None
 
 
+@app.on_event("startup")
+def _startup():
+    """Ensure digest_queue table exists (dev-api may run against an existing DB)."""
+    db = _get_db()
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS digest_queue (
+          id             INTEGER PRIMARY KEY,
+          job_contact_id INTEGER NOT NULL REFERENCES job_contacts(id),
+          created_at     TEXT DEFAULT (datetime('now')),
+          UNIQUE(job_contact_id)
+        )
+    """)
+    db.commit()
+    db.close()
+
+
 def _row_to_job(row) -> dict:
     d = dict(row)
     d["is_remote"] = bool(d.get("is_remote", 0))
