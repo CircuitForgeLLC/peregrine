@@ -306,7 +306,7 @@ def list_interviews():
         sig_placeholders = ",".join("?" * len(job_ids))
         excl_placeholders = ",".join("?" * len(SIGNAL_EXCLUDED))
         sig_rows = db.execute(
-            f"SELECT id, job_id, subject, received_at, stage_signal "
+            f"SELECT id, job_id, subject, received_at, stage_signal, body, from_addr "
             f"FROM job_contacts "
             f"WHERE job_id IN ({sig_placeholders}) "
             f"  AND suggestion_dismissed = 0 "
@@ -321,6 +321,8 @@ def list_interviews():
                 "subject":      sr["subject"],
                 "received_at":  sr["received_at"],
                 "stage_signal": sr["stage_signal"],
+                "body":         sr["body"],
+                "from_addr":    sr["from_addr"],
             })
 
     db.close()
@@ -378,6 +380,34 @@ def dismiss_signal(signal_id: int):
     )
     db.commit()
     rowcount = result.rowcount
+    db.close()
+    if rowcount == 0:
+        raise HTTPException(404, "Signal not found")
+    return {"ok": True}
+
+
+# ── POST /api/stage-signals/{id}/reclassify ──────────────────────────────
+
+VALID_SIGNAL_LABELS = {
+    'interview_scheduled', 'offer_received', 'rejected',
+    'positive_response', 'survey_received', 'neutral',
+    'event_rescheduled', 'unrelated', 'digest',
+}
+
+class ReclassifyBody(BaseModel):
+    stage_signal: str
+
+@app.post("/api/stage-signals/{signal_id}/reclassify")
+def reclassify_signal(signal_id: int, body: ReclassifyBody):
+    if body.stage_signal not in VALID_SIGNAL_LABELS:
+        raise HTTPException(400, f"Invalid label: {body.stage_signal}")
+    db = _get_db()
+    result = db.execute(
+        "UPDATE job_contacts SET stage_signal = ? WHERE id = ?",
+        (body.stage_signal, signal_id),
+    )
+    rowcount = result.rowcount
+    db.commit()
     db.close()
     if rowcount == 0:
         raise HTTPException(404, "Signal not found")
