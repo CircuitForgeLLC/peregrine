@@ -608,7 +608,7 @@ def queue_digest_jobs(digest_id: int, body: QueueJobsBody):
         if not url or not url.startswith(('http://', 'https://')):
             skipped += 1
             continue
-        result = insert_job(DB_PATH, {
+        result = insert_job(Path(DB_PATH), {
             'url': url,
             'title': '',
             'company': '',
