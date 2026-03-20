@@ -27,7 +27,9 @@ def tmp_db(tmp_path):
             subject TEXT,
             received_at TEXT,
             stage_signal TEXT,
-            suggestion_dismissed INTEGER DEFAULT 0
+            suggestion_dismissed INTEGER DEFAULT 0,
+            body TEXT,
+            from_addr TEXT
         );
         CREATE TABLE background_tasks (
             id INTEGER PRIMARY KEY,
@@ -73,6 +75,8 @@ def test_interviews_includes_stage_signals(client):
     assert signals[0]["stage_signal"] == "interview_scheduled"
     assert signals[0]["subject"] == "Interview confirmed"
     assert signals[0]["id"] == 10
+    assert "body" in signals[0]
+    assert "from_addr" in signals[0]
 
     # neutral signal excluded
     signal_types = [s["stage_signal"] for s in signals]
@@ -156,4 +160,43 @@ def test_dismiss_signal_sets_flag(client, tmp_db):
 
 def test_dismiss_signal_404_for_missing_id(client):
     resp = client.post("/api/stage-signals/9999/dismiss")
+    assert resp.status_code == 404
+
+
+# ── Body/from_addr in signal response ─────────────────────────────────────
+
+def test_interviews_signal_includes_body_and_from_addr(client):
+    resp = client.get("/api/interviews")
+    assert resp.status_code == 200
+    jobs = {j["id"]: j for j in resp.json()}
+    sig = jobs[1]["stage_signals"][0]
+    # Fields must exist (may be None when DB column is NULL)
+    assert "body" in sig
+    assert "from_addr" in sig
+
+
+# ── POST /api/stage-signals/{id}/reclassify ────────────────────────────────
+
+def test_reclassify_signal_updates_label(client, tmp_db):
+    resp = client.post("/api/stage-signals/10/reclassify",
+                       json={"stage_signal": "positive_response"})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    con = sqlite3.connect(tmp_db)
+    row = con.execute(
+        "SELECT stage_signal FROM job_contacts WHERE id = 10"
+    ).fetchone()
+    con.close()
+    assert row[0] == "positive_response"
+
+
+def test_reclassify_signal_invalid_label(client):
+    resp = client.post("/api/stage-signals/10/reclassify",
+                       json={"stage_signal": "not_a_real_label"})
+    assert resp.status_code == 400
+
+
+def test_reclassify_signal_404_for_missing_id(client):
+    resp = client.post("/api/stage-signals/9999/reclassify",
+                       json={"stage_signal": "neutral"})
     assert resp.status_code == 404
