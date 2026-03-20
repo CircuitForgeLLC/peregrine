@@ -406,8 +406,8 @@ def reclassify_signal(signal_id: int, body: ReclassifyBody):
         "UPDATE job_contacts SET stage_signal = ? WHERE id = ?",
         (body.stage_signal, signal_id),
     )
-    rowcount = result.rowcount
     db.commit()
+    rowcount = result.rowcount
     db.close()
     if rowcount == 0:
         raise HTTPException(404, "Signal not found")
