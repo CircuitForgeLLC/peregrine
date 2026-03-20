@@ -445,6 +445,60 @@ def reclassify_signal(signal_id: int, body: ReclassifyBody):
     return {"ok": True}
 
 
+# ── Digest queue models ───────────────────────────────────────────────────
+
+class DigestQueueBody(BaseModel):
+    job_contact_id: int
+
+
+# ── GET /api/digest-queue ─────────────────────────────────────────────────
+
+@app.get("/api/digest-queue")
+def list_digest_queue():
+    db = _get_db()
+    rows = db.execute(
+        """SELECT dq.id, dq.job_contact_id, dq.created_at,
+                  jc.subject, jc.from_addr, jc.received_at, jc.body
+           FROM digest_queue dq
+           JOIN job_contacts jc ON jc.id = dq.job_contact_id
+           ORDER BY dq.created_at DESC"""
+    ).fetchall()
+    db.close()
+    return [
+        {
+            "id":             r["id"],
+            "job_contact_id": r["job_contact_id"],
+            "created_at":     r["created_at"],
+            "subject":        r["subject"],
+            "from_addr":      r["from_addr"],
+            "received_at":    r["received_at"],
+            "body":           _strip_html(r["body"]),
+        }
+        for r in rows
+    ]
+
+
+# ── POST /api/digest-queue ────────────────────────────────────────────────
+
+@app.post("/api/digest-queue")
+def add_to_digest_queue(body: DigestQueueBody):
+    db = _get_db()
+    exists = db.execute(
+        "SELECT 1 FROM job_contacts WHERE id = ?", (body.job_contact_id,)
+    ).fetchone()
+    if not exists:
+        db.close()
+        raise HTTPException(404, "job_contact_id not found")
+    result = db.execute(
+        "INSERT OR IGNORE INTO digest_queue (job_contact_id) VALUES (?)",
+        (body.job_contact_id,),
+    )
+    db.commit()
+    created = result.rowcount > 0
+    db.close()
+    return {"ok": True, "created": created}
+
+
 # ── POST /api/jobs/{id}/move ───────────────────────────────────────────────────
 
 STATUS_TIMESTAMP_COL = {
