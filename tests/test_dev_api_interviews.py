@@ -200,3 +200,19 @@ def test_reclassify_signal_404_for_missing_id(client):
     resp = client.post("/api/stage-signals/9999/reclassify",
                        json={"stage_signal": "neutral"})
     assert resp.status_code == 404
+
+
+def test_signal_body_html_is_stripped(client, tmp_db):
+    import sqlite3
+    con = sqlite3.connect(tmp_db)
+    con.execute(
+        "UPDATE job_contacts SET body = ? WHERE id = 10",
+        ("<html><body><p>Hi there,</p><p>Interview confirmed.</p></body></html>",)
+    )
+    con.commit(); con.close()
+    resp = client.get("/api/interviews")
+    jobs = {j["id"]: j for j in resp.json()}
+    body = jobs[1]["stage_signals"][0]["body"]
+    assert "<" not in body
+    assert "Hi there" in body
+    assert "Interview confirmed" in body
