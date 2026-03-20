@@ -10,6 +10,7 @@ import sys
 import re
 import json
 import threading
+from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from datetime import datetime
 from pathlib import Path
@@ -69,6 +70,63 @@ def _startup():
         db.commit()
     finally:
         db.close()
+
+
+# ── Link extraction helpers ───────────────────────────────────────────────
+
+_JOB_DOMAINS = frozenset({
+    'greenhouse.io', 'lever.co', 'workday.com', 'linkedin.com',
+    'ashbyhq.com', 'smartrecruiters.com', 'icims.com', 'taleo.net',
+    'jobvite.com', 'breezy.hr', 'recruitee.com', 'bamboohr.com',
+    'myworkdayjobs.com',
+})
+
+_JOB_PATH_SEGMENTS = frozenset({'careers', 'jobs'})
+
+_FILTER_RE = re.compile(
+    r'(unsubscribe|mailto:|/track/|pixel\.|\.gif|\.png|\.jpg'
+    r'|/open\?|/click\?|list-unsubscribe)',
+    re.I,
+)
+
+_URL_RE = re.compile(r'https?://[^\s<>"\')\]]+', re.I)
+
+
+def _score_url(url: str) -> int:
+    """Return 2 for likely job URLs, 1 for others, -1 to exclude."""
+    if _FILTER_RE.search(url):
+        return -1
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or '').lower()
+    path = parsed.path.lower()
+    for domain in _JOB_DOMAINS:
+        if domain in hostname or domain in path:
+            return 2
+    for seg in _JOB_PATH_SEGMENTS:
+        if f'/{seg}/' in path or path.startswith(f'/{seg}'):
+            return 2
+    return 1
+
+
+def _extract_links(body: str) -> list[dict]:
+    """Extract and rank URLs from raw HTML email body."""
+    if not body:
+        return []
+    seen: set[str] = set()
+    results = []
+    for m in _URL_RE.finditer(body):
+        url = m.group(0).rstrip('.,;)')
+        if url in seen:
+            continue
+        seen.add(url)
+        score = _score_url(url)
+        if score < 0:
+            continue
+        start = max(0, m.start() - 60)
+        hint = body[start:m.start()].strip().split('\n')[-1].strip()
+        results.append({'url': url, 'score': score, 'hint': hint})
+    results.sort(key=lambda x: -x['score'])
+    return results
 
 
 def _row_to_job(row) -> dict:
@@ -498,6 +556,24 @@ def add_to_digest_queue(body: DigestQueueBody):
     finally:
         db.close()
     return {"ok": True, "created": created}
+
+
+# ── POST /api/digest-queue/{id}/extract-links ─────────────────────────────
+
+@app.post("/api/digest-queue/{digest_id}/extract-links")
+def extract_digest_links(digest_id: int):
+    db = _get_db()
+    row = db.execute(
+        """SELECT jc.body
+           FROM digest_queue dq
+           JOIN job_contacts jc ON jc.id = dq.job_contact_id
+           WHERE dq.id = ?""",
+        (digest_id,),
+    ).fetchone()
+    db.close()
+    if not row:
+        raise HTTPException(404, "Digest entry not found")
+    return {"links": _extract_links(row["body"] or "")}
 
 
 # ── POST /api/jobs/{id}/move ───────────────────────────────────────────────────
