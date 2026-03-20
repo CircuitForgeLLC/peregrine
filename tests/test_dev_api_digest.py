@@ -138,6 +138,10 @@ def test_digest_extract_links(client, tmp_db):
     assert len(lever_links) == 1
     assert lever_links[0]["score"] == 2
 
+    # Each link must have a hint key (may be empty string for links at start of body)
+    for link in links:
+        assert "hint" in link
+
 
 def test_digest_extract_links_filters_trackers(client, tmp_db):
     entry_id = _add_digest_entry(tmp_db)

@@ -100,7 +100,7 @@ def _score_url(url: str) -> int:
     hostname = (parsed.hostname or '').lower()
     path = parsed.path.lower()
     for domain in _JOB_DOMAINS:
-        if domain in hostname or domain in path:
+        if domain in hostname:
             return 2
     for seg in _JOB_PATH_SEGMENTS:
         if f'/{seg}/' in path or path.startswith(f'/{seg}'):
@@ -563,14 +563,16 @@ def add_to_digest_queue(body: DigestQueueBody):
 @app.post("/api/digest-queue/{digest_id}/extract-links")
 def extract_digest_links(digest_id: int):
     db = _get_db()
-    row = db.execute(
-        """SELECT jc.body
-           FROM digest_queue dq
-           JOIN job_contacts jc ON jc.id = dq.job_contact_id
-           WHERE dq.id = ?""",
-        (digest_id,),
-    ).fetchone()
-    db.close()
+    try:
+        row = db.execute(
+            """SELECT jc.body
+               FROM digest_queue dq
+               JOIN job_contacts jc ON jc.id = dq.job_contact_id
+               WHERE dq.id = ?""",
+            (digest_id,),
+        ).fetchone()
+    finally:
+        db.close()
     if not row:
         raise HTTPException(404, "Digest entry not found")
     return {"links": _extract_links(row["body"] or "")}
