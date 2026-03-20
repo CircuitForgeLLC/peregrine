@@ -57,16 +57,18 @@ def _strip_html(text: str | None) -> str | None:
 def _startup():
     """Ensure digest_queue table exists (dev-api may run against an existing DB)."""
     db = _get_db()
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS digest_queue (
-          id             INTEGER PRIMARY KEY,
-          job_contact_id INTEGER NOT NULL REFERENCES job_contacts(id),
-          created_at     TEXT DEFAULT (datetime('now')),
-          UNIQUE(job_contact_id)
-        )
-    """)
-    db.commit()
-    db.close()
+    try:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS digest_queue (
+              id             INTEGER PRIMARY KEY,
+              job_contact_id INTEGER NOT NULL REFERENCES job_contacts(id),
+              created_at     TEXT DEFAULT (datetime('now')),
+              UNIQUE(job_contact_id)
+            )
+        """)
+        db.commit()
+    finally:
+        db.close()
 
 
 def _row_to_job(row) -> dict:
