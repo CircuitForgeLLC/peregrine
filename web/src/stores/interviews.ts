@@ -7,6 +7,8 @@ export interface StageSignal {
   subject: string
   received_at: string     // ISO timestamp
   stage_signal: 'interview_scheduled' | 'positive_response' | 'offer_received' | 'survey_received' | 'rejected'
+  body: string | null     // email body text; null if not available
+  from_addr: string | null // sender address; null if not available
 }
 
 export interface PipelineJob {
