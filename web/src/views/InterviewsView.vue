@@ -33,6 +33,23 @@ const APPLIED_EXPANDED_KEY = 'peregrine.interviews.appliedExpanded'
 const appliedExpanded = ref(localStorage.getItem(APPLIED_EXPANDED_KEY) === 'true')
 watch(appliedExpanded, v => localStorage.setItem(APPLIED_EXPANDED_KEY, String(v)))
 
+const APPLIED_PAGE_SIZE = 10
+
+const appliedPage = ref(0)
+const allApplied  = computed(() => [...store.applied, ...store.survey])
+const appliedPageCount = computed(() => Math.ceil(allApplied.value.length / APPLIED_PAGE_SIZE))
+const pagedApplied = computed(() =>
+  allApplied.value.slice(
+    appliedPage.value * APPLIED_PAGE_SIZE,
+    (appliedPage.value + 1) * APPLIED_PAGE_SIZE,
+  )
+)
+
+// Clamp page when the list shrinks (e.g. after a move)
+watch(allApplied, () => {
+  if (appliedPage.value >= appliedPageCount.value) appliedPage.value = 0
+})
+
 const appliedSignalCount = computed(() =>
   [...store.applied, ...store.survey]
     .reduce((n, job) => n + (job.stage_signals?.length ?? 0), 0)
@@ -340,7 +357,7 @@ function daysSince(dateStr: string | null) {
           <span class="empty-bird">🦅</span>
           <span>No applied jobs yet. <RouterLink to="/apply">Go to Apply</RouterLink> to submit applications.</span>
         </div>
-        <template v-for="job in [...store.applied, ...store.survey]" :key="job.id">
+        <template v-for="job in pagedApplied" :key="job.id">
           <div class="pre-list-row">
             <div class="pre-row-info">
               <span class="pre-row-title">{{ job.title }}</span>
@@ -401,6 +418,22 @@ function daysSince(dateStr: string | null) {
             >{{ sigExpandedIds.has(job.id) ? '− less' : `+${(job.stage_signals?.length ?? 1) - 1} more` }}</button>
           </template>
         </template>
+        <!-- Pagination -->
+        <div v-if="appliedPageCount > 1" class="pre-list-pagination">
+          <button
+            class="btn-page"
+            :disabled="appliedPage === 0"
+            @click="appliedPage--"
+            aria-label="Previous page"
+          >‹</button>
+          <span class="page-indicator">{{ appliedPage + 1 }} / {{ appliedPageCount }}</span>
+          <button
+            class="btn-page"
+            :disabled="appliedPage >= appliedPageCount - 1"
+            @click="appliedPage++"
+            aria-label="Next page"
+          >›</button>
+        </div>
       </div>
     </section>
 
@@ -665,4 +698,22 @@ function daysSince(dateStr: string | null) {
 .rejected-stage { font-size: 0.75rem; color: var(--color-text-muted); }
 .btn-unrej      { background: none; border: 1px solid var(--color-border); border-radius: 6px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; color: var(--color-info); cursor: pointer; }
 .empty-bird     { font-size: 1.25rem; }
+.pre-list-pagination {
+  display: flex; align-items: center; justify-content: center; gap: var(--space-2);
+  padding: 6px 12px; border-top: 1px solid var(--color-border-light);
+}
+.btn-page {
+  background: none; border: 1px solid var(--color-border); border-radius: 4px;
+  color: var(--color-text); font-size: 0.9em; padding: 2px 10px; cursor: pointer;
+  line-height: 1.6;
+}
+.btn-page:disabled {
+  opacity: 0.35; cursor: default;
+}
+.btn-page:not(:disabled):hover {
+  background: var(--color-surface-raised);
+}
+.page-indicator {
+  font-size: 0.8em; color: var(--color-text-muted); min-width: 40px; text-align: center;
+}
 </style>
