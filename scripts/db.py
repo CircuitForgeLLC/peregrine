@@ -139,10 +139,10 @@ CREATE TABLE IF NOT EXISTS survey_responses (
 
 CREATE_DIGEST_QUEUE = """
 CREATE TABLE IF NOT EXISTS digest_queue (
-  id             INTEGER PRIMARY KEY,
-  job_contact_id INTEGER NOT NULL REFERENCES job_contacts(id),
-  created_at     TEXT DEFAULT (datetime('now')),
-  UNIQUE(job_contact_id)
+    id             INTEGER PRIMARY KEY,
+    job_contact_id INTEGER NOT NULL REFERENCES job_contacts(id),
+    created_at     TEXT DEFAULT (datetime('now')),
+    UNIQUE(job_contact_id)
 )
 """
 
