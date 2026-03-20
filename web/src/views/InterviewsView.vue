@@ -364,14 +364,17 @@ function daysSince(dateStr: string | null) {
                 <span class="signal-label">📧 <strong>{{ SIGNAL_META_PRE[sig.stage_signal]?.label?.replace('Move to ', '') ?? sig.stage_signal }}</strong></span>
                 <span class="signal-subject">{{ sig.subject.slice(0, 60) }}{{ sig.subject.length > 60 ? '…' : '' }}</span>
                 <div class="signal-header-actions">
-                  <button class="btn-signal-read" @click="toggleBodyExpand(sig.id)">
+                  <button class="btn-signal-read" @click.stop="toggleBodyExpand(sig.id)"
+                    :aria-expanded="bodyExpandedMap[sig.id] ?? false"
+                    :aria-label="(bodyExpandedMap[sig.id] ? 'Hide' : 'Read') + ' email body'">
                     {{ bodyExpandedMap[sig.id] ? '▾ Hide' : '▸ Read' }}
                   </button>
                   <button
                     class="btn-signal-move"
-                    @click="openMove(job.id, SIGNAL_META_PRE[sig.stage_signal]?.stage)"
+                    @click.stop="openMove(job.id, SIGNAL_META_PRE[sig.stage_signal]?.stage)"
+                    :aria-label="`Move ${job.title} — ${SIGNAL_META_PRE[sig.stage_signal]?.label ?? 'Move'}`"
                   >→ Move</button>
-                  <button class="btn-signal-dismiss" @click="dismissPreSignal(job, sig)">✕</button>
+                  <button class="btn-signal-dismiss" @click.stop="dismissPreSignal(job, sig)" aria-label="Dismiss signal">✕</button>
                 </div>
               </div>
               <!-- Expanded body + reclassify chips -->
@@ -386,7 +389,7 @@ function daysSince(dateStr: string | null) {
                     :key="chip.value"
                     class="btn-chip"
                     :class="{ 'btn-chip-active': sig.stage_signal === chip.value }"
-                    @click="reclassifyPreSignal(job, sig, chip.value)"
+                    @click.stop="reclassifyPreSignal(job, sig, chip.value)"
                   >{{ chip.label }}</button>
                 </div>
               </div>
