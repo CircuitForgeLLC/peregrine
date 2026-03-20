@@ -10,6 +10,7 @@ import sys
 import re
 import json
 import threading
+from bs4 import BeautifulSoup
 from datetime import datetime
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Response
@@ -38,6 +39,18 @@ def _get_db():
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
     return db
+
+
+def _strip_html(text: str | None) -> str | None:
+    """Strip HTML tags and normalize whitespace in email body text."""
+    if not text:
+        return text
+    plain = BeautifulSoup(text, 'html.parser').get_text(separator='\n')
+    # Strip trailing whitespace from each line
+    lines = [line.rstrip() for line in plain.split('\n')]
+    # Collapse 3+ consecutive blank lines to at most 2
+    cleaned = re.sub(r'\n{3,}', '\n\n', '\n'.join(lines))
+    return cleaned.strip() or None
 
 
 def _row_to_job(row) -> dict:
@@ -321,7 +334,7 @@ def list_interviews():
                 "subject":      sr["subject"],
                 "received_at":  sr["received_at"],
                 "stage_signal": sr["stage_signal"],
-                "body":         sr["body"],
+                "body":         _strip_html(sr["body"]),
                 "from_addr":    sr["from_addr"],
             })
 
