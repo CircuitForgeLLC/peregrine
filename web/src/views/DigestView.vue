@@ -12,6 +12,7 @@ const selectedUrls = ref<Record<number, Set<string>>>({})
 const queueResult  = ref<Record<number, { queued: number; skipped: number } | null>>({})
 const extracting   = ref<Record<number, boolean>>({})
 const queuing      = ref<Record<number, boolean>>({})
+const entryError   = ref<Record<number, string | null>>({})
 
 onMounted(() => store.fetchAll())
 
@@ -41,11 +42,16 @@ function otherLinks(id: number): DigestLink[] {
 
 async function extractLinks(entry: DigestEntry) {
   extracting.value = { ...extracting.value, [entry.id]: true }
-  const { data } = await useApiFetch<{ links: DigestLink[] }>(
+  const { data, error: err } = await useApiFetch<{ links: DigestLink[] }>(
     `/api/digest-queue/${entry.id}/extract-links`,
     { method: 'POST' },
   )
   extracting.value = { ...extracting.value, [entry.id]: false }
+  if (err) {
+    entryError.value = { ...entryError.value, [entry.id]: 'Could not extract links — try again' }
+    return
+  }
+  entryError.value = { ...entryError.value, [entry.id]: null }
   if (!data) return
   linkResults.value = { ...linkResults.value, [entry.id]: data.links }
   expandedIds.value = { ...expandedIds.value, [entry.id]: true }
@@ -59,7 +65,7 @@ async function queueJobs(entry: DigestEntry) {
   const urls = [...(selectedUrls.value[entry.id] ?? [])]
   if (!urls.length) return
   queuing.value = { ...queuing.value, [entry.id]: true }
-  const { data } = await useApiFetch<{ queued: number; skipped: number }>(
+  const { data, error: err } = await useApiFetch<{ queued: number; skipped: number }>(
     `/api/digest-queue/${entry.id}/queue-jobs`,
     {
       method: 'POST',
@@ -68,6 +74,11 @@ async function queueJobs(entry: DigestEntry) {
     },
   )
   queuing.value = { ...queuing.value, [entry.id]: false }
+  if (err) {
+    entryError.value = { ...entryError.value, [entry.id]: 'Could not queue jobs — try again' }
+    return
+  }
+  entryError.value = { ...entryError.value, [entry.id]: null }
   if (!data) return
   queueResult.value = { ...queueResult.value, [entry.id]: data }
   linkResults.value  = { ...linkResults.value,  [entry.id]: [] }
@@ -93,7 +104,16 @@ function formatDate(iso: string) {
       <div v-for="entry in store.entries" :key="entry.id" class="digest-entry">
 
         <!-- Entry header row -->
-        <div class="entry-header" @click="toggleExpand(entry.id)">
+        <div
+          class="entry-header"
+          role="button"
+          tabindex="0"
+          :aria-expanded="!!expandedIds[entry.id]"
+          :aria-label="`Toggle ${entry.subject}`"
+          @click="toggleExpand(entry.id)"
+          @keydown.enter.prevent="toggleExpand(entry.id)"
+          @keydown.space.prevent="toggleExpand(entry.id)"
+        >
           <span class="entry-toggle" aria-hidden="true">{{ expandedIds[entry.id] ? '▾' : '▸' }}</span>
           <div class="entry-meta">
             <span class="entry-subject">{{ entry.subject }}</span>
@@ -118,6 +138,9 @@ function formatDate(iso: string) {
             >✕</button>
           </div>
         </div>
+
+        <!-- Per-entry error -->
+        <div v-if="entryError[entry.id]" class="entry-error">{{ entryError[entry.id] }}</div>
 
         <!-- Post-queue confirmation -->
         <div v-if="queueResult[entry.id]" class="queue-result">
@@ -236,6 +259,10 @@ function formatDate(iso: string) {
   cursor: pointer;
   user-select: none;
 }
+.entry-header:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
 .entry-toggle { color: var(--color-text-muted); font-size: 0.9rem; flex-shrink: 0; padding-top: 2px; }
 
 .entry-meta  { flex: 1; min-width: 0; }
@@ -285,6 +312,16 @@ function formatDate(iso: string) {
   background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface-raised));
   border-radius: 6px;
   padding: var(--space-2) var(--space-3);
+}
+
+/* Error message */
+.entry-error {
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.8rem;
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, var(--color-surface-raised));
+  border-radius: 6px;
+  margin: 0 var(--space-4) var(--space-2);
 }
 
 /* Status messages */
