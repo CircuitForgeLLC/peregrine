@@ -71,8 +71,12 @@ import {
   CalendarDaysIcon,
   LightBulbIcon,
   MagnifyingGlassIcon,
+  NewspaperIcon,
   Cog6ToothIcon,
 } from '@heroicons/vue/24/outline'
+
+import { useDigestStore } from '../stores/digest'
+const digestStore = useDigestStore()
 
 // Logo click easter egg — 9.6: Click the Bird 5× rapidly
 const logoClickCount = ref(0)
@@ -101,14 +105,16 @@ function exitHackerMode() {
   localStorage.removeItem('cf-hacker-mode')
 }
 
-const navLinks = [
+const navLinks = computed(() => [
   { to: '/',           icon: HomeIcon,                   label: 'Home' },
   { to: '/review',     icon: ClipboardDocumentListIcon,  label: 'Job Review' },
   { to: '/apply',      icon: PencilSquareIcon,           label: 'Apply' },
   { to: '/interviews', icon: CalendarDaysIcon,           label: 'Interviews' },
+  { to: '/digest',     icon: NewspaperIcon,              label: 'Digest',
+    badge: digestStore.entries.length || undefined },
   { to: '/prep',       icon: LightBulbIcon,              label: 'Interview Prep' },
   { to: '/survey',     icon: MagnifyingGlassIcon,        label: 'Survey' },
-]
+])
 
 // Mobile: only the 5 most-used views
 const mobileLinks = [
