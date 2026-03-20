@@ -91,17 +91,21 @@ const PRE_RECLASSIFY_CHIPS = [
   { label: '🟢 Offer',     value: 'offer_received'      as const },
   { label: '📋 Survey',    value: 'survey_received'     as const },
   { label: '✖ Rejected',   value: 'rejected'            as const },
-  { label: '— Neutral',    value: 'neutral' },
+  { label: '🚫 Unrelated', value: 'unrelated'           },
+  { label: '📰 Digest',    value: 'digest'              },
+  { label: '— Neutral',    value: 'neutral'             },
 ] as const
 
-async function reclassifyPreSignal(job: PipelineJob, sig: StageSignal, newLabel: StageSignal['stage_signal'] | 'neutral') {
-  if (newLabel === 'neutral') {
+const DISMISS_LABELS = new Set(['neutral', 'unrelated', 'digest'] as const)
+
+async function reclassifyPreSignal(job: PipelineJob, sig: StageSignal, newLabel: StageSignal['stage_signal'] | 'neutral' | 'unrelated' | 'digest') {
+  if (DISMISS_LABELS.has(newLabel)) {
     const idx = job.stage_signals.findIndex(s => s.id === sig.id)
     if (idx !== -1) job.stage_signals.splice(idx, 1)
     await useApiFetch(`/api/stage-signals/${sig.id}/reclassify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage_signal: 'neutral' }),
+      body: JSON.stringify({ stage_signal: newLabel }),
     })
     await useApiFetch(`/api/stage-signals/${sig.id}/dismiss`, { method: 'POST' })
   } else {
