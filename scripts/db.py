@@ -137,6 +137,15 @@ CREATE TABLE IF NOT EXISTS survey_responses (
 );
 """
 
+CREATE_DIGEST_QUEUE = """
+CREATE TABLE IF NOT EXISTS digest_queue (
+  id             INTEGER PRIMARY KEY,
+  job_contact_id INTEGER NOT NULL REFERENCES job_contacts(id),
+  created_at     TEXT DEFAULT (datetime('now')),
+  UNIQUE(job_contact_id)
+)
+"""
+
 _MIGRATIONS = [
     ("cover_letter",       "TEXT"),
     ("applied_at",         "TEXT"),
@@ -193,6 +202,7 @@ def init_db(db_path: Path = DEFAULT_DB) -> None:
     conn.execute(CREATE_COMPANY_RESEARCH)
     conn.execute(CREATE_BACKGROUND_TASKS)
     conn.execute(CREATE_SURVEY_RESPONSES)
+    conn.execute(CREATE_DIGEST_QUEUE)
     conn.commit()
     conn.close()
     _migrate_db(db_path)
