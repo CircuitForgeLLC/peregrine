@@ -698,20 +698,42 @@ def _parse_message(conn: imaplib.IMAP4, uid: bytes) -> Optional[dict]:
             return None
         msg = email.message_from_bytes(data[0][1])
 
-        body = ""
+        # Prefer text/html (preserves href attributes for digest link extraction);
+        # fall back to text/plain if no HTML part exists.
+        html_body = ""
+        plain_body = ""
         if msg.is_multipart():
             for part in msg.walk():
-                if part.get_content_type() == "text/plain":
+                ct = part.get_content_type()
+                if ct == "text/html" and not html_body:
                     try:
-                        body = part.get_payload(decode=True).decode("utf-8", errors="replace")
+                        html_body = part.get_payload(decode=True).decode("utf-8", errors="replace")
                     except Exception:
                         pass
-                    break
+                elif ct == "text/plain" and not plain_body:
+                    try:
+                        plain_body = part.get_payload(decode=True).decode("utf-8", errors="replace")
+                    except Exception:
+                        pass
         else:
+            ct = msg.get_content_type()
             try:
-                body = msg.get_payload(decode=True).decode("utf-8", errors="replace")
+                raw = msg.get_payload(decode=True).decode("utf-8", errors="replace")
+                if ct == "text/html":
+                    html_body = raw
+                else:
+                    plain_body = raw
             except Exception:
                 pass
+
+        if html_body:
+            # Strip <head>…</head> (CSS, meta, title) and any stray <style> blocks.
+            # Keeps <body> HTML intact so href attributes survive for digest extraction.
+            body = re.sub(r"<head[\s\S]*?</head>", "", html_body, flags=re.I)
+            body = re.sub(r"<style[\s\S]*?</style>", "", body, flags=re.I)
+            body = re.sub(r"<script[\s\S]*?</script>", "", body, flags=re.I)
+        else:
+            body = plain_body
 
         mid = msg.get("Message-ID", "").strip()
         if not mid:
@@ -723,7 +745,7 @@ def _parse_message(conn: imaplib.IMAP4, uid: bytes) -> Optional[dict]:
             "from_addr":  _decode_str(msg.get("From")),
             "to_addr":    _decode_str(msg.get("To")),
             "date":       _decode_str(msg.get("Date")),
-            "body":       body[:4000],
+            "body":       body,  # no truncation — digest emails need full content
         }
     except Exception:
         return None

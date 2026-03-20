@@ -1024,8 +1024,8 @@ def test_sync_all_per_job_exception_continues(tmp_path):
 
 # ── Performance / edge cases ──────────────────────────────────────────────────
 
-def test_parse_message_large_body_truncated():
-    """Body longer than 4000 chars is silently truncated to 4000."""
+def test_parse_message_large_body_not_truncated():
+    """Body longer than 4000 chars is stored in full (no truncation)."""
     from scripts.imap_sync import _parse_message
 
     big_body = ("x" * 10_000).encode()
@@ -1037,7 +1037,7 @@ def test_parse_message_large_body_truncated():
     conn.fetch.return_value = ("OK", [(b"1 (RFC822)", raw)])
     result = _parse_message(conn, b"1")
     assert result is not None
-    assert len(result["body"]) <= 4000
+    assert len(result["body"]) == 10_000
 
 
 def test_parse_message_binary_attachment_no_crash():
