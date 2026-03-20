@@ -55,7 +55,13 @@ async function dismissSignal(sig: StageSignal) {
   await useApiFetch(`/api/stage-signals/${sig.id}/dismiss`, { method: 'POST' })
 }
 
-const bodyExpanded = ref(false)
+const expandedSignalIds = ref(new Set<number>())
+function toggleBodyExpand(sigId: number) {
+  const next = new Set(expandedSignalIds.value)
+  if (next.has(sigId)) next.delete(sigId)
+  else next.add(sigId)
+  expandedSignalIds.value = next
+}
 
 // Re-classify chips — neutral triggers two-call dismiss path
 const RECLASSIFY_CHIPS = [
@@ -67,7 +73,7 @@ const RECLASSIFY_CHIPS = [
   { label: '— Neutral',    value: 'neutral' },
 ] as const
 
-async function reclassifySignal(sig: StageSignal, newLabel: string) {
+async function reclassifySignal(sig: StageSignal, newLabel: StageSignal['stage_signal'] | 'neutral') {
   if (newLabel === 'neutral') {
     // Optimistic removal — neutral signals are dismissed
     const arr = props.job.stage_signals
@@ -82,12 +88,14 @@ async function reclassifySignal(sig: StageSignal, newLabel: string) {
     await useApiFetch(`/api/stage-signals/${sig.id}/dismiss`, { method: 'POST' })
   } else {
     // Optimistic local re-label — Vue 3 proxy tracks the mutation
-    sig.stage_signal = newLabel as StageSignal['stage_signal']
-    await useApiFetch(`/api/stage-signals/${sig.id}/reclassify`, {
+    const prev = sig.stage_signal
+    sig.stage_signal = newLabel
+    const { error } = await useApiFetch(`/api/stage-signals/${sig.id}/reclassify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stage_signal: newLabel }),
     })
+    if (error) sig.stage_signal = prev
   }
 }
 
@@ -180,8 +188,8 @@ const columnColor = computed(() => {
           </span>
           <span class="signal-subject">{{ sig.subject.slice(0, 60) }}{{ sig.subject.length > 60 ? '…' : '' }}</span>
           <div class="signal-header-actions">
-            <button class="btn-signal-read" @click.stop="bodyExpanded = !bodyExpanded">
-              {{ bodyExpanded ? '▾ Hide' : '▸ Read' }}
+            <button class="btn-signal-read" @click.stop="toggleBodyExpand(sig.id)">
+              {{ expandedSignalIds.has(sig.id) ? '▾ Hide' : '▸ Read' }}
             </button>
             <button
               class="btn-signal-move"
@@ -196,7 +204,7 @@ const columnColor = computed(() => {
           </div>
         </div>
         <!-- Expanded body + reclassify chips -->
-        <div v-if="bodyExpanded" class="signal-body-expanded">
+        <div v-if="expandedSignalIds.has(sig.id)" class="signal-body-expanded">
           <div v-if="sig.from_addr" class="signal-from">From: {{ sig.from_addr }}</div>
           <div v-if="sig.body" class="signal-body-text">{{ sig.body }}</div>
           <div v-else class="signal-body-empty">No email body available.</div>
@@ -361,7 +369,6 @@ const columnColor = computed(() => {
 }
 .signal-label  { font-size: 0.82em; }
 .signal-subject { font-size: 0.78em; color: var(--color-text-muted); }
-.signal-actions { display: flex; gap: 6px; align-items: center; }
 .btn-signal-move {
   background: var(--color-primary); color: #fff;
   border: none; border-radius: 4px; padding: 2px 8px; font-size: 0.78em; cursor: pointer;
