@@ -395,7 +395,10 @@ async function onGenerate() {
             role="tabpanel"
             aria-labelledby="tab-email"
           >
-            <template v-if="prepStore.contacts.length">
+            <div v-if="prepStore.contactsError" class="error-state" role="alert">
+              {{ prepStore.contactsError }}
+            </div>
+            <template v-else-if="prepStore.contacts.length">
               <div
                 v-for="contact in prepStore.contacts"
                 :key="contact.id"
@@ -707,6 +710,16 @@ async function onGenerate() {
   color: var(--color-error);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+/* Inline error state for tab panels (e.g. contacts fetch failure) */
+.error-state {
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface));
+  color: var(--color-error);
+  border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
   font-size: var(--text-sm);
 }
 
