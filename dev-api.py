@@ -1093,3 +1093,49 @@ async def upload_resume(file: UploadFile):
         return {"ok": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: Search Preferences endpoints ────────────────────────────────────
+
+class SearchPrefsPayload(BaseModel):
+    remote_preference: str = "both"
+    job_titles: List[str] = []
+    locations: List[str] = []
+    exclude_keywords: List[str] = []
+    job_boards: List[dict] = []
+    custom_board_urls: List[str] = []
+    blocklist_companies: List[str] = []
+    blocklist_industries: List[str] = []
+    blocklist_locations: List[str] = []
+
+SEARCH_PREFS_PATH = Path("config/search_profiles.yaml")
+
+@app.get("/api/settings/search")
+def get_search_prefs():
+    try:
+        if not SEARCH_PREFS_PATH.exists():
+            return {}
+        with open(SEARCH_PREFS_PATH) as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("default", {})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/settings/search")
+def save_search_prefs(payload: SearchPrefsPayload):
+    try:
+        data = {}
+        if SEARCH_PREFS_PATH.exists():
+            with open(SEARCH_PREFS_PATH) as f:
+                data = yaml.safe_load(f) or {}
+        data["default"] = payload.model_dump()
+        with open(SEARCH_PREFS_PATH, "w") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/settings/search/suggest")
+def suggest_search(body: dict):
+    # Stub — LLM suggest for paid tier
+    return {"suggestions": []}
