@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
+import requests
 
 # Allow importing peregrine scripts for cover letter generation
 PEREGRINE_ROOT = Path("/Library/Development/CircuitForge/peregrine")
@@ -364,6 +365,131 @@ def get_job_contacts(job_id: int):
     ).fetchall()
     db.close()
     return [dict(r) for r in rows]
+
+
+# ── Survey endpoints ─────────────────────────────────────────────────────────
+
+# Module-level imports so tests can patch dev_api.LLMRouter etc.
+from scripts.llm_router import LLMRouter
+from scripts.db import insert_survey_response, get_survey_responses
+
+_SURVEY_SYSTEM = (
+    "You are a job application advisor helping a candidate answer a culture-fit survey. "
+    "The candidate values collaborative teamwork, clear communication, growth, and impact. "
+    "Choose answers that present them in the best professional light."
+)
+
+
+def _build_text_prompt(text: str, mode: str) -> str:
+    if mode == "quick":
+        return (
+            "Answer each survey question below. For each, give ONLY the letter of the best "
+            "option and a single-sentence reason. Format exactly as:\n"
+            "1. B — reason here\n2. A — reason here\n\n"
+            f"Survey:\n{text}"
+        )
+    return (
+        "Analyze each survey question below. For each question:\n"
+        "- Briefly evaluate each option (1 sentence each)\n"
+        "- State your recommendation with reasoning\n\n"
+        f"Survey:\n{text}"
+    )
+
+
+def _build_image_prompt(mode: str) -> str:
+    if mode == "quick":
+        return (
+            "This is a screenshot of a culture-fit survey. Read all questions and answer each "
+            "with the letter of the best option for a collaborative, growth-oriented candidate. "
+            "Format: '1. B — brief reason' on separate lines."
+        )
+    return (
+        "This is a screenshot of a culture-fit survey. For each question, evaluate each option "
+        "and recommend the best choice for a collaborative, growth-oriented candidate. "
+        "Include a brief breakdown per option and a clear recommendation."
+    )
+
+
+@app.get("/api/vision/health")
+def vision_health():
+    try:
+        r = requests.get("http://localhost:8002/health", timeout=2)
+        return {"available": r.status_code == 200}
+    except Exception:
+        return {"available": False}
+
+
+class SurveyAnalyzeBody(BaseModel):
+    text: Optional[str] = None
+    image_b64: Optional[str] = None
+    mode: str  # "quick" or "detailed"
+
+
+@app.post("/api/jobs/{job_id}/survey/analyze")
+def survey_analyze(job_id: int, body: SurveyAnalyzeBody):
+    try:
+        router = LLMRouter()
+        if body.image_b64:
+            prompt = _build_image_prompt(body.mode)
+            output = router.complete(
+                prompt,
+                images=[body.image_b64],
+                fallback_order=router.config.get("vision_fallback_order"),
+            )
+            source = "screenshot"
+        else:
+            prompt = _build_text_prompt(body.text or "", body.mode)
+            output = router.complete(
+                prompt,
+                system=_SURVEY_SYSTEM,
+                fallback_order=router.config.get("research_fallback_order"),
+            )
+            source = "text_paste"
+        return {"output": output, "source": source}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+class SurveySaveBody(BaseModel):
+    survey_name: Optional[str] = None
+    mode: str
+    source: str
+    raw_input: Optional[str] = None
+    image_b64: Optional[str] = None
+    llm_output: str
+    reported_score: Optional[str] = None
+
+
+@app.post("/api/jobs/{job_id}/survey/responses")
+def save_survey_response(job_id: int, body: SurveySaveBody):
+    received_at = datetime.now().isoformat()
+    image_path = None
+    if body.image_b64:
+        import base64
+        screenshots_dir = Path(DB_PATH).parent / "survey_screenshots" / str(job_id)
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        img_path = screenshots_dir / f"{timestamp}.png"
+        img_path.write_bytes(base64.b64decode(body.image_b64))
+        image_path = str(img_path)
+    row_id = insert_survey_response(
+        db_path=Path(DB_PATH),
+        job_id=job_id,
+        survey_name=body.survey_name,
+        received_at=received_at,
+        source=body.source,
+        raw_input=body.raw_input,
+        image_path=image_path,
+        mode=body.mode,
+        llm_output=body.llm_output,
+        reported_score=body.reported_score,
+    )
+    return {"id": row_id}
+
+
+@app.get("/api/jobs/{job_id}/survey/responses")
+def get_survey_history(job_id: int):
+    return get_survey_responses(db_path=Path(DB_PATH), job_id=job_id)
 
 
 # ── GET /api/jobs/:id/cover_letter/pdf ───────────────────────────────────────
