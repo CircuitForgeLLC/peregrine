@@ -17,7 +17,8 @@ def client():
 
 def test_get_research_found(client):
     """Returns research row (minus raw_output) when present."""
-    row = {
+    import sqlite3
+    mock_row = {
         "job_id": 1,
         "company_brief": "Acme Corp makes anvils.",
         "ceo_brief": "Wile E Coyote",
@@ -27,9 +28,10 @@ def test_get_research_found(client):
         "red_flags": None,
         "accessibility_brief": None,
         "generated_at": "2026-03-20T12:00:00",
-        "raw_output": "should be stripped",
     }
-    with patch("scripts.db.get_research", return_value=row):
+    mock_db = MagicMock()
+    mock_db.execute.return_value.fetchone.return_value = mock_row
+    with patch("dev_api._get_db", return_value=mock_db):
         resp = client.get("/api/jobs/1/research")
     assert resp.status_code == 200
     data = resp.json()
@@ -39,7 +41,9 @@ def test_get_research_found(client):
 
 def test_get_research_not_found(client):
     """Returns 404 when no research row exists for job."""
-    with patch("scripts.db.get_research", return_value=None):
+    mock_db = MagicMock()
+    mock_db.execute.return_value.fetchone.return_value = None
+    with patch("dev_api._get_db", return_value=mock_db):
         resp = client.get("/api/jobs/99/research")
     assert resp.status_code == 404
 

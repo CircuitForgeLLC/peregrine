@@ -316,12 +316,17 @@ def cover_letter_task(job_id: int):
 
 @app.get("/api/jobs/{job_id}/research")
 def get_research_brief(job_id: int):
-    from scripts.db import get_research as _get_research
-    row = _get_research(Path(DB_PATH), job_id=job_id)
+    db = _get_db()
+    row = db.execute(
+        "SELECT job_id, company_brief, ceo_brief, talking_points, tech_brief, "
+        "funding_brief, red_flags, accessibility_brief, generated_at "
+        "FROM company_research WHERE job_id = ? LIMIT 1",
+        (job_id,),
+    ).fetchone()
+    db.close()
     if not row:
-        raise HTTPException(status_code=404, detail="No research found for this job")
-    row.pop("raw_output", None)
-    return row
+        raise HTTPException(404, "No research found for this job")
+    return dict(row)
 
 
 @app.post("/api/jobs/{job_id}/research/generate")
@@ -331,7 +336,7 @@ def generate_research(job_id: int):
         task_id, is_new = submit_task(db_path=Path(DB_PATH), task_type="company_research", job_id=job_id)
         return {"task_id": task_id, "is_new": is_new}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, str(e))
 
 
 @app.get("/api/jobs/{job_id}/research/task")
