@@ -8,6 +8,9 @@
     <div v-if="store.loading" class="loading-state">Loading profile…</div>
 
     <template v-else>
+      <div v-if="loadError" class="load-error-banner" role="alert">
+        <strong>Error loading profile:</strong> {{ loadError }}
+      </div>
       <!-- ── Identity ─────────────────────────────────────── -->
       <section class="form-section">
         <h3 class="section-title">Identity</h3>
@@ -88,7 +91,7 @@
 
         <div
           v-for="(pref, idx) in store.mission_preferences"
-          :key="idx"
+          :key="pref.id"
           class="mission-row"
         >
           <input
@@ -197,8 +200,10 @@
 import { ref, onMounted } from 'vue'
 import { useProfileStore } from '../../stores/settings/profile'
 import { useAppConfigStore } from '../../stores/appConfig'
+import { useApiFetch } from '../../composables/useApi'
 
 const store = useProfileStore()
+const { loadError } = store
 const config = useAppConfigStore()
 
 const newNdaCompany = ref('')
@@ -209,7 +214,7 @@ onMounted(() => { store.load() })
 
 // ── Mission helpers ──────────────────────────────────────
 function addMission() {
-  store.mission_preferences = [...store.mission_preferences, { industry: '', note: '' }]
+  store.mission_preferences = [...store.mission_preferences, { id: crypto.randomUUID(), industry: '', note: '' }]
 }
 
 function removeMission(idx: number) {
@@ -240,27 +245,23 @@ function autosave() {
 // ── AI generation (paid tier) ────────────────────────────
 async function generateSummary() {
   generatingSummary.value = true
-  try {
-    const res = await fetch('/api/settings/profile/generate-summary', { method: 'POST' })
-    if (res.ok) {
-      const data = await res.json() as { summary?: string }
-      if (data.summary) store.career_summary = data.summary
-    }
-  } finally {
-    generatingSummary.value = false
-  }
+  const { data, error } = await useApiFetch<{ summary?: string }>(
+    '/api/settings/profile/generate-summary', { method: 'POST' }
+  )
+  generatingSummary.value = false
+  if (!error && data?.summary) store.career_summary = data.summary
 }
 
 async function generateMissions() {
   generatingMissions.value = true
-  try {
-    const res = await fetch('/api/settings/profile/generate-missions', { method: 'POST' })
-    if (res.ok) {
-      const data = await res.json() as { mission_preferences?: Array<{ industry: string; note: string }> }
-      if (data.mission_preferences) store.mission_preferences = data.mission_preferences
-    }
-  } finally {
-    generatingMissions.value = false
+  const { data, error } = await useApiFetch<{ mission_preferences?: Array<{ industry: string; note: string }> }>(
+    '/api/settings/profile/generate-missions', { method: 'POST' }
+  )
+  generatingMissions.value = false
+  if (!error && data?.mission_preferences) {
+    store.mission_preferences = data.mission_preferences.map((m) => ({
+      id: crypto.randomUUID(), industry: m.industry ?? '', note: m.note ?? '',
+    }))
   }
 }
 </script>
@@ -290,6 +291,16 @@ async function generateMissions() {
   color: var(--color-text-muted);
   font-size: 0.875rem;
   padding: var(--space-4) 0;
+}
+
+.load-error-banner {
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  background: color-mix(in srgb, var(--color-danger, #c0392b) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger, #c0392b) 40%, transparent);
+  border-radius: 6px;
+  color: var(--color-danger, #c0392b);
+  font-size: 0.875rem;
 }
 
 /* ── Sections ──────────────────────────────────────────── */

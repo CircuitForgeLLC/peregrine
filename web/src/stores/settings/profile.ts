@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
 
-export interface MissionPref { industry: string; note: string }
+export interface MissionPref { id: string; industry: string; note: string }
 
 export const useProfileStore = defineStore('settings/profile', () => {
   const name = ref('')
@@ -20,11 +20,17 @@ export const useProfileStore = defineStore('settings/profile', () => {
   const loading = ref(false)
   const saving = ref(false)
   const saveError = ref<string | null>(null)
+  const loadError = ref<string | null>(null)
 
   async function load() {
     loading.value = true
-    const { data } = await useApiFetch<Record<string, unknown>>('/api/settings/profile')
+    loadError.value = null
+    const { data, error } = await useApiFetch<Record<string, unknown>>('/api/settings/profile')
     loading.value = false
+    if (error) {
+      loadError.value = error.kind === 'network' ? error.message : error.detail || 'Failed to load profile'
+      return
+    }
     if (!data) return
     name.value = String(data.name ?? '')
     email.value = String(data.email ?? '')
@@ -33,7 +39,8 @@ export const useProfileStore = defineStore('settings/profile', () => {
     career_summary.value = String(data.career_summary ?? '')
     candidate_voice.value = String(data.candidate_voice ?? '')
     inference_profile.value = String(data.inference_profile ?? 'cpu')
-    mission_preferences.value = (data.mission_preferences as MissionPref[]) ?? []
+    mission_preferences.value = ((data.mission_preferences as Array<{ industry: string; note: string }>) ?? [])
+      .map((m) => ({ id: crypto.randomUUID(), industry: m.industry ?? '', note: m.note ?? '' }))
     nda_companies.value = (data.nda_companies as string[]) ?? []
     accessibility_focus.value = Boolean(data.accessibility_focus)
     lgbtq_focus.value = Boolean(data.lgbtq_focus)
@@ -65,8 +72,8 @@ export const useProfileStore = defineStore('settings/profile', () => {
       saveError.value = 'Save failed — please try again.'
       return
     }
-    // Push identity fields to resume YAML — graceful; endpoint may not exist yet (Task 3)
-    await useApiFetch('/api/settings/resume/sync-identity', {
+    // fire-and-forget — identity sync failures don't block save
+    useApiFetch('/api/settings/resume/sync-identity', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -81,7 +88,7 @@ export const useProfileStore = defineStore('settings/profile', () => {
   return {
     name, email, phone, linkedin_url, career_summary, candidate_voice, inference_profile,
     mission_preferences, nda_companies, accessibility_focus, lgbtq_focus,
-    loading, saving, saveError,
+    loading, saving, saveError, loadError,
     load, save,
   }
 })
