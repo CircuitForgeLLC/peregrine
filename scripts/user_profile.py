@@ -7,6 +7,8 @@ here so port/host/SSL changes propagate everywhere automatically.
 """
 from __future__ import annotations
 from pathlib import Path
+import os
+import tempfile
 import yaml
 
 _DEFAULTS = {
@@ -136,8 +138,6 @@ class UserProfile:
 
 def load_user_profile(config_path: str) -> dict:
     """Load user.yaml and return as a plain dict with safe defaults."""
-    import yaml
-    from pathlib import Path
     path = Path(config_path)
     if not path.exists():
         return {}
@@ -148,10 +148,6 @@ def load_user_profile(config_path: str) -> dict:
 
 def save_user_profile(config_path: str, data: dict) -> None:
     """Atomically write the user profile dict to user.yaml."""
-    import yaml
-    import os
-    import tempfile
-    from pathlib import Path
     path = Path(config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     # Write to temp file then rename for atomicity
