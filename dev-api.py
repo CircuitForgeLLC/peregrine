@@ -868,6 +868,22 @@ def move_job(job_id: int, body: MoveBody):
     return {"ok": True}
 
 
+# ── GET /api/config/app ───────────────────────────────────────────────────────
+
+@app.get("/api/config/app")
+def get_app_config():
+    import os
+    profile = os.environ.get("INFERENCE_PROFILE", "cpu")
+    valid_profiles = {"remote", "cpu", "single-gpu", "dual-gpu"}
+    return {
+        "isCloud": os.environ.get("CLOUD_MODE", "").lower() in ("1", "true"),
+        "isDevMode": os.environ.get("DEV_MODE", "").lower() in ("1", "true"),
+        "tier": os.environ.get("APP_TIER", "free"),
+        "contractedClient": os.environ.get("CONTRACTED_CLIENT", "").lower() in ("1", "true"),
+        "inferenceProfile": profile if profile in valid_profiles else "cpu",
+    }
+
+
 # ── GET /api/config/user ──────────────────────────────────────────────────────
 
 @app.get("/api/config/user")
