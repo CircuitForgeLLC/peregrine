@@ -176,7 +176,6 @@ const columnColor = computed(() => {
       <div v-if="interviewDateLabel" class="date-chip">
         {{ dateChipIcon }} {{ interviewDateLabel }}
       </div>
-      <div class="research-badge research-badge--done">🔬 Research ready</div>
     </div>
     <footer class="card-footer">
       <button class="card-action" @click.stop="emit('move', job.id)">Move to… ›</button>
@@ -331,23 +330,6 @@ const columnColor = computed(() => {
   align-self: flex-start;
 }
 
-.research-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  border-radius: 99px;
-  padding: 2px 8px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  align-self: flex-start;
-  margin-top: 2px;
-}
-
-.research-badge--done {
-  background: color-mix(in srgb, var(--status-phone) 12%, var(--color-surface-raised));
-  color: var(--status-phone);
-  border: 1px solid color-mix(in srgb, var(--status-phone) 30%, var(--color-surface-raised));
-}
 
 .card-footer {
   border-top: 1px solid var(--color-border-light);
