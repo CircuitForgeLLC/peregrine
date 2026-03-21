@@ -130,3 +130,36 @@ class UserProfile:
             "ollama_research": f"{self.ollama_url}/v1",
             "vllm":            f"{self.vllm_url}/v1",
         }
+
+
+# ── Free functions for plain-dict access (used by dev-api.py) ─────────────────
+
+def load_user_profile(config_path: str) -> dict:
+    """Load user.yaml and return as a plain dict with safe defaults."""
+    import yaml
+    from pathlib import Path
+    path = Path(config_path)
+    if not path.exists():
+        return {}
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    return data
+
+
+def save_user_profile(config_path: str, data: dict) -> None:
+    """Atomically write the user profile dict to user.yaml."""
+    import yaml
+    import os
+    import tempfile
+    from pathlib import Path
+    path = Path(config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Write to temp file then rename for atomicity
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix='.yaml.tmp')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+        os.replace(tmp, path)
+    except Exception:
+        os.unlink(tmp)
+        raise
