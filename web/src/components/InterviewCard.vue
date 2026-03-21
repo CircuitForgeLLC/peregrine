@@ -12,6 +12,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   move: [jobId: number, preSelectedStage?: PipelineStage]
   prep: [jobId: number]
+  survey: [jobId: number]
 }>()
 
 // Signal state
@@ -180,6 +181,11 @@ const columnColor = computed(() => {
     <footer class="card-footer">
       <button class="card-action" @click.stop="emit('move', job.id)">Move to… ›</button>
       <button v-if="['phone_screen', 'interviewing', 'offer'].includes(job.status)" class="card-action" @click.stop="emit('prep', job.id)">Prep →</button>
+      <button
+        v-if="['survey', 'phone_screen', 'interviewing', 'offer'].includes(job.status)"
+        class="card-action"
+        @click.stop="emit('survey', job.id)"
+      >Survey →</button>
     </footer>
     <!-- Signal banners -->
     <template v-if="job.stage_signals?.length">
