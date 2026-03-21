@@ -77,10 +77,24 @@ export const usePrepStore = defineStore('prep', () => {
         useApiFetch<FullJobDetail>(`/api/jobs/${jobId}`),
       ])
 
+      // Research 404 is expected (no research yet) — only surface non-404 errors
+      if (researchResult.error && !(researchResult.error.kind === 'http' && researchResult.error.status === 404)) {
+        error.value = 'Failed to load research data'
+        return
+      }
+      if (contactsResult.error) {
+        error.value = 'Failed to load contacts'
+        return
+      }
+      if (jobResult.error) {
+        error.value = 'Failed to load job details'
+        return
+      }
+
       research.value = researchResult.data ?? null
-      contacts.value = (contactsResult.data as Contact[]) ?? []
-      taskStatus.value = (taskResult.data as TaskStatus) ?? { status: null, stage: null, message: null }
-      fullJob.value = (jobResult.data as FullJobDetail) ?? null
+      contacts.value = contactsResult.data ?? []
+      taskStatus.value = taskResult.data ?? { status: null, stage: null, message: null }
+      fullJob.value = jobResult.data ?? null
 
       // If a task is already running/queued, start polling
       const ts = taskStatus.value.status
@@ -95,16 +109,24 @@ export const usePrepStore = defineStore('prep', () => {
   }
 
   async function generateResearch(jobId: number) {
-    await useApiFetch<unknown>(`/api/jobs/${jobId}/research/generate`, { method: 'POST' })
+    const { data, error: fetchError } = await useApiFetch<{ task_id: number; is_new: boolean }>(
+      `/api/jobs/${jobId}/research/generate`,
+      { method: 'POST' }
+    )
+    if (fetchError || !data) {
+      error.value = 'Failed to start research generation'
+      return
+    }
     pollTask(jobId)
   }
 
+  /** @internal — called by fetchFor and generateResearch; not for component use */
   function pollTask(jobId: number) {
     _clearInterval()
     pollInterval = setInterval(async () => {
       const { data } = await useApiFetch<TaskStatus>(`/api/jobs/${jobId}/research/task`)
       if (data) {
-        taskStatus.value = data as TaskStatus
+        taskStatus.value = data
         if (data.status === 'completed' || data.status === 'failed') {
           _clearInterval()
           if (data.status === 'completed') {
