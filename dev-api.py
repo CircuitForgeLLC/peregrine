@@ -1074,17 +1074,22 @@ def create_blank_resume():
 
 @app.post("/api/settings/resume/upload")
 async def upload_resume(file: UploadFile):
-    from scripts.resume_parser import structure_resume
-    import tempfile, os
-    suffix = Path(file.filename).suffix.lower()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
     try:
-        result, error = structure_resume(tmp_path)
-    finally:
-        os.unlink(tmp_path)
-    if error:
-        return {"ok": False, "error": error, "data": result}
-    result["exists"] = True
-    return {"ok": True, "data": result}
+        from scripts.resume_parser import structure_resume
+        import tempfile, os
+        suffix = Path(file.filename).suffix.lower()
+        tmp_path = None
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+        try:
+            result, err = structure_resume(tmp_path)
+        finally:
+            if tmp_path:
+                os.unlink(tmp_path)
+        if err:
+            return {"ok": False, "error": err, "data": result}
+        result["exists"] = True
+        return {"ok": True, "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
