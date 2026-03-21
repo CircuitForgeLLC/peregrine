@@ -427,6 +427,8 @@ class SurveyAnalyzeBody(BaseModel):
 
 @app.post("/api/jobs/{job_id}/survey/analyze")
 def survey_analyze(job_id: int, body: SurveyAnalyzeBody):
+    if body.mode not in ("quick", "detailed"):
+        raise HTTPException(400, f"Invalid mode: {body.mode!r}")
     try:
         router = LLMRouter()
         if body.image_b64:
@@ -462,16 +464,21 @@ class SurveySaveBody(BaseModel):
 
 @app.post("/api/jobs/{job_id}/survey/responses")
 def save_survey_response(job_id: int, body: SurveySaveBody):
+    if body.mode not in ("quick", "detailed"):
+        raise HTTPException(400, f"Invalid mode: {body.mode!r}")
     received_at = datetime.now().isoformat()
     image_path = None
     if body.image_b64:
-        import base64
-        screenshots_dir = Path(DB_PATH).parent / "survey_screenshots" / str(job_id)
-        screenshots_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        img_path = screenshots_dir / f"{timestamp}.png"
-        img_path.write_bytes(base64.b64decode(body.image_b64))
-        image_path = str(img_path)
+        try:
+            import base64
+            screenshots_dir = Path(DB_PATH).parent / "survey_screenshots" / str(job_id)
+            screenshots_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            img_path = screenshots_dir / f"{timestamp}.png"
+            img_path.write_bytes(base64.b64decode(body.image_b64))
+            image_path = str(img_path)
+        except Exception:
+            raise HTTPException(400, "Invalid image data")
     row_id = insert_survey_response(
         db_path=Path(DB_PATH),
         job_id=job_id,
