@@ -41,4 +41,11 @@ describe('useProfileStore', () => {
     await store.save()
     expect(store.saveError).toBeTruthy()
   })
+
+  it('sets loadError when load fails', async () => {
+    mockFetch.mockResolvedValueOnce({ data: null, error: { kind: 'network', message: 'Network error' } })
+    const store = useProfileStore()
+    await store.load()
+    expect(store.loadError).toBe('Network error')
+  })
 })
