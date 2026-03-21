@@ -119,6 +119,38 @@ describe('useSurveyStore', () => {
     expect(store.saving).toBe(false)
   })
 
+  it('saveResponse sets error and preserves analysis on POST failure', async () => {
+    const mockApiFetch = vi.mocked(useApiFetch)
+    // Setup: fetchFor
+    mockApiFetch
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: { available: true }, error: null })
+
+    const store = useSurveyStore()
+    await store.fetchFor(1)
+
+    // Set analysis state manually
+    store.analysis = {
+      output: '1. B — reason',
+      source: 'text_paste',
+      mode: 'quick',
+      rawInput: 'Q1: test',
+    }
+
+    // Save fails
+    mockApiFetch.mockResolvedValueOnce({
+      data: null,
+      error: { kind: 'http', status: 500, detail: 'Internal Server Error' },
+    })
+
+    await store.saveResponse(1, { surveyName: 'Round 1', reportedScore: '85%' })
+
+    expect(store.saving).toBe(false)
+    expect(store.error).toBeTruthy()
+    expect(store.analysis).not.toBeNull()
+    expect(store.analysis!.output).toBe('1. B — reason')
+  })
+
   it('clear resets all state to initial values', async () => {
     const mockApiFetch = vi.mocked(useApiFetch)
     mockApiFetch
