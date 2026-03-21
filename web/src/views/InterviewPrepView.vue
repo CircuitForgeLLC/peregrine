@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import { usePrepStore } from '../stores/prep'
 import { useInterviewsStore } from '../stores/interviews'
+import type { PipelineJob } from '../stores/interviews'
 
 const route  = useRoute()
 const router = useRouter()
@@ -22,10 +23,7 @@ const jobId = computed<number | null>(() => {
 // ── Current job (from interviews store) ───────────────────────────────────────
 const PREP_VALID_STATUSES = ['phone_screen', 'interviewing', 'offer'] as const
 
-const job = computed(() => {
-  if (jobId.value === null) return null
-  return interviewsStore.jobs.find(j => j.id === jobId.value) ?? null
-})
+const job = ref<PipelineJob | null>(null)
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 type TabId = 'jd' | 'email' | 'letter'
@@ -34,6 +32,9 @@ const activeTab = ref<TabId>('jd')
 // ── Call notes (localStorage via @vueuse/core) ────────────────────────────────
 const notesKey     = computed(() => `cf-prep-notes-${jobId.value ?? 'none'}`)
 const callNotes    = useStorage(notesKey, '')
+
+// ── Page-level error (e.g. network failure during guard) ──────────────────────
+const pageError = ref<string | null>(null)
 
 // ── Routing / guard ───────────────────────────────────────────────────────────
 async function guardAndLoad() {
@@ -45,6 +46,11 @@ async function guardAndLoad() {
   // Ensure the interviews store is populated
   if (interviewsStore.jobs.length === 0) {
     await interviewsStore.fetchAll()
+    if (interviewsStore.error) {
+      // Store fetch failed — don't redirect, show error
+      pageError.value = 'Failed to load job data. Please try again.'
+      return
+    }
   }
 
   const found = interviewsStore.jobs.find(j => j.id === jobId.value)
@@ -53,6 +59,7 @@ async function guardAndLoad() {
     return
   }
 
+  job.value = found
   await prepStore.fetchFor(jobId.value)
 }
 
@@ -361,7 +368,7 @@ async function onGenerate() {
               <span
                 class="score-badge"
                 :class="matchScoreBadge(matchScore).cls"
-                aria-label="`Match score: ${matchScore ?? 'unknown'}%`"
+                :aria-label="`Match score: ${matchScore ?? 'unknown'}%`"
               >
                 {{ matchScoreBadge(matchScore).icon }}
               </span>
@@ -445,6 +452,11 @@ async function onGenerate() {
         </main>
       </div>
     </template>
+
+    <!-- Network/load error — don't redirect, show message -->
+    <div v-else-if="pageError" class="error-banner" role="alert">
+      {{ pageError }}
+    </div>
 
     <!-- Fallback while redirecting -->
     <div v-else class="prep-loading" aria-live="polite">
