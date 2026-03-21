@@ -20,6 +20,7 @@ if (!jobId || isNaN(jobId)) {
 }
 
 // UI state
+let saveSuccessTimer: ReturnType<typeof setTimeout> | null = null
 const activeTab = ref<'text' | 'screenshot'>('text')
 const textInput = ref('')
 const imageB64 = ref<string | null>(null)
@@ -48,6 +49,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   surveyStore.clear()
+  if (saveSuccessTimer) clearTimeout(saveSuccessTimer)
 })
 
 // Screenshot handling
@@ -119,7 +121,8 @@ async function saveToJob() {
     saveSuccess.value = true
     surveyName.value = ''
     reportedScore.value = ''
-    setTimeout(() => { saveSuccess.value = false }, 3000)
+    if (saveSuccessTimer) clearTimeout(saveSuccessTimer)
+    saveSuccessTimer = setTimeout(() => { saveSuccess.value = false }, 3000)
   }
 }
 
@@ -137,8 +140,10 @@ function formatDate(iso: string | null): string {
 }
 const expandedHistory = ref<Set<number>>(new Set())
 function toggleHistoryEntry(id: number) {
-  if (expandedHistory.value.has(id)) expandedHistory.value.delete(id)
-  else expandedHistory.value.add(id)
+  const next = new Set(expandedHistory.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedHistory.value = next
 }
 </script>
 
@@ -188,6 +193,8 @@ function toggleHistoryEntry(id: number) {
         <div
           v-else
           class="screenshot-zone"
+          role="region"
+          aria-label="Screenshot upload area — paste, drag, or choose file"
           @paste="handlePaste"
           @dragover.prevent
           @drop="handleDrop"
@@ -563,6 +570,7 @@ function toggleHistoryEntry(id: number) {
   font-size: 0.875rem;
   background: var(--color-bg, #fff);
   color: var(--color-text, #1a202c);
+  box-sizing: border-box;
 }
 
 .save-btn {
