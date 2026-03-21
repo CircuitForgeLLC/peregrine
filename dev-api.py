@@ -312,6 +312,55 @@ def cover_letter_task(job_id: int):
     }
 
 
+# ── Interview Prep endpoints ─────────────────────────────────────────────────
+
+@app.get("/api/jobs/{job_id}/research")
+def get_research_brief(job_id: int):
+    from scripts.db import get_research as _get_research
+    row = _get_research(Path(DB_PATH), job_id=job_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="No research found for this job")
+    row.pop("raw_output", None)
+    return row
+
+
+@app.post("/api/jobs/{job_id}/research/generate")
+def generate_research(job_id: int):
+    try:
+        from scripts.task_runner import submit_task
+        task_id, is_new = submit_task(db_path=Path(DB_PATH), task_type="company_research", job_id=job_id)
+        return {"task_id": task_id, "is_new": is_new}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/jobs/{job_id}/research/task")
+def research_task_status(job_id: int):
+    db = _get_db()
+    row = db.execute(
+        "SELECT status, stage, error FROM background_tasks "
+        "WHERE task_type = 'company_research' AND job_id = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (job_id,),
+    ).fetchone()
+    db.close()
+    if not row:
+        return {"status": "none", "stage": None, "message": None}
+    return {"status": row["status"], "stage": row["stage"], "message": row["error"]}
+
+
+@app.get("/api/jobs/{job_id}/contacts")
+def get_job_contacts(job_id: int):
+    db = _get_db()
+    rows = db.execute(
+        "SELECT id, direction, subject, from_addr, body, received_at "
+        "FROM job_contacts WHERE job_id = ? ORDER BY received_at DESC",
+        (job_id,),
+    ).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+
 # ── GET /api/jobs/:id/cover_letter/pdf ───────────────────────────────────────
 
 @app.get("/api/jobs/{job_id}/cover_letter/pdf")
