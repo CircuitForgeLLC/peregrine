@@ -180,7 +180,7 @@ const columnColor = computed(() => {
     </div>
     <footer class="card-footer">
       <button class="card-action" @click.stop="emit('move', job.id)">Move to… ›</button>
-      <button class="card-action" @click.stop="emit('prep', job.id)">Prep →</button>
+      <button v-if="['phone_screen', 'interviewing', 'offer'].includes(job.status)" class="card-action" @click.stop="emit('prep', job.id)">Prep →</button>
     </footer>
     <!-- Signal banners -->
     <template v-if="job.stage_signals?.length">
