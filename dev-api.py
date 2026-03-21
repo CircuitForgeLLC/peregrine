@@ -14,7 +14,8 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from datetime import datetime
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Response
+import yaml
+from fastapi import FastAPI, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -1017,3 +1018,73 @@ def save_profile(payload: UserProfilePayload):
         return {"ok": True}
     except Exception as e:
         raise HTTPException(500, f"Could not save profile: {e}")
+
+
+# ── Settings: Resume Profile endpoints ───────────────────────────────────────
+
+class WorkEntry(BaseModel):
+    title: str = ""; company: str = ""; period: str = ""; location: str = ""
+    industry: str = ""; responsibilities: str = ""; skills: List[str] = []
+
+class ResumePayload(BaseModel):
+    name: str = ""; email: str = ""; phone: str = ""; linkedin_url: str = ""
+    surname: str = ""; address: str = ""; city: str = ""; zip_code: str = ""; date_of_birth: str = ""
+    experience: List[WorkEntry] = []
+    salary_min: int = 0; salary_max: int = 0; notice_period: str = ""
+    remote: bool = False; relocation: bool = False
+    assessment: bool = False; background_check: bool = False
+    gender: str = ""; pronouns: str = ""; ethnicity: str = ""
+    veteran_status: str = ""; disability: str = ""
+    skills: List[str] = []; domains: List[str] = []; keywords: List[str] = []
+
+RESUME_PATH = Path("config/plain_text_resume.yaml")
+
+@app.get("/api/settings/resume")
+def get_resume():
+    try:
+        if not RESUME_PATH.exists():
+            return {"exists": False}
+        with open(RESUME_PATH) as f:
+            data = yaml.safe_load(f) or {}
+        data["exists"] = True
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/settings/resume")
+def save_resume(payload: ResumePayload):
+    try:
+        RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(RESUME_PATH, "w") as f:
+            yaml.dump(payload.model_dump(), f, allow_unicode=True, default_flow_style=False)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/settings/resume/blank")
+def create_blank_resume():
+    try:
+        RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if not RESUME_PATH.exists():
+            with open(RESUME_PATH, "w") as f:
+                yaml.dump({}, f)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/settings/resume/upload")
+async def upload_resume(file: UploadFile):
+    from scripts.resume_parser import structure_resume
+    import tempfile, os
+    suffix = Path(file.filename).suffix.lower()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+    try:
+        result, error = structure_resume(tmp_path)
+    finally:
+        os.unlink(tmp_path)
+    if error:
+        return {"ok": False, "error": error, "data": result}
+    result["exists"] = True
+    return {"ok": True, "data": result}
