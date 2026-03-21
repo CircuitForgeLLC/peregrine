@@ -2,6 +2,12 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../composables/useApi'
 
+const validSources = ['text_paste', 'screenshot'] as const
+type ValidSource = typeof validSources[number]
+function isValidSource(s: string): s is ValidSource {
+  return validSources.includes(s as ValidSource)
+}
+
 export interface SurveyAnalysis {
   output: string
   source: 'text_paste' | 'screenshot'
@@ -40,18 +46,23 @@ export const useSurveyStore = defineStore('survey', () => {
       currentJobId.value = jobId
     }
 
-    const [historyResult, visionResult] = await Promise.all([
-      useApiFetch<SurveyResponse[]>(`/api/jobs/${jobId}/survey/responses`),
-      useApiFetch<{ available: boolean }>('/api/vision/health'),
-    ])
+    loading.value = true
+    try {
+      const [historyResult, visionResult] = await Promise.all([
+        useApiFetch<SurveyResponse[]>(`/api/jobs/${jobId}/survey/responses`),
+        useApiFetch<{ available: boolean }>('/api/vision/health'),
+      ])
 
-    if (historyResult.error) {
-      error.value = 'Could not load survey history.'
-    } else {
-      history.value = historyResult.data ?? []
+      if (historyResult.error) {
+        error.value = 'Could not load survey history.'
+      } else {
+        history.value = historyResult.data ?? []
+      }
+
+      visionAvailable.value = visionResult.data?.available ?? false
+    } finally {
+      loading.value = false
     }
-
-    visionAvailable.value = visionResult.data?.available ?? false
   }
 
   async function analyze(
@@ -71,7 +82,7 @@ export const useSurveyStore = defineStore('survey', () => {
     }
     analysis.value = {
       output: data.output,
-      source: data.source as 'text_paste' | 'screenshot',
+      source: isValidSource(data.source) ? data.source : 'text_paste',
       mode: payload.mode,
       rawInput: payload.text ?? null,
     }
@@ -103,6 +114,7 @@ export const useSurveyStore = defineStore('survey', () => {
       return
     }
     // Prepend the saved response to history
+    const now = new Date().toISOString()
     const saved: SurveyResponse = {
       id: data.id,
       survey_name: args.surveyName || null,
@@ -112,8 +124,8 @@ export const useSurveyStore = defineStore('survey', () => {
       image_path: null,
       llm_output: analysis.value.output,
       reported_score: args.reportedScore || null,
-      received_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
+      received_at: now,
+      created_at: now,
     }
     history.value = [saved, ...history.value]
     analysis.value = null
