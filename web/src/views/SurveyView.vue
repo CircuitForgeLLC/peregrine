@@ -13,11 +13,7 @@ const VALID_STAGES = ['survey', 'phone_screen', 'interviewing', 'offer']
 
 const rawId = route.params.id
 const jobId = rawId ? parseInt(String(rawId), 10) : NaN
-
-// Redirect if no valid id
-if (!jobId || isNaN(jobId)) {
-  router.replace('/interviews')
-}
+const pickerMode = !rawId || isNaN(jobId)
 
 // UI state
 let saveSuccessTimer: ReturnType<typeof setTimeout> | null = null
@@ -35,11 +31,21 @@ const job = computed(() =>
   interviewsStore.jobs.find(j => j.id === jobId) ?? null
 )
 
+// Jobs eligible for survey (used in picker mode)
+const pickerJobs = computed(() =>
+  interviewsStore.jobs.filter(j => VALID_STAGES.includes(j.status))
+)
+
+const stageLabel: Record<string, string> = {
+  survey: 'Survey', phone_screen: 'Phone Screen',
+  interviewing: 'Interviewing', offer: 'Offer',
+}
+
 onMounted(async () => {
-  if (!jobId || isNaN(jobId)) return
   if (interviewsStore.jobs.length === 0) {
     await interviewsStore.fetchAll()
   }
+  if (pickerMode) return
   if (!job.value || !VALID_STAGES.includes(job.value.status)) {
     router.replace('/interviews')
     return
@@ -126,12 +132,6 @@ async function saveToJob() {
   }
 }
 
-// Stage label helper
-const stageLabel: Record<string, string> = {
-  survey: 'Survey', phone_screen: 'Phone Screen',
-  interviewing: 'Interviewing', offer: 'Offer',
-}
-
 // History accordion
 const historyOpen = ref(false)
 function formatDate(iso: string | null): string {
@@ -149,6 +149,32 @@ function toggleHistoryEntry(id: number) {
 
 <template>
   <div class="survey-layout">
+
+    <!-- ── Job picker (no id in route) ── -->
+    <div v-if="pickerMode" class="survey-content picker-mode">
+      <h2 class="picker-heading">Survey Assistant</h2>
+      <p class="picker-sub">Select a job to open the survey assistant.</p>
+      <div v-if="pickerJobs.length === 0" class="picker-empty">
+        No jobs in an active interview stage. Move a job to Survey, Phone Screen, Interviewing, or Offer first.
+      </div>
+      <ul v-else class="picker-list" role="list">
+        <li
+          v-for="j in pickerJobs"
+          :key="j.id"
+          class="picker-item"
+          @click="router.push('/survey/' + j.id)"
+        >
+          <div class="picker-item__main">
+            <span class="picker-item__company">{{ j.company }}</span>
+            <span class="picker-item__title">{{ j.title }}</span>
+          </div>
+          <span class="stage-badge">{{ stageLabel[j.status] ?? j.status }}</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- ── Survey assistant (id present) ── -->
+    <template v-else>
     <!-- Sticky context bar -->
     <div class="context-bar" v-if="job">
       <span class="context-company">{{ job.company }}</span>
@@ -305,6 +331,8 @@ function toggleHistoryEntry(id: number) {
         </div>
       </details>
     </div>
+    </template><!-- end v-else (id present) -->
+
   </div>
 </template>
 
@@ -724,5 +752,83 @@ function toggleHistoryEntry(id: number) {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ── Picker mode ── */
+.picker-mode {
+  padding-top: var(--space-8, 2rem);
+}
+
+.picker-heading {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text, #1a202c);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.picker-sub {
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #718096);
+  margin: 0 0 var(--space-4) 0;
+}
+
+.picker-empty {
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #718096);
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  text-align: center;
+}
+
+.picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.picker-item:hover {
+  border-color: var(--color-accent, #3182ce);
+  background: var(--color-accent-subtle, #ebf4ff);
+}
+
+.picker-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.picker-item__company {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--color-text, #1a202c);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker-item__title {
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #718096);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
