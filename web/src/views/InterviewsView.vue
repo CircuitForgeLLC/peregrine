@@ -379,6 +379,11 @@ function daysSince(dateStr: string | null) {
             <div class="pre-row-meta">
               <span v-if="daysSince(job.applied_at) !== null" class="pre-row-days">{{ daysSince(job.applied_at) }}d ago</span>
               <button class="btn-move-pre" @click="openMove(job.id)" :aria-label="`Move ${job.title}`">Move to… ›</button>
+              <button
+                v-if="job.status === 'survey'"
+                class="btn-move-pre"
+                @click="router.push('/survey/' + job.id)"
+              >Survey →</button>
             </div>
           </div>
           <!-- Signal banners for pre-list rows -->
@@ -461,7 +466,7 @@ function daysSince(dateStr: string | null) {
         </div>
         <InterviewCard v-for="(job, i) in store.phoneScreen" :key="job.id" :job="job"
           :focused="focusedCol === 0 && focusedCard === i"
-          @move="openMove" @prep="router.push(`/prep/${$event}`)" />
+          @move="openMove" @prep="router.push(`/prep/${$event}`)" @survey="router.push('/survey/' + $event)" />
       </div>
 
       <div class="kanban-col" :class="{ 'kanban-col--focused': focusedCol === 1 }" aria-label="Interviewing">
@@ -474,7 +479,7 @@ function daysSince(dateStr: string | null) {
         </div>
         <InterviewCard v-for="(job, i) in store.interviewing" :key="job.id" :job="job"
           :focused="focusedCol === 1 && focusedCard === i"
-          @move="openMove" @prep="router.push(`/prep/${$event}`)" />
+          @move="openMove" @prep="router.push(`/prep/${$event}`)" @survey="router.push('/survey/' + $event)" />
       </div>
 
       <div class="kanban-col" :class="{ 'kanban-col--focused': focusedCol === 2 }" aria-label="Offer and Hired">
@@ -487,7 +492,7 @@ function daysSince(dateStr: string | null) {
         </div>
         <InterviewCard v-for="(job, i) in store.offerHired" :key="job.id" :job="job"
           :focused="focusedCol === 2 && focusedCard === i"
-          @move="openMove" @prep="router.push(`/prep/${$event}`)" />
+          @move="openMove" @prep="router.push(`/prep/${$event}`)" @survey="router.push('/survey/' + $event)" />
       </div>
     </section>
 
