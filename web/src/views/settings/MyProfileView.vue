@@ -138,7 +138,7 @@
         <div class="tag-list">
           <span
             v-for="(company, idx) in store.nda_companies"
-            :key="idx"
+            :key="company"
             class="tag"
           >
             {{ company }}
@@ -224,9 +224,9 @@ function removeMission(idx: number) {
 
 // ── NDA helpers (autosave on add/remove) ────────────────
 function addNda() {
-  const val = newNdaCompany.value.trim()
-  if (!val) return
-  store.nda_companies = [...store.nda_companies, val]
+  const trimmed = newNdaCompany.value.trim()
+  if (!trimmed || store.nda_companies.includes(trimmed)) return
+  store.nda_companies = [...store.nda_companies, trimmed]
   newNdaCompany.value = ''
   store.save()
 }

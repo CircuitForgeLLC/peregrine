@@ -57,7 +57,7 @@ export const useProfileStore = defineStore('settings/profile', () => {
       career_summary: career_summary.value,
       candidate_voice: candidate_voice.value,
       inference_profile: inference_profile.value,
-      mission_preferences: mission_preferences.value,
+      mission_preferences: mission_preferences.value.map(({ industry, note }) => ({ industry, note })),
       nda_companies: nda_companies.value,
       accessibility_focus: accessibility_focus.value,
       lgbtq_focus: lgbtq_focus.value,
