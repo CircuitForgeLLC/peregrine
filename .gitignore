@@ -35,6 +35,9 @@ config/user.yaml.working
 
 # Claude context files — kept out of version control
 CLAUDE.md
+.superpowers/
+pytest-output.txt
+docs/superpowers/
 
 data/email_score.jsonl
 data/email_label_queue.jsonl
