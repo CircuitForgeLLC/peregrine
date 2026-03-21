@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { useApiFetch } from '../composables/useApiFetch'
+import { useApiFetch } from '../composables/useApi'
 
 export interface ResearchBrief {
   company_brief: string | null
@@ -70,17 +70,17 @@ export const usePrepStore = defineStore('prep', () => {
 
     loading.value = true
     try {
-      const [researchData, contactsData, taskData, jobData] = await Promise.all([
+      const [researchResult, contactsResult, taskResult, jobResult] = await Promise.all([
         useApiFetch<ResearchBrief>(`/api/jobs/${jobId}/research`),
         useApiFetch<Contact[]>(`/api/jobs/${jobId}/contacts`),
         useApiFetch<TaskStatus>(`/api/jobs/${jobId}/research/task`),
         useApiFetch<FullJobDetail>(`/api/jobs/${jobId}`),
       ])
 
-      research.value = researchData ?? null
-      contacts.value = (contactsData as Contact[]) ?? []
-      taskStatus.value = (taskData as TaskStatus) ?? { status: null, stage: null, message: null }
-      fullJob.value = (jobData as FullJobDetail) ?? null
+      research.value = researchResult.data ?? null
+      contacts.value = (contactsResult.data as Contact[]) ?? []
+      taskStatus.value = (taskResult.data as TaskStatus) ?? { status: null, stage: null, message: null }
+      fullJob.value = (jobResult.data as FullJobDetail) ?? null
 
       // If a task is already running/queued, start polling
       const ts = taskStatus.value.status
@@ -95,14 +95,14 @@ export const usePrepStore = defineStore('prep', () => {
   }
 
   async function generateResearch(jobId: number) {
-    await useApiFetch(`/api/jobs/${jobId}/research/generate`, { method: 'POST' })
+    await useApiFetch<unknown>(`/api/jobs/${jobId}/research/generate`, { method: 'POST' })
     pollTask(jobId)
   }
 
   function pollTask(jobId: number) {
     _clearInterval()
     pollInterval = setInterval(async () => {
-      const data = await useApiFetch<TaskStatus>(`/api/jobs/${jobId}/research/task`)
+      const { data } = await useApiFetch<TaskStatus>(`/api/jobs/${jobId}/research/task`)
       if (data) {
         taskStatus.value = data as TaskStatus
         if (data.status === 'completed' || data.status === 'failed') {
