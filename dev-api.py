@@ -983,13 +983,16 @@ class IdentitySyncPayload(BaseModel):
 @app.post("/api/settings/resume/sync-identity")
 def sync_identity(payload: IdentitySyncPayload):
     """Sync identity fields from profile store back to user.yaml."""
-    data = load_user_profile(_user_yaml_path())
-    data["name"] = payload.name
-    data["email"] = payload.email
-    data["phone"] = payload.phone
-    data["linkedin"] = payload.linkedin_url  # yaml key is 'linkedin', not 'linkedin_url'
-    save_user_profile(_user_yaml_path(), data)
-    return {"ok": True}
+    try:
+        data = load_user_profile(_user_yaml_path())
+        data["name"] = payload.name
+        data["email"] = payload.email
+        data["phone"] = payload.phone
+        data["linkedin"] = payload.linkedin_url  # yaml key is 'linkedin', not 'linkedin_url'
+        save_user_profile(_user_yaml_path(), data)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.put("/api/settings/profile")
