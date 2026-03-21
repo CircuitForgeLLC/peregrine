@@ -198,12 +198,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useProfileStore } from '../../stores/settings/profile'
 import { useAppConfigStore } from '../../stores/appConfig'
 import { useApiFetch } from '../../composables/useApi'
 
 const store = useProfileStore()
-const { loadError } = store
+const { loadError } = storeToRefs(store)
 const config = useAppConfigStore()
 
 const newNdaCompany = ref('')
