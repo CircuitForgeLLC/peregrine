@@ -123,7 +123,6 @@ describe('usePrepStore', () => {
 
     store.pollTask(1)
     await vi.advanceTimersByTimeAsync(3000)
-    await vi.runAllTimersAsync()
 
     expect(store.research?.company_brief).toBe('Updated!')
   })
