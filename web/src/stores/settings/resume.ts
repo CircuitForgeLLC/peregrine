@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
 
 export interface WorkEntry {
+  id: string
   title: string; company: string; period: string; location: string
   industry: string; responsibilities: string; skills: string[]
 }
@@ -12,6 +13,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
   const loading = ref(false)
   const saving = ref(false)
   const saveError = ref<string | null>(null)
+  const loadError = ref<string | null>(null)
 
   // Identity (synced from profile store)
   const name = ref(''); const email = ref(''); const phone = ref(''); const linkedin_url = ref('')
@@ -37,16 +39,21 @@ export const useResumeStore = defineStore('settings/resume', () => {
 
   async function load() {
     loading.value = true
+    loadError.value = null
     const { data, error } = await useApiFetch<Record<string, unknown>>('/api/settings/resume')
     loading.value = false
-    if (error || !data || !data.exists) { hasResume.value = false; return }
+    if (error) {
+      loadError.value = error.kind === 'network' ? error.message : (error.detail || 'Failed to load resume')
+      return
+    }
+    if (!data || !data.exists) { hasResume.value = false; return }
     hasResume.value = true
     name.value = String(data.name ?? ''); email.value = String(data.email ?? '')
     phone.value = String(data.phone ?? ''); linkedin_url.value = String(data.linkedin_url ?? '')
     surname.value = String(data.surname ?? ''); address.value = String(data.address ?? '')
     city.value = String(data.city ?? ''); zip_code.value = String(data.zip_code ?? '')
     date_of_birth.value = String(data.date_of_birth ?? '')
-    experience.value = (data.experience as WorkEntry[]) ?? []
+    experience.value = (data.experience as Omit<WorkEntry, 'id'>[]).map(e => ({ ...e, id: crypto.randomUUID() })) ?? []
     salary_min.value = Number(data.salary_min ?? 0); salary_max.value = Number(data.salary_max ?? 0)
     notice_period.value = String(data.notice_period ?? '')
     remote.value = Boolean(data.remote); relocation.value = Boolean(data.relocation)
@@ -64,7 +71,8 @@ export const useResumeStore = defineStore('settings/resume', () => {
     const body = {
       name: name.value, email: email.value, phone: phone.value, linkedin_url: linkedin_url.value,
       surname: surname.value, address: address.value, city: city.value, zip_code: zip_code.value,
-      date_of_birth: date_of_birth.value, experience: experience.value,
+      date_of_birth: date_of_birth.value,
+      experience: experience.value.map(({ id: _id, ...e }) => e),
       salary_min: salary_min.value, salary_max: salary_max.value, notice_period: notice_period.value,
       remote: remote.value, relocation: relocation.value,
       assessment: assessment.value, background_check: background_check.value,
@@ -84,12 +92,34 @@ export const useResumeStore = defineStore('settings/resume', () => {
     if (!error) { hasResume.value = true; await load() }
   }
 
+  function addExperience() {
+    experience.value.push({ id: crypto.randomUUID(), title: '', company: '', period: '', location: '', industry: '', responsibilities: '', skills: [] })
+  }
+
+  function removeExperience(idx: number) {
+    experience.value.splice(idx, 1)
+  }
+
+  function addTag(field: 'skills' | 'domains' | 'keywords', value: string) {
+    const arr = field === 'skills' ? skills.value : field === 'domains' ? domains.value : keywords.value
+    const trimmed = value.trim()
+    if (!trimmed || arr.includes(trimmed)) return
+    arr.push(trimmed)
+  }
+
+  function removeTag(field: 'skills' | 'domains' | 'keywords', value: string) {
+    const arr = field === 'skills' ? skills.value : field === 'domains' ? domains.value : keywords.value
+    const idx = arr.indexOf(value)
+    if (idx !== -1) arr.splice(idx, 1)
+  }
+
   return {
-    hasResume, loading, saving, saveError,
+    hasResume, loading, saving, saveError, loadError,
     name, email, phone, linkedin_url, surname, address, city, zip_code, date_of_birth,
     experience, salary_min, salary_max, notice_period, remote, relocation, assessment, background_check,
     gender, pronouns, ethnicity, veteran_status, disability,
     skills, domains, keywords,
     syncFromProfile, load, save, createBlank,
+    addExperience, removeExperience, addTag, removeTag,
   }
 })

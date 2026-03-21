@@ -2,6 +2,11 @@
   <div class="resume-profile">
     <h2>Resume Profile</h2>
 
+    <!-- Load error banner -->
+    <div v-if="loadError" class="error-banner">
+      Failed to load resume: {{ loadError }}
+    </div>
+
     <!-- Empty state -->
     <div v-if="!store.hasResume && !store.loading" class="empty-state">
       <p>No resume found. Choose how to get started:</p>
@@ -65,12 +70,16 @@
           <label>ZIP Code</label>
           <input v-model="store.zip_code" />
         </div>
+        <div class="field-row">
+          <label>Date of Birth</label>
+          <input v-model="store.date_of_birth" type="date" />
+        </div>
       </section>
 
       <!-- Work Experience -->
       <section class="form-section">
         <h3>Work Experience</h3>
-        <div v-for="(entry, idx) in store.experience" :key="idx" class="experience-card">
+        <div v-for="(entry, idx) in store.experience" :key="entry.id" class="experience-card">
           <div class="field-row">
             <label>Job Title</label>
             <input v-model="entry.title" />
@@ -95,9 +104,9 @@
             <label>Responsibilities</label>
             <textarea v-model="entry.responsibilities" rows="4" />
           </div>
-          <button class="remove-btn" @click="removeExperience(idx)">Remove</button>
+          <button class="remove-btn" @click="store.removeExperience(idx)">Remove</button>
         </div>
-        <button @click="addExperience">+ Add Position</button>
+        <button @click="store.addExperience()">+ Add Position</button>
       </section>
 
       <!-- Preferences -->
@@ -169,28 +178,28 @@
           <label>Skills</label>
           <div class="tags">
             <span v-for="skill in store.skills" :key="skill" class="tag">
-              {{ skill }} <button @click="removeTag('skills', skill)">×</button>
+              {{ skill }} <button @click="store.removeTag('skills', skill)">×</button>
             </span>
           </div>
-          <input v-model="skillInput" @keydown.enter.prevent="addTag('skills', skillInput); skillInput = ''" placeholder="Add skill, press Enter" />
+          <input v-model="skillInput" @keydown.enter.prevent="store.addTag('skills', skillInput); skillInput = ''" placeholder="Add skill, press Enter" />
         </div>
         <div class="tag-section">
           <label>Domains</label>
           <div class="tags">
             <span v-for="domain in store.domains" :key="domain" class="tag">
-              {{ domain }} <button @click="removeTag('domains', domain)">×</button>
+              {{ domain }} <button @click="store.removeTag('domains', domain)">×</button>
             </span>
           </div>
-          <input v-model="domainInput" @keydown.enter.prevent="addTag('domains', domainInput); domainInput = ''" placeholder="Add domain, press Enter" />
+          <input v-model="domainInput" @keydown.enter.prevent="store.addTag('domains', domainInput); domainInput = ''" placeholder="Add domain, press Enter" />
         </div>
         <div class="tag-section">
           <label>Keywords</label>
           <div class="tags">
             <span v-for="kw in store.keywords" :key="kw" class="tag">
-              {{ kw }} <button @click="removeTag('keywords', kw)">×</button>
+              {{ kw }} <button @click="store.removeTag('keywords', kw)">×</button>
             </span>
           </div>
-          <input v-model="kwInput" @keydown.enter.prevent="addTag('keywords', kwInput); kwInput = ''" placeholder="Add keyword, press Enter" />
+          <input v-model="kwInput" @keydown.enter.prevent="store.addTag('keywords', kwInput); kwInput = ''" placeholder="Add keyword, press Enter" />
         </div>
       </section>
 
@@ -209,12 +218,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useResumeStore } from '../../stores/settings/resume'
 import { useProfileStore } from '../../stores/settings/profile'
 import { useApiFetch } from '../../composables/useApi'
 
 const store = useResumeStore()
 const profileStore = useProfileStore()
+const { loadError } = storeToRefs(store)
 const showSelfId = ref(false)
 const skillInput = ref('')
 const domainInput = ref('')
@@ -224,33 +235,16 @@ const fileInput = ref<HTMLInputElement | null>(null)
 
 onMounted(async () => {
   await store.load()
-  store.syncFromProfile({
-    name: profileStore.name,
-    email: profileStore.email,
-    phone: profileStore.phone,
-    linkedin_url: profileStore.linkedin_url,
-  })
+  // Only prime identity from profile on a fresh/empty resume
+  if (!store.hasResume) {
+    store.syncFromProfile({
+      name: profileStore.name,
+      email: profileStore.email,
+      phone: profileStore.phone,
+      linkedin_url: profileStore.linkedin_url,
+    })
+  }
 })
-
-function addExperience() {
-  store.experience.push({ title: '', company: '', period: '', location: '', industry: '', responsibilities: '', skills: [] })
-}
-
-function removeExperience(idx: number) {
-  store.experience.splice(idx, 1)
-}
-
-function addTag(field: 'skills' | 'domains' | 'keywords', value: string) {
-  const trimmed = value.trim()
-  if (!trimmed || store[field].includes(trimmed)) return
-  store[field].push(trimmed)
-}
-
-function removeTag(field: 'skills' | 'domains' | 'keywords', value: string) {
-  const arr = store[field] as string[]
-  const idx = arr.indexOf(value)
-  if (idx !== -1) arr.splice(idx, 1)
-}
 
 async function handleUpload(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
@@ -263,7 +257,7 @@ async function handleUpload(event: Event) {
     { method: 'POST', body: formData }
   )
   if (error || !data?.ok) {
-    uploadError.value = data?.error ?? error ?? 'Upload failed'
+    uploadError.value = data?.error ?? (typeof error === 'string' ? error : (error?.kind === 'network' ? error.message : error?.detail ?? 'Upload failed'))
     return
   }
   if (data.data) {
@@ -309,6 +303,7 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3, 16px); col
 .btn-primary { padding: 9px 24px; background: var(--color-accent, #7c3aed); color: #fff; border: none; border-radius: 7px; font-size: 0.9rem; cursor: pointer; font-weight: 600; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .error { color: #ef4444; font-size: 0.82rem; }
+.error-banner { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; color: #ef4444; font-size: 0.85rem; padding: 10px 14px; margin-bottom: var(--space-4, 24px); }
 .section-note { font-size: 0.8rem; color: var(--color-text-secondary, #94a3b8); margin-bottom: 16px; }
 .toggle-btn { margin-left: 10px; padding: 2px 10px; background: transparent; border: 1px solid var(--color-border, rgba(255,255,255,0.15)); border-radius: 4px; color: var(--color-text-secondary, #94a3b8); cursor: pointer; font-size: 0.78rem; }
 .loading { text-align: center; padding: var(--space-8, 48px); color: var(--color-text-secondary, #94a3b8); }

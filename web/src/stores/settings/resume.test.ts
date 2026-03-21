@@ -39,4 +39,12 @@ describe('useResumeStore', () => {
     await store.load()
     expect(store.hasResume).toBe(false)
   })
+
+  it('load() sets loadError on API error', async () => {
+    mockFetch.mockResolvedValue({ data: null, error: { kind: 'network', message: 'Network error' } })
+    const store = useResumeStore()
+    await store.load()
+    expect(store.loadError).toBeTruthy()
+    expect(store.hasResume).toBe(false)
+  })
 })
