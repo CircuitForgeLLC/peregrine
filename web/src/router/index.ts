@@ -35,11 +35,12 @@ export const router = createRouter({
   ],
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   if (!to.path.startsWith('/settings/')) return next()
   const config = useAppConfigStore()
+  if (!config.loaded) await config.load()
   const tab = to.path.replace('/settings/', '')
-  const devOverride = localStorage.getItem('dev_tier_override')
+  const devOverride = config.devTierOverride
   const gpuProfiles = ['single-gpu', 'dual-gpu']
 
   if (tab === 'system' && config.isCloud) return next('/settings/my-profile')

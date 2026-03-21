@@ -38,7 +38,7 @@ import { computed } from 'vue'
 import { useAppConfigStore } from '../../stores/appConfig'
 
 const config = useAppConfigStore()
-const devOverride = computed(() => !!localStorage.getItem('dev_tier_override'))
+const devOverride = computed(() => !!config.devTierOverride)
 const gpuProfiles = ['single-gpu', 'dual-gpu']
 
 const showSystem = computed(() => !config.isCloud)

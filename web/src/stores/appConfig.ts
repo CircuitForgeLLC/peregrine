@@ -12,6 +12,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
   const contractedClient = ref(false)
   const inferenceProfile = ref<InferenceProfile>('cpu')
   const loaded = ref(false)
+  const devTierOverride = ref(localStorage.getItem('dev_tier_override') ?? '')
 
   async function load() {
     const { data } = await useApiFetch<{
@@ -27,5 +28,15 @@ export const useAppConfigStore = defineStore('appConfig', () => {
     loaded.value = true
   }
 
-  return { isCloud, isDevMode, tier, contractedClient, inferenceProfile, loaded, load }
+  function setDevTierOverride(value: string | null) {
+    if (value) {
+      localStorage.setItem('dev_tier_override', value)
+      devTierOverride.value = value
+    } else {
+      localStorage.removeItem('dev_tier_override')
+      devTierOverride.value = ''
+    }
+  }
+
+  return { isCloud, isDevMode, tier, contractedClient, inferenceProfile, loaded, load, devTierOverride, setDevTierOverride }
 })
