@@ -42,6 +42,7 @@ export interface FullJobDetail {
 export const usePrepStore = defineStore('prep', () => {
   const research = ref<ResearchBrief | null>(null)
   const contacts = ref<Contact[]>([])
+  const contactsError = ref<string | null>(null)
   const taskStatus = ref<TaskStatus>({ status: null, stage: null, message: null })
   const fullJob = ref<FullJobDetail | null>(null)
   const loading = ref(false)
@@ -62,6 +63,7 @@ export const usePrepStore = defineStore('prep', () => {
       _clearInterval()
       research.value = null
       contacts.value = []
+      contactsError.value = null
       taskStatus.value = { status: null, stage: null, message: null }
       fullJob.value = null
       error.value = null
@@ -82,17 +84,22 @@ export const usePrepStore = defineStore('prep', () => {
         error.value = 'Failed to load research data'
         return
       }
-      if (contactsResult.error) {
-        error.value = 'Failed to load contacts'
-        return
-      }
       if (jobResult.error) {
         error.value = 'Failed to load job details'
         return
       }
 
       research.value = researchResult.data ?? null
-      contacts.value = contactsResult.data ?? []
+
+      // Contacts failure is non-fatal — degrade the Email tab only
+      if (contactsResult.error) {
+        contactsError.value = 'Could not load email history.'
+        contacts.value = []
+      } else {
+        contacts.value = contactsResult.data ?? []
+        contactsError.value = null
+      }
+
       taskStatus.value = taskResult.data ?? { status: null, stage: null, message: null }
       fullJob.value = jobResult.data ?? null
 
@@ -141,6 +148,7 @@ export const usePrepStore = defineStore('prep', () => {
     _clearInterval()
     research.value = null
     contacts.value = []
+    contactsError.value = null
     taskStatus.value = { status: null, stage: null, message: null }
     fullJob.value = null
     loading.value = false
@@ -151,6 +159,7 @@ export const usePrepStore = defineStore('prep', () => {
   return {
     research,
     contacts,
+    contactsError,
     taskStatus,
     fullJob,
     loading,
