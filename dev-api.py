@@ -905,28 +905,15 @@ def config_user():
 
 # ── Settings: My Profile endpoints ───────────────────────────────────────────
 
+from scripts.user_profile import load_user_profile, save_user_profile
+
+
 def _user_yaml_path() -> str:
     """Resolve user.yaml path, falling back to legacy location."""
     cfg_path = os.path.join(os.path.dirname(DB_PATH), "config", "user.yaml")
     if not os.path.exists(cfg_path):
         cfg_path = "/devl/job-seeker/config/user.yaml"
     return cfg_path
-
-
-def _read_user_yaml() -> dict:
-    import yaml
-    path = _user_yaml_path()
-    if not os.path.exists(path):
-        return {}
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
-
-
-def _write_user_yaml(data: dict) -> None:
-    import yaml
-    path = _user_yaml_path()
-    with open(path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
 
 
 def _mission_dict_to_list(prefs: object) -> list:
@@ -950,7 +937,7 @@ def _mission_list_to_dict(prefs: list) -> dict:
 @app.get("/api/settings/profile")
 def get_profile():
     try:
-        cfg = _read_user_yaml()
+        cfg = load_user_profile(_user_yaml_path())
         return {
             "name":               cfg.get("name", ""),
             "email":              cfg.get("email", ""),
@@ -990,7 +977,8 @@ class UserProfilePayload(BaseModel):
 @app.put("/api/settings/profile")
 def save_profile(payload: UserProfilePayload):
     try:
-        cfg = _read_user_yaml()
+        yaml_path = _user_yaml_path()
+        cfg = load_user_profile(yaml_path)
         cfg["name"] = payload.name
         cfg["email"] = payload.email
         cfg["phone"] = payload.phone
@@ -1004,7 +992,7 @@ def save_profile(payload: UserProfilePayload):
         cfg["nda_companies"] = payload.nda_companies
         cfg["candidate_accessibility_focus"] = payload.accessibility_focus
         cfg["candidate_lgbtq_focus"] = payload.lgbtq_focus
-        _write_user_yaml(cfg)
+        save_user_profile(yaml_path, cfg)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(500, f"Could not save profile: {e}")

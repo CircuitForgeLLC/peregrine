@@ -29,6 +29,10 @@ describe('useProfileStore', () => {
     store.name = 'Meg'
     await store.save()
     expect(mockFetch).toHaveBeenCalledWith('/api/settings/profile', expect.objectContaining({ method: 'PUT' }))
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/settings/resume/sync-identity',
+      expect.objectContaining({ method: 'POST' })
+    )
   })
 
   it('save() error sets error state', async () => {
