@@ -875,10 +875,12 @@ def get_app_config():
     import os
     profile = os.environ.get("INFERENCE_PROFILE", "cpu")
     valid_profiles = {"remote", "cpu", "single-gpu", "dual-gpu"}
+    valid_tiers = {"free", "paid", "premium", "ultra"}
+    raw_tier = os.environ.get("APP_TIER", "free")
     return {
         "isCloud": os.environ.get("CLOUD_MODE", "").lower() in ("1", "true"),
         "isDevMode": os.environ.get("DEV_MODE", "").lower() in ("1", "true"),
-        "tier": os.environ.get("APP_TIER", "free"),
+        "tier": raw_tier if raw_tier in valid_tiers else "free",
         "contractedClient": os.environ.get("CONTRACTED_CLIENT", "").lower() in ("1", "true"),
         "inferenceProfile": profile if profile in valid_profiles else "cpu",
     }

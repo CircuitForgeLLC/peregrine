@@ -33,4 +33,13 @@ describe('SettingsView sidebar', () => {
     const wrapper = mount(SettingsView, { global: { plugins: [makeRouter()] } })
     expect(wrapper.find('[data-testid="nav-developer"]').exists()).toBe(false)
   })
+
+  it('shows Developer when devTierOverride is set in store', () => {
+    const store = useAppConfigStore()
+    store.isDevMode = false
+    store.setDevTierOverride('premium')
+    const wrapper = mount(SettingsView, { global: { plugins: [makeRouter()] } })
+    expect(wrapper.find('[data-testid="nav-developer"]').exists()).toBe(true)
+    store.setDevTierOverride(null)  // cleanup
+  })
 })
