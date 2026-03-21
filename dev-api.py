@@ -17,7 +17,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import requests
 
 # Allow importing peregrine scripts for cover letter generation
@@ -901,3 +901,110 @@ def config_user():
         return {"name": cfg.get("name", "")}
     except Exception:
         return {"name": ""}
+
+
+# ── Settings: My Profile endpoints ───────────────────────────────────────────
+
+def _user_yaml_path() -> str:
+    """Resolve user.yaml path, falling back to legacy location."""
+    cfg_path = os.path.join(os.path.dirname(DB_PATH), "config", "user.yaml")
+    if not os.path.exists(cfg_path):
+        cfg_path = "/devl/job-seeker/config/user.yaml"
+    return cfg_path
+
+
+def _read_user_yaml() -> dict:
+    import yaml
+    path = _user_yaml_path()
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
+
+
+def _write_user_yaml(data: dict) -> None:
+    import yaml
+    path = _user_yaml_path()
+    with open(path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+
+
+def _mission_dict_to_list(prefs: object) -> list:
+    """Convert {industry: note} dict to [{industry, note}] list for the SPA."""
+    if isinstance(prefs, list):
+        return prefs
+    if isinstance(prefs, dict):
+        return [{"industry": k, "note": v or ""} for k, v in prefs.items()]
+    return []
+
+
+def _mission_list_to_dict(prefs: list) -> dict:
+    """Convert [{industry, note}] list from the SPA back to {industry: note} dict."""
+    result = {}
+    for item in prefs:
+        if isinstance(item, dict):
+            result[item.get("industry", "")] = item.get("note", "")
+    return result
+
+
+@app.get("/api/settings/profile")
+def get_profile():
+    try:
+        cfg = _read_user_yaml()
+        return {
+            "name":               cfg.get("name", ""),
+            "email":              cfg.get("email", ""),
+            "phone":              cfg.get("phone", ""),
+            "linkedin_url":       cfg.get("linkedin", ""),
+            "career_summary":     cfg.get("career_summary", ""),
+            "candidate_voice":    cfg.get("candidate_voice", ""),
+            "inference_profile":  cfg.get("inference_profile", "cpu"),
+            "mission_preferences": _mission_dict_to_list(cfg.get("mission_preferences", {})),
+            "nda_companies":      cfg.get("nda_companies", []),
+            "accessibility_focus": cfg.get("candidate_accessibility_focus", False),
+            "lgbtq_focus":        cfg.get("candidate_lgbtq_focus", False),
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Could not read profile: {e}")
+
+
+class MissionPrefModel(BaseModel):
+    industry: str
+    note: str = ""
+
+
+class UserProfilePayload(BaseModel):
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    linkedin_url: str = ""
+    career_summary: str = ""
+    candidate_voice: str = ""
+    inference_profile: str = "cpu"
+    mission_preferences: List[MissionPrefModel] = []
+    nda_companies: List[str] = []
+    accessibility_focus: bool = False
+    lgbtq_focus: bool = False
+
+
+@app.put("/api/settings/profile")
+def save_profile(payload: UserProfilePayload):
+    try:
+        cfg = _read_user_yaml()
+        cfg["name"] = payload.name
+        cfg["email"] = payload.email
+        cfg["phone"] = payload.phone
+        cfg["linkedin"] = payload.linkedin_url
+        cfg["career_summary"] = payload.career_summary
+        cfg["candidate_voice"] = payload.candidate_voice
+        cfg["inference_profile"] = payload.inference_profile
+        cfg["mission_preferences"] = _mission_list_to_dict(
+            [m.model_dump() for m in payload.mission_preferences]
+        )
+        cfg["nda_companies"] = payload.nda_companies
+        cfg["candidate_accessibility_focus"] = payload.accessibility_focus
+        cfg["candidate_lgbtq_focus"] = payload.lgbtq_focus
+        _write_user_yaml(cfg)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, f"Could not save profile: {e}")
