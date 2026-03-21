@@ -151,6 +151,36 @@ describe('usePrepStore', () => {
 
     expect(store.research).toBeNull()
     expect(store.contacts).toEqual([])
+    expect(store.contactsError).toBeNull()
     expect(store.currentJobId).toBeNull()
+  })
+
+  it('fetchFor sets contactsError and leaves other data intact when contacts fetch fails', async () => {
+    const mockApiFetch = vi.mocked(useApiFetch)
+    mockApiFetch
+      .mockResolvedValueOnce({ data: { company_brief: 'Acme', ceo_brief: null, talking_points: null,
+        tech_brief: null, funding_brief: null, red_flags: null, accessibility_brief: null,
+        generated_at: '2026-03-20T12:00:00' }, error: null })  // research OK
+      .mockResolvedValueOnce({ data: null, error: { kind: 'http', status: 500, detail: 'DB error' } }) // contacts fail
+      .mockResolvedValueOnce({ data: { status: 'none', stage: null, message: null }, error: null })    // task OK
+      .mockResolvedValueOnce({ data: { id: 1, title: 'Engineer', company: 'Acme', url: null,
+        description: 'Build things.', cover_letter: null, match_score: 80,
+        keyword_gaps: null }, error: null })                                                           // fullJob OK
+
+    const store = usePrepStore()
+    await store.fetchFor(1)
+
+    // Contacts error shown in Email tab only
+    expect(store.contactsError).toBe('Could not load email history.')
+    expect(store.contacts).toEqual([])
+
+    // Everything else still renders
+    expect(store.research?.company_brief).toBe('Acme')
+    expect(store.fullJob?.description).toBe('Build things.')
+    expect(store.fullJob?.match_score).toBe(80)
+    expect(store.taskStatus.status).toBe('none')
+
+    // Top-level error stays null (no full-panel blank-out)
+    expect(store.error).toBeNull()
   })
 })
