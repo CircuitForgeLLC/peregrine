@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAppConfigStore } from '../stores/appConfig'
+import { settingsGuard } from './settingsGuard'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -39,16 +40,5 @@ router.beforeEach(async (to, _from, next) => {
   if (!to.path.startsWith('/settings/')) return next()
   const config = useAppConfigStore()
   if (!config.loaded) await config.load()
-  const tab = to.path.replace('/settings/', '')
-  const devOverride = config.devTierOverride
-  const gpuProfiles = ['single-gpu', 'dual-gpu']
-
-  if (tab === 'system' && config.isCloud) return next('/settings/my-profile')
-  if (tab === 'fine-tune') {
-    const cloudBlocked = config.isCloud && config.tier !== 'premium'
-    const selfHostedBlocked = !config.isCloud && !gpuProfiles.includes(config.inferenceProfile)
-    if (cloudBlocked || selfHostedBlocked) return next('/settings/my-profile')
-  }
-  if (tab === 'developer' && !config.isDevMode && !devOverride) return next('/settings/my-profile')
-  next()
+  settingsGuard(to, _from, next)
 })
