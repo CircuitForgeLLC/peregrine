@@ -1137,5 +1137,8 @@ def save_search_prefs(payload: SearchPrefsPayload):
 
 @app.post("/api/settings/search/suggest")
 def suggest_search(body: dict):
-    # Stub — LLM suggest for paid tier
-    return {"suggestions": []}
+    try:
+        # Stub — LLM suggest for paid tier
+        return {"suggestions": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

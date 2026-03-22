@@ -77,7 +77,7 @@
       <h3>Job Boards</h3>
       <div v-for="board in store.job_boards" :key="board.name" class="board-row">
         <label class="checkbox-row">
-          <input type="checkbox" v-model="board.enabled" />
+          <input type="checkbox" :checked="board.enabled" @change="store.toggleBoard(board.name)" />
           {{ board.name }}
         </label>
       </div>
