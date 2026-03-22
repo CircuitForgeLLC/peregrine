@@ -1142,3 +1142,50 @@ def suggest_search(body: dict):
         return {"suggestions": []}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: System — LLM Backends + BYOK endpoints ─────────────────────────
+
+class ByokAckPayload(BaseModel):
+    backends: List[str] = []
+
+LLM_CONFIG_PATH = Path("config/llm.yaml")
+
+@app.get("/api/settings/system/llm")
+def get_llm_config():
+    try:
+        user = load_user_profile(_user_yaml_path())
+        backends = []
+        if LLM_CONFIG_PATH.exists():
+            with open(LLM_CONFIG_PATH) as f:
+                data = yaml.safe_load(f) or {}
+            backends = data.get("backends", [])
+        return {"backends": backends, "byok_acknowledged": user.get("byok_acknowledged_backends", [])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/settings/system/llm")
+def save_llm_config(payload: dict):
+    try:
+        data = {}
+        if LLM_CONFIG_PATH.exists():
+            with open(LLM_CONFIG_PATH) as f:
+                data = yaml.safe_load(f) or {}
+        data["backends"] = payload.get("backends", [])
+        LLM_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(LLM_CONFIG_PATH, "w") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/settings/system/llm/byok-ack")
+def byok_ack(payload: ByokAckPayload):
+    try:
+        user = load_user_profile(_user_yaml_path())
+        existing = user.get("byok_acknowledged_backends", [])
+        user["byok_acknowledged_backends"] = list(set(existing + payload.backends))
+        save_user_profile(_user_yaml_path(), user)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
