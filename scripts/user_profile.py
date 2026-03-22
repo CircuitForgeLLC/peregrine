@@ -29,6 +29,7 @@ _DEFAULTS = {
     "wizard_complete": False,
     "wizard_step": 0,
     "dismissed_banners": [],
+    "ui_preference": "streamlit",
     "services": {
         "streamlit_port": 8501,
         "ollama_host": "localhost",
@@ -76,7 +77,37 @@ class UserProfile:
         self.wizard_complete: bool = bool(data.get("wizard_complete", False))
         self.wizard_step: int = int(data.get("wizard_step", 0))
         self.dismissed_banners: list[str] = list(data.get("dismissed_banners", []))
+        raw_pref = data.get("ui_preference", "streamlit")
+        self.ui_preference: str = raw_pref if raw_pref in ("streamlit", "vue") else "streamlit"
         self._svc = data["services"]
+        self._path = path
+
+    def save(self) -> None:
+        """Save all profile fields back to user.yaml."""
+        output = {
+            "name": self.name,
+            "email": self.email,
+            "phone": self.phone,
+            "linkedin": self.linkedin,
+            "career_summary": self.career_summary,
+            "candidate_voice": self.candidate_voice,
+            "nda_companies": self.nda_companies,
+            "docs_dir": str(self.docs_dir),
+            "ollama_models_dir": str(self.ollama_models_dir),
+            "vllm_models_dir": str(self.vllm_models_dir),
+            "inference_profile": self.inference_profile,
+            "mission_preferences": self.mission_preferences,
+            "candidate_accessibility_focus": self.candidate_accessibility_focus,
+            "candidate_lgbtq_focus": self.candidate_lgbtq_focus,
+            "tier": self.tier,
+            "dev_tier_override": self.dev_tier_override,
+            "wizard_complete": self.wizard_complete,
+            "wizard_step": self.wizard_step,
+            "dismissed_banners": self.dismissed_banners,
+            "ui_preference": self.ui_preference,
+            "services": self._svc,
+        }
+        self._path.write_text(yaml.dump(output, default_flow_style=False))
 
     # ── Service URLs ──────────────────────────────────────────────────────────
     def _url(self, host: str, port: int, ssl: bool) -> str:
