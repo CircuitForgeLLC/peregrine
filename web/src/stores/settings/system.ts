@@ -153,6 +153,46 @@ export const useSystemStore = defineStore('settings/system', () => {
     if (data) integrations.value = data
   }
 
+  async function connectIntegration(id: string, credentials: Record<string, string>) {
+    const { data, error } = await useApiFetch<{ok: boolean; error?: string}>(
+      `/api/settings/system/integrations/${id}/connect`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(credentials) }
+    )
+    if (error || !data?.ok) {
+      return { ok: false, error: data?.error ?? 'Connection failed' }
+    }
+    await loadIntegrations()
+    return { ok: true }
+  }
+
+  async function testIntegration(id: string, credentials: Record<string, string>) {
+    const { data, error } = await useApiFetch<{ok: boolean; error?: string}>(
+      `/api/settings/system/integrations/${id}/test`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(credentials) }
+    )
+    return { ok: data?.ok ?? false, error: data?.error ?? (error ? 'Test failed' : undefined) }
+  }
+
+  async function disconnectIntegration(id: string) {
+    const { error } = await useApiFetch(
+      `/api/settings/system/integrations/${id}/disconnect`, { method: 'POST' }
+    )
+    if (!error) await loadIntegrations()
+  }
+
+  async function saveEmailWithPassword(payload: Record<string, unknown>) {
+    emailSaving.value = true
+    emailError.value = null
+    const { error } = await useApiFetch('/api/settings/system/email', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    emailSaving.value = false
+    if (error) emailError.value = 'Save failed — please try again.'
+    else await loadEmail()  // reload to get fresh password_set status
+  }
+
   async function loadFilePaths() {
     const { data } = await useApiFetch<Record<string, string>>('/api/settings/system/paths')
     if (data) filePaths.value = data
@@ -191,8 +231,8 @@ export const useSystemStore = defineStore('settings/system', () => {
     services, emailConfig, integrations, serviceErrors, emailSaving, emailError,
     filePaths, deployConfig, filePathsSaving, deploySaving,
     loadServices, startService, stopService,
-    loadEmail, saveEmail, testEmail,
-    loadIntegrations,
+    loadEmail, saveEmail, testEmail, saveEmailWithPassword,
+    loadIntegrations, connectIntegration, testIntegration, disconnectIntegration,
     loadFilePaths, saveFilePaths,
     loadDeployConfig, saveDeployConfig,
   }
