@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 _ENV_REF = re.compile(r'^\$\{([A-Z_][A-Z0-9_]*)\}$')
 
-CRED_DIR = Path("config/credentials")
-KEY_PATH = Path("config/.credential_key")
+_PROJECT_ROOT = Path(__file__).parent.parent
+CRED_DIR = _PROJECT_ROOT / "config" / "credentials"
+KEY_PATH = _PROJECT_ROOT / "config" / ".credential_key"
 
 
 def _resolve_env_ref(value: str) -> Optional[str]:

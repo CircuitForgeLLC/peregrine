@@ -1293,9 +1293,9 @@ def get_email_config():
 def save_email_config(payload: dict):
     try:
         EMAIL_PATH.parent.mkdir(parents=True, exist_ok=True)
-        # Extract password before writing yaml
-        password = payload.pop("password", None) or payload.pop("password_set", None)
-        # Only store if it's a real new value (not the sentinel True/False)
+        # Extract password before writing yaml; discard the sentinel boolean regardless
+        password = payload.pop("password", None)
+        payload.pop("password_set", None)  # always discard — boolean sentinel, not a secret
         if password and isinstance(password, str):
             set_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY, password)
         # Write non-secret fields to yaml (chmod 600 still, contains username)
@@ -1311,8 +1311,8 @@ def save_email_config(payload: dict):
 @app.post("/api/settings/system/email/test")
 def test_email(payload: dict):
     try:
-        # Allow test to pass in a password override, or use stored credential
-        password = payload.get("password") or get_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY)
+        # Always use the stored credential — never accept a password in the test request body
+        password = get_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY)
         host = payload.get("host", "")
         port = int(payload.get("port", 993))
         use_ssl = payload.get("ssl", True)
