@@ -144,8 +144,8 @@
             <div class="form-actions">
               <button @click="handleConnect(integration.id)" class="btn-primary">Connect</button>
               <button @click="handleTest(integration.id)" class="btn-secondary">Test</button>
-              <span v-if="integrationResults[integration.id]" :class="integrationResults[integration.id].ok ? 'test-ok' : 'test-fail'">
-                {{ integrationResults[integration.id].ok ? '✓ OK' : '✗ ' + integrationResults[integration.id].error }}
+              <span v-if="store.integrationResults[integration.id]" :class="store.integrationResults[integration.id].ok ? 'test-ok' : 'test-fail'">
+                {{ store.integrationResults[integration.id].ok ? '✓ OK' : '✗ ' + store.integrationResults[integration.id].error }}
               </span>
             </div>
           </div>
@@ -176,6 +176,7 @@
           {{ store.filePathsSaving ? 'Saving…' : 'Save Paths' }}
         </button>
       </div>
+      <p v-if="store.filePathsError" class="error-msg">{{ store.filePathsError }}</p>
     </section>
 
     <!-- Deployment / Server -->
@@ -199,6 +200,7 @@
           {{ store.deploySaving ? 'Saving…' : 'Save (requires restart)' }}
         </button>
       </div>
+      <p v-if="store.deployError" class="error-msg">{{ store.deployError }}</p>
     </section>
 
     <!-- BYOK Modal -->
@@ -288,8 +290,6 @@ async function handleConfirmByok() {
 const emailTestResult = ref<boolean | null>(null)
 const emailPasswordInput = ref('')
 const integrationInputs = ref<Record<string, string>>({})
-const integrationResults = ref<Record<string, {ok: boolean; error?: string}>>({})
-
 async function handleTestEmail() {
   const result = await store.testEmail()
   emailTestResult.value = result?.ok ?? false
@@ -307,8 +307,7 @@ async function handleConnect(id: string) {
   for (const field of integration.fields) {
     credentials[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
   }
-  const result = await store.connectIntegration(id, credentials)
-  integrationResults.value = { ...integrationResults.value, [id]: result }
+  await store.connectIntegration(id, credentials)
 }
 
 async function handleTest(id: string) {
@@ -318,8 +317,7 @@ async function handleTest(id: string) {
   for (const field of integration.fields) {
     credentials[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
   }
-  const result = await store.testIntegration(id, credentials)
-  integrationResults.value = { ...integrationResults.value, [id]: result }
+  await store.testIntegration(id, credentials)
 }
 
 onMounted(async () => {

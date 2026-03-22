@@ -30,6 +30,10 @@ export const useSystemStore = defineStore('settings/system', () => {
   const deployConfig = ref<Record<string, unknown>>({})
   const filePathsSaving = ref(false)
   const deploySaving = ref(false)
+  const filePathsError = ref<string | null>(null)
+  const deployError = ref<string | null>(null)
+  // Integration test/connect results — keyed by integration id
+  const integrationResults = ref<Record<string, {ok: boolean; error?: string}>>({})
 
   async function loadLlm() {
     loadError.value = null
@@ -158,11 +162,12 @@ export const useSystemStore = defineStore('settings/system', () => {
       `/api/settings/system/integrations/${id}/connect`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(credentials) }
     )
-    if (error || !data?.ok) {
-      return { ok: false, error: data?.error ?? 'Connection failed' }
-    }
-    await loadIntegrations()
-    return { ok: true }
+    const result = error || !data?.ok
+      ? { ok: false, error: data?.error ?? 'Connection failed' }
+      : { ok: true }
+    integrationResults.value = { ...integrationResults.value, [id]: result }
+    if (result.ok) await loadIntegrations()
+    return result
   }
 
   async function testIntegration(id: string, credentials: Record<string, string>) {
@@ -170,7 +175,9 @@ export const useSystemStore = defineStore('settings/system', () => {
       `/api/settings/system/integrations/${id}/test`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(credentials) }
     )
-    return { ok: data?.ok ?? false, error: data?.error ?? (error ? 'Test failed' : undefined) }
+    const result = { ok: data?.ok ?? false, error: data?.error ?? (error ? 'Test failed' : undefined) }
+    integrationResults.value = { ...integrationResults.value, [id]: result }
+    return result
   }
 
   async function disconnectIntegration(id: string) {
@@ -206,7 +213,7 @@ export const useSystemStore = defineStore('settings/system', () => {
       body: JSON.stringify(filePaths.value),
     })
     filePathsSaving.value = false
-    if (error) saveError.value = 'Failed to save file paths.'
+    filePathsError.value = error ? 'Failed to save file paths.' : null
   }
 
   async function loadDeployConfig() {
@@ -222,14 +229,14 @@ export const useSystemStore = defineStore('settings/system', () => {
       body: JSON.stringify(deployConfig.value),
     })
     deploySaving.value = false
-    if (error) saveError.value = 'Failed to save deployment config.'
+    deployError.value = error ? 'Failed to save deployment config.' : null
   }
 
   return {
     backends, byokAcknowledged, byokPending, saving, saveError, loadError,
     loadLlm, trySave, confirmByok, cancelByok,
-    services, emailConfig, integrations, serviceErrors, emailSaving, emailError,
-    filePaths, deployConfig, filePathsSaving, deploySaving,
+    services, emailConfig, integrations, integrationResults, serviceErrors, emailSaving, emailError,
+    filePaths, deployConfig, filePathsSaving, deploySaving, filePathsError, deployError,
     loadServices, startService, stopService,
     loadEmail, saveEmail, testEmail, saveEmailWithPassword,
     loadIntegrations, connectIntegration, testIntegration, disconnectIntegration,
