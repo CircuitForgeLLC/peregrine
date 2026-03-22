@@ -103,12 +103,14 @@ New `web/src/components/ClassicUIButton.vue`:
 
 ```js
 function switchToClassic() {
-  document.cookie = 'prgn_ui=streamlit; path=/';
-  window.location.reload();
+  document.cookie = 'prgn_ui=streamlit; path=/; SameSite=Lax';
+  const url = new URL(window.location.href);
+  url.searchParams.set('prgn_switch', 'streamlit');
+  window.location.href = url.toString();
 }
 ```
 
-No backend call needed. On next Streamlit load, `sync_ui_cookie()` sees `prgn_ui=streamlit`, writes user.yaml to match.
+**Why the query param?** Streamlit cannot read HTTP cookies from Python — only client-side JS can. The `?prgn_switch=streamlit` param acts as a bridge: `sync_ui_cookie()` reads it via `st.query_params`, updates user.yaml to match, then clears the param. The cookie is set by the JS before the navigation so Caddy routes the request to Streamlit, and the param ensures user.yaml stays consistent with the cookie.
 
 ### 5. Tier gate
 
@@ -196,10 +198,12 @@ User clicks "Try it" banner or Settings toggle
 ```
 User clicks "Classic UI" in Vue nav
   → document.cookie = 'prgn_ui=streamlit; path=/'
-  → window.location.reload()
+  → navigate to current URL + ?prgn_switch=streamlit
   → Caddy sees prgn_ui=streamlit → :8505/:8504 (Streamlit)
-  → app.py render pass: sync_ui_cookie() sees cookie=streamlit
+  → app.py render pass: sync_ui_cookie() sees ?prgn_switch=streamlit in st.query_params
       → writes user.yaml: ui_preference: streamlit
+      → clears query param
+      → injects JS to re-confirm cookie
 ```
 
 ### Demo tier switch
