@@ -1,12 +1,15 @@
 """Tests for app/components/demo_toolbar.py."""
-import sys, os
+import sys
 from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Ensure DEMO_MODE is set so the module initialises correctly
-os.environ["DEMO_MODE"] = "true"
+from app.components.demo_toolbar import (
+    get_simulated_tier,
+    set_simulated_tier,
+    render_demo_toolbar,
+)
 
 
 def test_set_simulated_tier_updates_session_state(monkeypatch):
@@ -17,12 +20,7 @@ def test_set_simulated_tier_updates_session_state(monkeypatch):
     monkeypatch.setattr("streamlit.session_state", session, raising=False)
     monkeypatch.setattr("streamlit.rerun", lambda: None)
 
-    from unittest.mock import patch
-    with patch('app.components.demo_toolbar._DEMO_MODE', True):
-        from importlib import reload
-        import app.components.demo_toolbar as m
-        reload(m)
-        m.set_simulated_tier("premium")
+    set_simulated_tier("premium")
 
     assert session.get("simulated_tier") == "premium"
     assert any("prgn_demo_tier=premium" in h for h in injected)
@@ -35,12 +33,7 @@ def test_set_simulated_tier_invalid_ignored(monkeypatch):
     monkeypatch.setattr("streamlit.session_state", session, raising=False)
     monkeypatch.setattr("streamlit.rerun", lambda: None)
 
-    from unittest.mock import patch
-    with patch('app.components.demo_toolbar._DEMO_MODE', True):
-        from importlib import reload
-        import app.components.demo_toolbar as m
-        reload(m)
-        m.set_simulated_tier("ultramax")
+    set_simulated_tier("ultramax")
 
     assert "simulated_tier" not in session
 
@@ -50,7 +43,6 @@ def test_get_simulated_tier_defaults_to_paid(monkeypatch):
     monkeypatch.setattr("streamlit.session_state", {}, raising=False)
     monkeypatch.setattr("streamlit.query_params", {}, raising=False)
 
-    from app.components.demo_toolbar import get_simulated_tier
     assert get_simulated_tier() == "paid"
 
 
@@ -59,7 +51,6 @@ def test_get_simulated_tier_reads_session(monkeypatch):
     monkeypatch.setattr("streamlit.session_state", {"simulated_tier": "free"}, raising=False)
     monkeypatch.setattr("streamlit.query_params", {}, raising=False)
 
-    from app.components.demo_toolbar import get_simulated_tier
     assert get_simulated_tier() == "free"
 
 
@@ -79,10 +70,13 @@ def test_render_demo_toolbar_renders_pills(monkeypatch):
     monkeypatch.setattr("streamlit.button", mock_button)
     monkeypatch.setattr("streamlit.divider", lambda: None)
 
-    from app.components.demo_toolbar import render_demo_toolbar
     render_demo_toolbar()
 
     # Verify buttons were rendered for all tiers
     button_calls = [c for c in calls if c[0] == "button"]
     assert len(button_calls) == 3
     assert any("Paid ✓" in c[1] for c in button_calls)  # current tier marked
+
+    primary_calls = [c for c in button_calls if c[3] == "primary"]
+    assert len(primary_calls) == 1
+    assert "Paid" in primary_calls[0][1]
