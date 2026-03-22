@@ -71,3 +71,13 @@ describe('useSystemStore — BYOK gate', () => {
     expect(store.backends).toEqual(original)
   })
 })
+
+describe('useSystemStore — services', () => {
+  it('loadServices() populates services list', async () => {
+    mockFetch.mockResolvedValue({ data: [{ name: 'ollama', port: 11434, running: true, note: '' }], error: null })
+    const store = useSystemStore()
+    await store.loadServices()
+    expect(store.services[0].name).toBe('ollama')
+    expect(store.services[0].running).toBe(true)
+  })
+})
