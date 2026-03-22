@@ -61,3 +61,28 @@ def test_get_simulated_tier_reads_session(monkeypatch):
 
     from app.components.demo_toolbar import get_simulated_tier
     assert get_simulated_tier() == "free"
+
+
+def test_render_demo_toolbar_renders_pills(monkeypatch):
+    """render_demo_toolbar renders tier selection pills."""
+    session = {"simulated_tier": "paid"}
+    calls = []
+
+    def mock_button(label, key=None, type=None, use_container_width=False):
+        calls.append(("button", label, key, type))
+        return False  # button not clicked
+
+    monkeypatch.setattr("streamlit.session_state", session, raising=False)
+    monkeypatch.setattr("streamlit.container", lambda: __import__("contextlib").nullcontext())
+    monkeypatch.setattr("streamlit.columns", lambda x: [__import__("contextlib").nullcontext() for _ in x])
+    monkeypatch.setattr("streamlit.caption", lambda x: None)
+    monkeypatch.setattr("streamlit.button", mock_button)
+    monkeypatch.setattr("streamlit.divider", lambda: None)
+
+    from app.components.demo_toolbar import render_demo_toolbar
+    render_demo_toolbar()
+
+    # Verify buttons were rendered for all tiers
+    button_calls = [c for c in calls if c[0] == "button"]
+    assert len(button_calls) == 3
+    assert any("Paid ✓" in c[1] for c in button_calls)  # current tier marked
