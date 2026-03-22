@@ -25,14 +25,24 @@ from app.feedback import inject_feedback_button
 from app.cloud_session import resolve_session, get_db_path, get_config_dir
 import sqlite3
 
+_LOGO_CIRCLE = Path(__file__).parent / "static" / "peregrine_logo_circle.png"
+_LOGO_FULL   = Path(__file__).parent / "static" / "peregrine_logo.png"
+
 st.set_page_config(
     page_title="Peregrine",
-    page_icon="💼",
+    page_icon=str(_LOGO_CIRCLE) if _LOGO_CIRCLE.exists() else "💼",
     layout="wide",
 )
 
 resolve_session("peregrine")
 init_db(get_db_path())
+
+# Demo tier — initialize once per session (cookie persistence handled client-side)
+if IS_DEMO and "simulated_tier" not in st.session_state:
+    st.session_state["simulated_tier"] = "paid"
+
+if _LOGO_CIRCLE.exists():
+    st.logo(str(_LOGO_CIRCLE), icon_image=str(_LOGO_CIRCLE))
 
 # ── Startup cleanup — runs once per server process via cache_resource ──────────
 @st.cache_resource
@@ -188,4 +198,24 @@ with st.sidebar:
     st.caption(f"Peregrine {_get_version()}")
     inject_feedback_button(page=pg.title)
 
+# ── Demo toolbar (DEMO_MODE only) ───────────────────────────────────────────
+if IS_DEMO:
+    from app.components.demo_toolbar import render_demo_toolbar
+    render_demo_toolbar()
+
+# ── UI switcher banner (non-demo, paid tier) ────────────────────────────────
+if not IS_DEMO:
+    try:
+        from app.components.ui_switcher import render_banner
+        render_banner()
+    except Exception:
+        pass  # never crash the app over the banner
+
 pg.run()
+
+# ── UI preference cookie sync (runs after page render) ──────────────────────
+try:
+    from app.components.ui_switcher import sync_ui_cookie
+    sync_ui_cookie()
+except Exception:
+    pass  # never crash the app over cookie sync
