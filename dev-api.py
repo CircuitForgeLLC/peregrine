@@ -1515,3 +1515,225 @@ def finetune_local_status():
         return {"model_ready": model_ready}
     except Exception:
         return {"model_ready": False}
+
+
+# ── Settings: License ─────────────────────────────────────────────────────────
+
+# CONFIG_DIR resolves relative to staging.db location (same convention as _user_yaml_path)
+CONFIG_DIR = Path(os.path.dirname(DB_PATH)) / "config"
+if not CONFIG_DIR.exists():
+    CONFIG_DIR = Path("/devl/job-seeker/config")
+
+LICENSE_PATH = CONFIG_DIR / "license.yaml"
+
+
+def _load_user_config() -> dict:
+    """Load user.yaml using the same path logic as _user_yaml_path()."""
+    return load_user_profile(_user_yaml_path())
+
+
+def _save_user_config(cfg: dict) -> None:
+    """Save user.yaml using the same path logic as _user_yaml_path()."""
+    save_user_profile(_user_yaml_path(), cfg)
+
+
+@app.get("/api/settings/license")
+def get_license():
+    try:
+        if LICENSE_PATH.exists():
+            with open(LICENSE_PATH) as f:
+                data = yaml.safe_load(f) or {}
+        else:
+            data = {}
+        return {
+            "tier": data.get("tier", "free"),
+            "key": data.get("key"),
+            "active": bool(data.get("active", False)),
+            "grace_period_ends": data.get("grace_period_ends"),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class LicenseActivatePayload(BaseModel):
+    key: str
+
+@app.post("/api/settings/license/activate")
+def activate_license(payload: LicenseActivatePayload):
+    try:
+        # In dev: accept any key matching our format, grant paid tier
+        key = payload.key.strip()
+        if not re.match(r'^CFG-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$', key):
+            return {"ok": False, "error": "Invalid key format"}
+        data = {"tier": "paid", "key": key, "active": True}
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(LICENSE_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+        return {"ok": True, "tier": "paid"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/license/deactivate")
+def deactivate_license():
+    try:
+        if LICENSE_PATH.exists():
+            with open(LICENSE_PATH) as f:
+                data = yaml.safe_load(f) or {}
+            data["active"] = False
+            fd = os.open(str(LICENSE_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: Data ────────────────────────────────────────────────────────────
+
+class BackupCreatePayload(BaseModel):
+    include_db: bool = False
+
+@app.post("/api/settings/data/backup/create")
+def create_backup(payload: BackupCreatePayload):
+    try:
+        import zipfile
+        import datetime
+        backup_dir = Path("data/backups")
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest = backup_dir / f"peregrine_backup_{ts}.zip"
+        file_count = 0
+        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
+            for cfg_file in CONFIG_DIR.glob("*.yaml"):
+                if cfg_file.name not in ("tokens.yaml",):
+                    zf.write(cfg_file, f"config/{cfg_file.name}")
+                    file_count += 1
+            if payload.include_db:
+                db_path = Path(DB_PATH)
+                if db_path.exists():
+                    zf.write(db_path, "data/staging.db")
+                    file_count += 1
+        size_bytes = dest.stat().st_size
+        return {"path": str(dest), "file_count": file_count, "size_bytes": size_bytes}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: Privacy ─────────────────────────────────────────────────────────
+
+PRIVACY_YAML_FIELDS = {"telemetry_opt_in", "byok_info_dismissed", "master_off", "usage_events", "content_sharing"}
+
+@app.get("/api/settings/privacy")
+def get_privacy():
+    try:
+        cfg = _load_user_config()
+        return {
+            "telemetry_opt_in": bool(cfg.get("telemetry_opt_in", False)),
+            "byok_info_dismissed": bool(cfg.get("byok_info_dismissed", False)),
+            "master_off": bool(cfg.get("master_off", False)),
+            "usage_events": cfg.get("usage_events", True),
+            "content_sharing": bool(cfg.get("content_sharing", False)),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/settings/privacy")
+def save_privacy(payload: dict):
+    try:
+        cfg = _load_user_config()
+        for k, v in payload.items():
+            if k in PRIVACY_YAML_FIELDS:
+                cfg[k] = v
+        _save_user_config(cfg)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: Developer ───────────────────────────────────────────────────────
+
+TOKENS_PATH = CONFIG_DIR / "tokens.yaml"
+
+@app.get("/api/settings/developer")
+def get_developer():
+    try:
+        cfg = _load_user_config()
+        tokens = {}
+        if TOKENS_PATH.exists():
+            with open(TOKENS_PATH) as f:
+                tokens = yaml.safe_load(f) or {}
+        return {
+            "dev_tier_override": cfg.get("dev_tier_override"),
+            "hf_token_set": bool(tokens.get("huggingface_token")),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DevTierPayload(BaseModel):
+    tier: Optional[str]
+
+@app.put("/api/settings/developer/tier")
+def set_dev_tier(payload: DevTierPayload):
+    try:
+        cfg = _load_user_config()
+        cfg["dev_tier_override"] = payload.tier
+        _save_user_config(cfg)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class HfTokenPayload(BaseModel):
+    token: str
+
+@app.put("/api/settings/developer/hf-token")
+def save_hf_token(payload: HfTokenPayload):
+    try:
+        set_credential("peregrine_tokens", "huggingface_token", payload.token)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/developer/hf-token/test")
+def test_hf_token():
+    try:
+        token = get_credential("peregrine_tokens", "huggingface_token")
+        if not token:
+            return {"ok": False, "error": "No token stored"}
+        from huggingface_hub import whoami
+        info = whoami(token=token)
+        return {"ok": True, "username": info.get("name")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/settings/developer/wizard-reset")
+def wizard_reset():
+    try:
+        cfg = _load_user_config()
+        cfg["wizard_complete"] = False
+        _save_user_config(cfg)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/developer/export-classifier")
+def export_classifier():
+    try:
+        import json as _json
+        from scripts.db import get_labeled_emails
+        emails = get_labeled_emails(DB_PATH)
+        export_path = Path("data/email_score.jsonl")
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(export_path, "w") as f:
+            for e in emails:
+                f.write(_json.dumps(e) + "\n")
+        return {"ok": True, "count": len(emails), "path": str(export_path)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
