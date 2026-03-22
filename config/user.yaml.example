@@ -43,6 +43,7 @@ dev_tier_override: null     # overrides tier locally (for testing only)
 wizard_complete: false
 wizard_step: 0
 dismissed_banners: []
+ui_preference: streamlit    # UI preference — "streamlit" (default) or "vue" (Beta: Paid tier)
 
 docs_dir: "~/Documents/JobSearch"
 ollama_models_dir: "~/models/ollama"
