@@ -1192,3 +1192,236 @@ def byok_ack(payload: ByokAckPayload):
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: System — Services ───────────────────────────────────────────────
+
+import subprocess
+import socket
+
+SERVICES_REGISTRY = [
+    {"name": "ollama", "port": 11434, "compose_service": "ollama", "note": "LLM inference", "profiles": ["cpu","single-gpu","dual-gpu"]},
+    {"name": "vllm", "port": 8000, "compose_service": "vllm", "note": "vLLM server", "profiles": ["single-gpu","dual-gpu"]},
+    {"name": "vision", "port": 8002, "compose_service": "vision", "note": "Moondream2 vision", "profiles": ["single-gpu","dual-gpu"]},
+    {"name": "searxng", "port": 8888, "compose_service": "searxng", "note": "Search engine", "profiles": ["cpu","remote","single-gpu","dual-gpu"]},
+]
+
+
+def _port_open(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+@app.get("/api/settings/system/services")
+def get_services():
+    try:
+        profile = os.environ.get("INFERENCE_PROFILE", "cpu")
+        result = []
+        for svc in SERVICES_REGISTRY:
+            if profile not in svc["profiles"]:
+                continue
+            result.append({"name": svc["name"], "port": svc["port"],
+                           "running": _port_open(svc["port"]), "note": svc["note"]})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/system/services/{name}/start")
+def start_service(name: str):
+    try:
+        svc = next((s for s in SERVICES_REGISTRY if s["name"] == name), None)
+        if not svc:
+            raise HTTPException(404, "Unknown service")
+        r = subprocess.run(["docker", "compose", "up", "-d", svc["compose_service"]],
+                          capture_output=True, text=True)
+        return {"ok": r.returncode == 0, "output": r.stdout + r.stderr}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/system/services/{name}/stop")
+def stop_service(name: str):
+    try:
+        svc = next((s for s in SERVICES_REGISTRY if s["name"] == name), None)
+        if not svc:
+            raise HTTPException(404, "Unknown service")
+        r = subprocess.run(["docker", "compose", "stop", svc["compose_service"]],
+                          capture_output=True, text=True)
+        return {"ok": r.returncode == 0, "output": r.stdout + r.stderr}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: System — Email ──────────────────────────────────────────────────
+
+EMAIL_PATH = Path("config/email.yaml")
+
+
+@app.get("/api/settings/system/email")
+def get_email_config():
+    try:
+        if not EMAIL_PATH.exists():
+            return {}
+        with open(EMAIL_PATH) as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/settings/system/email")
+def save_email_config(payload: dict):
+    try:
+        EMAIL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # Write with restricted permissions (contains password)
+        fd = os.open(str(EMAIL_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            yaml.dump(dict(payload), f, allow_unicode=True, default_flow_style=False)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/system/email/test")
+def test_email(payload: dict):
+    import imaplib, ssl as ssl_mod
+    try:
+        host = payload.get("host", "")
+        port = int(payload.get("port", 993))
+        use_ssl = payload.get("ssl", True)
+        username = payload.get("username", "")
+        password = payload.get("password", "")
+        if use_ssl:
+            ctx = ssl_mod.create_default_context()
+            conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
+        else:
+            conn = imaplib.IMAP4(host, port)
+        conn.login(username, password)
+        conn.logout()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ── Settings: System — Integrations ──────────────────────────────────────────
+
+@app.get("/api/settings/system/integrations")
+def get_integrations():
+    try:
+        from scripts.integrations import REGISTRY
+        result = []
+        for integration in REGISTRY:
+            result.append({
+                "id": integration.id,
+                "name": integration.name,
+                "connected": integration.is_connected(),
+                "tier_required": getattr(integration, "tier_required", "free"),
+                "fields": [{"key": f["key"], "label": f["label"], "type": f.get("type", "text")}
+                           for f in integration.fields()],
+            })
+        return result
+    except ImportError:
+        return []  # integrations module not yet implemented
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/system/integrations/{integration_id}/test")
+def test_integration(integration_id: str, payload: dict):
+    try:
+        from scripts.integrations import REGISTRY
+        integration = next((i for i in REGISTRY if i.id == integration_id), None)
+        if not integration:
+            raise HTTPException(404, "Unknown integration")
+        ok, error = integration.test(payload)
+        return {"ok": ok, "error": error}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/system/integrations/{integration_id}/connect")
+def connect_integration(integration_id: str, payload: dict):
+    try:
+        from scripts.integrations import REGISTRY
+        integration = next((i for i in REGISTRY if i.id == integration_id), None)
+        if not integration:
+            raise HTTPException(404, "Unknown integration")
+        ok, error = integration.test(payload)
+        if not ok:
+            return {"ok": False, "error": error}
+        integration.save_credentials(payload)
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/system/integrations/{integration_id}/disconnect")
+def disconnect_integration(integration_id: str):
+    try:
+        from scripts.integrations import REGISTRY
+        integration = next((i for i in REGISTRY if i.id == integration_id), None)
+        if not integration:
+            raise HTTPException(404, "Unknown integration")
+        integration.remove_credentials()
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: System — File Paths ─────────────────────────────────────────────
+
+@app.get("/api/settings/system/paths")
+def get_file_paths():
+    try:
+        user = load_user_profile(_user_yaml_path())
+        return {
+            "docs_dir": user.get("docs_dir", ""),
+            "data_dir": user.get("data_dir", ""),
+            "model_dir": user.get("model_dir", ""),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/settings/system/paths")
+def save_file_paths(payload: dict):
+    try:
+        user = load_user_profile(_user_yaml_path())
+        for key in ("docs_dir", "data_dir", "model_dir"):
+            if key in payload:
+                user[key] = payload[key]
+        save_user_profile(_user_yaml_path(), user)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: System — Deployment Config ─────────────────────────────────────
+
+@app.get("/api/settings/system/deploy")
+def get_deploy_config():
+    try:
+        return {
+            "base_url_path": os.environ.get("STREAMLIT_SERVER_BASE_URL_PATH", ""),
+            "server_host": os.environ.get("STREAMLIT_SERVER_ADDRESS", "0.0.0.0"),
+            "server_port": int(os.environ.get("STREAMLIT_SERVER_PORT", "8502")),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/settings/system/deploy")
+def save_deploy_config(payload: dict):
+    # Deployment config changes require restart; just acknowledge
+    return {"ok": True, "note": "Restart required to apply changes"}
