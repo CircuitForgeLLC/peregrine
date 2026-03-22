@@ -112,3 +112,60 @@ def test_byok_false_preserves_original_gating():
     # has_byok=False (default) must not change existing behaviour
     assert can_use("free", "company_research", has_byok=False) is False
     assert can_use("paid", "company_research", has_byok=False) is True
+
+
+# ── Vue UI Beta & Demo Tier tests ──────────────────────────────────────────────
+
+def test_vue_ui_beta_free_tier():
+    assert can_use("free", "vue_ui_beta") is False
+
+
+def test_vue_ui_beta_paid_tier():
+    assert can_use("paid", "vue_ui_beta") is True
+
+
+def test_vue_ui_beta_premium_tier():
+    assert can_use("premium", "vue_ui_beta") is True
+
+
+def test_can_use_demo_tier_overrides_real_tier():
+    # demo_tier kwarg substitutes for the real tier when provided and DEMO_MODE is set
+    import os
+    os.environ["DEMO_MODE"] = "true"
+    # Need to reload the module to pick up the new DEMO_MODE value
+    import importlib
+    import app.wizard.tiers as tiers_module
+    importlib.reload(tiers_module)
+    try:
+        assert tiers_module.can_use("free", "company_research", demo_tier="paid") is True
+    finally:
+        # Cleanup: restore original state
+        os.environ.pop("DEMO_MODE", None)
+        importlib.reload(tiers_module)
+
+
+def test_can_use_demo_tier_free_restricts():
+    # demo_tier="free" should restrict access even if real tier is "paid"
+    import os
+    os.environ["DEMO_MODE"] = "true"
+    import importlib
+    import app.wizard.tiers as tiers_module
+    importlib.reload(tiers_module)
+    try:
+        assert tiers_module.can_use("paid", "model_fine_tuning", demo_tier="free") is False
+    finally:
+        os.environ.pop("DEMO_MODE", None)
+        importlib.reload(tiers_module)
+
+
+def test_can_use_demo_tier_none_falls_back_to_real():
+    # demo_tier=None means no override — real tier is used
+    assert can_use("paid", "company_research", demo_tier=None) is True
+
+
+def test_can_use_demo_tier_does_not_affect_non_demo():
+    # demo_tier is only applied when DEMO_MODE env var is set;
+    # in tests DEMO_MODE is False by default, so demo_tier is ignored
+    import os
+    os.environ.pop("DEMO_MODE", None)
+    assert can_use("free", "company_research", demo_tier="paid") is False
