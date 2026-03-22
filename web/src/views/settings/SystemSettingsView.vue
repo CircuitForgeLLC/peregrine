@@ -98,16 +98,18 @@ function dragStart(idx: number) {
   dragIdx.value = idx
 }
 
-function dragOver(idx: number) {
-  if (dragIdx.value === null || dragIdx.value === idx) return
-  // Reorder store.backends (immutable swap)
+function dragOver(toFilteredIdx: number) {
+  if (dragIdx.value === null || dragIdx.value === toFilteredIdx) return
+  const fromId = visibleBackends.value[dragIdx.value].id
+  const toId = visibleBackends.value[toFilteredIdx].id
   const arr = [...store.backends]
-  const [moved] = arr.splice(dragIdx.value, 1)
-  arr.splice(idx, 0, moved)
-  store.backends = arr
-  // Update priorities
-  store.backends = store.backends.map((b, i) => ({ ...b, priority: i + 1 }))
-  dragIdx.value = idx
+  const fromFull = arr.findIndex(b => b.id === fromId)
+  const toFull = arr.findIndex(b => b.id === toId)
+  if (fromFull === -1 || toFull === -1) return
+  const [moved] = arr.splice(fromFull, 1)
+  arr.splice(toFull, 0, moved)
+  store.backends = arr.map((b, i) => ({ ...b, priority: i + 1 }))
+  dragIdx.value = toFilteredIdx
 }
 
 function drop() {
