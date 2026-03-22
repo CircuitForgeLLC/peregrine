@@ -323,6 +323,26 @@ with tab_search:
         _run_suggest = st.button("✨ Suggest", key="sp_suggest_btn",
                                   help="Ask the LLM to suggest additional titles and smarter exclude keywords — using your blocklist, mission values, and career background.")
 
+    _title_sugg_count = len((st.session_state.get("_sp_suggestions") or {}).get("suggested_titles", []))
+    if _title_sugg_count:
+        st.markdown(f"""<style>
+@keyframes _pg_arrow_float {{
+    0%, 100% {{
+        transform: translateY(0px);
+        filter: drop-shadow(0 0 2px #4fc3f7);
+    }}
+    50% {{
+        transform: translateY(4px);
+        filter: drop-shadow(0 0 8px #4fc3f7);
+    }}
+}}
+/* Target the expand-arrow SVG inside the multiselect dropdown indicator */
+.stMultiSelect [data-baseweb="select"] > div + div svg {{
+    animation: _pg_arrow_float 1.3s ease-in-out infinite;
+    cursor: pointer;
+}}
+</style>""", unsafe_allow_html=True)
+
     st.multiselect(
         "Job titles",
         options=st.session_state.get("_sp_title_options", p.get("titles", [])),
@@ -330,6 +350,14 @@ with tab_search:
         help="Select from known titles. Suggestions from ✨ Suggest appear here — pick the ones you want.",
         label_visibility="collapsed",
     )
+
+    if _title_sugg_count:
+        st.markdown(
+            f'<div style="font-size:0.8em; color:#4fc3f7; margin-top:-10px; margin-bottom:4px;">'
+            f'&nbsp;↑&nbsp;{_title_sugg_count} new suggestion{"s" if _title_sugg_count != 1 else ""} '
+            f'added — open the dropdown to browse</div>',
+            unsafe_allow_html=True,
+        )
     _add_t_col, _add_t_btn = st.columns([5, 1])
     with _add_t_col:
         st.text_input("Add a title", key="_sp_new_title", label_visibility="collapsed",
@@ -813,6 +841,13 @@ with tab_resume:
             kw_current: list[str] = kw_data.get(kw_category, [])
             kw_suggestions = _load_sugg(kw_category)
 
+            # If a custom tag was added last render, clear the multiselect's session
+            # state key NOW (before the widget is created) so Streamlit uses `default`
+            # instead of the stale session state that lacks the new tag.
+            _reset_key = f"_kw_reset_{kw_category}"
+            if st.session_state.pop(_reset_key, False):
+                st.session_state.pop(f"kw_ms_{kw_category}", None)
+
             # Merge: suggestions first, then any custom tags not in suggestions
             kw_custom = [t for t in kw_current if t not in kw_suggestions]
             kw_options = kw_suggestions + kw_custom
@@ -833,6 +868,7 @@ with tab_resume:
                 label_visibility="collapsed",
                 placeholder=f"Custom: {kw_placeholder}",
             )
+            _tag_just_added = False
             if kw_btn_col.button("＋", key=f"kw_add_{kw_category}", help="Add custom tag"):
                 cleaned = _filter_tag(kw_raw)
                 if cleaned is None:
@@ -840,13 +876,19 @@ with tab_resume:
                 elif cleaned in kw_options:
                     st.info(f"'{cleaned}' is already in the list — select it above.")
                 else:
-                    # Persist custom tag: add to YAML and session state so it appears in options
+                    # Save to YAML and set a reset flag so the multiselect session
+                    # state is cleared before the widget renders on the next rerun,
+                    # allowing `default` (which includes the new tag) to take effect.
                     kw_new_list = kw_selected + [cleaned]
+                    st.session_state[_reset_key] = True
                     kw_data[kw_category] = kw_new_list
                     kw_changed = True
+                    _tag_just_added = True
 
-            # Detect multiselect changes
-            if sorted(kw_selected) != sorted(kw_current):
+            # Detect multiselect changes. Skip when a tag was just added — the change
+            # detection would otherwise overwrite kw_data with the old kw_selected
+            # (which doesn't include the new tag) in the same render.
+            if not _tag_just_added and sorted(kw_selected) != sorted(kw_current):
                 kw_data[kw_category] = kw_selected
                 kw_changed = True
 
@@ -998,6 +1040,11 @@ with tab_system:
                 _env_lines.append(f"STREAMLIT_BASE_URL_PATH={s_base_url.strip()}")
                 _env_path.write_text("\n".join(_env_lines) + "\n")
             st.success("Deployment settings saved. Run `./manage.sh restart` to apply.")
+
+        st.divider()
+        from app.components.ui_switcher import render_settings_toggle as _render_ui_toggle
+        _ui_tier = _profile.tier if _profile else "free"
+        _render_ui_toggle(yaml_path=_USER_YAML, tier=_ui_tier)
 
     st.divider()
 
