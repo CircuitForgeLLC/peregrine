@@ -4,27 +4,35 @@ Reads directly from /devl/job-seeker/staging.db.
 Run with:
     conda run -n job-seeker uvicorn dev-api:app --port 8600 --reload
 """
-import sqlite3
-import os
-import sys
-import re
+import imaplib
 import json
+import logging
+import os
+import re
+import socket
+import sqlite3
+import ssl as ssl_mod
+import subprocess
+import sys
 import threading
-from urllib.parse import urlparse
-from bs4 import BeautifulSoup
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, List
+from urllib.parse import urlparse
+
+import requests
 import yaml
+from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List
-import requests
 
 # Allow importing peregrine scripts for cover letter generation
 PEREGRINE_ROOT = Path("/Library/Development/CircuitForge/peregrine")
 if str(PEREGRINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PEREGRINE_ROOT))
+
+from scripts.credential_store import get_credential, set_credential, delete_credential  # noqa: E402
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 
@@ -1196,9 +1204,6 @@ def byok_ack(payload: ByokAckPayload):
 
 # ── Settings: System — Services ───────────────────────────────────────────────
 
-import subprocess
-import socket
-
 SERVICES_REGISTRY = [
     {"name": "ollama", "port": 11434, "compose_service": "ollama", "note": "LLM inference", "profiles": ["cpu","single-gpu","dual-gpu"]},
     {"name": "vllm", "port": 8000, "compose_service": "vllm", "note": "vLLM server", "profiles": ["single-gpu","dual-gpu"]},
@@ -1261,15 +1266,25 @@ def stop_service(name: str):
 # ── Settings: System — Email ──────────────────────────────────────────────────
 
 EMAIL_PATH = Path("config/email.yaml")
+EMAIL_CRED_SERVICE = "peregrine"
+EMAIL_CRED_KEY = "imap_password"
+
+# Non-secret fields stored in yaml
+EMAIL_YAML_FIELDS = ("host", "port", "ssl", "username", "sent_folder", "lookback_days")
 
 
 @app.get("/api/settings/system/email")
 def get_email_config():
     try:
-        if not EMAIL_PATH.exists():
-            return {}
-        with open(EMAIL_PATH) as f:
-            return yaml.safe_load(f) or {}
+        config = {}
+        if EMAIL_PATH.exists():
+            with open(EMAIL_PATH) as f:
+                config = yaml.safe_load(f) or {}
+        # Never return the password — only indicate whether it's set
+        password = get_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY)
+        config["password_set"] = bool(password)
+        config.pop("password", None)  # strip if somehow in yaml
+        return config
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1278,10 +1293,16 @@ def get_email_config():
 def save_email_config(payload: dict):
     try:
         EMAIL_PATH.parent.mkdir(parents=True, exist_ok=True)
-        # Write with restricted permissions (contains password)
+        # Extract password before writing yaml
+        password = payload.pop("password", None) or payload.pop("password_set", None)
+        # Only store if it's a real new value (not the sentinel True/False)
+        if password and isinstance(password, str):
+            set_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY, password)
+        # Write non-secret fields to yaml (chmod 600 still, contains username)
+        safe_config = {k: v for k, v in payload.items() if k in EMAIL_YAML_FIELDS}
         fd = os.open(str(EMAIL_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, 'w') as f:
-            yaml.dump(dict(payload), f, allow_unicode=True, default_flow_style=False)
+        with os.fdopen(fd, "w") as f:
+            yaml.dump(safe_config, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1289,13 +1310,15 @@ def save_email_config(payload: dict):
 
 @app.post("/api/settings/system/email/test")
 def test_email(payload: dict):
-    import imaplib, ssl as ssl_mod
     try:
+        # Allow test to pass in a password override, or use stored credential
+        password = payload.get("password") or get_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY)
         host = payload.get("host", "")
         port = int(payload.get("port", 993))
         use_ssl = payload.get("ssl", True)
         username = payload.get("username", "")
-        password = payload.get("password", "")
+        if not all([host, username, password]):
+            return {"ok": False, "error": "Missing host, username, or password"}
         if use_ssl:
             ctx = ssl_mod.create_default_context()
             conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)

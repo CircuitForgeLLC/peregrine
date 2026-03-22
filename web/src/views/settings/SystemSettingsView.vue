@@ -86,8 +86,12 @@
       </div>
       <div class="field-row">
         <label>Password / App Password</label>
-        <input v-model="(store.emailConfig as any).password" type="password" />
-        <span class="field-hint">Gmail: use an App Password, not your account password.</span>
+        <input
+          v-model="emailPasswordInput"
+          type="password"
+          :placeholder="(store.emailConfig as any).password_set ? '••••••• (saved — enter new to change)' : 'Password'"
+        />
+        <span class="field-hint">Gmail: use an App Password. Tip: type ${ENV_VAR_NAME} to use an environment variable.</span>
       </div>
       <div class="field-row">
         <label>Sent Folder</label>
@@ -98,7 +102,7 @@
         <input v-model.number="(store.emailConfig as any).lookback_days" type="number" placeholder="30" />
       </div>
       <div class="form-actions">
-        <button @click="store.saveEmail()" :disabled="store.emailSaving" class="btn-primary">
+        <button @click="handleSaveEmail()" :disabled="store.emailSaving" class="btn-primary">
           {{ store.emailSaving ? 'Saving…' : 'Save Email Config' }}
         </button>
         <button @click="handleTestEmail" class="btn-secondary">Test Connection</button>
@@ -116,24 +120,39 @@
       <div v-for="integration in store.integrations" :key="integration.id" class="integration-card">
         <div class="integration-header">
           <span class="integration-name">{{ integration.name }}</span>
-          <span :class="['status-badge', integration.connected ? 'badge-connected' : 'badge-disconnected']">
-            {{ integration.connected ? 'Connected' : 'Disconnected' }}
-          </span>
-        </div>
-        <div v-if="!integration.connected" class="integration-form">
-          <div v-for="field in integration.fields" :key="field.key" class="field-row">
-            <label>{{ field.label }}</label>
-            <input v-model="integrationInputs[integration.id + ':' + field.key]"
-                   :type="field.type === 'password' ? 'password' : 'text'" />
-          </div>
-          <div class="form-actions">
-            <button @click="connectIntegration(integration.id)" class="btn-primary">Connect</button>
-            <button @click="testIntegration(integration.id)" class="btn-secondary">Test</button>
+          <div class="integration-badges">
+            <span v-if="!meetsRequiredTier(integration.tier_required)" class="tier-badge">
+              Requires {{ integration.tier_required }}
+            </span>
+            <span :class="['status-badge', integration.connected ? 'badge-connected' : 'badge-disconnected']">
+              {{ integration.connected ? 'Connected' : 'Disconnected' }}
+            </span>
           </div>
         </div>
-        <div v-else>
-          <button @click="disconnectIntegration(integration.id)" class="btn-danger">Disconnect</button>
+        <!-- Locked state for insufficient tier -->
+        <div v-if="!meetsRequiredTier(integration.tier_required)" class="tier-locked">
+          <p>Upgrade to {{ integration.tier_required }} to use this integration.</p>
         </div>
+        <!-- Normal state for sufficient tier -->
+        <template v-else>
+          <div v-if="!integration.connected" class="integration-form">
+            <div v-for="field in integration.fields" :key="field.key" class="field-row">
+              <label>{{ field.label }}</label>
+              <input v-model="integrationInputs[integration.id + ':' + field.key]"
+                     :type="field.type === 'password' ? 'password' : 'text'" />
+            </div>
+            <div class="form-actions">
+              <button @click="handleConnect(integration.id)" class="btn-primary">Connect</button>
+              <button @click="handleTest(integration.id)" class="btn-secondary">Test</button>
+              <span v-if="integrationResults[integration.id]" :class="integrationResults[integration.id].ok ? 'test-ok' : 'test-fail'">
+                {{ integrationResults[integration.id].ok ? '✓ OK' : '✗ ' + integrationResults[integration.id].error }}
+              </span>
+            </div>
+          </div>
+          <div v-else>
+            <button @click="store.disconnectIntegration(integration.id)" class="btn-danger">Disconnect</button>
+          </div>
+        </template>
       </div>
     </section>
 
@@ -215,12 +234,13 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useSystemStore } from '../../stores/settings/system'
 import { useAppConfigStore } from '../../stores/appConfig'
-import { useApiFetch } from '../../composables/useApi'
 
 const store = useSystemStore()
 const config = useAppConfigStore()
+const { tier } = storeToRefs(config)
 
 const byokConfirmed = ref(false)
 const dragIdx = ref<number | null>(null)
@@ -232,6 +252,11 @@ const visibleBackends = computed(() =>
     !CONTRACTED_ONLY.includes(b.id) || config.contractedClient
   )
 )
+
+const tierOrder = ['free', 'paid', 'premium', 'ultra']
+function meetsRequiredTier(required: string): boolean {
+  return tierOrder.indexOf(tier.value) >= tierOrder.indexOf(required || 'free')
+}
 
 function dragStart(idx: number) {
   dragIdx.value = idx
@@ -261,42 +286,40 @@ async function handleConfirmByok() {
 }
 
 const emailTestResult = ref<boolean | null>(null)
+const emailPasswordInput = ref('')
 const integrationInputs = ref<Record<string, string>>({})
+const integrationResults = ref<Record<string, {ok: boolean; error?: string}>>({})
 
 async function handleTestEmail() {
   const result = await store.testEmail()
   emailTestResult.value = result?.ok ?? false
 }
 
-async function connectIntegration(id: string) {
-  const integration = store.integrations.find(i => i.id === id)
-  if (!integration) return
-  const payload: Record<string, string> = {}
-  for (const field of integration.fields) {
-    payload[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
-  }
-  const { data } = await useApiFetch<{ok: boolean; error?: string}>(
-    `/api/settings/system/integrations/${id}/connect`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
-  )
-  if (data?.ok) await store.loadIntegrations()
+async function handleSaveEmail() {
+  const payload = { ...store.emailConfig, password: emailPasswordInput.value || undefined }
+  await store.saveEmailWithPassword(payload)
 }
 
-async function testIntegration(id: string) {
+async function handleConnect(id: string) {
   const integration = store.integrations.find(i => i.id === id)
   if (!integration) return
-  const payload: Record<string, string> = {}
+  const credentials: Record<string, string> = {}
   for (const field of integration.fields) {
-    payload[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
+    credentials[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
   }
-  await useApiFetch(`/api/settings/system/integrations/${id}/test`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
-  )
+  const result = await store.connectIntegration(id, credentials)
+  integrationResults.value = { ...integrationResults.value, [id]: result }
 }
 
-async function disconnectIntegration(id: string) {
-  await useApiFetch(`/api/settings/system/integrations/${id}/disconnect`, { method: 'POST' })
-  await store.loadIntegrations()
+async function handleTest(id: string) {
+  const integration = store.integrations.find(i => i.id === id)
+  if (!integration) return
+  const credentials: Record<string, string> = {}
+  for (const field of integration.fields) {
+    credentials[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
+  }
+  const result = await store.testIntegration(id, credentials)
+  integrationResults.value = { ...integrationResults.value, [id]: result }
 }
 
 onMounted(async () => {
@@ -367,4 +390,7 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3, 16px); col
 .badge-connected { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
 .badge-disconnected { background: rgba(100,116,139,0.15); color: #94a3b8; border: 1px solid rgba(100,116,139,0.2); }
 .empty-note { font-size: 0.85rem; color: var(--color-text-secondary, #94a3b8); padding: 16px 0; }
+.tier-badge { font-size: 0.68rem; padding: 2px 7px; border-radius: 8px; background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); margin-right: 6px; }
+.tier-locked { padding: 12px 0; font-size: 0.85rem; color: var(--color-text-secondary, #94a3b8); }
+.integration-badges { display: flex; align-items: center; gap: 4px; }
 </style>
