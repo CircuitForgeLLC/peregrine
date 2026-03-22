@@ -61,26 +61,30 @@ def sync_ui_cookie(yaml_path: Path, tier: str) -> None:
             profile.ui_preference = switch_param
             profile.save()
         except Exception:
+            # UI components must not crash the app — silent fallback
             pass
         st.query_params.pop("prgn_switch", None)
         _set_cookie_js(switch_param)
         return
 
     # ── Normal path: read yaml, enforce tier, inject cookie ───────────────────
+    profile = None
     try:
         profile = UserProfile(yaml_path)
         pref = profile.ui_preference
     except Exception:
+        # UI components must not crash the app — silent fallback to default
         pref = "streamlit"
 
     # Tier downgrade protection (skip in demo — demo bypasses tier gate)
     if pref == "vue" and not _DEMO_MODE and not can_use(tier, "vue_ui_beta"):
-        try:
-            profile = UserProfile(yaml_path)
-            profile.ui_preference = "streamlit"
-            profile.save()
-        except Exception:
-            pass
+        if profile is not None:
+            try:
+                profile.ui_preference = "streamlit"
+                profile.save()
+            except Exception:
+                # UI components must not crash the app — silent fallback
+                pass
         pref = "streamlit"
 
     _set_cookie_js(pref)
@@ -98,6 +102,7 @@ def switch_ui(yaml_path: Path, to: str, tier: str) -> None:
         profile.ui_preference = to
         profile.save()
     except Exception:
+        # UI components must not crash the app — silent fallback
         pass
     sync_ui_cookie(yaml_path, tier=tier)
     st.rerun()
@@ -117,6 +122,7 @@ def render_banner(yaml_path: Path, tier: str) -> None:
     try:
         profile = UserProfile(yaml_path)
     except Exception:
+        # UI components must not crash the app — silent fallback
         return
 
     if profile.ui_preference == "vue":
@@ -147,6 +153,7 @@ def render_settings_toggle(yaml_path: Path, tier: str) -> None:
         profile = UserProfile(yaml_path)
         current = profile.ui_preference
     except Exception:
+        # UI components must not crash the app — silent fallback to default
         current = "streamlit"
 
     options = ["streamlit", "vue"]
