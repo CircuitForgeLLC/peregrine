@@ -44,6 +44,144 @@
       </div>
     </section>
 
+    <!-- Services section -->
+    <section class="form-section">
+      <h3>Services</h3>
+      <p class="section-note">Port-based status. Start/Stop via Docker Compose.</p>
+      <div class="service-grid">
+        <div v-for="svc in store.services" :key="svc.name" class="service-card">
+          <div class="service-header">
+            <span class="service-dot" :class="svc.running ? 'dot-running' : 'dot-stopped'"></span>
+            <span class="service-name">{{ svc.name }}</span>
+            <span class="service-port">:{{ svc.port }}</span>
+          </div>
+          <p class="service-note">{{ svc.note }}</p>
+          <div class="service-actions">
+            <button v-if="!svc.running" @click="store.startService(svc.name)" class="btn-start">Start</button>
+            <button v-else @click="store.stopService(svc.name)" class="btn-stop">Stop</button>
+          </div>
+          <p v-if="store.serviceErrors[svc.name]" class="error">{{ store.serviceErrors[svc.name] }}</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Email section -->
+    <section class="form-section">
+      <h3>Email (IMAP)</h3>
+      <p class="section-note">Used for email sync in the Interviews pipeline.</p>
+      <div class="field-row">
+        <label>IMAP Host</label>
+        <input v-model="(store.emailConfig as any).host" placeholder="imap.gmail.com" />
+      </div>
+      <div class="field-row">
+        <label>Port</label>
+        <input v-model.number="(store.emailConfig as any).port" type="number" placeholder="993" />
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" v-model="(store.emailConfig as any).ssl" /> Use SSL
+      </label>
+      <div class="field-row">
+        <label>Username</label>
+        <input v-model="(store.emailConfig as any).username" type="email" />
+      </div>
+      <div class="field-row">
+        <label>Password / App Password</label>
+        <input v-model="(store.emailConfig as any).password" type="password" />
+        <span class="field-hint">Gmail: use an App Password, not your account password.</span>
+      </div>
+      <div class="field-row">
+        <label>Sent Folder</label>
+        <input v-model="(store.emailConfig as any).sent_folder" placeholder="[Gmail]/Sent Mail" />
+      </div>
+      <div class="field-row">
+        <label>Lookback Days</label>
+        <input v-model.number="(store.emailConfig as any).lookback_days" type="number" placeholder="30" />
+      </div>
+      <div class="form-actions">
+        <button @click="store.saveEmail()" :disabled="store.emailSaving" class="btn-primary">
+          {{ store.emailSaving ? 'Saving…' : 'Save Email Config' }}
+        </button>
+        <button @click="handleTestEmail" class="btn-secondary">Test Connection</button>
+        <span v-if="emailTestResult !== null" :class="emailTestResult ? 'test-ok' : 'test-fail'">
+          {{ emailTestResult ? '✓ Connected' : '✗ Failed' }}
+        </span>
+        <p v-if="store.emailError" class="error">{{ store.emailError }}</p>
+      </div>
+    </section>
+
+    <!-- Integrations -->
+    <section class="form-section">
+      <h3>Integrations</h3>
+      <div v-if="store.integrations.length === 0" class="empty-note">No integrations registered.</div>
+      <div v-for="integration in store.integrations" :key="integration.id" class="integration-card">
+        <div class="integration-header">
+          <span class="integration-name">{{ integration.name }}</span>
+          <span :class="['status-badge', integration.connected ? 'badge-connected' : 'badge-disconnected']">
+            {{ integration.connected ? 'Connected' : 'Disconnected' }}
+          </span>
+        </div>
+        <div v-if="!integration.connected" class="integration-form">
+          <div v-for="field in integration.fields" :key="field.key" class="field-row">
+            <label>{{ field.label }}</label>
+            <input v-model="integrationInputs[integration.id + ':' + field.key]"
+                   :type="field.type === 'password' ? 'password' : 'text'" />
+          </div>
+          <div class="form-actions">
+            <button @click="connectIntegration(integration.id)" class="btn-primary">Connect</button>
+            <button @click="testIntegration(integration.id)" class="btn-secondary">Test</button>
+          </div>
+        </div>
+        <div v-else>
+          <button @click="disconnectIntegration(integration.id)" class="btn-danger">Disconnect</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- File Paths -->
+    <section class="form-section">
+      <h3>File Paths</h3>
+      <div class="field-row">
+        <label>Documents Directory</label>
+        <input v-model="(store.filePaths as any).docs_dir" placeholder="/Library/Documents/JobSearch" />
+      </div>
+      <div class="field-row">
+        <label>Data Directory</label>
+        <input v-model="(store.filePaths as any).data_dir" placeholder="data/" />
+      </div>
+      <div class="field-row">
+        <label>Model Directory</label>
+        <input v-model="(store.filePaths as any).model_dir" placeholder="/Library/Assets/LLM" />
+      </div>
+      <div class="form-actions">
+        <button @click="store.saveFilePaths()" :disabled="store.filePathsSaving" class="btn-primary">
+          {{ store.filePathsSaving ? 'Saving…' : 'Save Paths' }}
+        </button>
+      </div>
+    </section>
+
+    <!-- Deployment / Server -->
+    <section class="form-section">
+      <h3>Deployment / Server</h3>
+      <p class="section-note">Restart required for changes to take effect.</p>
+      <div class="field-row">
+        <label>Base URL Path</label>
+        <input v-model="(store.deployConfig as any).base_url_path" placeholder="/peregrine" />
+      </div>
+      <div class="field-row">
+        <label>Server Host</label>
+        <input v-model="(store.deployConfig as any).server_host" placeholder="0.0.0.0" />
+      </div>
+      <div class="field-row">
+        <label>Server Port</label>
+        <input v-model.number="(store.deployConfig as any).server_port" type="number" placeholder="8502" />
+      </div>
+      <div class="form-actions">
+        <button @click="store.saveDeployConfig()" :disabled="store.deploySaving" class="btn-primary">
+          {{ store.deploySaving ? 'Saving…' : 'Save (requires restart)' }}
+        </button>
+      </div>
+    </section>
+
     <!-- BYOK Modal -->
     <Teleport to="body">
       <div v-if="store.byokPending.length > 0" class="modal-overlay" @click.self="store.cancelByok()">
@@ -79,6 +217,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useSystemStore } from '../../stores/settings/system'
 import { useAppConfigStore } from '../../stores/appConfig'
+import { useApiFetch } from '../../composables/useApi'
 
 const store = useSystemStore()
 const config = useAppConfigStore()
@@ -121,7 +260,55 @@ async function handleConfirmByok() {
   byokConfirmed.value = false
 }
 
-onMounted(() => store.loadLlm())
+const emailTestResult = ref<boolean | null>(null)
+const integrationInputs = ref<Record<string, string>>({})
+
+async function handleTestEmail() {
+  const result = await store.testEmail()
+  emailTestResult.value = result?.ok ?? false
+}
+
+async function connectIntegration(id: string) {
+  const integration = store.integrations.find(i => i.id === id)
+  if (!integration) return
+  const payload: Record<string, string> = {}
+  for (const field of integration.fields) {
+    payload[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
+  }
+  const { data } = await useApiFetch<{ok: boolean; error?: string}>(
+    `/api/settings/system/integrations/${id}/connect`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
+  )
+  if (data?.ok) await store.loadIntegrations()
+}
+
+async function testIntegration(id: string) {
+  const integration = store.integrations.find(i => i.id === id)
+  if (!integration) return
+  const payload: Record<string, string> = {}
+  for (const field of integration.fields) {
+    payload[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
+  }
+  await useApiFetch(`/api/settings/system/integrations/${id}/test`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
+  )
+}
+
+async function disconnectIntegration(id: string) {
+  await useApiFetch(`/api/settings/system/integrations/${id}/disconnect`, { method: 'POST' })
+  await store.loadIntegrations()
+}
+
+onMounted(async () => {
+  await store.loadLlm()
+  await Promise.all([
+    store.loadServices(),
+    store.loadEmail(),
+    store.loadIntegrations(),
+    store.loadFilePaths(),
+    store.loadDeployConfig(),
+  ])
+})
 </script>
 
 <style scoped>
@@ -153,4 +340,31 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3, 16px); col
 .byok-warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 6px; padding: 10px 12px; color: #fbbf24 !important; }
 .checkbox-row { display: flex; align-items: flex-start; gap: 8px; font-size: 0.85rem; color: var(--color-text-primary, #e2e8f0); cursor: pointer; margin: 16px 0; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.service-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.service-card { background: var(--color-surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-radius: 8px; padding: 14px; }
+.service-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.service-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot-running { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+.dot-stopped { background: #64748b; }
+.service-name { font-weight: 600; font-size: 0.88rem; color: var(--color-text-primary, #e2e8f0); }
+.service-port { font-size: 0.75rem; color: var(--color-text-secondary, #64748b); font-family: monospace; }
+.service-note { font-size: 0.75rem; color: var(--color-text-secondary, #94a3b8); margin-bottom: 10px; }
+.service-actions { display: flex; gap: 6px; }
+.btn-start { padding: 4px 12px; border-radius: 4px; background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); cursor: pointer; font-size: 0.78rem; }
+.btn-stop { padding: 4px 12px; border-radius: 4px; background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); cursor: pointer; font-size: 0.78rem; }
+.field-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.field-row label { font-size: 0.82rem; color: var(--color-text-secondary, #94a3b8); }
+.field-row input { background: var(--color-surface-2, rgba(255,255,255,0.05)); border: 1px solid var(--color-border, rgba(255,255,255,0.12)); border-radius: 6px; color: var(--color-text-primary, #e2e8f0); padding: 7px 10px; font-size: 0.88rem; }
+.field-hint { font-size: 0.72rem; color: var(--color-text-secondary, #64748b); margin-top: 3px; }
+.btn-secondary { padding: 9px 18px; background: transparent; border: 1px solid var(--color-border, rgba(255,255,255,0.2)); border-radius: 7px; color: var(--color-text-secondary, #94a3b8); cursor: pointer; font-size: 0.88rem; }
+.btn-danger { padding: 6px 14px; border-radius: 6px; background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); cursor: pointer; font-size: 0.82rem; }
+.test-ok { color: #22c55e; font-size: 0.85rem; }
+.test-fail { color: #ef4444; font-size: 0.85rem; }
+.integration-card { background: var(--color-surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.integration-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.integration-name { font-weight: 600; font-size: 0.9rem; color: var(--color-text-primary, #e2e8f0); }
+.status-badge { font-size: 0.72rem; padding: 2px 8px; border-radius: 10px; }
+.badge-connected { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+.badge-disconnected { background: rgba(100,116,139,0.15); color: #94a3b8; border: 1px solid rgba(100,116,139,0.2); }
+.empty-note { font-size: 0.85rem; color: var(--color-text-secondary, #94a3b8); padding: 16px 0; }
 </style>

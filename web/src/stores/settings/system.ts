@@ -5,6 +5,9 @@ import { useApiFetch } from '../../composables/useApi'
 const CLOUD_BACKEND_IDS = ['anthropic', 'openai']
 
 export interface Backend { id: string; enabled: boolean; priority: number }
+export interface Service { name: string; port: number; running: boolean; note: string }
+export interface IntegrationField { key: string; label: string; type: string }
+export interface Integration { id: string; name: string; connected: boolean; tier_required: string; fields: IntegrationField[] }
 
 export const useSystemStore = defineStore('settings/system', () => {
   const backends = ref<Backend[]>([])
@@ -15,6 +18,18 @@ export const useSystemStore = defineStore('settings/system', () => {
   const saving = ref(false)
   const saveError = ref<string | null>(null)
   const loadError = ref<string | null>(null)
+
+  const services = ref<Service[]>([])
+  const emailConfig = ref<Record<string, unknown>>({})
+  const integrations = ref<Integration[]>([])
+  const serviceErrors = ref<Record<string, string>>({})
+  const emailSaving = ref(false)
+  const emailError = ref<string | null>(null)
+  // File paths + deployment
+  const filePaths = ref<Record<string, string>>({})
+  const deployConfig = ref<Record<string, unknown>>({})
+  const filePathsSaving = ref(false)
+  const deploySaving = ref(false)
 
   async function loadLlm() {
     loadError.value = null
@@ -76,6 +91,109 @@ export const useSystemStore = defineStore('settings/system', () => {
     if (error) saveError.value = 'Save failed — please try again.'
   }
 
-  // Services, email, integrations added in Task 6
-  return { backends, byokAcknowledged, byokPending, saving, saveError, loadError, loadLlm, trySave, confirmByok, cancelByok }
+  async function loadServices() {
+    const { data } = await useApiFetch<Service[]>('/api/settings/system/services')
+    if (data) services.value = data
+  }
+
+  async function startService(name: string) {
+    const { data, error } = await useApiFetch<{ok: boolean; output: string}>(
+      `/api/settings/system/services/${name}/start`, { method: 'POST' }
+    )
+    if (error || !data?.ok) {
+      serviceErrors.value = { ...serviceErrors.value, [name]: data?.output ?? 'Start failed' }
+    } else {
+      serviceErrors.value = { ...serviceErrors.value, [name]: '' }
+      await loadServices()
+    }
+  }
+
+  async function stopService(name: string) {
+    const { data, error } = await useApiFetch<{ok: boolean; output: string}>(
+      `/api/settings/system/services/${name}/stop`, { method: 'POST' }
+    )
+    if (error || !data?.ok) {
+      serviceErrors.value = { ...serviceErrors.value, [name]: data?.output ?? 'Stop failed' }
+    } else {
+      serviceErrors.value = { ...serviceErrors.value, [name]: '' }
+      await loadServices()
+    }
+  }
+
+  async function loadEmail() {
+    const { data } = await useApiFetch<Record<string, unknown>>('/api/settings/system/email')
+    if (data) emailConfig.value = data
+  }
+
+  async function saveEmail() {
+    emailSaving.value = true
+    emailError.value = null
+    const { error } = await useApiFetch('/api/settings/system/email', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(emailConfig.value),
+    })
+    emailSaving.value = false
+    if (error) emailError.value = 'Save failed — please try again.'
+  }
+
+  async function testEmail() {
+    const { data } = await useApiFetch<{ok: boolean; error?: string}>(
+      '/api/settings/system/email/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(emailConfig.value),
+      }
+    )
+    return data
+  }
+
+  async function loadIntegrations() {
+    const { data } = await useApiFetch<Integration[]>('/api/settings/system/integrations')
+    if (data) integrations.value = data
+  }
+
+  async function loadFilePaths() {
+    const { data } = await useApiFetch<Record<string, string>>('/api/settings/system/paths')
+    if (data) filePaths.value = data
+  }
+
+  async function saveFilePaths() {
+    filePathsSaving.value = true
+    const { error } = await useApiFetch('/api/settings/system/paths', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(filePaths.value),
+    })
+    filePathsSaving.value = false
+    if (error) saveError.value = 'Failed to save file paths.'
+  }
+
+  async function loadDeployConfig() {
+    const { data } = await useApiFetch<Record<string, unknown>>('/api/settings/system/deploy')
+    if (data) deployConfig.value = data
+  }
+
+  async function saveDeployConfig() {
+    deploySaving.value = true
+    const { error } = await useApiFetch('/api/settings/system/deploy', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deployConfig.value),
+    })
+    deploySaving.value = false
+    if (error) saveError.value = 'Failed to save deployment config.'
+  }
+
+  return {
+    backends, byokAcknowledged, byokPending, saving, saveError, loadError,
+    loadLlm, trySave, confirmByok, cancelByok,
+    services, emailConfig, integrations, serviceErrors, emailSaving, emailError,
+    filePaths, deployConfig, filePathsSaving, deploySaving,
+    loadServices, startService, stopService,
+    loadEmail, saveEmail, testEmail,
+    loadIntegrations,
+    loadFilePaths, saveFilePaths,
+    loadDeployConfig, saveDeployConfig,
+  }
 })
