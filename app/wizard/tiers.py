@@ -81,6 +81,9 @@ BYOK_UNLOCKABLE: frozenset[str] = frozenset({
 
 # Demo mode flag — read from environment at module load time.
 # Allows demo toolbar to override tier without accessing st.session_state (thread-safe).
+# _DEMO_MODE is immutable after import for the process lifetime.
+# DEMO_MODE must be set in the environment before the process starts (e.g., via
+# Docker Compose environment:). Runtime toggling is not supported.
 _DEMO_MODE = _os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 # Free integrations (not in FEATURES):
