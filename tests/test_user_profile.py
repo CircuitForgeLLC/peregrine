@@ -106,3 +106,34 @@ def test_effective_tier_no_override(tmp_path):
     p.write_text("name: T\nemail: t@t.com\ncareer_summary: x\ntier: paid\n")
     u = UserProfile(p)
     assert u.effective_tier == "paid"
+
+def test_ui_preference_default(tmp_path):
+    """Fresh profile defaults to streamlit."""
+    p = tmp_path / "user.yaml"
+    p.write_text("name: Test User\n")
+    profile = UserProfile(p)
+    assert profile.ui_preference == "streamlit"
+
+def test_ui_preference_vue(tmp_path):
+    """Saved vue preference loads correctly."""
+    p = tmp_path / "user.yaml"
+    p.write_text("name: Test\nui_preference: vue\n")
+    profile = UserProfile(p)
+    assert profile.ui_preference == "vue"
+
+def test_ui_preference_roundtrip(tmp_path):
+    """Saving ui_preference: vue persists and reloads."""
+    p = tmp_path / "user.yaml"
+    p.write_text("name: Test\n")
+    profile = UserProfile(p)
+    profile.ui_preference = "vue"
+    profile.save()
+    reloaded = UserProfile(p)
+    assert reloaded.ui_preference == "vue"
+
+def test_ui_preference_invalid_falls_back(tmp_path):
+    """Unknown value falls back to streamlit."""
+    p = tmp_path / "user.yaml"
+    p.write_text("name: Test\nui_preference: newui\n")
+    profile = UserProfile(p)
+    assert profile.ui_preference == "streamlit"
