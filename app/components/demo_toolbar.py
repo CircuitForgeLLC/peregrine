@@ -50,11 +50,7 @@ def render_demo_toolbar() -> None:
     """
     current = get_simulated_tier()
 
-    labels = {
-        "free": "Free",
-        "paid": "Paid ✓" if current == "paid" else "Paid",
-        "premium": "Premium ✓" if current == "premium" else "Premium",
-    }
+    labels = {t: t.capitalize() + (" ✓" if t == current else "") for t in _VALID_TIERS}
 
     with st.container():
         cols = st.columns([3, 1, 1, 1, 2])
