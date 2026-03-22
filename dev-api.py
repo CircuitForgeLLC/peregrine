@@ -1448,3 +1448,70 @@ def get_deploy_config():
 def save_deploy_config(payload: dict):
     # Deployment config changes require restart; just acknowledge
     return {"ok": True, "note": "Restart required to apply changes"}
+
+
+# ── Settings: Fine-Tune ───────────────────────────────────────────────────────
+
+@app.get("/api/settings/fine-tune/status")
+def finetune_status():
+    try:
+        from scripts.task_runner import get_task_status
+        task = get_task_status("finetune_extract")
+        if not task:
+            return {"status": "idle", "pairs_count": 0}
+        return {"status": task.get("status", "idle"), "pairs_count": task.get("result_count", 0)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/fine-tune/extract")
+def finetune_extract():
+    try:
+        from scripts.task_runner import submit_task
+        task_id = submit_task(DB_PATH, "finetune_extract", None)
+        return {"task_id": str(task_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/fine-tune/upload")
+async def finetune_upload(files: list[UploadFile]):
+    try:
+        upload_dir = Path("data/finetune_uploads")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        saved = []
+        for f in files:
+            dest = upload_dir / (f.filename or "upload.bin")
+            content = await f.read()
+            fd = os.open(str(dest), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as out:
+                out.write(content)
+            saved.append(str(dest))
+        return {"file_count": len(saved), "paths": saved}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/fine-tune/submit")
+def finetune_submit():
+    try:
+        # Cloud-only: submit a managed fine-tune job
+        # In dev mode, stub a job_id for local testing
+        import uuid
+        job_id = str(uuid.uuid4())
+        return {"job_id": job_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/settings/fine-tune/local-status")
+def finetune_local_status():
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["ollama", "list"], capture_output=True, text=True, timeout=5
+        )
+        model_ready = "alex-cover-writer" in (result.stdout or "")
+        return {"model_ready": model_ready}
+    except Exception:
+        return {"model_ready": False}
