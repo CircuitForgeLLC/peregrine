@@ -47,6 +47,17 @@ describe('useSystemStore — BYOK gate', () => {
     expect(mockFetch).toHaveBeenCalledWith('/api/settings/system/llm', expect.anything())
   })
 
+  it('confirmByok() sets saveError and leaves modal open when ack POST fails', async () => {
+    mockFetch.mockResolvedValue({ data: null, error: 'Network error' })
+    const store = useSystemStore()
+    store.byokPending = ['anthropic']
+    store.backends = [{ id: 'anthropic', enabled: true, priority: 1 }]
+    await store.confirmByok()
+    expect(store.saveError).toBeTruthy()
+    expect(store.byokPending).toContain('anthropic')  // modal stays open
+    expect(mockFetch).not.toHaveBeenCalledWith('/api/settings/system/llm', expect.anything())
+  })
+
   it('cancelByok() clears pending and restores backends to pre-save state', async () => {
     mockFetch.mockResolvedValue({ data: { ok: true }, error: null })
     const store = useSystemStore()

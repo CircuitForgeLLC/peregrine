@@ -40,18 +40,26 @@ export const useSystemStore = defineStore('settings/system', () => {
 
   async function confirmByok() {
     saving.value = true
+    saveError.value = null
     const { error } = await useApiFetch('/api/settings/system/llm/byok-ack', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ backends: byokPending.value }),
     })
-    if (!error) byokAcknowledged.value = [...byokAcknowledged.value, ...byokPending.value]
+    if (error) {
+      saving.value = false
+      saveError.value = 'Failed to save acknowledgment — please try again.'
+      return  // leave modal open, byokPending intact
+    }
+    byokAcknowledged.value = [...byokAcknowledged.value, ...byokPending.value]
     byokPending.value = []
     await _commitSave()
   }
 
   function cancelByok() {
-    backends.value = JSON.parse(JSON.stringify(_preSaveSnapshot))
+    if (_preSaveSnapshot.length > 0) {
+      backends.value = JSON.parse(JSON.stringify(_preSaveSnapshot))
+    }
     byokPending.value = []
     _preSaveSnapshot = []
   }
