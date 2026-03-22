@@ -91,23 +91,28 @@ export const useSearchStore = defineStore('settings/search', () => {
     const arr = { job_titles, locations, exclude_keywords, custom_board_urls, blocklist_companies, blocklist_industries, blocklist_locations }[field]
     const trimmed = value.trim()
     if (!trimmed || arr.value.includes(trimmed)) return
-    arr.value.push(trimmed)
+    arr.value = [...arr.value, trimmed]
   }
 
   function removeTag(field: 'job_titles' | 'locations' | 'exclude_keywords' | 'custom_board_urls' | 'blocklist_companies' | 'blocklist_industries' | 'blocklist_locations', value: string) {
     const arr = { job_titles, locations, exclude_keywords, custom_board_urls, blocklist_companies, blocklist_industries, blocklist_locations }[field]
-    const idx = arr.value.indexOf(value)
-    if (idx !== -1) arr.value.splice(idx, 1)
+    arr.value = arr.value.filter(v => v !== value)
   }
 
   function acceptSuggestion(type: 'title' | 'location', value: string) {
     if (type === 'title') {
-      if (!job_titles.value.includes(value)) job_titles.value.push(value)
+      if (!job_titles.value.includes(value)) job_titles.value = [...job_titles.value, value]
       titleSuggestions.value = titleSuggestions.value.filter(s => s !== value)
     } else {
-      if (!locations.value.includes(value)) locations.value.push(value)
+      if (!locations.value.includes(value)) locations.value = [...locations.value, value]
       locationSuggestions.value = locationSuggestions.value.filter(s => s !== value)
     }
+  }
+
+  function toggleBoard(name: string) {
+    job_boards.value = job_boards.value.map(b =>
+      b.name === name ? { ...b, enabled: !b.enabled } : b
+    )
   }
 
   return {
@@ -115,6 +120,6 @@ export const useSearchStore = defineStore('settings/search', () => {
     custom_board_urls, blocklist_companies, blocklist_industries, blocklist_locations,
     titleSuggestions, locationSuggestions,
     loading, saving, saveError, loadError,
-    load, save, suggestTitles, suggestLocations, addTag, removeTag, acceptSuggestion,
+    load, save, suggestTitles, suggestLocations, addTag, removeTag, acceptSuggestion, toggleBoard,
   }
 })
