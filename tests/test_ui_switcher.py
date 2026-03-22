@@ -4,6 +4,7 @@ Streamlit is not running during tests — mock all st.* calls.
 """
 import sys
 from pathlib import Path
+from unittest.mock import patch
 import pytest
 import yaml
 
@@ -54,11 +55,9 @@ def test_sync_cookie_prgn_switch_param_overrides_yaml(profile_yaml, monkeypatch)
     monkeypatch.setattr("streamlit.components.v1.html", lambda html, height=0: injected.append(html))
     monkeypatch.setattr("streamlit.query_params", {"prgn_switch": "streamlit"}, raising=False)
 
-    from importlib import reload
-    import app.components.ui_switcher as m
-    reload(m)
-
-    m.sync_ui_cookie(profile_yaml, tier="paid")
+    with patch('app.components.ui_switcher._DEMO_MODE', False):
+        from app.components.ui_switcher import sync_ui_cookie
+        sync_ui_cookie(profile_yaml, tier="paid")
 
     # user.yaml should now say streamlit
     saved = _yaml.safe_load(profile_yaml.read_text())
@@ -76,11 +75,9 @@ def test_sync_cookie_downgrades_tier_resets_to_streamlit(profile_yaml, monkeypat
     monkeypatch.setattr("streamlit.components.v1.html", lambda html, height=0: injected.append(html))
     monkeypatch.setattr("streamlit.query_params", {}, raising=False)
 
-    from importlib import reload
-    import app.components.ui_switcher as m
-    reload(m)
-
-    m.sync_ui_cookie(profile_yaml, tier="free")
+    with patch('app.components.ui_switcher._DEMO_MODE', False):
+        from app.components.ui_switcher import sync_ui_cookie
+        sync_ui_cookie(profile_yaml, tier="free")
 
     saved = _yaml.safe_load(profile_yaml.read_text())
     assert saved["ui_preference"] == "streamlit"
@@ -95,11 +92,9 @@ def test_switch_ui_writes_yaml_and_calls_sync(profile_yaml, monkeypatch):
     monkeypatch.setattr("streamlit.query_params", {}, raising=False)
     monkeypatch.setattr("streamlit.rerun", lambda: None)
 
-    from importlib import reload
-    import app.components.ui_switcher as m
-    reload(m)
-
-    m.switch_ui(profile_yaml, to="vue", tier="paid")
+    with patch('app.components.ui_switcher._DEMO_MODE', False):
+        from app.components.ui_switcher import switch_ui
+        switch_ui(profile_yaml, to="vue", tier="paid")
 
     saved = _yaml.safe_load(profile_yaml.read_text())
     assert saved["ui_preference"] == "vue"
