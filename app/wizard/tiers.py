@@ -22,6 +22,7 @@ Features that stay gated even with BYOK:
 """
 from __future__ import annotations
 
+import os as _os
 from pathlib import Path
 
 TIERS = ["free", "paid", "premium"]
@@ -58,6 +59,9 @@ FEATURES: dict[str, str] = {
     "google_calendar_sync":         "paid",
     "apple_calendar_sync":          "paid",
     "slack_notifications":          "paid",
+
+    # Beta UI access — stays gated (access management, not compute)
+    "vue_ui_beta":                  "paid",
 }
 
 # Features that unlock when the user supplies any LLM backend (local or BYOK).
@@ -74,6 +78,10 @@ BYOK_UNLOCKABLE: frozenset[str] = frozenset({
     "interview_prep",
     "survey_assistant",
 })
+
+# Demo mode flag — read from environment at module load time.
+# Allows demo toolbar to override tier without accessing st.session_state (thread-safe).
+_DEMO_MODE = _os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 # Free integrations (not in FEATURES):
 # google_drive_sync, dropbox_sync, onedrive_sync, mega_sync,
@@ -101,22 +109,33 @@ def has_configured_llm(config_path: Path | None = None) -> bool:
         return False
 
 
-def can_use(tier: str, feature: str, has_byok: bool = False) -> bool:
+def can_use(
+    tier: str,
+    feature: str,
+    has_byok: bool = False,
+    *,
+    demo_tier: str | None = None,
+) -> bool:
     """Return True if the given tier has access to the feature.
 
     has_byok: pass has_configured_llm() to unlock BYOK_UNLOCKABLE features
     for users who supply their own LLM backend regardless of tier.
 
+    demo_tier: when set AND _DEMO_MODE is True, substitutes for `tier`.
+               Read from st.session_state by the *caller*, not here — keeps
+               this function thread-safe for background tasks and tests.
+
     Returns True for unknown features (not gated).
     Returns False for unknown/invalid tier strings.
     """
+    effective_tier = demo_tier if (demo_tier is not None and _DEMO_MODE) else tier
     required = FEATURES.get(feature)
     if required is None:
         return True  # not gated — available to all
     if has_byok and feature in BYOK_UNLOCKABLE:
         return True
     try:
-        return TIERS.index(tier) >= TIERS.index(required)
+        return TIERS.index(effective_tier) >= TIERS.index(required)
     except ValueError:
         return False  # invalid tier string
 
