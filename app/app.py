@@ -203,13 +203,12 @@ if IS_DEMO:
     from app.components.demo_toolbar import render_demo_toolbar
     render_demo_toolbar()
 
-# ── UI switcher banner (non-demo, paid tier) ────────────────────────────────
-if not IS_DEMO:
-    try:
-        from app.components.ui_switcher import render_banner
-        render_banner()
-    except Exception:
-        pass  # never crash the app over the banner
+# ── UI switcher banner (paid tier; or all visitors in demo mode) ─────────────
+try:
+    from app.components.ui_switcher import render_banner
+    render_banner()
+except Exception:
+    pass  # never crash the app over the banner
 
 pg.run()
 
