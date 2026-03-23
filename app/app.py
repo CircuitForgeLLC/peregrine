@@ -206,7 +206,9 @@ if IS_DEMO:
 # ── UI switcher banner (paid tier; or all visitors in demo mode) ─────────────
 try:
     from app.components.ui_switcher import render_banner
-    render_banner()
+    _ui_profile = _UserProfile(_USER_YAML) if _UserProfile.exists(_USER_YAML) else None
+    _ui_tier = _ui_profile.tier if _ui_profile else "free"
+    render_banner(_USER_YAML, _ui_tier)
 except Exception:
     pass  # never crash the app over the banner
 
@@ -215,6 +217,8 @@ pg.run()
 # ── UI preference cookie sync (runs after page render) ──────────────────────
 try:
     from app.components.ui_switcher import sync_ui_cookie
-    sync_ui_cookie()
+    _ui_profile = _UserProfile(_USER_YAML) if _UserProfile.exists(_USER_YAML) else None
+    _ui_tier = _ui_profile.tier if _ui_profile else "free"
+    sync_ui_cookie(_USER_YAML, _ui_tier)
 except Exception:
     pass  # never crash the app over cookie sync
