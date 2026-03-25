@@ -8,7 +8,9 @@ from app.wizard.tiers import can_use, tier_label, TIERS, FEATURES, BYOK_UNLOCKAB
 
 
 def test_tiers_list():
-    assert TIERS == ["free", "paid", "premium"]
+    # Peregrine uses the core tier list; "ultra" is included but no features require it yet
+    assert TIERS[:3] == ["free", "paid", "premium"]
+    assert "ultra" in TIERS
 
 
 def test_can_use_free_feature_always():

@@ -24,7 +24,7 @@ def test_router_uses_first_reachable_backend():
     mock_response.choices[0].message.content = "hello"
 
     with patch.object(router, "_is_reachable", side_effect=[False, True, True, True, True]), \
-         patch("scripts.llm_router.OpenAI") as MockOpenAI:
+         patch("circuitforge_core.llm.router.OpenAI") as MockOpenAI:
         instance = MockOpenAI.return_value
         instance.chat.completions.create.return_value = mock_response
         mock_model = MagicMock()
@@ -54,7 +54,7 @@ def test_is_reachable_returns_false_on_connection_error():
 
     router = LLMRouter(CONFIG_PATH)
 
-    with patch("scripts.llm_router.requests.get", side_effect=requests.ConnectionError):
+    with patch("circuitforge_core.llm.router.requests.get", side_effect=requests.ConnectionError):
         result = router._is_reachable("http://localhost:9999/v1")
 
     assert result is False
@@ -92,8 +92,8 @@ def test_complete_skips_backend_without_image_support(tmp_path):
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"text": "B — collaborative"}
 
-    with patch("scripts.llm_router.requests.get") as mock_get, \
-         patch("scripts.llm_router.requests.post") as mock_post:
+    with patch("circuitforge_core.llm.router.requests.get") as mock_get, \
+         patch("circuitforge_core.llm.router.requests.post") as mock_post:
         # health check returns ok for vision_service
         mock_get.return_value = MagicMock(status_code=200)
         mock_post.return_value = mock_resp
@@ -127,7 +127,7 @@ def test_complete_without_images_skips_vision_service(tmp_path):
     cfg_file.write_text(yaml.dump(cfg))
 
     router = LLMRouter(config_path=cfg_file)
-    with patch("scripts.llm_router.requests.post") as mock_post:
+    with patch("circuitforge_core.llm.router.requests.post") as mock_post:
         try:
             router.complete("text only prompt")
         except RuntimeError:
