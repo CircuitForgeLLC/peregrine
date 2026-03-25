@@ -1,7 +1,7 @@
 """
 Tier definitions and feature gates for Peregrine.
 
-Tiers: free < paid < premium
+Tiers: free < paid < premium < ultra (ultra reserved; no Peregrine features use it yet)
 FEATURES maps feature key → minimum tier required.
 Features not in FEATURES are available to all tiers (free).
 
@@ -25,7 +25,11 @@ from __future__ import annotations
 import os as _os
 from pathlib import Path
 
-TIERS = ["free", "paid", "premium"]
+from circuitforge_core.tiers import (
+    can_use as _core_can_use,
+    TIERS,
+    tier_label as _core_tier_label,
+)
 
 # Maps feature key → minimum tier string required.
 # Features absent from this dict are free (available to all).
@@ -132,25 +136,20 @@ def can_use(
     Returns False for unknown/invalid tier strings.
     """
     effective_tier = demo_tier if (demo_tier is not None and _DEMO_MODE) else tier
-    required = FEATURES.get(feature)
-    if required is None:
-        return True  # not gated — available to all
+    # Pass Peregrine's BYOK_UNLOCKABLE via has_byok collapse — core's frozenset is empty
     if has_byok and feature in BYOK_UNLOCKABLE:
         return True
-    try:
-        return TIERS.index(effective_tier) >= TIERS.index(required)
-    except ValueError:
-        return False  # invalid tier string
+    return _core_can_use(feature, effective_tier, _features=FEATURES)
 
 
 def tier_label(feature: str, has_byok: bool = False) -> str:
     """Return a display label for a locked feature, or '' if free/unlocked."""
     if has_byok and feature in BYOK_UNLOCKABLE:
         return ""
-    required = FEATURES.get(feature)
-    if required is None:
+    raw = _core_tier_label(feature, _features=FEATURES)
+    if not raw or raw == "free":
         return ""
-    return "🔒 Paid" if required == "paid" else "⭐ Premium"
+    return "🔒 Paid" if raw == "paid" else "⭐ Premium"
 
 
 def effective_tier(
