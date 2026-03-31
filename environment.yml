@@ -1,4 +1,4 @@
-name: job-seeker
+name: cf
 # Recreate: conda env create -f environment.yml
 # Update pinned snapshot: conda env export --no-builds > environment.yml
 channels:

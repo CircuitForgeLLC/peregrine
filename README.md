@@ -1,16 +1,33 @@
 # Peregrine
 
-> **Primary development** happens at [git.opensourcesolarpunk.com](https://git.opensourcesolarpunk.com/pyr0ball/peregrine) — GitHub and Codeberg are push mirrors. Issues and PRs are welcome on either platform.
+> **Primary development** happens at [git.opensourcesolarpunk.com](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine) — GitHub and Codeberg are push mirrors. Issues and PRs are welcome on either platform.
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](./LICENSE-BSL)
 [![CI](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml/badge.svg)](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml)
 
-**AI-powered job search pipeline — by [Circuit Forge LLC](https://circuitforge.tech)**
+**Job search pipeline — by [Circuit Forge LLC](https://circuitforge.tech)**
 
-> *"Don't be evil, for real and forever."*
+> *"Tools for the jobs that the system made hard on purpose."*
 
-Automates the full job search lifecycle: discovery → matching → cover letters → applications → interview prep.
-Privacy-first, local-first. Your data never leaves your machine.
+---
+
+Job search is a second job nobody hired you for.
+
+ATS filters designed to reject. Job boards that show the same listing eight times. Cover letter number forty-seven for a role that might already be filled. Hours of prep for a phone screen that lasts twelve minutes.
+
+Peregrine handles the pipeline — discovery, matching, tracking, drafting, and prep — so you can spend your time doing the work you actually want to be doing.
+
+**LLM support is optional.** The full discovery and tracking pipeline works without one. When you do configure a backend, the LLM drafts the parts that are genuinely miserable — cover letters, company research briefs, interview prep sheets — and waits for your approval before anything goes anywhere.
+
+### What Peregrine does not do
+
+Peregrine does **not** submit job applications for you. You still have to go to each employer's site and click apply yourself.
+
+This is intentional. Automated mass-applying is a bad experience for everyone — it's also a trust violation with employers who took the time to post a real role. Peregrine is a preparation and organization tool, not a bot.
+
+What it *does* cover is everything before and after that click: finding the jobs, matching them against your resume, generating cover letters and prep materials, and once you've applied — tracking where you stand, classifying the emails that come back, and surfacing company research when an interview lands on your calendar. The submit button is yours. The rest of the grind is ours.
+
+> **Exception:** [AIHawk](https://github.com/nicolomantini/LinkedIn-Easy-Apply) is a separate, optional tool that handles LinkedIn Easy Apply automation. Peregrine integrates with it for AIHawk-compatible profiles, but it is not part of Peregrine's core pipeline.
 
 ---
 
@@ -19,7 +36,7 @@ Privacy-first, local-first. Your data never leaves your machine.
 **1. Clone and install dependencies** (Docker, NVIDIA toolkit if needed):
 
 ```bash
-git clone https://git.opensourcesolarpunk.com/pyr0ball/peregrine
+git clone https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine
 cd peregrine
 ./manage.sh setup
 ```
@@ -129,20 +146,25 @@ Re-enter the wizard any time via **Settings → Developer → Reset wizard**.
 | **Company research briefs** | Free with LLM¹ |
 | **Interview prep & practice Q&A** | Free with LLM¹ |
 | **Survey assistant** (culture-fit Q&A, screenshot analysis) | Free with LLM¹ |
-| **AI wizard helpers** (career summary, bullet expansion, skill suggestions) | Free with LLM¹ |
+| **Wizard helpers** (career summary, bullet expansion, skill suggestions, job title suggestions, mission notes) | Free with LLM¹ |
 | Managed cloud LLM (no API key needed) | Paid |
 | Email sync & auto-classification | Paid |
+| LLM-powered keyword blocklist | Paid |
 | Job tracking integrations (Notion, Airtable, Google Sheets) | Paid |
 | Calendar sync (Google, Apple) | Paid |
 | Slack notifications | Paid |
 | CircuitForge shared cover-letter model | Paid |
+| Vue 3 SPA beta UI | Paid |
+| **Voice guidelines** (custom writing style & tone) | Premium with LLM¹ ² |
 | Cover letter model fine-tuning (your writing, your model) | Premium |
 | Multi-user support | Premium |
 
-¹ **BYOK unlock:** configure any LLM backend — a local [Ollama](https://ollama.com) or vLLM instance,
-or your own API key (Anthropic, OpenAI-compatible) — and all AI features marked **Free with LLM**
+¹ **BYOK (bring your own key/backend) unlock:** configure any LLM backend — a local [Ollama](https://ollama.com) or vLLM instance,
+or your own API key (Anthropic, OpenAI-compatible) — and all features marked **Free with LLM** or **Premium with LLM**
 unlock at no charge. The paid tier earns its price by providing managed cloud inference so you
 don't need a key at all, plus integrations and email sync.
+
+² **Voice guidelines** requires Premium tier without a configured LLM backend. With BYOK, it unlocks at any tier.
 
 ---
 
@@ -201,6 +223,6 @@ Full documentation at: https://docs.circuitforge.tech/peregrine
 ## License
 
 Core discovery pipeline: [MIT](LICENSE-MIT)
-AI features (cover letter generation, company research, interview prep, UI): [BSL 1.1](LICENSE-BSL)
+LLM features (cover letter generation, company research, interview prep, UI): [BSL 1.1](LICENSE-BSL)
 
 © 2026 Circuit Forge LLC

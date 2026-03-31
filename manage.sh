@@ -94,7 +94,7 @@ case "$CMD" in
 
     models)
         info "Checking ollama models..."
-        conda run -n job-seeker python scripts/preflight.py --models-only
+        conda run -n cf python scripts/preflight.py --models-only
         success "Model check complete."
         ;;
 
@@ -190,7 +190,7 @@ case "$CMD" in
             RUNNER=""
         fi
         info "Running E2E tests (mode=${MODE}, headless=${HEADLESS})..."
-        $RUNNER conda run -n job-seeker pytest tests/e2e/ \
+        $RUNNER conda run -n cf pytest tests/e2e/ \
             --mode="${MODE}" \
             --json-report \
             --json-report-file="${RESULTS_DIR}/report.json" \
