@@ -9,9 +9,12 @@ and marks the task completed or failed.
 Deduplication: only one queued/running task per (task_type, job_id) is allowed.
 Different task types for the same job run concurrently (e.g. cover letter + research).
 """
+import logging
 import sqlite3
 import threading
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 from scripts.db import (
     DEFAULT_DB,
@@ -20,6 +23,7 @@ from scripts.db import (
     update_task_stage,
     update_cover_letter,
     save_research,
+    save_optimized_resume,
 )
 
 
@@ -39,9 +43,13 @@ def submit_task(db_path: Path = DEFAULT_DB, task_type: str = "",
     if is_new:
         from scripts.task_scheduler import get_scheduler, LLM_TASK_TYPES
         if task_type in LLM_TASK_TYPES:
-            get_scheduler(db_path, run_task_fn=_run_task).enqueue(
+            enqueued = get_scheduler(db_path, run_task_fn=_run_task).enqueue(
                 task_id, task_type, job_id or 0, params
             )
+            if not enqueued:
+                update_task_status(
+                    db_path, task_id, "failed", error="Queue depth limit reached"
+                )
         else:
             t = threading.Thread(
                 target=_run_task,
@@ -260,6 +268,48 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 error=_json.dumps({"section": section, "result": result}),
             )
             return
+
+        elif task_type == "resume_optimize":
+            import json as _json
+            from scripts.resume_parser import structure_resume
+            from scripts.resume_optimizer import (
+                extract_jd_signals,
+                prioritize_gaps,
+                rewrite_for_ats,
+                hallucination_check,
+                render_resume_text,
+            )
+            from scripts.user_profile import load_user_profile
+
+            description = job.get("description", "")
+            resume_path = load_user_profile().get("resume_path", "")
+
+            # Parse the candidate's resume
+            update_task_stage(db_path, task_id, "parsing resume")
+            resume_text = Path(resume_path).read_text(errors="replace") if resume_path else ""
+            resume_struct, parse_err = structure_resume(resume_text)
+
+            # Extract keyword gaps and build gap report (free tier)
+            update_task_stage(db_path, task_id, "extracting keyword gaps")
+            gaps = extract_jd_signals(description, resume_text)
+            prioritized = prioritize_gaps(gaps, resume_struct)
+            gap_report = _json.dumps(prioritized, indent=2)
+
+            # Full rewrite (paid tier only)
+            rewritten_text = ""
+            p = _json.loads(params or "{}")
+            if p.get("full_rewrite", False):
+                update_task_stage(db_path, task_id, "rewriting resume sections")
+                candidate_voice = load_user_profile().get("candidate_voice", "")
+                rewritten = rewrite_for_ats(resume_struct, prioritized, job, candidate_voice)
+                if hallucination_check(resume_struct, rewritten):
+                    rewritten_text = render_resume_text(rewritten)
+                else:
+                    log.warning("[task_runner] resume_optimize hallucination check failed for job %d", job_id)
+
+            save_optimized_resume(db_path, job_id=job_id,
+                                  text=rewritten_text,
+                                  gap_report=gap_report)
 
         elif task_type == "prepare_training":
             from scripts.prepare_training_data import build_records, write_jsonl, DEFAULT_OUTPUT

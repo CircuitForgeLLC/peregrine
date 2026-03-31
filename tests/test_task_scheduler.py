@@ -470,3 +470,14 @@ def test_llm_tasks_routed_to_scheduler(tmp_db):
         task_runner.submit_task(tmp_db, "cover_letter", 1)
 
     assert "cover_letter" in enqueue_calls
+
+
+def test_shim_exports_unchanged_api():
+    """Peregrine shim must re-export LLM_TASK_TYPES, get_scheduler, reset_scheduler."""
+    from scripts.task_scheduler import LLM_TASK_TYPES, get_scheduler, reset_scheduler
+    assert "cover_letter" in LLM_TASK_TYPES
+    assert "company_research" in LLM_TASK_TYPES
+    assert "wizard_generate" in LLM_TASK_TYPES
+    assert "resume_optimize" in LLM_TASK_TYPES
+    assert callable(get_scheduler)
+    assert callable(reset_scheduler)
