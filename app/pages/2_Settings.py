@@ -401,22 +401,32 @@ with tab_search:
         with st.spinner("Asking LLM for suggestions…"):
             try:
                 suggestions = _suggest_search_terms(_current_titles, RESUME_PATH, _blocklist, _user_profile)
-            except RuntimeError as _e:
-                st.warning(
-                    f"No LLM backend available: {_e}. "
-                    "Check that Ollama is running and has GPU access, or enable a cloud backend in Settings → System → LLM.",
-                    icon="⚠️",
-                )
+            except Exception as _e:
+                _err_msg = str(_e)
+                if "exhausted" in _err_msg.lower() or isinstance(_e, RuntimeError):
+                    st.warning(
+                        f"No LLM backend available: {_err_msg}. "
+                        "Check that Ollama is running and has GPU access, or enable a cloud backend in Settings → System → LLM.",
+                        icon="⚠️",
+                    )
+                else:
+                    st.error(f"Suggestion failed: {_err_msg}", icon="🚨")
                 suggestions = None
         if suggestions is not None:
             # Add suggested titles to options list (not auto-selected — user picks from dropdown)
             _opts = list(st.session_state.get("_sp_title_options", []))
-            for _t in suggestions.get("suggested_titles", []):
-                if _t not in _opts:
-                    _opts.append(_t)
+            _new_titles = [_t for _t in suggestions.get("suggested_titles", []) if _t not in _opts]
+            _opts.extend(_new_titles)
             st.session_state["_sp_title_options"] = _opts
             st.session_state["_sp_suggestions"] = suggestions
-            st.rerun()
+            if not _new_titles and not suggestions.get("suggested_excludes"):
+                _resume_hint = " Upload your resume in Settings → Resume Profile for better results." if not RESUME_PATH.exists() else ""
+                st.info(
+                    f"No new suggestions found — the LLM didn't generate anything new for these titles.{_resume_hint}",
+                    icon="ℹ️",
+                )
+            else:
+                st.rerun()
 
     if st.session_state.get("_sp_suggestions"):
         sugg = st.session_state["_sp_suggestions"]
