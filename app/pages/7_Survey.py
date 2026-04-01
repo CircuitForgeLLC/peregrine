@@ -22,10 +22,13 @@ from scripts.db import (
     insert_survey_response, get_survey_responses,
 )
 from scripts.llm_router import LLMRouter
+from app.cloud_session import resolve_session, get_db_path
+
+resolve_session("peregrine")
 
 st.title("📋 Survey Assistant")
 
-init_db(DEFAULT_DB)
+init_db(get_db_path())
 
 
 # ── Vision service health check ────────────────────────────────────────────────
@@ -40,7 +43,7 @@ def _vision_available() -> bool:
 vision_up = _vision_available()
 
 # ── Job selector ───────────────────────────────────────────────────────────────
-jobs_by_stage = get_interview_jobs(DEFAULT_DB)
+jobs_by_stage = get_interview_jobs(get_db_path())
 survey_jobs = jobs_by_stage.get("survey", [])
 other_jobs = (
     jobs_by_stage.get("applied", []) +
@@ -61,7 +64,7 @@ selected_job_id = st.selectbox(
     format_func=lambda jid: job_labels[jid],
     index=0,
 )
-selected_job = get_job_by_id(DEFAULT_DB, selected_job_id)
+selected_job = get_job_by_id(get_db_path(), selected_job_id)
 
 # ── LLM prompt builders ────────────────────────────────────────────────────────
 _SURVEY_SYSTEM = (
@@ -236,7 +239,7 @@ with right_col:
                     image_path = str(img_file)
 
                 insert_survey_response(
-                    DEFAULT_DB,
+                    get_db_path(),
                     job_id=selected_job_id,
                     survey_name=survey_name,
                     source=source,
@@ -256,7 +259,7 @@ with right_col:
 # ── History ────────────────────────────────────────────────────────────────────
 st.divider()
 st.subheader("📂 Response History")
-history = get_survey_responses(DEFAULT_DB, job_id=selected_job_id)
+history = get_survey_responses(get_db_path(), job_id=selected_job_id)
 
 if not history:
     st.caption("No saved responses for this job yet.")
