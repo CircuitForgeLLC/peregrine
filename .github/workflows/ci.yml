@@ -22,6 +22,12 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Configure git credentials for Forgejo
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: |
+          git config --global url."https://oauth2:${FORGEJO_TOKEN}@git.opensourcesolarpunk.com/".insteadOf "https://git.opensourcesolarpunk.com/"
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
