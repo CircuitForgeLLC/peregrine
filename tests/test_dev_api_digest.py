@@ -50,9 +50,8 @@ def tmp_db(tmp_path):
 @pytest.fixture()
 def client(tmp_db, monkeypatch):
     monkeypatch.setenv("STAGING_DB", tmp_db)
-    import importlib
     import dev_api
-    importlib.reload(dev_api)
+    monkeypatch.setattr(dev_api, "DB_PATH", tmp_db)
     return TestClient(dev_api.app)
 
 
