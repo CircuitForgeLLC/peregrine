@@ -196,13 +196,20 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False) -> None
         exclude_kw = [kw.lower() for kw in profile.get("exclude_keywords", [])]
         results_per_board = profile.get("results_per_board", 25)
 
+        # Map remote_preference → JobSpy is_remote param:
+        #   'remote'  → True  (remote-only listings)
+        #   'onsite'  → False (on-site-only listings)
+        #   'both'    → None  (no filter — JobSpy default)
+        _rp = profile.get("remote_preference", "both")
+        _is_remote: bool | None = True if _rp == "remote" else (False if _rp == "onsite" else None)
+
         for location in profile["locations"]:
 
             # ── JobSpy boards ──────────────────────────────────────────────────
             if boards:
                 print(f"  [jobspy] {location} — boards: {', '.join(boards)}")
                 try:
-                    jobs: pd.DataFrame = scrape_jobs(
+                    jobspy_kwargs: dict = dict(
                         site_name=boards,
                         search_term=" OR ".join(f'"{t}"' for t in profile["titles"]),
                         location=location,
@@ -210,6 +217,9 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False) -> None
                         hours_old=profile.get("hours_old", 72),
                         linkedin_fetch_description=True,
                     )
+                    if _is_remote is not None:
+                        jobspy_kwargs["is_remote"] = _is_remote
+                    jobs: pd.DataFrame = scrape_jobs(**jobspy_kwargs)
                     print(f"  [jobspy] {len(jobs)} raw results")
                 except Exception as exc:
                     print(f"  [jobspy] ERROR: {exc}")
