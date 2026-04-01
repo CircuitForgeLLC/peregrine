@@ -32,6 +32,13 @@ _DEMO_MODE = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 # Example: PEREGRINE_VUE_URL=http://localhost:8506
 _VUE_URL = os.environ.get("PEREGRINE_VUE_URL", "").strip().rstrip("/")
 
+# When True, a window.location.reload() after setting prgn_ui=vue will be
+# intercepted by Caddy and routed to the Vue SPA. When False (no Caddy in the
+# traffic path — e.g. test instances, direct Docker exposure), reloading just
+# comes back to Streamlit and creates an infinite loop. Only set this in
+# production/staging compose files where Caddy is actually in front.
+_CADDY_PROXY = os.environ.get("PEREGRINE_CADDY_PROXY", "").lower() in ("1", "true", "yes")
+
 _COOKIE_JS = """
 <script>
 (function() {{
@@ -50,14 +57,18 @@ def _set_cookie_js(value: str, navigate: bool = False) -> None:
     port. Without this, reload() just sends the request back to the same
     Streamlit port with no router in between to inspect the cookie.
 
-    When PEREGRINE_VUE_URL is absent (Caddy deployment): navigate=True
+    When PEREGRINE_CADDY_PROXY is set (production/staging): navigate=True
     triggers window.location.reload() so Caddy sees the updated cookie on
     the next HTTP request and routes accordingly.
+
+    When neither is set (test instances, bare Docker): navigate is suppressed
+    entirely — the cookie is written silently, but no reload is attempted.
+    Reloading without a proxy just bounces back to Streamlit and loops.
     """
     # components.html() renders in an iframe — window.parent navigates the host page
     if navigate and value == "vue" and _VUE_URL:
         nav_js = f"window.parent.location.href = '{_VUE_URL}';"
-    elif navigate:
+    elif navigate and _CADDY_PROXY:
         nav_js = "window.parent.location.reload();"
     else:
         nav_js = ""

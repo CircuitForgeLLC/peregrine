@@ -31,6 +31,7 @@ services:
       - DOCS_DIR=/tmp/cloud-docs
       - STREAMLIT_SERVER_BASE_URL_PATH=peregrine
       - PYTHONUNBUFFERED=1
+      - PEREGRINE_CADDY_PROXY=1
       - DEMO_MODE=false
     depends_on:
       searxng:
