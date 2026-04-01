@@ -364,6 +364,67 @@ def research_task_status(job_id: int):
     return {"status": row["status"], "stage": row["stage"], "message": row["error"]}
 
 
+# ── ATS Resume Optimizer endpoints ───────────────────────────────────────────
+
+@app.get("/api/jobs/{job_id}/resume_optimizer")
+def get_optimized_resume(job_id: int):
+    """Return the current optimized resume and ATS gap report for a job."""
+    from scripts.db import get_optimized_resume as _get
+    import json
+    result = _get(db_path=Path(DB_PATH), job_id=job_id)
+    gap_report = result.get("ats_gap_report", "")
+    try:
+        gap_report_parsed = json.loads(gap_report) if gap_report else []
+    except Exception:
+        gap_report_parsed = []
+    return {
+        "optimized_resume": result.get("optimized_resume", ""),
+        "ats_gap_report":   gap_report_parsed,
+    }
+
+
+class ResumeOptimizeBody(BaseModel):
+    full_rewrite: bool = False
+
+
+@app.post("/api/jobs/{job_id}/resume_optimizer/generate")
+def generate_optimized_resume(job_id: int, body: ResumeOptimizeBody):
+    """Queue an ATS resume optimization task for this job.
+
+    full_rewrite=False (default) → free tier: gap report only, no LLM rewrite.
+    full_rewrite=True → paid tier: per-section LLM rewrite + hallucination check.
+    """
+    import json
+    try:
+        from scripts.task_runner import submit_task
+        params = json.dumps({"full_rewrite": body.full_rewrite})
+        task_id, is_new = submit_task(
+            db_path=Path(DB_PATH),
+            task_type="resume_optimize",
+            job_id=job_id,
+            params=params,
+        )
+        return {"task_id": task_id, "is_new": is_new}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/jobs/{job_id}/resume_optimizer/task")
+def resume_optimizer_task_status(job_id: int):
+    """Poll the latest resume_optimize task status for this job."""
+    db = _get_db()
+    row = db.execute(
+        "SELECT status, stage, error FROM background_tasks "
+        "WHERE task_type = 'resume_optimize' AND job_id = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (job_id,),
+    ).fetchone()
+    db.close()
+    if not row:
+        return {"status": "none", "stage": None, "message": None}
+    return {"status": row["status"], "stage": row["stage"], "message": row["error"]}
+
+
 @app.get("/api/jobs/{job_id}/contacts")
 def get_job_contacts(job_id: int):
     db = _get_db()
