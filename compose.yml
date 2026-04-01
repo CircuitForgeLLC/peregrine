@@ -3,7 +3,9 @@
 services:
 
   app:
-    build: .
+    build:
+      context: ..
+      dockerfile: peregrine/Dockerfile.cfcore
     command: >
       bash -c "streamlit run app/app.py
       --server.port=8501
@@ -41,12 +43,37 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  api:
+    build:
+      context: ..
+      dockerfile: peregrine/Dockerfile.cfcore
+    command: >
+      bash -c "uvicorn dev_api:app --host 0.0.0.0 --port 8601"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ${DOCS_DIR:-~/Documents/JobSearch}:/docs
+    environment:
+      - STAGING_DB=/app/data/staging.db
+      - DOCS_DIR=/docs
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_COMPAT_URL=${OPENAI_COMPAT_URL:-}
+      - OPENAI_COMPAT_KEY=${OPENAI_COMPAT_KEY:-}
+      - PEREGRINE_GPU_COUNT=${PEREGRINE_GPU_COUNT:-0}
+      - PEREGRINE_GPU_NAMES=${PEREGRINE_GPU_NAMES:-}
+      - PYTHONUNBUFFERED=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
   web:
     build:
       context: .
       dockerfile: docker/web/Dockerfile
     ports:
       - "${VUE_PORT:-8506}:80"
+    depends_on:
+      - api
     restart: unless-stopped
 
   searxng:
