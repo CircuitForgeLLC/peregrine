@@ -3,7 +3,11 @@
 # Keep in sync with environment.yml
 
 # ── CircuitForge shared core ───────────────────────────────────────────────
--e ../circuitforge-core
+# Local dev / Docker (parent-context build): path install works because
+# circuitforge-core/ is a sibling directory.
+# CI / fresh checkouts: falls back to the Forgejo VCS URL below.
+# To use local editable install run: pip install -e ../circuitforge-core
+git+https://git.opensourcesolarpunk.com/Circuit-Forge/circuitforge-core.git@main
 
 # ── Web UI ────────────────────────────────────────────────────────────────
 streamlit>=1.35
