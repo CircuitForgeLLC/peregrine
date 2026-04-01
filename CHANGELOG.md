@@ -9,6 +9,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.1] — 2026-04-01
+
+### Fixed
+- **Job title suggester silent failure** — when the LLM returned empty arrays or
+  non-JSON text, the spinner would complete with zero UI feedback. Now shows an
+  explicit "No new suggestions found" info message with a resume-upload hint for
+  new users who haven't uploaded a resume yet.
+- **Suggester exception handling** — catch `Exception` instead of only
+  `RuntimeError` so connection errors and `FileNotFoundError` (missing llm.yaml)
+  surface as error messages rather than crashing the page silently.
+
+### Added
+- **`Dockerfile.cfcore`** — parent-context Dockerfile that copies
+  `circuitforge-core/` alongside `peregrine/` before `pip install`, resolving
+  the `-e ../circuitforge-core` editable requirement inside Docker.
+- **`compose.test-cfcore.yml`** — single-user test instance on port 8516 for
+  smoke-testing cfcore shim integration before promoting to the cloud instance.
+
+---
+
 ## [0.8.0] — 2026-04-01
 
 ### Added
