@@ -963,9 +963,7 @@ def config_user():
     # Try to read name from user.yaml if present
     try:
         import yaml
-        cfg_path = os.path.join(os.path.dirname(DB_PATH), "config", "user.yaml")
-        if not os.path.exists(cfg_path):
-            cfg_path = "/devl/job-seeker/config/user.yaml"
+        cfg_path = _user_yaml_path()
         with open(cfg_path) as f:
             cfg = yaml.safe_load(f)
         return {"name": cfg.get("name", "")}
@@ -979,8 +977,9 @@ from scripts.user_profile import load_user_profile, save_user_profile
 
 
 def _user_yaml_path() -> str:
-    """Resolve user.yaml path, falling back to legacy location."""
-    cfg_path = os.path.join(os.path.dirname(DB_PATH), "config", "user.yaml")
+    """Resolve user.yaml path relative to the current STAGING_DB location."""
+    db = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
+    cfg_path = os.path.join(os.path.dirname(db), "config", "user.yaml")
     if not os.path.exists(cfg_path):
         cfg_path = "/devl/job-seeker/config/user.yaml"
     return cfg_path
