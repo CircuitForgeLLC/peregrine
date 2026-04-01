@@ -33,6 +33,7 @@ services:
       - FORGEJO_API_URL=${FORGEJO_API_URL:-}
       - PYTHONUNBUFFERED=1
       - PYTHONLOGGING=WARNING
+      - PEREGRINE_CADDY_PROXY=1
     depends_on:
       searxng:
         condition: service_healthy
