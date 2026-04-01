@@ -1,7 +1,7 @@
 """
 Tier definitions and feature gates for Peregrine.
 
-Tiers: free < paid < premium
+Tiers: free < paid < premium < ultra (ultra reserved; no Peregrine features use it yet)
 FEATURES maps feature key → minimum tier required.
 Features not in FEATURES are available to all tiers (free).
 
@@ -22,9 +22,14 @@ Features that stay gated even with BYOK:
 """
 from __future__ import annotations
 
+import os as _os
 from pathlib import Path
 
-TIERS = ["free", "paid", "premium"]
+from circuitforge_core.tiers import (
+    can_use as _core_can_use,
+    TIERS,
+    tier_label as _core_tier_label,
+)
 
 # Maps feature key → minimum tier string required.
 # Features absent from this dict are free (available to all).
@@ -58,6 +63,9 @@ FEATURES: dict[str, str] = {
     "google_calendar_sync":         "paid",
     "apple_calendar_sync":          "paid",
     "slack_notifications":          "paid",
+
+    # Beta UI access — stays gated (access management, not compute)
+    "vue_ui_beta":                  "paid",
 }
 
 # Features that unlock when the user supplies any LLM backend (local or BYOK).
@@ -74,6 +82,13 @@ BYOK_UNLOCKABLE: frozenset[str] = frozenset({
     "interview_prep",
     "survey_assistant",
 })
+
+# Demo mode flag — read from environment at module load time.
+# Allows demo toolbar to override tier without accessing st.session_state (thread-safe).
+# _DEMO_MODE is immutable after import for the process lifetime.
+# DEMO_MODE must be set in the environment before the process starts (e.g., via
+# Docker Compose environment:). Runtime toggling is not supported.
+_DEMO_MODE = _os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 # Free integrations (not in FEATURES):
 # google_drive_sync, dropbox_sync, onedrive_sync, mega_sync,
@@ -101,34 +116,40 @@ def has_configured_llm(config_path: Path | None = None) -> bool:
         return False
 
 
-def can_use(tier: str, feature: str, has_byok: bool = False) -> bool:
+def can_use(
+    tier: str,
+    feature: str,
+    has_byok: bool = False,
+    *,
+    demo_tier: str | None = None,
+) -> bool:
     """Return True if the given tier has access to the feature.
 
     has_byok: pass has_configured_llm() to unlock BYOK_UNLOCKABLE features
     for users who supply their own LLM backend regardless of tier.
 
+    demo_tier: when set AND _DEMO_MODE is True, substitutes for `tier`.
+               Read from st.session_state by the *caller*, not here — keeps
+               this function thread-safe for background tasks and tests.
+
     Returns True for unknown features (not gated).
     Returns False for unknown/invalid tier strings.
     """
-    required = FEATURES.get(feature)
-    if required is None:
-        return True  # not gated — available to all
+    effective_tier = demo_tier if (demo_tier is not None and _DEMO_MODE) else tier
+    # Pass Peregrine's BYOK_UNLOCKABLE via has_byok collapse — core's frozenset is empty
     if has_byok and feature in BYOK_UNLOCKABLE:
         return True
-    try:
-        return TIERS.index(tier) >= TIERS.index(required)
-    except ValueError:
-        return False  # invalid tier string
+    return _core_can_use(feature, effective_tier, _features=FEATURES)
 
 
 def tier_label(feature: str, has_byok: bool = False) -> str:
     """Return a display label for a locked feature, or '' if free/unlocked."""
     if has_byok and feature in BYOK_UNLOCKABLE:
         return ""
-    required = FEATURES.get(feature)
-    if required is None:
+    raw = _core_tier_label(feature, _features=FEATURES)
+    if not raw or raw == "free":
         return ""
-    return "🔒 Paid" if required == "paid" else "⭐ Premium"
+    return "🔒 Paid" if raw == "paid" else "⭐ Premium"
 
 
 def effective_tier(

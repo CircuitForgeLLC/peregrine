@@ -32,6 +32,7 @@ usage() {
     echo -e "    ${GREEN}logs [service]${NC}      Tail logs (default: app)"
     echo -e "    ${GREEN}update${NC}              Pull latest images + rebuild app"
     echo -e "    ${GREEN}preflight${NC}           Check ports + resources; write .env"
+    echo -e "    ${GREEN}models${NC}              Check ollama models in config; pull any missing"
     echo -e "    ${GREEN}test${NC}                Run test suite"
     echo -e "    ${GREEN}e2e [mode]${NC}          Run E2E tests (mode: demo|cloud|local, default: demo)"
     echo -e "                        Set E2E_HEADLESS=false to run headed via Xvfb"
@@ -91,6 +92,12 @@ case "$CMD" in
         make preflight PROFILE="$PROFILE"
         ;;
 
+    models)
+        info "Checking ollama models..."
+        conda run -n job-seeker python scripts/preflight.py --models-only
+        success "Model check complete."
+        ;;
+
     start)
         info "Starting Peregrine (PROFILE=${PROFILE})..."
         make start PROFILE="$PROFILE"
@@ -133,7 +140,7 @@ case "$CMD" in
             && echo "docker compose" \
             || (command -v podman >/dev/null 2>&1 && echo "podman compose" || echo "podman-compose"))"
         $COMPOSE pull searxng ollama 2>/dev/null || true
-        $COMPOSE build app
+        $COMPOSE build app web
         success "Update complete. Run './manage.sh restart' to apply."
         ;;
 

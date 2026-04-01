@@ -1,12 +1,16 @@
 import sys
 from pathlib import Path
+from unittest.mock import patch
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.wizard.tiers import can_use, tier_label, TIERS, FEATURES, BYOK_UNLOCKABLE
 
 
 def test_tiers_list():
-    assert TIERS == ["free", "paid", "premium"]
+    # Peregrine uses the core tier list; "ultra" is included but no features require it yet
+    assert TIERS[:3] == ["free", "paid", "premium"]
+    assert "ultra" in TIERS
 
 
 def test_can_use_free_feature_always():
@@ -112,3 +116,41 @@ def test_byok_false_preserves_original_gating():
     # has_byok=False (default) must not change existing behaviour
     assert can_use("free", "company_research", has_byok=False) is False
     assert can_use("paid", "company_research", has_byok=False) is True
+
+
+# ── Vue UI Beta & Demo Tier tests ──────────────────────────────────────────────
+
+def test_vue_ui_beta_free_tier():
+    assert can_use("free", "vue_ui_beta") is False
+
+
+def test_vue_ui_beta_paid_tier():
+    assert can_use("paid", "vue_ui_beta") is True
+
+
+def test_vue_ui_beta_premium_tier():
+    assert can_use("premium", "vue_ui_beta") is True
+
+
+def test_can_use_demo_tier_overrides_real_tier():
+    # demo_tier="paid" overrides real tier "free" when DEMO_MODE is active
+    with patch('app.wizard.tiers._DEMO_MODE', True):
+        assert can_use("free", "company_research", demo_tier="paid") is True
+
+
+def test_can_use_demo_tier_free_restricts():
+    # demo_tier="free" restricts access even if real tier is "paid"
+    with patch('app.wizard.tiers._DEMO_MODE', True):
+        assert can_use("paid", "model_fine_tuning", demo_tier="free") is False
+
+
+def test_can_use_demo_tier_none_falls_back_to_real():
+    # demo_tier=None means no override regardless of DEMO_MODE
+    with patch('app.wizard.tiers._DEMO_MODE', True):
+        assert can_use("paid", "company_research", demo_tier=None) is True
+
+
+def test_can_use_demo_tier_does_not_affect_non_demo():
+    # When _DEMO_MODE is False, demo_tier is ignored
+    with patch('app.wizard.tiers._DEMO_MODE', False):
+        assert can_use("free", "company_research", demo_tier="paid") is False
