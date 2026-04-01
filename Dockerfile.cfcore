@@ -20,12 +20,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libffi-dev curl libsqlcipher-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy circuitforge-core first so pip can resolve the -e ../circuitforge-core
-# reference in requirements.txt (installed editable at /circuitforge-core)
+# Copy circuitforge-core and install it from the local path before requirements.txt.
+# requirements.txt has a git+https:// fallback URL for CI (where circuitforge-core
+# is not a sibling directory), but Docker always has the local copy available here.
 COPY circuitforge-core/ /circuitforge-core/
+RUN pip install --no-cache-dir /circuitforge-core
 
 COPY peregrine/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Skip the cfcore line — already installed above from the local copy
+RUN grep -v 'circuitforge-core' requirements.txt | pip install --no-cache-dir -r /dev/stdin
 
 # Install Playwright browser (cached separately from Python deps so requirements
 # changes don't bust the ~600–900 MB Chromium layer and vice versa)
