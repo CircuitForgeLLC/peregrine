@@ -15,6 +15,7 @@ Public API (unchanged — callers do not need to change):
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from pathlib import Path
 from typing import Callable, Optional
@@ -112,6 +113,10 @@ class TaskScheduler(_CoreTaskScheduler):
                     "defaulting to 0.0 GB (unlimited concurrency for this type)", t
                 )
 
+        coordinator_url = os.environ.get(
+            "CF_ORCH_URL", "http://localhost:7700"
+        ).rstrip("/")
+
         super().__init__(
             db_path=db_path,
             run_task_fn=run_task_fn,
@@ -119,6 +124,8 @@ class TaskScheduler(_CoreTaskScheduler):
             vram_budgets=budgets,
             available_vram_gb=available_vram,
             max_queue_depth=max_depth,
+            coordinator_url=coordinator_url,
+            service_name="peregrine",
         )
 
     def enqueue(

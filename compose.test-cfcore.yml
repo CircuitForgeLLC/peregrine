@@ -22,10 +22,14 @@ services:
       - "8516:8501"
     volumes:
       - /devl/job-seeker:/devl/job-seeker
+      - /devl/job-seeker/config:/app/config
+      - /devl/job-seeker/config/llm.docker.yaml:/app/config/llm.yaml:ro
+      - /devl/job-seeker/config/user.docker.yaml:/app/config/user.yaml:ro
     environment:
       - STAGING_DB=/devl/job-seeker/staging.db
       - PYTHONUNBUFFERED=1
       - STREAMLIT_SERVER_BASE_URL_PATH=
+      - CF_ORCH_URL=http://host.docker.internal:7700
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: "no"
