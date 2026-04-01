@@ -9,6 +9,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.2] — 2026-04-01
+
+### Fixed
+- **CI pipeline** — `pip install -r requirements.txt` was failing in GitHub Actions
+  because `-e ../circuitforge-core` requires a sibling directory that doesn't exist
+  in a single-repo checkout. Replaced with a `git+https://` VCS URL fallback;
+  `Dockerfile.cfcore` still installs from the local `COPY` to avoid redundant
+  network fetches during Docker builds.
+- **Vue-nav reload loop** — `sync_ui_cookie()` was calling
+  `window.parent.location.reload()` on every render when `user.yaml` has
+  `ui_preference: vue` but no Caddy proxy is in the traffic path (test instances,
+  bare Docker). Gated the reload on `PEREGRINE_CADDY_PROXY=1`; instances without
+  the env var set the cookie silently and skip the reload.
+
+### Changed
+- **cfcore VRAM lease integration** — the task scheduler now acquires a VRAM lease
+  from the cf-orch coordinator before running a batch of LLM tasks and releases it
+  when the batch completes. Visible in the coordinator dashboard at `:7700`.
+- **`CF_ORCH_URL` env var** — scheduler reads coordinator address from
+  `CF_ORCH_URL` (default `http://localhost:7700`); set to
+  `http://host.docker.internal:7700` in Docker compose files so containers can
+  reach the host coordinator.
+- **All compose files on `Dockerfile.cfcore`** — `compose.yml`, `compose.cloud.yml`,
+  and `compose.test-cfcore.yml` all use the parent-context build. `build: .` is
+  removed from `compose.yml`.
+
+---
+
 ## [0.8.1] — 2026-04-01
 
 ### Fixed
