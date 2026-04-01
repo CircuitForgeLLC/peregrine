@@ -1,0 +1,44 @@
+# Dockerfile.cfcore — build context must be the PARENT directory of peregrine/
+#
+# Used when circuitforge-core is installed from source (not PyPI).
+# Both repos must be siblings on the build host:
+#   /devl/peregrine/          → WORKDIR /app
+#   /devl/circuitforge-core/  → installed to /circuitforge-core
+#
+# Build manually:
+#   docker build -f peregrine/Dockerfile.cfcore -t peregrine-cfcore ..
+#
+# Via compose (compose.test-cfcore.yml sets context: ..):
+#   docker compose -f compose.test-cfcore.yml build
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System deps for companyScraper (beautifulsoup4, fake-useragent, lxml) and PDF gen
+# libsqlcipher-dev: required to build pysqlcipher3 (SQLCipher AES-256 encryption for cloud mode)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libffi-dev curl libsqlcipher-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy circuitforge-core first so pip can resolve the -e ../circuitforge-core
+# reference in requirements.txt (installed editable at /circuitforge-core)
+COPY circuitforge-core/ /circuitforge-core/
+
+COPY peregrine/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright browser (cached separately from Python deps so requirements
+# changes don't bust the ~600–900 MB Chromium layer and vice versa)
+RUN playwright install chromium && playwright install-deps chromium
+
+# Bundle companyScraper (company research web scraper)
+COPY peregrine/scrapers/ /app/scrapers/
+
+COPY peregrine/ .
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "app/app.py", \
+     "--server.port=8501", \
+     "--server.headless=true", \
+     "--server.fileWatcherType=none"]
