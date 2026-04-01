@@ -132,6 +132,8 @@ _MIGRATIONS = [
     ("hired_at",           "TEXT"),
     ("survey_at",          "TEXT"),
     ("calendar_event_id",  "TEXT"),
+    ("optimized_resume",   "TEXT"),   # ATS-rewritten resume text (paid tier)
+    ("ats_gap_report",     "TEXT"),   # JSON gap report (free tier)
 ]
 
 
@@ -299,6 +301,38 @@ def update_cover_letter(db_path: Path = DEFAULT_DB, job_id: int = None, text: st
     conn.execute("UPDATE jobs SET cover_letter = ? WHERE id = ?", (text, job_id))
     conn.commit()
     conn.close()
+
+
+def save_optimized_resume(db_path: Path = DEFAULT_DB, job_id: int = None,
+                          text: str = "", gap_report: str = "") -> None:
+    """Persist ATS-optimized resume text and/or gap report for a job."""
+    if job_id is None:
+        return
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "UPDATE jobs SET optimized_resume = ?, ats_gap_report = ? WHERE id = ?",
+        (text or None, gap_report or None, job_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_optimized_resume(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict:
+    """Return optimized_resume and ats_gap_report for a job, or empty strings if absent."""
+    if job_id is None:
+        return {"optimized_resume": "", "ats_gap_report": ""}
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT optimized_resume, ats_gap_report FROM jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {"optimized_resume": "", "ats_gap_report": ""}
+    return {
+        "optimized_resume": row["optimized_resume"] or "",
+        "ats_gap_report":   row["ats_gap_report"] or "",
+    }
 
 
 _UPDATABLE_JOB_COLS = {
