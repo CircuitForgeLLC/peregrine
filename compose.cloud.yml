@@ -13,7 +13,9 @@
 
 services:
   app:
-    build: .
+    build:
+      context: ..
+      dockerfile: peregrine/Dockerfile.cfcore
     container_name: peregrine-cloud
     ports:
       - "8505:8501"
@@ -32,6 +34,7 @@ services:
       - STREAMLIT_SERVER_BASE_URL_PATH=peregrine
       - PYTHONUNBUFFERED=1
       - PEREGRINE_CADDY_PROXY=1
+      - CF_ORCH_URL=http://host.docker.internal:7700
       - DEMO_MODE=false
     depends_on:
       searxng:
