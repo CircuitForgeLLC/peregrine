@@ -12,12 +12,15 @@ from scripts.db import (
     DEFAULT_DB, init_db, get_jobs_by_status, update_job_status,
     update_cover_letter, mark_applied, get_email_leads,
 )
+from app.cloud_session import resolve_session, get_db_path
+
+resolve_session("peregrine")
 
 st.title("📋 Job Review")
 
-init_db(DEFAULT_DB)
+init_db(get_db_path())
 
-_email_leads = get_email_leads(DEFAULT_DB)
+_email_leads = get_email_leads(get_db_path())
 
 # ── Sidebar filters ────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -37,7 +40,7 @@ with st.sidebar:
         index=0,
     )
 
-jobs = get_jobs_by_status(DEFAULT_DB, show_status)
+jobs = get_jobs_by_status(get_db_path(), show_status)
 
 if remote_only:
     jobs = [j for j in jobs if j.get("is_remote")]
@@ -86,11 +89,11 @@ if show_status == "pending" and _email_leads:
             with right_l:
                 if st.button("✅ Approve", key=f"el_approve_{lead_id}",
                              type="primary", use_container_width=True):
-                    update_job_status(DEFAULT_DB, [lead_id], "approved")
+                    update_job_status(get_db_path(), [lead_id], "approved")
                     st.rerun()
                 if st.button("❌ Reject", key=f"el_reject_{lead_id}",
                              use_container_width=True):
-                    update_job_status(DEFAULT_DB, [lead_id], "rejected")
+                    update_job_status(get_db_path(), [lead_id], "rejected")
                     st.rerun()
     st.divider()
 
@@ -162,7 +165,7 @@ for job in jobs:
                     )
                     save_col, _ = st.columns([2, 5])
                     if save_col.button("💾 Save draft", key=f"save_cl_{job_id}"):
-                        update_cover_letter(DEFAULT_DB, job_id, st.session_state[_cl_key])
+                        update_cover_letter(get_db_path(), job_id, st.session_state[_cl_key])
                         st.success("Saved!")
 
             # Applied date + cover letter preview (applied/synced)
@@ -182,11 +185,11 @@ for job in jobs:
             if show_status == "pending":
                 if st.button("✅ Approve", key=f"approve_{job_id}",
                              type="primary", use_container_width=True):
-                    update_job_status(DEFAULT_DB, [job_id], "approved")
+                    update_job_status(get_db_path(), [job_id], "approved")
                     st.rerun()
                 if st.button("❌ Reject", key=f"reject_{job_id}",
                              use_container_width=True):
-                    update_job_status(DEFAULT_DB, [job_id], "rejected")
+                    update_job_status(get_db_path(), [job_id], "rejected")
                     st.rerun()
 
             elif show_status == "approved":
@@ -198,6 +201,6 @@ for job in jobs:
                              use_container_width=True):
                     cl_text = st.session_state.get(f"cl_{job_id}", "")
                     if cl_text:
-                        update_cover_letter(DEFAULT_DB, job_id, cl_text)
-                    mark_applied(DEFAULT_DB, [job_id])
+                        update_cover_letter(get_db_path(), job_id, cl_text)
+                    mark_applied(get_db_path(), [job_id])
                     st.rerun()

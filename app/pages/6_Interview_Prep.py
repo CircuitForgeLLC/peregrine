@@ -25,11 +25,14 @@ from scripts.db import (
     get_task_for_job,
 )
 from scripts.task_runner import submit_task
+from app.cloud_session import resolve_session, get_db_path
 
-init_db(DEFAULT_DB)
+resolve_session("peregrine")
+
+init_db(get_db_path())
 
 # ── Job selection ─────────────────────────────────────────────────────────────
-jobs_by_stage = get_interview_jobs(DEFAULT_DB)
+jobs_by_stage = get_interview_jobs(get_db_path())
 active_stages = ["phone_screen", "interviewing", "offer"]
 active_jobs = [
     j for stage in active_stages
@@ -100,10 +103,10 @@ col_prep, col_context = st.columns([2, 3])
 # ════════════════════════════════════════════════
 with col_prep:
 
-    research = get_research(DEFAULT_DB, job_id=selected_id)
+    research = get_research(get_db_path(), job_id=selected_id)
 
     # Refresh / generate research
-    _res_task = get_task_for_job(DEFAULT_DB, "company_research", selected_id)
+    _res_task = get_task_for_job(get_db_path(), "company_research", selected_id)
     _res_running = _res_task and _res_task["status"] in ("queued", "running")
 
     if not research:
@@ -112,13 +115,13 @@ with col_prep:
             if _res_task and _res_task["status"] == "failed":
                 st.error(f"Last attempt failed: {_res_task.get('error', '')}")
             if st.button("🔬 Generate research brief", type="primary", use_container_width=True):
-                submit_task(DEFAULT_DB, "company_research", selected_id)
+                submit_task(get_db_path(), "company_research", selected_id)
                 st.rerun()
 
         if _res_running:
             @st.fragment(run_every=3)
             def _res_status_initial():
-                t = get_task_for_job(DEFAULT_DB, "company_research", selected_id)
+                t = get_task_for_job(get_db_path(), "company_research", selected_id)
                 if t and t["status"] in ("queued", "running"):
                     stage = t.get("stage") or ""
                     lbl = "Queued…" if t["status"] == "queued" else (stage or "Generating… this may take 30–60 seconds")
@@ -133,13 +136,13 @@ with col_prep:
         col_ts, col_btn = st.columns([3, 1])
         col_ts.caption(f"Research generated: {generated_at}")
         if col_btn.button("🔄 Refresh", use_container_width=True, disabled=bool(_res_running)):
-            submit_task(DEFAULT_DB, "company_research", selected_id)
+            submit_task(get_db_path(), "company_research", selected_id)
             st.rerun()
 
         if _res_running:
             @st.fragment(run_every=3)
             def _res_status_refresh():
-                t = get_task_for_job(DEFAULT_DB, "company_research", selected_id)
+                t = get_task_for_job(get_db_path(), "company_research", selected_id)
                 if t and t["status"] in ("queued", "running"):
                     stage = t.get("stage") or ""
                     lbl = "Queued…" if t["status"] == "queued" else (stage or "Refreshing research…")
@@ -311,7 +314,7 @@ with col_context:
         st.markdown(job.get("description") or "_No description saved for this listing._")
 
     with tab_emails:
-        contacts = get_contacts(DEFAULT_DB, job_id=selected_id)
+        contacts = get_contacts(get_db_path(), job_id=selected_id)
         if not contacts:
             st.info("No contacts logged yet. Use the Interviews page to log emails.")
         else:

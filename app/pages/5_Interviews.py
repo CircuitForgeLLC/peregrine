@@ -36,6 +36,9 @@ from scripts.db import (
     get_unread_stage_signals, dismiss_stage_signal,
 )
 from scripts.task_runner import submit_task
+from app.cloud_session import resolve_session, get_db_path
+
+resolve_session("peregrine")
 
 _CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
 _CALENDAR_INTEGRATIONS = ("apple_calendar", "google_calendar")
@@ -46,23 +49,23 @@ _calendar_connected = any(
 
 st.title("🎯 Interviews")
 
-init_db(DEFAULT_DB)
+init_db(get_db_path())
 
 # ── Sidebar: Email sync ────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 📧 Email Sync")
-    _email_task = get_task_for_job(DEFAULT_DB, "email_sync", 0)
+    _email_task = get_task_for_job(get_db_path(), "email_sync", 0)
     _email_running = _email_task and _email_task["status"] in ("queued", "running")
 
     if st.button("🔄 Sync Emails", use_container_width=True, type="primary",
                  disabled=bool(_email_running)):
-        submit_task(DEFAULT_DB, "email_sync", 0)
+        submit_task(get_db_path(), "email_sync", 0)
         st.rerun()
 
     if _email_running:
         @st.fragment(run_every=4)
         def _email_sidebar_status():
-            t = get_task_for_job(DEFAULT_DB, "email_sync", 0)
+            t = get_task_for_job(get_db_path(), "email_sync", 0)
             if t and t["status"] in ("queued", "running"):
                 st.info("⏳ Syncing…")
             else:
@@ -99,7 +102,7 @@ STAGE_NEXT_LABEL = {
 }
 
 # ── Data ──────────────────────────────────────────────────────────────────────
-jobs_by_stage = get_interview_jobs(DEFAULT_DB)
+jobs_by_stage = get_interview_jobs(get_db_path())
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _days_ago(date_str: str | None) -> str:
@@ -120,8 +123,8 @@ def _days_ago(date_str: str | None) -> str:
 def _research_modal(job: dict) -> None:
     job_id = job["id"]
     st.caption(f"**{job.get('company')}** — {job.get('title')}")
-    research = get_research(DEFAULT_DB, job_id=job_id)
-    task = get_task_for_job(DEFAULT_DB, "company_research", job_id)
+    research = get_research(get_db_path(), job_id=job_id)
+    task = get_task_for_job(get_db_path(), "company_research", job_id)
     running = task and task["status"] in ("queued", "running")
 
     if running:
@@ -144,7 +147,7 @@ def _research_modal(job: dict) -> None:
                     "inaccuracies. SearXNG is now available — re-run to get verified facts."
                 )
                 if st.button("🔄 Re-run with live data", key=f"modal_rescrape_{job_id}", type="primary"):
-                    submit_task(DEFAULT_DB, "company_research", job_id)
+                    submit_task(get_db_path(), "company_research", job_id)
                     st.rerun()
                 st.divider()
             else:
@@ -160,14 +163,14 @@ def _research_modal(job: dict) -> None:
         )
         st.markdown(research["raw_output"])
         if st.button("🔄 Refresh", key=f"modal_regen_{job_id}", disabled=bool(running)):
-            submit_task(DEFAULT_DB, "company_research", job_id)
+            submit_task(get_db_path(), "company_research", job_id)
             st.rerun()
     else:
         st.info("No research brief yet.")
         if task and task["status"] == "failed":
             st.error(f"Last attempt failed: {task.get('error', '')}")
         if st.button("🔬 Generate now", key=f"modal_gen_{job_id}"):
-            submit_task(DEFAULT_DB, "company_research", job_id)
+            submit_task(get_db_path(), "company_research", job_id)
             st.rerun()
 
 
@@ -175,7 +178,7 @@ def _research_modal(job: dict) -> None:
 def _email_modal(job: dict) -> None:
     job_id = job["id"]
     st.caption(f"**{job.get('company')}** — {job.get('title')}")
-    contacts = get_contacts(DEFAULT_DB, job_id=job_id)
+    contacts = get_contacts(get_db_path(), job_id=job_id)
 
     if not contacts:
         st.info("No emails logged yet. Use the form below to add one.")
@@ -246,7 +249,7 @@ def _email_modal(job: dict) -> None:
         body_text = st.text_area("Body / notes", height=80, key=f"body_modal_{job_id}")
         if st.form_submit_button("📧 Save contact"):
             add_contact(
-                DEFAULT_DB, job_id=job_id,
+                get_db_path(), job_id=job_id,
                 direction=direction, subject=subject,
                 from_addr=from_addr, body=body_text, received_at=recv_at,
             )
@@ -255,7 +258,7 @@ def _email_modal(job: dict) -> None:
 def _render_card(job: dict, stage: str, compact: bool = False) -> None:
     """Render a single job card appropriate for the given stage."""
     job_id = job["id"]
-    contacts = get_contacts(DEFAULT_DB, job_id=job_id)
+    contacts = get_contacts(get_db_path(), job_id=job_id)
     last_contact = contacts[-1] if contacts else None
 
     with st.container(border=True):
@@ -278,7 +281,7 @@ def _render_card(job: dict, stage: str, compact: bool = False) -> None:
                     format="YYYY-MM-DD",
                 )
                 if st.form_submit_button("📅 Save date"):
-                    set_interview_date(DEFAULT_DB, job_id=job_id, date_str=str(new_date))
+                    set_interview_date(get_db_path(), job_id=job_id, date_str=str(new_date))
                     st.success("Saved!")
                     st.rerun()
 
@@ -288,7 +291,7 @@ def _render_card(job: dict, stage: str, compact: bool = False) -> None:
                 _cal_label = "🔄 Update Calendar" if _has_event else "📅 Add to Calendar"
                 if st.button(_cal_label, key=f"cal_push_{job_id}", use_container_width=True):
                     from scripts.calendar_push import push_interview_event
-                    result = push_interview_event(DEFAULT_DB, job_id=job_id, config_dir=_CONFIG_DIR)
+                    result = push_interview_event(get_db_path(), job_id=job_id, config_dir=_CONFIG_DIR)
                     if result["ok"]:
                         st.success(f"Event {'updated' if _has_event else 'added'} ({result['provider'].replace('_', ' ').title()})")
                         st.rerun()
@@ -297,7 +300,7 @@ def _render_card(job: dict, stage: str, compact: bool = False) -> None:
 
         if not compact:
             if stage in ("applied", "phone_screen", "interviewing"):
-                signals = get_unread_stage_signals(DEFAULT_DB, job_id=job_id)
+                signals = get_unread_stage_signals(get_db_path(), job_id=job_id)
                 if signals:
                     sig = signals[-1]
                     _SIGNAL_TO_STAGE = {
@@ -318,23 +321,23 @@ def _render_card(job: dict, stage: str, compact: bool = False) -> None:
                         if sig["stage_signal"] == "rejected":
                             if b1.button("✗ Reject", key=f"sig_rej_{sig['id']}",
                                          use_container_width=True):
-                                reject_at_stage(DEFAULT_DB, job_id=job_id, rejection_stage=stage)
-                                dismiss_stage_signal(DEFAULT_DB, sig["id"])
+                                reject_at_stage(get_db_path(), job_id=job_id, rejection_stage=stage)
+                                dismiss_stage_signal(get_db_path(), sig["id"])
                                 st.rerun(scope="app")
                         elif target_stage and b1.button(
                             f"→ {target_label}", key=f"sig_adv_{sig['id']}",
                             use_container_width=True, type="primary",
                         ):
                             if target_stage == "phone_screen" and stage == "applied":
-                                advance_to_stage(DEFAULT_DB, job_id=job_id, stage="phone_screen")
-                                submit_task(DEFAULT_DB, "company_research", job_id)
+                                advance_to_stage(get_db_path(), job_id=job_id, stage="phone_screen")
+                                submit_task(get_db_path(), "company_research", job_id)
                             elif target_stage:
-                                advance_to_stage(DEFAULT_DB, job_id=job_id, stage=target_stage)
-                            dismiss_stage_signal(DEFAULT_DB, sig["id"])
+                                advance_to_stage(get_db_path(), job_id=job_id, stage=target_stage)
+                            dismiss_stage_signal(get_db_path(), sig["id"])
                             st.rerun(scope="app")
                         if b2.button("Dismiss", key=f"sig_dis_{sig['id']}",
                                      use_container_width=True):
-                            dismiss_stage_signal(DEFAULT_DB, sig["id"])
+                            dismiss_stage_signal(get_db_path(), sig["id"])
                             st.rerun()
 
             # Advance / Reject buttons
@@ -346,16 +349,16 @@ def _render_card(job: dict, stage: str, compact: bool = False) -> None:
                     f"→ {next_label}", key=f"adv_{job_id}",
                     use_container_width=True, type="primary",
                 ):
-                    advance_to_stage(DEFAULT_DB, job_id=job_id, stage=next_stage)
+                    advance_to_stage(get_db_path(), job_id=job_id, stage=next_stage)
                     if next_stage == "phone_screen":
-                        submit_task(DEFAULT_DB, "company_research", job_id)
+                        submit_task(get_db_path(), "company_research", job_id)
                     st.rerun(scope="app")  # full rerun — card must appear in new column
 
             if c2.button(
                 "✗ Reject", key=f"rej_{job_id}",
                 use_container_width=True,
             ):
-                reject_at_stage(DEFAULT_DB, job_id=job_id, rejection_stage=stage)
+                reject_at_stage(get_db_path(), job_id=job_id, rejection_stage=stage)
                 st.rerun()  # fragment-scope rerun — card disappears without scroll-to-top
 
             if job.get("url"):
@@ -385,7 +388,7 @@ def _render_card(job: dict, stage: str, compact: bool = False) -> None:
 @st.fragment
 def _card_fragment(job_id: int, stage: str) -> None:
     """Re-fetches the job on each fragment rerun; renders nothing if moved/rejected."""
-    job = get_job_by_id(DEFAULT_DB, job_id)
+    job = get_job_by_id(get_db_path(), job_id)
     if job is None or job.get("status") != stage:
         return
     _render_card(job, stage)
@@ -394,11 +397,11 @@ def _card_fragment(job_id: int, stage: str) -> None:
 @st.fragment
 def _pre_kanban_row_fragment(job_id: int) -> None:
     """Pre-kanban compact row for applied and survey-stage jobs."""
-    job = get_job_by_id(DEFAULT_DB, job_id)
+    job = get_job_by_id(get_db_path(), job_id)
     if job is None or job.get("status") not in ("applied", "survey"):
         return
     stage = job["status"]
-    contacts = get_contacts(DEFAULT_DB, job_id=job_id)
+    contacts = get_contacts(get_db_path(), job_id=job_id)
     last_contact = contacts[-1] if contacts else None
 
     with st.container(border=True):
@@ -414,7 +417,7 @@ def _pre_kanban_row_fragment(job_id: int) -> None:
                 _email_modal(job)
 
             # Stage signal hint (email-detected next steps)
-            signals = get_unread_stage_signals(DEFAULT_DB, job_id=job_id)
+            signals = get_unread_stage_signals(get_db_path(), job_id=job_id)
             if signals:
                 sig = signals[-1]
                 _SIGNAL_TO_STAGE = {
@@ -437,15 +440,15 @@ def _pre_kanban_row_fragment(job_id: int) -> None:
                         use_container_width=True, type="primary",
                     ):
                         if target_stage == "phone_screen":
-                            advance_to_stage(DEFAULT_DB, job_id=job_id, stage="phone_screen")
-                            submit_task(DEFAULT_DB, "company_research", job_id)
+                            advance_to_stage(get_db_path(), job_id=job_id, stage="phone_screen")
+                            submit_task(get_db_path(), "company_research", job_id)
                         else:
-                            advance_to_stage(DEFAULT_DB, job_id=job_id, stage=target_stage)
-                        dismiss_stage_signal(DEFAULT_DB, sig["id"])
+                            advance_to_stage(get_db_path(), job_id=job_id, stage=target_stage)
+                        dismiss_stage_signal(get_db_path(), sig["id"])
                         st.rerun(scope="app")
                     if s2.button("Dismiss", key=f"sig_dis_pre_{sig['id']}",
                                  use_container_width=True):
-                        dismiss_stage_signal(DEFAULT_DB, sig["id"])
+                        dismiss_stage_signal(get_db_path(), sig["id"])
                         st.rerun()
 
         with right:
@@ -453,24 +456,24 @@ def _pre_kanban_row_fragment(job_id: int) -> None:
                 "→ 📞 Phone Screen", key=f"adv_pre_{job_id}",
                 use_container_width=True, type="primary",
             ):
-                advance_to_stage(DEFAULT_DB, job_id=job_id, stage="phone_screen")
-                submit_task(DEFAULT_DB, "company_research", job_id)
+                advance_to_stage(get_db_path(), job_id=job_id, stage="phone_screen")
+                submit_task(get_db_path(), "company_research", job_id)
                 st.rerun(scope="app")
             col_a, col_b = st.columns(2)
             if stage == "applied" and col_a.button(
                 "📋 Survey", key=f"to_survey_{job_id}", use_container_width=True,
             ):
-                advance_to_stage(DEFAULT_DB, job_id=job_id, stage="survey")
+                advance_to_stage(get_db_path(), job_id=job_id, stage="survey")
                 st.rerun(scope="app")
             if col_b.button("✗ Reject", key=f"rej_pre_{job_id}", use_container_width=True):
-                reject_at_stage(DEFAULT_DB, job_id=job_id, rejection_stage=stage)
+                reject_at_stage(get_db_path(), job_id=job_id, rejection_stage=stage)
                 st.rerun()
 
 
 @st.fragment
 def _hired_card_fragment(job_id: int) -> None:
     """Compact hired job card — shown in the Offer/Hired column."""
-    job = get_job_by_id(DEFAULT_DB, job_id)
+    job = get_job_by_id(get_db_path(), job_id)
     if job is None or job.get("status") != "hired":
         return
     with st.container(border=True):
