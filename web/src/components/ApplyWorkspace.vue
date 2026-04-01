@@ -10,7 +10,7 @@
     </div>
 
     <template v-else>
-      <!-- Two-panel layout: job details | cover letter -->
+      <!-- Two-panel layout: job details | cover letter + resume optimizer -->
       <div class="workspace__panels">
 
         <!-- ── Left: Job details ──────────────────────────────────────── -->
@@ -98,7 +98,12 @@
               <span aria-hidden="true">⚠️</span>
               <span class="cl-error__msg">Cover letter generation failed</span>
               <span v-if="taskError" class="cl-error__detail">{{ taskError }}</span>
-              <button class="btn-generate" @click="generate()">Retry</button>
+              <div class="cl-error__actions">
+                <button class="btn-generate" @click="generate()">Retry</button>
+                <button class="btn-ghost" @click="clState = 'ready'; clText = ''">
+                  Write manually instead
+                </button>
+              </div>
             </div>
           </template>
 
@@ -143,6 +148,9 @@
             ↺ Regenerate
           </button>
 
+          <!-- ── ATS Resume Optimizer ──────────────────────────────── -->
+          <ResumeOptimizerPanel :job-id="props.jobId" />
+
           <!-- ── Bottom action bar ──────────────────────────────────── -->
           <div class="workspace__actions">
             <button
@@ -178,6 +186,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useApiFetch } from '../composables/useApi'
 import type { Job } from '../stores/review'
+import ResumeOptimizerPanel from './ResumeOptimizerPanel.vue'
 
 const props = defineProps<{ jobId: number }>()
 
@@ -610,6 +619,7 @@ declare module '../stores/review' {
 
 .cl-error__msg    { font-weight: 700; }
 .cl-error__detail { font-size: var(--text-xs); color: var(--color-text-muted); font-weight: 400; }
+.cl-error__actions { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; }
 
 /* Editor */
 .cl-editor {
