@@ -9,6 +9,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.0] — 2026-04-01
+
+### Added
+- **ATS Resume Optimizer** (gap report free; LLM rewrite paid+)
+  - `scripts/resume_optimizer.py` — full pipeline: TF-IDF gap extraction →
+    `prioritize_gaps` → `rewrite_for_ats` → hallucination guard (anchor-set
+    diffing on employers, institutions, and dates)
+  - `scripts/db.py` — `optimized_resume` + `ats_gap_report` columns;
+    `save_optimized_resume` / `get_optimized_resume` helpers
+  - `GET /api/jobs/{id}/resume_optimizer` — fetch gap report + rewrite
+  - `POST /api/jobs/{id}/resume_optimizer/generate` — queue rewrite task
+  - `GET /api/jobs/{id}/resume_optimizer/task` — poll task status
+  - `web/src/components/ResumeOptimizerPanel.vue` — gap report (all tiers),
+    LLM rewrite section (paid+), hallucination warning badge, `.txt` download
+  - `ResumeOptimizerPanel` integrated into `ApplyWorkspace`
+
+- **Vue SPA full merge** (closes #8) — `feature/vue-spa` merged to `main`
+  - `dev-api.py` — full FastAPI backend (settings, jobs, interviews, prep,
+    survey, digest, resume optimizer); cloud session middleware (JWT → per-user
+    SQLite); BYOK credential store
+  - `dev_api.py` — symlink → `dev-api.py` for importable module alias
+  - `scripts/job_ranker.py` — two-stage ranking for `/api/jobs/stack`
+  - `scripts/credential_store.py` — per-user BYOK API key management
+  - `scripts/user_profile.py` — `load_user_profile` / `save_user_profile`
+  - `web/src/components/TaskIndicator.vue` + `web/src/stores/tasks.ts` —
+    live background task queue display
+  - `web/public/` — peregrine logo assets (SVG + PNG)
+
+- **API test suite** — 5 new test modules (622 tests total)
+  - `tests/test_dev_api_settings.py` (38 tests)
+  - `tests/test_dev_api_interviews.py`, `test_dev_api_prep.py`,
+    `test_dev_api_survey.py`, `test_dev_api_digest.py`
+
+### Fixed
+- **Cloud DB routing** — `app/pages/1_Job_Review.py`, `5_Interviews.py`,
+  `6_Interview_Prep.py`, `7_Survey.py` were hardcoding `DEFAULT_DB`; now
+  use `get_db_path()` for correct per-user routing in cloud mode (#24)
+- **Test isolation** — `importlib.reload(dev_api)` in digest/interviews
+  fixtures reset all module globals, silently breaking `monkeypatch.setattr`
+  in subsequent test files; replaced with targeted `monkeypatch.setattr(dev_api,
+  "DB_PATH", tmp_db)` (#26)
+
+---
+
 ## [0.7.0] — 2026-03-22
 
 ### Added
