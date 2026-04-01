@@ -9,6 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.3] — 2026-04-01
+
+### Fixed
+- **CI: Forgejo auth** — GitHub Actions `pip install` was failing to fetch
+  `circuitforge-core` from the private Forgejo VCS URL. Added `FORGEJO_TOKEN`
+  repository secret and a `git config insteadOf` step to inject credentials
+  before `pip install`.
+- **CI: settings API tests** — 6 `test_dev_api_settings` PUT/POST tests were
+  returning HTTP 500 in CI because `_user_yaml_path()` read the module-level
+  `DB_PATH` constant (frozen at import time), so `monkeypatch.setenv("STAGING_DB")`
+  had no effect. Fixed by reading `os.environ` at call time.
+
+---
+
 ## [0.8.2] — 2026-04-01
 
 ### Fixed
