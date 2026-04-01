@@ -9,6 +9,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.7.0] — 2026-03-22
+
+### Added
+- **Vue 3 SPA — beta access for paid tier** — The new Vue 3 frontend (built with
+  Vite + UnoCSS) is now merged into `main` and available to paid-tier subscribers
+  as an opt-in beta. The Streamlit UI remains the default and will continue to
+  receive full support.
+  - `web/` — full Vue 3 SPA source (components, stores, router, composables,
+    views) from `feature/vue-spa`
+  - `web/src/components/ClassicUIButton.vue` — one-click switch back to the
+    Classic (Streamlit) UI; sets `prgn_ui=streamlit` cookie and appends
+    `?prgn_switch=streamlit` so `user.yaml` stays in sync
+  - `web/src/composables/useFeatureFlag.ts` — reads `prgn_demo_tier` cookie for
+    demo toolbar visual consistency (display-only, not an authoritative gate)
+
+- **UI switcher** — Reddit-style opt-in to the Vue SPA with durable preference
+  persistence and graceful fallback.
+  - `app/components/ui_switcher.py` — `sync_ui_cookie()`, `switch_ui()`,
+    `render_banner()`, `render_settings_toggle()`
+  - `scripts/user_profile.py` — `ui_preference` field (`streamlit` | `vue`,
+    default: `streamlit`) with round-trip `save()`
+  - `app/wizard/tiers.py` — `vue_ui_beta: "paid"` feature key; `demo_tier`
+    keyword arg on `can_use()` for thread-safe demo mode simulation
+  - Banner (dismissible, paid tier only) + Settings → System → Deployment toggle
+  - Caddy cookie routing: `prgn_ui=vue` → nginx Vue SPA; absent/`streamlit` →
+    Streamlit. 502 fallback clears cookie and redirects with `?ui_fallback=1`
+
+- **Demo toolbar** — slim full-width tier-simulation bar for `DEMO_MODE`
+  instances. Free / Paid / Premium pills let demo visitors explore all feature
+  tiers without an account. Persists via `prgn_demo_tier` cookie. Default: Paid
+  (most compelling first impression). `app/components/demo_toolbar.py`
+
+- **Docker `web` service** — multi-stage nginx container serving the Vue SPA
+  `dist/` build. Added to `compose.yml` (port 8506), `compose.demo.yml`
+  (port 8507), `compose.cloud.yml` (port 8508). `manage.sh build` now includes
+  the `web` service alongside `app`.
+
+### Changed
+- **Caddy routing** — `menagerie.circuitforge.tech` and
+  `demo.circuitforge.tech` peregrine blocks now inspect the `prgn_ui` cookie
+  and fan-out to the Vue SPA service or Streamlit accordingly.
+
+---
+
 ## [0.6.2] — 2026-03-18
 
 ### Added

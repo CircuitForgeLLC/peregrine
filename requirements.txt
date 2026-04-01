@@ -2,6 +2,9 @@
 # Extracted from environment.yml for Docker pip installs
 # Keep in sync with environment.yml
 
+# ── CircuitForge shared core ───────────────────────────────────────────────
+-e ../circuitforge-core
+
 # ── Web UI ────────────────────────────────────────────────────────────────
 streamlit>=1.35
 watchdog
@@ -78,3 +81,10 @@ lxml
 # ── Documentation ────────────────────────────────────────────────────────
 mkdocs>=1.5
 mkdocs-material>=9.5
+
+# ── Vue SPA API backend ──────────────────────────────────────────────────
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+PyJWT>=2.8.0
+cryptography>=40.0.0
+python-multipart>=0.0.6

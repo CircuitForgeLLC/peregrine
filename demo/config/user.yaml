@@ -22,7 +22,7 @@ mission_preferences:
   social_impact: Want my work to reach people who need it most.
 name: Demo User
 nda_companies: []
-ollama_models_dir: ~/models/ollama
+ollama_models_dir: /root/models/ollama
 phone: ''
 services:
   ollama_host: localhost
@@ -39,6 +39,7 @@ services:
   vllm_ssl: false
   vllm_ssl_verify: true
 tier: free
-vllm_models_dir: ~/models/vllm
+ui_preference: streamlit
+vllm_models_dir: /root/models/vllm
 wizard_complete: true
 wizard_step: 0

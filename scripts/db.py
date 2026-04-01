@@ -9,30 +9,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from circuitforge_core.db import get_connection as _cf_get_connection
+
 DEFAULT_DB = Path(os.environ.get("STAGING_DB", Path(__file__).parent.parent / "staging.db"))
 
 
 def get_connection(db_path: Path = DEFAULT_DB, key: str = "") -> "sqlite3.Connection":
-    """
-    Open a database connection.
-
-    In cloud mode with a key: uses SQLCipher (AES-256 encrypted, API-identical to sqlite3).
-    Otherwise: vanilla sqlite3.
-
-    Args:
-        db_path: Path to the SQLite/SQLCipher database file.
-        key:     SQLCipher encryption key (hex string). Empty = unencrypted.
-    """
-    import os as _os
-    cloud_mode = _os.environ.get("CLOUD_MODE", "").lower() in ("1", "true", "yes")
-    if cloud_mode and key:
-        from pysqlcipher3 import dbapi2 as _sqlcipher
-        conn = _sqlcipher.connect(str(db_path))
-        conn.execute(f"PRAGMA key='{key}'")
-        return conn
-    else:
-        import sqlite3 as _sqlite3
-        return _sqlite3.connect(str(db_path))
+    """Thin shim — delegates to circuitforge_core.db.get_connection."""
+    return _cf_get_connection(db_path, key)
 
 
 CREATE_JOBS = """
