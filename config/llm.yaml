@@ -48,8 +48,8 @@ backends:
     cf_orch:
       service: vllm
       model_candidates:
-      - Phi-4-mini-instruct
       - Qwen2.5-3B-Instruct
+      - Phi-4-mini-instruct
       ttl_s: 300
   vllm_research:
     api_key: ''
