@@ -47,7 +47,7 @@ OVERRIDE_YML = ROOT / "compose.override.yml"
 _SERVICES: dict[str, tuple[str, int, str, bool, bool]] = {
     "streamlit":       ("streamlit_port",       8501,  "STREAMLIT_PORT",       True,  False),
     "searxng":         ("searxng_port",          8888,  "SEARXNG_PORT",         True,  True),
-    "vllm":            ("vllm_port",             8000,  "VLLM_PORT",            True,  True),
+    # vllm removed — now managed by cf-orch (host process), not a Docker service
     "vision":          ("vision_port",           8002,  "VISION_PORT",          True,  True),
     "ollama":          ("ollama_port",          11434,  "OLLAMA_PORT",          True,  True),
     "ollama_research": ("ollama_research_port", 11435,  "OLLAMA_RESEARCH_PORT", True,  True),
@@ -65,7 +65,6 @@ _LLM_BACKENDS: dict[str, list[tuple[str, str]]] = {
 _DOCKER_INTERNAL: dict[str, tuple[str, int]] = {
     "ollama":          ("ollama",          11434),
     "ollama_research": ("ollama_research", 11434),  # container-internal port is always 11434
-    "vllm":            ("vllm",             8000),
     "vision":          ("vision",           8002),
     "searxng":         ("searxng",          8080),  # searxng internal port differs from host port
 }
