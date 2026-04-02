@@ -107,7 +107,7 @@ def scrape(profile: dict, location: str, results_wanted: int = 50) -> list[dict]
         )
         page = ctx.new_page()
 
-        for title in profile.get("titles", []):
+        for title in (profile.get("titles") or profile.get("job_titles", [])):
             if len(results) >= results_wanted:
                 break
 

@@ -631,7 +631,7 @@ elif step == 6:
             )
             default_profile = {
                 "name": "default",
-                "job_titles": titles,
+                "titles": titles,
                 "locations": locations,
                 "remote_only": False,
                 "boards": ["linkedin", "indeed", "glassdoor", "zip_recruiter"],

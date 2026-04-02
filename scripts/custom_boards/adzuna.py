@@ -70,7 +70,7 @@ def scrape(profile: dict, location: str, results_wanted: int = 50) -> list[dict]
         print(f"    [adzuna] Skipped — {exc}")
         return []
 
-    titles = profile.get("titles", [])
+    titles = profile.get("titles") or profile.get("job_titles", [])
     hours_old = profile.get("hours_old", 240)
     max_days_old = max(1, hours_old // 24)
     is_remote_search = location.lower() == "remote"
