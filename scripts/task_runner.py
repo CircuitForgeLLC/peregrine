@@ -166,7 +166,8 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 )
                 return
             from scripts.discover import run_discovery
-            new_count = run_discovery(db_path)
+            from pathlib import Path as _Path
+            new_count = run_discovery(db_path, config_dir=_Path(db_path).parent / "config")
             n = new_count or 0
             update_task_status(
                 db_path, task_id, "completed",

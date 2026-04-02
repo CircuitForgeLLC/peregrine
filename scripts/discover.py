@@ -34,17 +34,21 @@ CUSTOM_SCRAPERS: dict[str, object] = {
 }
 
 
-def load_config() -> tuple[dict, dict]:
-    profiles = yaml.safe_load(PROFILES_CFG.read_text())
-    notion_cfg = yaml.safe_load(NOTION_CFG.read_text())
+def load_config(config_dir: Path | None = None) -> tuple[dict, dict]:
+    cfg = config_dir or CONFIG_DIR
+    profiles_path = cfg / "search_profiles.yaml"
+    notion_path = cfg / "notion.yaml"
+    profiles = yaml.safe_load(profiles_path.read_text())
+    notion_cfg = yaml.safe_load(notion_path.read_text()) if notion_path.exists() else {"field_map": {}, "token": None, "database_id": None}
     return profiles, notion_cfg
 
 
-def load_blocklist() -> dict:
+def load_blocklist(config_dir: Path | None = None) -> dict:
     """Load global blocklist config. Returns dict with companies, industries, locations lists."""
-    if not BLOCKLIST_CFG.exists():
+    blocklist_path = (config_dir or CONFIG_DIR) / "blocklist.yaml"
+    if not blocklist_path.exists():
         return {"companies": [], "industries": [], "locations": []}
-    raw = yaml.safe_load(BLOCKLIST_CFG.read_text()) or {}
+    raw = yaml.safe_load(blocklist_path.read_text()) or {}
     return {
         "companies":  [c.lower() for c in raw.get("companies", []) if c],
         "industries": [i.lower() for i in raw.get("industries", []) if i],
@@ -117,10 +121,15 @@ def push_to_notion(notion: Client, db_id: str, job: dict, fm: dict) -> None:
     )
 
 
-def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False) -> None:
-    profiles_cfg, notion_cfg = load_config()
-    fm = notion_cfg["field_map"]
-    blocklist = load_blocklist()
+def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_dir: Path | None = None) -> None:
+    # In cloud mode, config_dir is the per-user config directory derived from db_path.
+    # Falls back to the app-level /app/config for single-tenant deployments.
+    resolved_cfg = config_dir or Path(db_path).parent / "config"
+    if not resolved_cfg.exists():
+        resolved_cfg = CONFIG_DIR
+    profiles_cfg, notion_cfg = load_config(resolved_cfg)
+    fm = notion_cfg.get("field_map") or {}
+    blocklist = load_blocklist(resolved_cfg)
 
     _bl_summary = {k: len(v) for k, v in blocklist.items() if v}
     if _bl_summary:
@@ -211,7 +220,7 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False) -> None
                 try:
                     jobspy_kwargs: dict = dict(
                         site_name=boards,
-                        search_term=" OR ".join(f'"{t}"' for t in profile["titles"]),
+                        search_term=" OR ".join(f'"{t}"' for t in (profile.get("titles") or profile.get("job_titles", []))),
                         location=location,
                         results_wanted=results_per_board,
                         hours_old=profile.get("hours_old", 72),

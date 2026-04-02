@@ -121,7 +121,7 @@ def scrape(profile: dict, location: str, results_wanted: int = 50) -> list[dict]
             return []
         metros = [metro]
 
-    titles: list[str] = profile.get("titles", [])
+    titles: list[str] = profile.get("titles") or profile.get("job_titles", [])
     hours_old: int = profile.get("hours_old", 240)
     cutoff = datetime.now(tz=timezone.utc).timestamp() - (hours_old * 3600)
 
