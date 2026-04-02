@@ -1,0 +1,62 @@
+backends:
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+    enabled: false
+    model: claude-sonnet-4-6
+    supports_images: true
+    type: anthropic
+  claude_code:
+    api_key: any
+    base_url: http://localhost:3009/v1
+    enabled: false
+    model: claude-code-terminal
+    supports_images: true
+    type: openai_compat
+  github_copilot:
+    api_key: any
+    base_url: http://localhost:3010/v1
+    enabled: false
+    model: gpt-4o
+    supports_images: false
+    type: openai_compat
+  ollama:
+    api_key: ollama
+    base_url: http://host.docker.internal:11434/v1
+    enabled: true
+    model: llama3.1:8b  # generic — no personal fine-tunes in cloud
+    supports_images: false
+    type: openai_compat
+  ollama_research:
+    api_key: ollama
+    base_url: http://host.docker.internal:11434/v1
+    enabled: true
+    model: llama3.1:8b
+    supports_images: false
+    type: openai_compat
+  vision_service:
+    base_url: http://host.docker.internal:8002
+    enabled: true
+    supports_images: true
+    type: vision_service
+  vllm:
+    api_key: ''
+    base_url: http://host.docker.internal:8000/v1
+    enabled: true
+    model: __auto__
+    supports_images: false
+    type: openai_compat
+  vllm_research:
+    api_key: ''
+    base_url: http://host.docker.internal:8000/v1
+    enabled: true
+    model: __auto__
+    supports_images: false
+    type: openai_compat
+fallback_order:
+- vllm
+- ollama
+research_fallback_order:
+- vllm_research
+- ollama_research
+vision_fallback_order:
+- vision_service

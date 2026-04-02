@@ -21,6 +21,7 @@ services:
       - "8505:8501"
     volumes:
       - /devl/menagerie-data:/devl/menagerie-data  # per-user data trees
+      - ./config/llm.cloud.yaml:/app/config/llm.yaml:ro  # cloud-safe backends only (no claude_code/copilot/anthropic)
     environment:
       - CLOUD_MODE=true
       - CLOUD_DATA_ROOT=/devl/menagerie-data
