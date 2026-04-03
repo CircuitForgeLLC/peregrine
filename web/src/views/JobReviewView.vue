@@ -98,25 +98,50 @@
         <span class="spinner" aria-hidden="true" />
         <span>Loading…</span>
       </div>
-      <div v-else-if="store.listJobs.length === 0" class="review__empty" role="status">
-        <p class="empty-desc">No {{ activeTab }} jobs.</p>
-      </div>
-      <ul v-else class="job-list" role="list">
-        <li v-for="job in store.listJobs" :key="job.id" class="job-list__item">
-          <div class="job-list__info">
-            <span class="job-list__title">{{ job.title }}</span>
-            <span class="job-list__company">{{ job.company }}</span>
-          </div>
-          <div class="job-list__meta">
-            <span v-if="job.match_score !== null" class="score-pill" :class="scorePillClass(job.match_score)">
-              {{ job.match_score }}%
-            </span>
-            <a :href="job.url" target="_blank" rel="noopener noreferrer" class="job-list__link">
-              View ↗
-            </a>
-          </div>
-        </li>
-      </ul>
+      <template v-else>
+        <!-- Sort + filter bar -->
+        <div class="list-controls" aria-label="Sort and filter">
+          <select v-model="sortBy" class="list-sort" aria-label="Sort by">
+            <option value="match_score">Best match</option>
+            <option value="date_found">Newest first</option>
+            <option value="company">Company A–Z</option>
+          </select>
+          <label class="list-filter-remote">
+            <input type="checkbox" v-model="filterRemote" />
+            Remote only
+          </label>
+          <span class="list-count">{{ sortedFilteredJobs.length }} job{{ sortedFilteredJobs.length !== 1 ? 's' : '' }}</span>
+        </div>
+
+        <div v-if="sortedFilteredJobs.length === 0" class="review__empty" role="status">
+          <p class="empty-desc">No {{ activeTab }} jobs{{ filterRemote ? ' (remote only)' : '' }}.</p>
+        </div>
+        <ul v-else class="job-list" role="list">
+          <li v-for="job in sortedFilteredJobs" :key="job.id" class="job-list__item">
+            <div class="job-list__info">
+              <span class="job-list__title">{{ job.title }}</span>
+              <span class="job-list__company">
+                {{ job.company }}
+                <span v-if="job.is_remote" class="remote-tag">Remote</span>
+              </span>
+            </div>
+            <div class="job-list__meta">
+              <span v-if="job.match_score !== null" class="score-pill" :class="scorePillClass(job.match_score)">
+                {{ job.match_score }}%
+              </span>
+              <button
+                v-if="activeTab === 'approved'"
+                class="job-list__action"
+                @click="router.push(`/apply/${job.id}`)"
+                :aria-label="`Draft cover letter for ${job.title}`"
+              >✨ Draft</button>
+              <a :href="job.url" target="_blank" rel="noopener noreferrer" class="job-list__link">
+                View ↗
+              </a>
+            </div>
+          </li>
+        </ul>
+      </template>
     </div>
 
     <!-- ── Help overlay ─────────────────────────────────────────────────── -->
@@ -186,12 +211,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useReviewStore } from '../stores/review'
 import JobCardStack from '../components/JobCardStack.vue'
 
 const store    = useReviewStore()
 const route    = useRoute()
+const router   = useRouter()
 const stackRef = ref<InstanceType<typeof JobCardStack> | null>(null)
 
 // ─── Tabs ──────────────────────────────────────────────────────────────────────
@@ -314,6 +340,30 @@ function onKeyDown(e: KeyboardEvent) {
       break
   }
 }
+
+// ─── List view: sort + filter ─────────────────────────────────────────────────
+
+type SortKey = 'match_score' | 'date_found' | 'company'
+const sortBy       = ref<SortKey>('match_score')
+const filterRemote = ref(false)
+
+const sortedFilteredJobs = computed(() => {
+  let jobs = [...store.listJobs]
+  if (filterRemote.value) jobs = jobs.filter(j => j.is_remote)
+  jobs.sort((a, b) => {
+    if (sortBy.value === 'match_score') return (b.match_score ?? -1) - (a.match_score ?? -1)
+    if (sortBy.value === 'date_found')  return new Date(b.date_found).getTime() - new Date(a.date_found).getTime()
+    if (sortBy.value === 'company')     return (a.company ?? '').localeCompare(b.company ?? '')
+    return 0
+  })
+  return jobs
+})
+
+// Reset filters when switching tabs
+watch(activeTab, () => {
+  filterRemote.value = false
+  sortBy.value = 'match_score'
+})
 
 // ─── List view score pill ─────────────────────────────────────────────────────
 
@@ -657,6 +707,69 @@ kbd {
   color: var(--app-primary);
   text-decoration: none;
   font-weight: 600;
+}
+
+.job-list__action {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--app-primary);
+  background: color-mix(in srgb, var(--app-primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-primary) 25%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background 150ms;
+  white-space: nowrap;
+}
+
+.job-list__action:hover {
+  background: color-mix(in srgb, var(--app-primary) 18%, transparent);
+}
+
+.remote-tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  border-radius: var(--radius-full);
+  padding: 1px 5px;
+  margin-left: 4px;
+}
+
+/* ── List controls (sort + filter) ──────────────────────────────────── */
+
+.list-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.list-sort {
+  font-size: var(--text-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.list-filter-remote {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.list-count {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-left: auto;
 }
 
 /* ── Help overlay ────────────────────────────────────────────────────── */

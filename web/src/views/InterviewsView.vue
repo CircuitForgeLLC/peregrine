@@ -7,6 +7,7 @@ import type { StageSignal } from '../stores/interviews'
 import { useApiFetch } from '../composables/useApi'
 import InterviewCard from '../components/InterviewCard.vue'
 import MoveToSheet from '../components/MoveToSheet.vue'
+import CompanyResearchModal from '../components/CompanyResearchModal.vue'
 
 const router = useRouter()
 const store  = useInterviewsStore()
@@ -22,10 +23,29 @@ function openMove(jobId: number, preSelectedStage?: PipelineStage) {
 
 async function onMove(stage: PipelineStage, opts: { interview_date?: string; rejection_stage?: string }) {
   if (!moveTarget.value) return
+  const movedJob = moveTarget.value
   const wasHired = stage === 'hired'
-  await store.move(moveTarget.value.id, stage, opts)
+  await store.move(movedJob.id, stage, opts)
   moveTarget.value = null
   if (wasHired) triggerConfetti()
+  // Auto-open research modal when moving to phone_screen (mirrors Streamlit behaviour)
+  if (stage === 'phone_screen') openResearch(movedJob.id, `${movedJob.title} at ${movedJob.company}`)
+}
+
+// ── Company research modal ─────────────────────────────────────────────────────
+const researchJobId    = ref<number | null>(null)
+const researchJobTitle = ref('')
+const researchAutoGen  = ref(false)
+
+function openResearch(jobId: number, jobTitle: string, autoGenerate = true) {
+  researchJobId.value    = jobId
+  researchJobTitle.value = jobTitle
+  researchAutoGen.value  = autoGenerate
+}
+
+function onInterviewCardResearch(jobId: number) {
+  const job = store.jobs.find(j => j.id === jobId)
+  if (job) openResearch(jobId, `${job.title} at ${job.company}`, false)
 }
 
 // ── Collapsible Applied section ────────────────────────────────────────────
@@ -466,7 +486,8 @@ function daysSince(dateStr: string | null) {
         </div>
         <InterviewCard v-for="(job, i) in store.phoneScreen" :key="job.id" :job="job"
           :focused="focusedCol === 0 && focusedCard === i"
-          @move="openMove" @prep="router.push(`/prep/${$event}`)" @survey="router.push('/survey/' + $event)" />
+          @move="openMove" @prep="router.push(`/prep/${$event}`)" @survey="router.push('/survey/' + $event)"
+          @research="onInterviewCardResearch" />
       </div>
 
       <div class="kanban-col" :class="{ 'kanban-col--focused': focusedCol === 1 }" aria-label="Interviewing">
@@ -479,7 +500,8 @@ function daysSince(dateStr: string | null) {
         </div>
         <InterviewCard v-for="(job, i) in store.interviewing" :key="job.id" :job="job"
           :focused="focusedCol === 1 && focusedCard === i"
-          @move="openMove" @prep="router.push(`/prep/${$event}`)" @survey="router.push('/survey/' + $event)" />
+          @move="openMove" @prep="router.push(`/prep/${$event}`)" @survey="router.push('/survey/' + $event)"
+          @research="onInterviewCardResearch" />
       </div>
 
       <div class="kanban-col" :class="{ 'kanban-col--focused': focusedCol === 2 }" aria-label="Offer and Hired">
@@ -492,7 +514,8 @@ function daysSince(dateStr: string | null) {
         </div>
         <InterviewCard v-for="(job, i) in store.offerHired" :key="job.id" :job="job"
           :focused="focusedCol === 2 && focusedCard === i"
-          @move="openMove" @prep="router.push(`/prep/${$event}`)" @survey="router.push('/survey/' + $event)" />
+          @move="openMove" @prep="router.push(`/prep/${$event}`)" @survey="router.push('/survey/' + $event)"
+          @research="onInterviewCardResearch" />
       </div>
     </section>
 
@@ -524,6 +547,14 @@ function daysSince(dateStr: string | null) {
       :preSelectedStage="movePreSelected"
       @move="onMove"
       @close="moveTarget = null; movePreSelected = undefined"
+    />
+
+    <CompanyResearchModal
+      v-if="researchJobId !== null"
+      :jobId="researchJobId"
+      :jobTitle="researchJobTitle"
+      :autoGenerate="researchAutoGen"
+      @close="researchJobId = null"
     />
   </div>
 </template>
