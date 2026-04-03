@@ -9,6 +9,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.5] — 2026-04-02
+
+### Added
+
+- **Vue onboarding wizard** — 7-step first-run setup replaces the Streamlit wizard
+  in the Vue SPA: Hardware detection → Tier → Resume upload/build → Identity →
+  Inference & API keys → Search preferences → Integrations. Progress saves to
+  `user.yaml` on every step; crash-recovery resumes from the last completed step.
+- **Wizard API endpoints** — `GET /api/wizard/status`, `POST /api/wizard/step`,
+  `GET /api/wizard/hardware`, `POST /api/wizard/inference/test`,
+  `POST /api/wizard/complete`. Inference test always soft-fails so Ollama being
+  unreachable never blocks setup completion.
+- **Cloud auto-skip** — cloud instances automatically complete steps 1 (hardware),
+  2 (tier), and 5 (inference) and drop the user directly on the Resume step.
+- **`wizardGuard` router gate** — all Vue routes require wizard completion; completed
+  users are bounced away from `/setup` to `/`.
+- **Chip-input search step** — job titles and locations entered as press-Enter/comma
+  chips; validates at least one title before advancing.
+- **Integrations tile grid** — optional step 7 shows Notion, Calendar, Slack, Discord,
+  Drive with paid-tier badges; skippable on Finish.
+
+### Fixed
+
+- **User config isolation: dangerous fallback removed** — `_user_yaml_path()` fell
+  back to `/devl/job-seeker/config/user.yaml` (legacy profile) when `user.yaml`
+  didn't exist at the expected path; new users now get an empty dict instead of
+  another user's data. Affects profile, resume, search, and all wizard endpoints.
+- **Resume path not user-isolated** — `RESUME_PATH = Path("config/plain_text_resume.yaml")`
+  was a relative CWD path shared across all users. Replaced with `_resume_path()`
+  derived from `_user_yaml_path()` / `STAGING_DB`.
+- **Resume upload silently returned empty data** — `upload_resume` was passing a
+  file path string to `structure_resume()` which expects raw text; now reads bytes
+  and dispatches to the correct extractor (`extract_text_from_pdf` / `_docx` / `_odt`).
+- **Wizard resume step read wrong envelope field** — `WizardResumeStep.vue` read
+  `data.experience` but the upload response wraps parsed data under `data.data`.
+
+---
+
 ## [0.8.4] — 2026-04-02
 
 ### Fixed
