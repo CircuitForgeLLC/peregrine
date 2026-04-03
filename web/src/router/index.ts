@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAppConfigStore } from '../stores/appConfig'
 import { settingsGuard } from './settingsGuard'
+import { wizardGuard } from './wizardGuard'
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -31,14 +32,40 @@ export const router = createRouter({
         { path: 'developer',   component: () => import('../views/settings/DeveloperView.vue') },
       ],
     },
+    // Onboarding wizard — full-page layout, no AppNav
+    {
+      path: '/setup',
+      component: () => import('../views/wizard/WizardLayout.vue'),
+      children: [
+        { path: '',           redirect: '/setup/hardware' },
+        { path: 'hardware',   component: () => import('../views/wizard/WizardHardwareStep.vue') },
+        { path: 'tier',       component: () => import('../views/wizard/WizardTierStep.vue') },
+        { path: 'resume',     component: () => import('../views/wizard/WizardResumeStep.vue') },
+        { path: 'identity',   component: () => import('../views/wizard/WizardIdentityStep.vue') },
+        { path: 'inference',  component: () => import('../views/wizard/WizardInferenceStep.vue') },
+        { path: 'search',     component: () => import('../views/wizard/WizardSearchStep.vue') },
+        { path: 'integrations', component: () => import('../views/wizard/WizardIntegrationsStep.vue') },
+      ],
+    },
     // Catch-all — FastAPI serves index.html for all unknown routes (SPA mode)
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })
 
 router.beforeEach(async (to, _from, next) => {
-  if (!to.path.startsWith('/settings/')) return next()
   const config = useAppConfigStore()
   if (!config.loaded) await config.load()
-  settingsGuard(to, _from, next)
+
+  // Wizard gate runs first for every route except /setup itself
+  if (!to.path.startsWith('/setup') && !config.wizardComplete) {
+    return next('/setup')
+  }
+
+  // /setup routes: let wizardGuard handle complete→redirect-to-home logic
+  if (to.path.startsWith('/setup')) return wizardGuard(to, _from, next)
+
+  // Settings tier-gating (runs only when wizard is complete)
+  if (to.path.startsWith('/settings/')) return settingsGuard(to, _from, next)
+
+  next()
 })
