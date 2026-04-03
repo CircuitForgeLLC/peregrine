@@ -9,6 +9,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.4] — 2026-04-02
+
+### Fixed
+
+- **Cloud: cover letter used wrong user's profile** — `generate_cover_letter.generate()`
+  loaded `_profile` from the global `config/user.yaml` at module import time, so all
+  cloud users got the default user's name, voice, and mission preferences in their
+  generated letters. `generate()` now accepts a `user_yaml_path` parameter; `task_runner`
+  derives it from the per-user config directory (`db_path/../config/user.yaml`) and
+  passes it through. `_build_system_context`, `_build_mission_notes`, `detect_mission_alignment`,
+  `build_prompt`, and `_trim_to_letter_end` all accept a `profile` override so the
+  per-call profile is used end-to-end without breaking CLI mode.
+- **Apply Workspace: hardcoded config paths in cloud mode** — `4_Apply.py` was loading
+  `_USER_YAML` and `RESUME_YAML` from the repo-root `config/` before `resolve_session()`
+  ran, so cloud users saw the global (Meg's) resume in the Apply tab. Both paths now
+  derive from `get_config_dir()` after session resolution.
+
+### Changed
+
+- **Vue SPA open to all tiers** — Vue 3 frontend is no longer gated behind the beta
+  flag; all tier users can switch to the Vue UI from Settings.
+- **LLM model candidates** — vllm backend now tries Qwen2.5-3B first, Phi-4-mini
+  as fallback (was reversed). cf_orch allocation block added to vllm config.
+- **Preflight** — removed `vllm` from Docker adoption list; vllm is now managed
+  entirely by cf-orch and should not be stubbed by preflight.
+
+---
+
 ## [0.8.3] — 2026-04-01
 
 ### Fixed
