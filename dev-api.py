@@ -947,12 +947,23 @@ def get_app_config():
     valid_profiles = {"remote", "cpu", "single-gpu", "dual-gpu"}
     valid_tiers = {"free", "paid", "premium", "ultra"}
     raw_tier = os.environ.get("APP_TIER", "free")
+
+    # wizard_complete: read from user.yaml so the guard reflects live state
+    wizard_complete = True
+    try:
+        cfg = load_user_profile(_user_yaml_path())
+        wizard_complete = bool(cfg.get("wizard_complete", False))
+    except Exception:
+        wizard_complete = False
+
     return {
         "isCloud": os.environ.get("CLOUD_MODE", "").lower() in ("1", "true"),
+        "isDemo": os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes"),
         "isDevMode": os.environ.get("DEV_MODE", "").lower() in ("1", "true"),
         "tier": raw_tier if raw_tier in valid_tiers else "free",
         "contractedClient": os.environ.get("CONTRACTED_CLIENT", "").lower() in ("1", "true"),
         "inferenceProfile": profile if profile in valid_profiles else "cpu",
+        "wizardComplete": wizard_complete,
     }
 
 
@@ -977,12 +988,13 @@ from scripts.user_profile import load_user_profile, save_user_profile
 
 
 def _user_yaml_path() -> str:
-    """Resolve user.yaml path relative to the current STAGING_DB location."""
-    db = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
-    cfg_path = os.path.join(os.path.dirname(db), "config", "user.yaml")
-    if not os.path.exists(cfg_path):
-        cfg_path = "/devl/job-seeker/config/user.yaml"
-    return cfg_path
+    """Resolve user.yaml path relative to the current STAGING_DB location.
+
+    Never falls back to another user's config directory — callers must handle
+    a missing file gracefully (return defaults / empty wizard state).
+    """
+    db = os.environ.get("STAGING_DB", "/devl/peregrine/staging.db")
+    return os.path.join(os.path.dirname(db), "config", "user.yaml")
 
 
 def _mission_dict_to_list(prefs: object) -> list:
@@ -1105,14 +1117,17 @@ class ResumePayload(BaseModel):
     veteran_status: str = ""; disability: str = ""
     skills: List[str] = []; domains: List[str] = []; keywords: List[str] = []
 
-RESUME_PATH = Path("config/plain_text_resume.yaml")
+def _resume_path() -> Path:
+    """Resolve plain_text_resume.yaml co-located with user.yaml (user-isolated)."""
+    return Path(_user_yaml_path()).parent / "plain_text_resume.yaml"
 
 @app.get("/api/settings/resume")
 def get_resume():
     try:
-        if not RESUME_PATH.exists():
+        resume_path = _resume_path()
+        if not resume_path.exists():
             return {"exists": False}
-        with open(RESUME_PATH) as f:
+        with open(resume_path) as f:
             data = yaml.safe_load(f) or {}
         data["exists"] = True
         return data
@@ -1122,8 +1137,9 @@ def get_resume():
 @app.put("/api/settings/resume")
 def save_resume(payload: ResumePayload):
     try:
-        RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(RESUME_PATH, "w") as f:
+        resume_path = _resume_path()
+        resume_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(resume_path, "w") as f:
             yaml.dump(payload.model_dump(), f, allow_unicode=True, default_flow_style=False)
         return {"ok": True}
     except Exception as e:
@@ -1132,9 +1148,10 @@ def save_resume(payload: ResumePayload):
 @app.post("/api/settings/resume/blank")
 def create_blank_resume():
     try:
-        RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
-        if not RESUME_PATH.exists():
-            with open(RESUME_PATH, "w") as f:
+        resume_path = _resume_path()
+        resume_path.parent.mkdir(parents=True, exist_ok=True)
+        if not resume_path.exists():
+            with open(resume_path, "w") as f:
                 yaml.dump({}, f)
         return {"ok": True}
     except Exception as e:
@@ -1143,18 +1160,23 @@ def create_blank_resume():
 @app.post("/api/settings/resume/upload")
 async def upload_resume(file: UploadFile):
     try:
-        from scripts.resume_parser import structure_resume
-        import tempfile, os
+        from scripts.resume_parser import (
+            extract_text_from_pdf,
+            extract_text_from_docx,
+            extract_text_from_odt,
+            structure_resume,
+        )
         suffix = Path(file.filename).suffix.lower()
-        tmp_path = None
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(await file.read())
-            tmp_path = tmp.name
-        try:
-            result, err = structure_resume(tmp_path)
-        finally:
-            if tmp_path:
-                os.unlink(tmp_path)
+        file_bytes = await file.read()
+
+        if suffix == ".pdf":
+            raw_text = extract_text_from_pdf(file_bytes)
+        elif suffix == ".odt":
+            raw_text = extract_text_from_odt(file_bytes)
+        else:
+            raw_text = extract_text_from_docx(file_bytes)
+
+        result, err = structure_resume(raw_text)
         if err:
             return {"ok": False, "error": err, "data": result}
         result["exists"] = True
@@ -1795,5 +1817,290 @@ def export_classifier():
             for e in emails:
                 f.write(_json.dumps(e) + "\n")
         return {"ok": True, "count": len(emails), "path": str(export_path)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Wizard API ────────────────────────────────────────────────────────────────
+#
+# These endpoints back the Vue SPA first-run onboarding wizard.
+# State is persisted to user.yaml on every step so the wizard can resume
+# after a browser refresh or crash (mirrors the Streamlit wizard behaviour).
+
+_WIZARD_PROFILES = ("remote", "cpu", "single-gpu", "dual-gpu")
+_WIZARD_TIERS = ("free", "paid", "premium")
+
+
+def _wizard_yaml_path() -> str:
+    """Same resolution logic as _user_yaml_path() — single source of truth."""
+    return _user_yaml_path()
+
+
+def _load_wizard_yaml() -> dict:
+    try:
+        return load_user_profile(_wizard_yaml_path()) or {}
+    except Exception:
+        return {}
+
+
+def _save_wizard_yaml(updates: dict) -> None:
+    path = _wizard_yaml_path()
+    existing = _load_wizard_yaml()
+    existing.update(updates)
+    save_user_profile(path, existing)
+
+
+def _detect_gpus() -> list[str]:
+    """Detect GPUs. Prefers PEREGRINE_GPU_NAMES env var (set by preflight)."""
+    env_names = os.environ.get("PEREGRINE_GPU_NAMES", "").strip()
+    if env_names:
+        return [n.strip() for n in env_names.split(",") if n.strip()]
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            text=True, timeout=5,
+        )
+        return [line.strip() for line in out.strip().splitlines() if line.strip()]
+    except Exception:
+        return []
+
+
+def _suggest_profile(gpus: list[str]) -> str:
+    recommended = os.environ.get("RECOMMENDED_PROFILE", "").strip()
+    if recommended and recommended in _WIZARD_PROFILES:
+        return recommended
+    if len(gpus) >= 2:
+        return "dual-gpu"
+    if len(gpus) == 1:
+        return "single-gpu"
+    return "remote"
+
+
+@app.get("/api/wizard/status")
+def wizard_status():
+    """Return current wizard state for resume-after-refresh.
+
+    wizard_complete=True means the wizard has been finished and the app
+    should not redirect to /setup.  wizard_step is the last completed step
+    (0 = not started); the SPA advances to step+1 on load.
+    """
+    cfg = _load_wizard_yaml()
+    return {
+        "wizard_complete": bool(cfg.get("wizard_complete", False)),
+        "wizard_step": int(cfg.get("wizard_step", 0)),
+        "saved_data": {
+            "inference_profile": cfg.get("inference_profile", ""),
+            "tier": cfg.get("tier", "free"),
+            "name": cfg.get("name", ""),
+            "email": cfg.get("email", ""),
+            "phone": cfg.get("phone", ""),
+            "linkedin": cfg.get("linkedin", ""),
+            "career_summary": cfg.get("career_summary", ""),
+            "services": cfg.get("services", {}),
+        },
+    }
+
+
+class WizardStepPayload(BaseModel):
+    step: int
+    data: dict = {}
+
+
+@app.post("/api/wizard/step")
+def wizard_save_step(payload: WizardStepPayload):
+    """Persist a single wizard step and advance the step counter.
+
+    Side effects by step number:
+    - Step 3 (Resume): writes config/plain_text_resume.yaml
+    - Step 5 (Inference): writes API keys into .env
+    - Step 6 (Search): writes config/search_profiles.yaml
+    """
+    step = payload.step
+    data = payload.data
+
+    if step < 1 or step > 7:
+        raise HTTPException(status_code=400, detail="step must be 1–7")
+
+    updates: dict = {"wizard_step": step}
+
+    # ── Step-specific field extraction ────────────────────────────────────────
+    if step == 1:
+        profile = data.get("inference_profile", "remote")
+        if profile not in _WIZARD_PROFILES:
+            raise HTTPException(status_code=400, detail=f"Unknown profile: {profile}")
+        updates["inference_profile"] = profile
+
+    elif step == 2:
+        tier = data.get("tier", "free")
+        if tier not in _WIZARD_TIERS:
+            raise HTTPException(status_code=400, detail=f"Unknown tier: {tier}")
+        updates["tier"] = tier
+
+    elif step == 3:
+        # Resume data: persist to plain_text_resume.yaml
+        resume = data.get("resume", {})
+        if resume:
+            resume_path = Path(_wizard_yaml_path()).parent / "plain_text_resume.yaml"
+            resume_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(resume_path, "w") as f:
+                yaml.dump(resume, f, allow_unicode=True, default_flow_style=False)
+
+    elif step == 4:
+        for field in ("name", "email", "phone", "linkedin", "career_summary"):
+            if field in data:
+                updates[field] = data[field]
+
+    elif step == 5:
+        # Write API keys to .env (never store in user.yaml)
+        env_path = Path(_wizard_yaml_path()).parent.parent / ".env"
+        env_lines = env_path.read_text().splitlines() if env_path.exists() else []
+
+        def _set_env_key(lines: list[str], key: str, val: str) -> list[str]:
+            for i, line in enumerate(lines):
+                if line.startswith(f"{key}="):
+                    lines[i] = f"{key}={val}"
+                    return lines
+            lines.append(f"{key}={val}")
+            return lines
+
+        if data.get("anthropic_key"):
+            env_lines = _set_env_key(env_lines, "ANTHROPIC_API_KEY", data["anthropic_key"])
+        if data.get("openai_url"):
+            env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_URL", data["openai_url"])
+        if data.get("openai_key"):
+            env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_KEY", data["openai_key"])
+        if any(data.get(k) for k in ("anthropic_key", "openai_url", "openai_key")):
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+            env_path.write_text("\n".join(env_lines) + "\n")
+
+        if "services" in data:
+            updates["services"] = data["services"]
+
+    elif step == 6:
+        # Persist search preferences to search_profiles.yaml
+        titles = data.get("titles", [])
+        locations = data.get("locations", [])
+        search_path = SEARCH_PREFS_PATH
+        existing_search: dict = {}
+        if search_path.exists():
+            with open(search_path) as f:
+                existing_search = yaml.safe_load(f) or {}
+        default_profile = existing_search.get("default", {})
+        default_profile["job_titles"] = titles
+        default_profile["location"] = locations
+        existing_search["default"] = default_profile
+        search_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(search_path, "w") as f:
+            yaml.dump(existing_search, f, allow_unicode=True, default_flow_style=False)
+
+    # Step 7 (integrations) has no extra side effects here — connections are
+    # handled by the existing /api/settings/system/integrations/{id}/connect.
+
+    try:
+        _save_wizard_yaml(updates)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"ok": True, "step": step}
+
+
+@app.get("/api/wizard/hardware")
+def wizard_hardware():
+    """Detect GPUs and suggest an inference profile."""
+    gpus = _detect_gpus()
+    suggested = _suggest_profile(gpus)
+    return {
+        "gpus": gpus,
+        "suggested_profile": suggested,
+        "profiles": list(_WIZARD_PROFILES),
+    }
+
+
+class WizardInferenceTestPayload(BaseModel):
+    profile: str = "remote"
+    anthropic_key: str = ""
+    openai_url: str = ""
+    openai_key: str = ""
+    ollama_host: str = "localhost"
+    ollama_port: int = 11434
+
+
+@app.post("/api/wizard/inference/test")
+def wizard_test_inference(payload: WizardInferenceTestPayload):
+    """Test LLM or Ollama connectivity.
+
+    Always returns {ok, message} — a connection failure is reported as a
+    soft warning (message), not an HTTP error, so the wizard can let the
+    user continue past a temporarily-down Ollama instance.
+    """
+    if payload.profile == "remote":
+        try:
+            # Temporarily inject key if provided (don't persist yet)
+            env_override = {}
+            if payload.anthropic_key:
+                env_override["ANTHROPIC_API_KEY"] = payload.anthropic_key
+            if payload.openai_url:
+                env_override["OPENAI_COMPAT_URL"] = payload.openai_url
+            if payload.openai_key:
+                env_override["OPENAI_COMPAT_KEY"] = payload.openai_key
+
+            old_env = {k: os.environ.get(k) for k in env_override}
+            os.environ.update(env_override)
+            try:
+                from scripts.llm_router import LLMRouter
+                result = LLMRouter().complete("Reply with only the word: OK")
+                ok = bool(result and result.strip())
+                message = "LLM responding." if ok else "LLM returned an empty response."
+            finally:
+                for k, v in old_env.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+        except Exception as exc:
+            return {"ok": False, "message": f"LLM test failed: {exc}"}
+    else:
+        # Local profile — ping Ollama
+        ollama_url = f"http://{payload.ollama_host}:{payload.ollama_port}"
+        try:
+            resp = requests.get(f"{ollama_url}/api/tags", timeout=5)
+            ok = resp.status_code == 200
+            message = "Ollama is running." if ok else f"Ollama returned HTTP {resp.status_code}."
+        except Exception:
+            # Soft-fail: user can skip and configure later
+            return {
+                "ok": False,
+                "message": (
+                    "Ollama not responding — you can continue and configure it later "
+                    "in Settings → System."
+                ),
+            }
+
+    return {"ok": ok, "message": message}
+
+
+@app.post("/api/wizard/complete")
+def wizard_complete():
+    """Finalise the wizard: set wizard_complete=true, apply service URLs."""
+    try:
+        from scripts.user_profile import UserProfile
+        from scripts.generate_llm_config import apply_service_urls
+
+        yaml_path = _wizard_yaml_path()
+        llm_yaml = Path(yaml_path).parent / "llm.yaml"
+
+        try:
+            profile_obj = UserProfile(yaml_path)
+            if llm_yaml.exists():
+                apply_service_urls(profile_obj, llm_yaml)
+        except Exception:
+            pass  # don't block completion on llm.yaml errors
+
+        cfg = _load_wizard_yaml()
+        cfg["wizard_complete"] = True
+        cfg.pop("wizard_step", None)
+        save_user_profile(yaml_path, cfg)
+
+        return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

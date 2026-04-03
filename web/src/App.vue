@@ -1,9 +1,9 @@
 <template>
   <!-- Root uses .app-root class, NOT id="app" — index.html owns #app.
        Nested #app elements cause ambiguous CSS specificity. Gotcha #1. -->
-  <div class="app-root" :class="{ 'rich-motion': motion.rich.value }">
-    <AppNav />
-    <main class="app-main" id="main-content" tabindex="-1">
+  <div class="app-root" :class="{ 'rich-motion': motion.rich.value, 'app-root--wizard': isWizard }">
+    <AppNav v-if="!isWizard" />
+    <main class="app-main" :class="{ 'app-main--wizard': isWizard }" id="main-content" tabindex="-1">
       <!-- Skip to main content link (screen reader / keyboard nav) -->
       <a href="#main-content" class="skip-link">Skip to main content</a>
       <RouterView />
@@ -12,16 +12,19 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { RouterView } from 'vue-router'
+import { computed, onMounted } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 import { useMotion } from './composables/useMotion'
 import { useHackerMode, useKonamiCode } from './composables/useEasterEgg'
 import AppNav from './components/AppNav.vue'
 import { useDigestStore } from './stores/digest'
 
 const motion = useMotion()
+const route = useRoute()
 const { toggle, restore } = useHackerMode()
 const digestStore = useDigestStore()
+
+const isWizard = computed(() => route.path.startsWith('/setup'))
 
 useKonamiCode(toggle)
 
@@ -93,5 +96,15 @@ body {
     margin-left: 0;
     padding-bottom: calc(56px + env(safe-area-inset-bottom));
   }
+}
+
+/* Wizard: full-bleed, no sidebar offset, no tab-bar clearance */
+.app-root--wizard {
+  display: block;
+}
+
+.app-main--wizard {
+  margin-left: 0;
+  padding-bottom: 0;
 }
 </style>
