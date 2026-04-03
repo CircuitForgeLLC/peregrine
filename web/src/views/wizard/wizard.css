@@ -1,0 +1,329 @@
+/* wizard.css — shared styles imported by every WizardXxxStep component */
+
+/* ── Step heading ──────────────────────────────────────────────────────────── */
+.step__heading {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: var(--space-2);
+}
+
+.step__caption {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-6);
+  line-height: 1.5;
+}
+
+/* ── Info / warning banners ────────────────────────────────────────────────── */
+.step__info {
+  background: color-mix(in srgb, var(--color-info) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-info) 40%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.875rem;
+  color: var(--color-text);
+  margin-bottom: var(--space-4);
+  line-height: 1.5;
+}
+
+.step__warning {
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 40%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.875rem;
+  color: var(--color-text);
+  margin-bottom: var(--space-4);
+}
+
+.step__success {
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-success) 40%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.875rem;
+  color: var(--color-text);
+  margin-bottom: var(--space-4);
+}
+
+/* ── Form fields ───────────────────────────────────────────────────────────── */
+.step__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.step__label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.step__label--optional::after {
+  content: ' (optional)';
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.step__input,
+.step__select,
+.step__textarea {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  transition: border-color var(--transition);
+}
+
+.step__input:focus,
+.step__select:focus,
+.step__textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+
+.step__input[type="password"] {
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+}
+
+.step__textarea {
+  resize: vertical;
+  min-height: 100px;
+  line-height: 1.5;
+}
+
+/* ── Radio cards (Tier step) ──────────────────────────────────────────────── */
+.step__radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.step__radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 2px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.step__radio-card:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.step__radio-card--selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.step__radio-card input[type="radio"] {
+  margin-top: 2px;
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.step__radio-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.step__radio-card__title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-text);
+}
+
+.step__radio-card__desc {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+/* ── Chip list (Search step) ──────────────────────────────────────────────── */
+.step__chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  min-height: 36px;
+}
+
+.step__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-primary-light);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-radius: var(--radius-full);
+  font-size: 0.825rem;
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.step__chip__remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-primary);
+  padding: 0;
+  line-height: 1;
+  font-size: 1rem;
+  opacity: 0.6;
+  transition: opacity var(--transition);
+}
+
+.step__chip__remove:hover {
+  opacity: 1;
+}
+
+.step__chip-input-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.step__chip-input-row .step__input {
+  flex: 1;
+}
+
+/* ── Two-column layout (Search step) ─────────────────────────────────────── */
+.step__cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+
+@media (max-width: 520px) {
+  .step__cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Expandable (advanced section) ───────────────────────────────────────── */
+.step__expandable {
+  margin-bottom: var(--space-4);
+}
+
+.step__expandable__toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-family: var(--font-body);
+  padding: var(--space-2) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  transition: color var(--transition);
+}
+
+.step__expandable__toggle:hover {
+  color: var(--color-text);
+}
+
+.step__expandable__body {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  margin-top: var(--space-2);
+  background: var(--color-surface-alt);
+}
+
+/* ── Navigation footer ────────────────────────────────────────────────────── */
+.step__nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border-light);
+  gap: var(--space-3);
+}
+
+.step__nav--end {
+  justify-content: flex-end;
+}
+
+.btn-primary {
+  padding: var(--space-2) var(--space-6);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), opacity var(--transition);
+  min-height: 44px;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  padding: var(--space-2) var(--space-4);
+  background: none;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+  min-height: 44px;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background var(--transition);
+  min-height: 40px;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-border-light);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
