@@ -168,7 +168,9 @@ async function parseResume() {
       tab.value = 'manual'
       return
     }
-    const data = await res.json()
+    const resp = await res.json()
+    // API returns { ok, data: { experience, name, email, … } }
+    const data = resp.data ?? {}
     // Map parsed sections to experience entries
     if (data.experience?.length) {
       wizard.resume.experience = data.experience as WorkExperience[]
