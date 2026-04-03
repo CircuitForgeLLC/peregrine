@@ -179,6 +179,9 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             import json as _json
             p = _json.loads(params or "{}")
             from scripts.generate_cover_letter import generate
+            _cfg_dir = Path(db_path).parent / "config"
+            _user_llm_cfg = _cfg_dir / "llm.yaml"
+            _user_yaml = _cfg_dir / "user.yaml"
             result = generate(
                 job.get("title", ""),
                 job.get("company", ""),
@@ -186,6 +189,8 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 previous_result=p.get("previous_result", ""),
                 feedback=p.get("feedback", ""),
                 is_jobgether=job.get("source") == "jobgether",
+                config_path=_user_llm_cfg,
+                user_yaml_path=_user_yaml,
             )
             update_cover_letter(db_path, job_id, result)
 

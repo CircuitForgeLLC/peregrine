@@ -3,7 +3,7 @@ import { useAppConfigStore } from '../stores/appConfig'
 import { settingsGuard } from './settingsGuard'
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/',           component: () => import('../views/HomeView.vue') },
     { path: '/review',     component: () => import('../views/JobReviewView.vue') },

@@ -15,27 +15,27 @@ import streamlit.components.v1 as components
 import yaml
 
 from scripts.user_profile import UserProfile
-
-_USER_YAML = Path(__file__).parent.parent.parent / "config" / "user.yaml"
-_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
-_name = _profile.name if _profile else "Job Seeker"
-
 from scripts.db import (
     DEFAULT_DB, init_db, get_jobs_by_status,
     update_cover_letter, mark_applied, update_job_status,
     get_task_for_job,
 )
 from scripts.task_runner import submit_task
-from app.cloud_session import resolve_session, get_db_path
+from app.cloud_session import resolve_session, get_db_path, get_config_dir
 from app.telemetry import log_usage_event
-
-DOCS_DIR = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
-RESUME_YAML = Path(__file__).parent.parent.parent / "config" / "plain_text_resume.yaml"
 
 st.title("🚀 Apply Workspace")
 
 resolve_session("peregrine")
 init_db(get_db_path())
+
+_CONFIG_DIR = get_config_dir()
+_USER_YAML = _CONFIG_DIR / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+_name = _profile.name if _profile else "Job Seeker"
+
+DOCS_DIR = _profile.docs_dir if _profile else Path.home() / "Documents" / "JobSearch"
+RESUME_YAML = _CONFIG_DIR / "plain_text_resume.yaml"
 
 # ── PDF generation ─────────────────────────────────────────────────────────────
 def _make_cover_letter_pdf(job: dict, cover_letter: str, output_dir: Path) -> Path:

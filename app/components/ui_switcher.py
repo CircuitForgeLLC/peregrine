@@ -200,7 +200,7 @@ def render_banner(yaml_path: Path, tier: str) -> None:
 
     col1, col2, col3 = st.columns([8, 1, 1])
     with col1:
-        st.info("✨ **New Peregrine UI available** — try the modern Vue interface (Beta, Paid tier)")
+        st.info("✨ **New Peregrine UI available** — try the modern Vue interface (Beta)")
     with col2:
         if st.button("Try it", key="_ui_banner_try"):
             switch_ui(yaml_path, to="vue", tier=tier)
