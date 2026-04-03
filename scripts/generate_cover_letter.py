@@ -26,13 +26,14 @@ LETTERS_DIR = _profile.docs_dir if _profile else Path.home() / "Documents" / "Jo
 LETTER_GLOB = "*Cover Letter*.md"
 
 # Background injected into every prompt so the model has the candidate's facts
-def _build_system_context() -> str:
-    if not _profile:
+def _build_system_context(profile=None) -> str:
+    p = profile or _profile
+    if not p:
         return "You are a professional cover letter writer. Write in first person."
-    parts = [f"You are writing cover letters for {_profile.name}. {_profile.career_summary}"]
-    if _profile.candidate_voice:
+    parts = [f"You are writing cover letters for {p.name}. {p.career_summary}"]
+    if p.candidate_voice:
         parts.append(
-            f"Voice and personality: {_profile.candidate_voice} "
+            f"Voice and personality: {p.candidate_voice} "
             "Write in a way that reflects these authentic traits — not as a checklist, "
             "but as a natural expression of who this person is."
         )
@@ -125,15 +126,17 @@ _MISSION_DEFAULTS: dict[str, str] = {
 }
 
 
-def _build_mission_notes() -> dict[str, str]:
+def _build_mission_notes(profile=None, candidate_name: str | None = None) -> dict[str, str]:
     """Merge user's custom mission notes with generic defaults."""
-    prefs = _profile.mission_preferences if _profile else {}
+    p = profile or _profile
+    name = candidate_name or _candidate
+    prefs = p.mission_preferences if p else {}
     notes = {}
     for industry, default_note in _MISSION_DEFAULTS.items():
         custom = (prefs.get(industry) or "").strip()
         if custom:
             notes[industry] = (
-                f"Mission alignment — {_candidate} shared: \"{custom}\". "
+                f"Mission alignment — {name} shared: \"{custom}\". "
                 "Para 3 should warmly and specifically reflect this authentic connection."
             )
         else:
@@ -144,12 +147,15 @@ def _build_mission_notes() -> dict[str, str]:
 _MISSION_NOTES = _build_mission_notes()
 
 
-def detect_mission_alignment(company: str, description: str) -> str | None:
+def detect_mission_alignment(
+    company: str, description: str, mission_notes: dict | None = None
+) -> str | None:
     """Return a mission hint string if company/JD matches a preferred industry, else None."""
+    notes = mission_notes if mission_notes is not None else _MISSION_NOTES
     text = f"{company} {description}".lower()
     for industry, signals in _MISSION_SIGNALS.items():
         if any(sig in text for sig in signals):
-            return _MISSION_NOTES[industry]
+            return notes[industry]
     return None
 
 
@@ -190,10 +196,14 @@ def build_prompt(
     examples: list[dict],
     mission_hint: str | None = None,
     is_jobgether: bool = False,
+    system_context: str | None = None,
+    candidate_name: str | None = None,
 ) -> str:
-    parts = [SYSTEM_CONTEXT.strip(), ""]
+    ctx = system_context if system_context is not None else SYSTEM_CONTEXT
+    name = candidate_name or _candidate
+    parts = [ctx.strip(), ""]
     if examples:
-        parts.append(f"=== STYLE EXAMPLES ({_candidate}'s past letters) ===\n")
+        parts.append(f"=== STYLE EXAMPLES ({name}'s past letters) ===\n")
         for i, ex in enumerate(examples, 1):
             parts.append(f"--- Example {i} ({ex['company']}) ---")
             parts.append(ex["text"])
@@ -231,13 +241,14 @@ def build_prompt(
     return "\n".join(parts)
 
 
-def _trim_to_letter_end(text: str) -> str:
+def _trim_to_letter_end(text: str, profile=None) -> str:
     """Remove repetitive hallucinated content after the first complete sign-off.
 
     Fine-tuned models sometimes loop after completing the letter. This cuts at
     the first closing + candidate name so only the intended letter is saved.
     """
-    candidate_first = (_profile.name.split()[0] if _profile else "").strip()
+    p = profile or _profile
+    candidate_first = (p.name.split()[0] if p else "").strip()
     pattern = (
         r'(?:Warm regards|Sincerely|Best regards|Kind regards|Thank you)[,.]?\s*\n+\s*'
         + (re.escape(candidate_first) if candidate_first else r'\w+(?:\s+\w+)?')
@@ -257,6 +268,8 @@ def generate(
     feedback: str = "",
     is_jobgether: bool = False,
     _router=None,
+    config_path: "Path | None" = None,
+    user_yaml_path: "Path | None" = None,
 ) -> str:
     """Generate a cover letter and return it as a string.
 
@@ -264,15 +277,29 @@ def generate(
     and requested changes are appended to the prompt so the LLM revises rather
     than starting from scratch.
 
+    user_yaml_path overrides the module-level profile — required in cloud mode
+    so each user's name/voice/mission prefs are used instead of the global default.
+
     _router is an optional pre-built LLMRouter (used in tests to avoid real LLM calls).
     """
+    # Per-call profile override (cloud mode: each user has their own user.yaml)
+    if user_yaml_path and Path(user_yaml_path).exists():
+        _prof = UserProfile(Path(user_yaml_path))
+    else:
+        _prof = _profile
+
+    sys_ctx = _build_system_context(_prof)
+    mission_notes = _build_mission_notes(_prof, candidate_name=(_prof.name if _prof else None))
+    candidate_name = _prof.name if _prof else _candidate
+
     corpus = load_corpus()
     examples = find_similar_letters(description or f"{title} {company}", corpus)
-    mission_hint = detect_mission_alignment(company, description)
+    mission_hint = detect_mission_alignment(company, description, mission_notes=mission_notes)
     if mission_hint:
         print(f"[cover-letter] Mission alignment detected for {company}", file=sys.stderr)
     prompt = build_prompt(title, company, description, examples,
-                          mission_hint=mission_hint, is_jobgether=is_jobgether)
+                          mission_hint=mission_hint, is_jobgether=is_jobgether,
+                          system_context=sys_ctx, candidate_name=candidate_name)
 
     if previous_result:
         prompt += f"\n\n---\nPrevious draft:\n{previous_result}"
@@ -281,8 +308,9 @@ def generate(
 
     if _router is None:
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from scripts.llm_router import LLMRouter
-        _router = LLMRouter()
+        from scripts.llm_router import LLMRouter, CONFIG_PATH
+        resolved = config_path if (config_path and Path(config_path).exists()) else CONFIG_PATH
+        _router = LLMRouter(resolved)
 
     print(f"[cover-letter] Generating for: {title} @ {company}", file=sys.stderr)
     print(f"[cover-letter] Style examples: {[e['company'] for e in examples]}", file=sys.stderr)
@@ -292,7 +320,7 @@ def generate(
     # max_tokens=1200 caps generation at ~900 words — enough for any cover letter
     # and prevents fine-tuned models from looping into repetitive garbage output.
     result = _router.complete(prompt, max_tokens=1200)
-    return _trim_to_letter_end(result)
+    return _trim_to_letter_end(result, _prof)
 
 
 def main() -> None:

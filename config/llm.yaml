@@ -28,9 +28,9 @@ backends:
     type: openai_compat
   ollama_research:
     api_key: ollama
-    base_url: http://host.docker.internal:11434/v1
+    base_url: http://ollama_research:11434/v1
     enabled: true
-    model: llama3.2:3b
+    model: llama3.1:8b
     supports_images: false
     type: openai_compat
   vision_service:
@@ -45,6 +45,11 @@ backends:
     model: __auto__
     supports_images: false
     type: openai_compat
+    cf_orch:
+      service: vllm
+      model_candidates:
+      - Qwen2.5-3B-Instruct
+      ttl_s: 300
   vllm_research:
     api_key: ''
     base_url: http://host.docker.internal:8000/v1
