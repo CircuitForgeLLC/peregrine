@@ -1,5 +1,5 @@
 # compose.yml — Peregrine by Circuit Forge LLC
-# Profiles: remote | cpu | single-gpu | dual-gpu-ollama | dual-gpu-vllm | dual-gpu-mixed
+# Profiles: remote | cpu | single-gpu | dual-gpu-ollama
 services:
 
   app:
@@ -127,23 +127,6 @@ services:
       - VISION_MODEL=${VISION_MODEL:-vikhyatk/moondream2}
       - VISION_REVISION=${VISION_REVISION:-2025-01-09}
     profiles: [single-gpu, dual-gpu-ollama, dual-gpu-vllm, dual-gpu-mixed]
-    restart: unless-stopped
-
-  vllm:
-    image: vllm/vllm-openai:latest
-    ports:
-      - "${VLLM_PORT:-8000}:8000"
-    volumes:
-      - ${VLLM_MODELS_DIR:-~/models/vllm}:/models
-    command: >
-      --model /models/${VLLM_MODEL:-Ouro-1.4B}
-      --trust-remote-code
-      --max-model-len 4096
-      --gpu-memory-utilization 0.75
-      --enforce-eager
-      --max-num-seqs 8
-      --cpu-offload-gb ${CPU_OFFLOAD_GB:-0}
-    profiles: [dual-gpu-vllm, dual-gpu-mixed]
     restart: unless-stopped
 
   finetune:

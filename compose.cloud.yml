@@ -37,6 +37,7 @@ services:
       - PEREGRINE_CADDY_PROXY=1
       - CF_ORCH_URL=http://host.docker.internal:7700
       - DEMO_MODE=false
+      - FORGEJO_API_TOKEN=${FORGEJO_API_TOKEN:-}
     depends_on:
       searxng:
         condition: service_healthy
@@ -48,6 +49,8 @@ services:
     build:
       context: .
       dockerfile: docker/web/Dockerfile
+      args:
+        VITE_BASE_PATH: /peregrine/
     ports:
       - "8508:80"
     restart: unless-stopped

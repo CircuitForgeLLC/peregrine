@@ -64,8 +64,8 @@ FEATURES: dict[str, str] = {
     "apple_calendar_sync":          "paid",
     "slack_notifications":          "paid",
 
-    # Beta UI access — stays gated (access management, not compute)
-    "vue_ui_beta":                  "paid",
+    # Beta UI access — open to all tiers (access management, not compute)
+    "vue_ui_beta":                  "free",
 }
 
 # Features that unlock when the user supplies any LLM backend (local or BYOK).
