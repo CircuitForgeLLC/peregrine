@@ -236,7 +236,7 @@ class TestWizardStep:
         search_path = tmp_path / "config" / "search_profiles.yaml"
         _write_user_yaml(yaml_path, {})
         with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api.SEARCH_PREFS_PATH", search_path):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
                 r = client.post("/api/wizard/step",
                                 json={"step": 6, "data": {
                                     "titles": ["Software Engineer", "Backend Developer"],
