@@ -1,4 +1,5 @@
 import { onMounted, onUnmounted } from 'vue'
+import { useTheme } from './useTheme'
 
 const KONAMI    = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a']
 const KONAMI_AB = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','a','b']
@@ -31,8 +32,10 @@ export function useHackerMode() {
   function toggle() {
     const root = document.documentElement
     if (root.dataset.theme === 'hacker') {
-      delete root.dataset.theme
       localStorage.removeItem('cf-hacker-mode')
+      // Let useTheme restore the user's chosen theme rather than just deleting data-theme
+      const { restoreTheme } = useTheme()
+      restoreTheme()
     } else {
       root.dataset.theme = 'hacker'
       localStorage.setItem('cf-hacker-mode', 'true')
