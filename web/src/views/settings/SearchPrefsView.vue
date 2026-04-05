@@ -69,7 +69,18 @@
           {{ kw }} <button @click="store.removeTag('exclude_keywords', kw)">×</button>
         </span>
       </div>
-      <input v-model="excludeInput" @keydown.enter.prevent="store.addTag('exclude_keywords', excludeInput); excludeInput = ''" placeholder="Add keyword, press Enter" />
+      <div class="tag-input-row">
+        <input v-model="excludeInput" @keydown.enter.prevent="store.addTag('exclude_keywords', excludeInput); excludeInput = ''" placeholder="Add keyword, press Enter" />
+        <button @click="store.suggestExcludeKeywords()" class="btn-suggest">Suggest</button>
+      </div>
+      <div v-if="store.excludeSuggestions.length > 0" class="suggestions">
+        <span
+          v-for="s in store.excludeSuggestions"
+          :key="s"
+          class="suggestion-chip"
+          @click="store.acceptSuggestion('exclude', s)"
+        >+ {{ s }}</span>
+      </div>
     </section>
 
     <!-- Job Boards -->
