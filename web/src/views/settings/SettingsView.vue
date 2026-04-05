@@ -41,7 +41,8 @@ const config = useAppConfigStore()
 const devOverride = computed(() => !!config.devTierOverride)
 const gpuProfiles = ['single-gpu', 'dual-gpu']
 
-const showSystem = computed(() => !config.isCloud)
+const showSystem   = computed(() => !config.isCloud)
+const showData     = computed(() => !config.isCloud)
 const showFineTune = computed(() => {
   if (config.isCloud) return config.tier === 'premium'
   return gpuProfiles.includes(config.inferenceProfile)
@@ -65,7 +66,7 @@ const allGroups = [
   ]},
   { label: 'Account', items: [
     { key: 'license', path: '/settings/license', label: 'License', show: true },
-    { key: 'data', path: '/settings/data', label: 'Data', show: true },
+    { key: 'data', path: '/settings/data', label: 'Data', show: showData },
     { key: 'privacy', path: '/settings/privacy', label: 'Privacy', show: true },
   ]},
   { label: 'Dev', items: [

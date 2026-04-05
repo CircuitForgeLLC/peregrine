@@ -154,7 +154,7 @@ Re-enter the wizard any time via **Settings → Developer → Reset wizard**.
 | Calendar sync (Google, Apple) | Paid |
 | Slack notifications | Paid |
 | CircuitForge shared cover-letter model | Paid |
-| Vue 3 SPA beta UI | Paid |
+| Vue 3 SPA — full UI with onboarding wizard, job board, apply workspace, sort/filter, research modal, draft cover letter | Free |
 | **Voice guidelines** (custom writing style & tone) | Premium with LLM¹ ² |
 | Cover letter model fine-tuning (your writing, your model) | Premium |
 | Multi-user support | Premium |

@@ -45,6 +45,30 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  api:
+    build:
+      context: ..
+      dockerfile: peregrine/Dockerfile.cfcore
+    command: >
+      bash -c "uvicorn dev_api:app --host 0.0.0.0 --port 8601"
+    volumes:
+      - /devl/menagerie-data:/devl/menagerie-data
+      - ./config/llm.cloud.yaml:/app/config/llm.yaml:ro
+    environment:
+      - CLOUD_MODE=true
+      - CLOUD_DATA_ROOT=/devl/menagerie-data
+      - STAGING_DB=/devl/menagerie-data/cloud-default.db
+      - DIRECTUS_JWT_SECRET=${DIRECTUS_JWT_SECRET}
+      - CF_SERVER_SECRET=${CF_SERVER_SECRET}
+      - PLATFORM_DB_URL=${PLATFORM_DB_URL}
+      - HEIMDALL_URL=${HEIMDALL_URL:-http://cf-license:8000}
+      - HEIMDALL_ADMIN_TOKEN=${HEIMDALL_ADMIN_TOKEN}
+      - PYTHONUNBUFFERED=1
+      - FORGEJO_API_TOKEN=${FORGEJO_API_TOKEN:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
   web:
     build:
       context: .
@@ -53,6 +77,8 @@ services:
         VITE_BASE_PATH: /peregrine/
     ports:
       - "8508:80"
+    depends_on:
+      - api
     restart: unless-stopped
 
   searxng:

@@ -64,7 +64,7 @@
           />
         </div>
 
-        <div class="field-row">
+        <div v-if="!config.isCloud" class="field-row">
           <label class="field-label" for="profile-inference">Inference profile</label>
           <select id="profile-inference" v-model="store.inference_profile" class="select-input">
             <option value="remote">Remote</option>
