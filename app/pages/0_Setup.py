@@ -457,6 +457,11 @@ elif step == 5:
     from app.wizard.step_inference import validate
 
     st.subheader("Step 5 \u2014 Inference & API Keys")
+    st.info(
+        "**Simplest setup:** set `OLLAMA_HOST` in your `.env` file — "
+        "Peregrine auto-detects it, no config file needed. "
+        "Or use the fields below to configure API keys and endpoints."
+    )
     profile = saved_yaml.get("inference_profile", "remote")
 
     if profile == "remote":
@@ -466,8 +471,18 @@ elif step == 5:
                                        placeholder="https://api.together.xyz/v1")
         openai_key    = st.text_input("Endpoint API Key (optional)", type="password",
                                        key="oai_key") if openai_url else ""
+        ollama_host   = st.text_input("Ollama host (optional \u2014 local fallback)",
+                                       placeholder="http://localhost:11434",
+                                       key="ollama_host_input")
+        ollama_model  = st.text_input("Ollama model (optional)",
+                                       value="llama3.2:3b",
+                                       key="ollama_model_input")
     else:
         st.info(f"Local mode ({profile}): Ollama provides inference.")
+        import os
+        _ollama_host_env = os.environ.get("OLLAMA_HOST", "")
+        if _ollama_host_env:
+            st.caption(f"OLLAMA_HOST from .env: `{_ollama_host_env}`")
         anthropic_key = openai_url = openai_key = ""
 
     with st.expander("Advanced \u2014 Service Ports & Hosts"):
@@ -545,6 +560,14 @@ elif step == 5:
                 env_lines = _set_env(env_lines, "OPENAI_COMPAT_KEY", openai_key)
             if anthropic_key or openai_url:
                 env_path.write_text("\n".join(env_lines) + "\n")
+
+            if profile == "remote":
+                if ollama_host:
+                    env_lines = _set_env(env_lines, "OLLAMA_HOST", ollama_host)
+                if ollama_model:
+                    env_lines = _set_env(env_lines, "OLLAMA_MODEL", ollama_model)
+                if ollama_host or ollama_model:
+                    env_path.write_text("\n".join(env_lines) + "\n")
 
             _save_yaml({"services": svc, "wizard_step": 5})
             st.session_state.wizard_step = 6
