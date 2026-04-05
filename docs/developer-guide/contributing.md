@@ -102,6 +102,23 @@ Before opening a pull request:
 
 ---
 
+## Database Migrations
+
+Peregrine uses a numbered SQL migration system (Rails-style). Each migration is a `.sql` file in the `migrations/` directory at the repo root, named `NNN_description.sql` (e.g. `002_add_foo_column.sql`). Applied migrations are tracked in a `schema_migrations` table in each user database.
+
+### Adding a migration
+
+1. Create `migrations/NNN_description.sql` where `NNN` is the next sequential number (zero-padded to 3 digits).
+2. Write standard SQL — `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ADD COLUMN`, etc. Keep each migration idempotent where possible.
+3. Do **not** modify `scripts/db.py`'s legacy `_MIGRATIONS` lists — those are superseded and will be removed once all active databases have been bootstrapped by the migration runner.
+4. The runner (`scripts/db_migrate.py`) applies pending migrations at startup automatically (both FastAPI and Streamlit paths call `migrate_db(db_path)`).
+
+### Rollbacks
+
+SQLite does not support transactional DDL for all statement types. Write forward-only migrations. If you need to undo a schema change, add a new migration that reverses it.
+
+---
+
 ## What NOT to Do
 
 - Do not commit `config/user.yaml`, `config/notion.yaml`, `config/email.yaml`, `config/adzuna.yaml`, or any `config/integrations/*.yaml` — all are gitignored

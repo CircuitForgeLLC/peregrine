@@ -26,6 +26,7 @@ IS_DEMO = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 import streamlit as st
 from scripts.db import DEFAULT_DB, init_db, get_active_tasks
+from scripts.db_migrate import migrate_db
 from app.feedback import inject_feedback_button
 from app.cloud_session import resolve_session, get_db_path, get_config_dir, get_cloud_tier
 import sqlite3
@@ -41,6 +42,7 @@ st.set_page_config(
 
 resolve_session("peregrine")
 init_db(get_db_path())
+migrate_db(Path(get_db_path()))
 
 # Demo tier — initialize once per session (cookie persistence handled client-side)
 if IS_DEMO and "simulated_tier" not in st.session_state:
