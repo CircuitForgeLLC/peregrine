@@ -2,6 +2,12 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
 
+export interface TrainingPair {
+  index: number
+  instruction: string
+  source_file: string
+}
+
 export const useFineTuneStore = defineStore('settings/fineTune', () => {
   const step = ref(1)
   const inFlightJob = ref(false)
@@ -10,6 +16,8 @@ export const useFineTuneStore = defineStore('settings/fineTune', () => {
   const quotaRemaining = ref<number | null>(null)
   const uploading = ref(false)
   const loading = ref(false)
+  const pairs = ref<TrainingPair[]>([])
+  const pairsLoading = ref(false)
   let _pollTimer: ReturnType<typeof setInterval> | null = null
 
   function resetStep() { step.value = 1 }
@@ -37,6 +45,26 @@ export const useFineTuneStore = defineStore('settings/fineTune', () => {
     if (!error && data) { inFlightJob.value = true; jobStatus.value = 'queued' }
   }
 
+  async function loadPairs() {
+    pairsLoading.value = true
+    const { data } = await useApiFetch<{ pairs: TrainingPair[]; total: number }>('/api/settings/fine-tune/pairs')
+    pairsLoading.value = false
+    if (data) {
+      pairs.value = data.pairs
+      pairsCount.value = data.total
+    }
+  }
+
+  async function deletePair(index: number) {
+    const { data } = await useApiFetch<{ ok: boolean; remaining: number }>(
+      `/api/settings/fine-tune/pairs/${index}`, { method: 'DELETE' }
+    )
+    if (data?.ok) {
+      pairs.value = pairs.value.filter(p => p.index !== index).map((p, i) => ({ ...p, index: i }))
+      pairsCount.value = data.remaining
+    }
+  }
+
   return {
     step,
     inFlightJob,
@@ -45,10 +73,14 @@ export const useFineTuneStore = defineStore('settings/fineTune', () => {
     quotaRemaining,
     uploading,
     loading,
+    pairs,
+    pairsLoading,
     resetStep,
     loadStatus,
     startPolling,
     stopPolling,
     submitJob,
+    loadPairs,
+    deletePair,
   }
 })
