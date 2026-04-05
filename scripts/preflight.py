@@ -492,6 +492,16 @@ def main() -> None:
         # binds a harmless free port instead of conflicting with the external service.
         env_updates: dict[str, str] = {i["env_var"]: str(i["stub_port"]) for i in ports.values()}
         env_updates["RECOMMENDED_PROFILE"] = profile
+        # When Ollama is adopted from the host process, write OLLAMA_HOST so
+        # LLMRouter's env-var auto-config finds it without needing config/llm.yaml.
+        ollama_info = ports.get("ollama")
+        if ollama_info and ollama_info.get("external"):
+            env_updates["OLLAMA_HOST"] = f"http://host.docker.internal:{ollama_info['resolved']}"
+
+        ollama_research_info = ports.get("ollama_research")
+        if ollama_research_info and ollama_research_info.get("external"):
+            env_updates["OLLAMA_RESEARCH_HOST"] = f"http://host.docker.internal:{ollama_research_info['resolved']}"
+
         if offload_gb > 0:
             env_updates["CPU_OFFLOAD_GB"] = str(offload_gb)
         # GPU info for the app container (which lacks nvidia-smi access)
