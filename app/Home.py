@@ -19,8 +19,8 @@ _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
 _name = _profile.name if _profile else "Job Seeker"
 
 from scripts.db import init_db, get_job_counts, purge_jobs, purge_email_data, \
-    purge_non_remote, archive_jobs, kill_stuck_tasks, get_task_for_job, get_active_tasks, \
-    insert_job, get_existing_urls
+    purge_non_remote, archive_jobs, kill_stuck_tasks, cancel_task, \
+    get_task_for_job, get_active_tasks, insert_job, get_existing_urls
 from scripts.task_runner import submit_task
 from app.cloud_session import resolve_session, get_db_path
 
@@ -376,178 +376,145 @@ _scrape_status()
 
 st.divider()
 
-# ── Danger zone: purge + re-scrape ────────────────────────────────────────────
+# ── Danger zone ───────────────────────────────────────────────────────────────
 with st.expander("⚠️ Danger Zone", expanded=False):
+
+    # ── Queue reset (the common case) ─────────────────────────────────────────
+    st.markdown("**Queue reset**")
     st.caption(
-        "**Purge** permanently deletes jobs from the local database. "
-        "Applied and synced jobs are never touched."
+        "Archive clears your review queue while keeping job URLs for dedup, "
+        "so the same listings won't resurface on the next discovery run. "
+        "Use hard purge only if you want a full clean slate including dedup history."
     )
 
-    purge_col, rescrape_col, email_col, tasks_col = st.columns(4)
+    _scope = st.radio(
+        "Clear scope",
+        ["Pending only", "Pending + approved (stale search)"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    _scope_statuses = (
+        ["pending"] if _scope == "Pending only" else ["pending", "approved"]
+    )
 
-    with purge_col:
-        st.markdown("**Purge pending & rejected**")
-        st.caption("Removes all _pending_ and _rejected_ listings so the next discovery starts fresh.")
-        if st.button("🗑 Purge Pending + Rejected", use_container_width=True):
-            st.session_state["confirm_purge"] = "partial"
+    _qc1, _qc2, _qc3 = st.columns([2, 2, 4])
+    if _qc1.button("📦 Archive & reset", use_container_width=True, type="primary"):
+        st.session_state["confirm_dz"] = "archive"
+    if _qc2.button("🗑 Hard purge (delete)", use_container_width=True):
+        st.session_state["confirm_dz"] = "purge"
 
-        if st.session_state.get("confirm_purge") == "partial":
-            st.warning("Are you sure? This cannot be undone.")
-            c1, c2 = st.columns(2)
-            if c1.button("Yes, purge", type="primary", use_container_width=True):
-                deleted = purge_jobs(get_db_path(), statuses=["pending", "rejected"])
-                st.success(f"Purged {deleted} jobs.")
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-            if c2.button("Cancel", use_container_width=True):
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-
-    with email_col:
-        st.markdown("**Purge email data**")
-        st.caption("Clears all email thread logs and email-sourced pending jobs so the next sync starts fresh.")
-        if st.button("📧 Purge Email Data", use_container_width=True):
-            st.session_state["confirm_purge"] = "email"
-
-        if st.session_state.get("confirm_purge") == "email":
-            st.warning("This deletes all email contacts and email-sourced jobs. Cannot be undone.")
-            c1, c2 = st.columns(2)
-            if c1.button("Yes, purge emails", type="primary", use_container_width=True):
-                contacts, jobs = purge_email_data(get_db_path())
-                st.success(f"Purged {contacts} email contacts, {jobs} email jobs.")
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-            if c2.button("Cancel  ", use_container_width=True):
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-
-    with tasks_col:
-        _active = get_active_tasks(get_db_path())
-        st.markdown("**Kill stuck tasks**")
-        st.caption(f"Force-fail all queued/running background tasks. Currently **{len(_active)}** active.")
-        if st.button("⏹ Kill All Tasks", use_container_width=True, disabled=len(_active) == 0):
-            killed = kill_stuck_tasks(get_db_path())
-            st.success(f"Killed {killed} task(s).")
+    if st.session_state.get("confirm_dz") == "archive":
+        st.info(
+            f"Archive **{', '.join(_scope_statuses)}** jobs? "
+            "URLs are kept for dedup — nothing is permanently deleted."
+        )
+        _dc1, _dc2 = st.columns(2)
+        if _dc1.button("Yes, archive", type="primary", use_container_width=True, key="dz_archive_confirm"):
+            n = archive_jobs(get_db_path(), statuses=_scope_statuses)
+            st.success(f"Archived {n} jobs.")
+            st.session_state.pop("confirm_dz", None)
+            st.rerun()
+        if _dc2.button("Cancel", use_container_width=True, key="dz_archive_cancel"):
+            st.session_state.pop("confirm_dz", None)
             st.rerun()
 
-    with rescrape_col:
-        st.markdown("**Purge all & re-scrape**")
-        st.caption("Wipes _all_ non-applied, non-synced jobs then immediately runs a fresh discovery.")
-        if st.button("🔄 Purge All + Re-scrape", use_container_width=True):
-            st.session_state["confirm_purge"] = "full"
-
-        if st.session_state.get("confirm_purge") == "full":
-            st.warning("This will delete ALL pending, approved, and rejected jobs, then re-scrape. Applied and synced records are kept.")
-            c1, c2 = st.columns(2)
-            if c1.button("Yes, wipe + scrape", type="primary", use_container_width=True):
-                purge_jobs(get_db_path(), statuses=["pending", "approved", "rejected"])
-                submit_task(get_db_path(), "discovery", 0)
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-            if c2.button("Cancel ", use_container_width=True):
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-
-    st.divider()
-
-    pending_col, nonremote_col, approved_col, _ = st.columns(4)
-
-    with pending_col:
-        st.markdown("**Purge pending review**")
-        st.caption("Removes only _pending_ listings, keeping your rejected history intact.")
-        if st.button("🗑 Purge Pending Only", use_container_width=True):
-            st.session_state["confirm_purge"] = "pending_only"
-
-        if st.session_state.get("confirm_purge") == "pending_only":
-            st.warning("Deletes all pending jobs. Rejected jobs are kept. Cannot be undone.")
-            c1, c2 = st.columns(2)
-            if c1.button("Yes, purge pending", type="primary", use_container_width=True):
-                deleted = purge_jobs(get_db_path(), statuses=["pending"])
-                st.success(f"Purged {deleted} pending jobs.")
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-            if c2.button("Cancel   ", use_container_width=True):
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-
-    with nonremote_col:
-        st.markdown("**Purge non-remote**")
-        st.caption("Removes pending/approved/rejected jobs where remote is not set. Keeps anything already in the pipeline.")
-        if st.button("🏢 Purge On-site Jobs", use_container_width=True):
-            st.session_state["confirm_purge"] = "non_remote"
-
-        if st.session_state.get("confirm_purge") == "non_remote":
-            st.warning("Deletes all non-remote jobs not yet applied to. Cannot be undone.")
-            c1, c2 = st.columns(2)
-            if c1.button("Yes, purge on-site", type="primary", use_container_width=True):
-                deleted = purge_non_remote(get_db_path())
-                st.success(f"Purged {deleted} non-remote jobs.")
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-            if c2.button("Cancel    ", use_container_width=True):
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-
-    with approved_col:
-        st.markdown("**Purge approved (unapplied)**")
-        st.caption("Removes _approved_ jobs you haven't applied to yet — e.g. to reset after a review pass.")
-        if st.button("🗑 Purge Approved", use_container_width=True):
-            st.session_state["confirm_purge"] = "approved_only"
-
-        if st.session_state.get("confirm_purge") == "approved_only":
-            st.warning("Deletes all approved-but-not-applied jobs. Cannot be undone.")
-            c1, c2 = st.columns(2)
-            if c1.button("Yes, purge approved", type="primary", use_container_width=True):
-                deleted = purge_jobs(get_db_path(), statuses=["approved"])
-                st.success(f"Purged {deleted} approved jobs.")
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-            if c2.button("Cancel     ", use_container_width=True):
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-
-    st.divider()
-
-    archive_col1, archive_col2, _, _ = st.columns(4)
-
-    with archive_col1:
-        st.markdown("**Archive remaining**")
-        st.caption(
-            "Move all _pending_ and _rejected_ jobs to archived status. "
-            "Archived jobs stay in the DB for dedup — they just won't appear in Job Review."
+    if st.session_state.get("confirm_dz") == "purge":
+        st.warning(
+            f"Permanently delete **{', '.join(_scope_statuses)}** jobs? "
+            "This removes the URLs from dedup history too. Cannot be undone."
         )
-        if st.button("📦 Archive Pending + Rejected", use_container_width=True):
-            st.session_state["confirm_purge"] = "archive_remaining"
+        _dc1, _dc2 = st.columns(2)
+        if _dc1.button("Yes, delete", type="primary", use_container_width=True, key="dz_purge_confirm"):
+            n = purge_jobs(get_db_path(), statuses=_scope_statuses)
+            st.success(f"Deleted {n} jobs.")
+            st.session_state.pop("confirm_dz", None)
+            st.rerun()
+        if _dc2.button("Cancel", use_container_width=True, key="dz_purge_cancel"):
+            st.session_state.pop("confirm_dz", None)
+            st.rerun()
 
-        if st.session_state.get("confirm_purge") == "archive_remaining":
-            st.info("Jobs will be archived (not deleted) — URLs are kept for dedup.")
-            c1, c2 = st.columns(2)
-            if c1.button("Yes, archive", type="primary", use_container_width=True):
-                archived = archive_jobs(get_db_path(), statuses=["pending", "rejected"])
-                st.success(f"Archived {archived} jobs.")
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
-            if c2.button("Cancel      ", use_container_width=True):
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
+    st.divider()
 
-    with archive_col2:
-        st.markdown("**Archive approved (unapplied)**")
-        st.caption("Archive _approved_ listings you decided to skip — keeps history without cluttering the apply queue.")
-        if st.button("📦 Archive Approved", use_container_width=True):
-            st.session_state["confirm_purge"] = "archive_approved"
+    # ── Background tasks ──────────────────────────────────────────────────────
+    _active = get_active_tasks(get_db_path())
+    st.markdown(f"**Background tasks** — {len(_active)} active")
 
-        if st.session_state.get("confirm_purge") == "archive_approved":
-            st.info("Approved jobs will be archived (not deleted).")
-            c1, c2 = st.columns(2)
-            if c1.button("Yes, archive approved", type="primary", use_container_width=True):
-                archived = archive_jobs(get_db_path(), statuses=["approved"])
-                st.success(f"Archived {archived} approved jobs.")
-                st.session_state.pop("confirm_purge", None)
+    if _active:
+        _task_icons = {"cover_letter": "✉️", "research": "🔍", "discovery": "🌐", "enrich_descriptions": "📝"}
+        for _t in _active:
+            _tc1, _tc2, _tc3 = st.columns([3, 4, 2])
+            _icon = _task_icons.get(_t["task_type"], "⚙️")
+            _tc1.caption(f"{_icon} `{_t['task_type']}`")
+            _job_label = f"{_t['title']} @ {_t['company']}" if _t.get("title") else f"job #{_t['job_id']}"
+            _tc2.caption(_job_label)
+            _tc3.caption(f"_{_t['status']}_")
+            if st.button("✕ Cancel", key=f"dz_cancel_task_{_t['id']}", use_container_width=True):
+                cancel_task(get_db_path(), _t["id"])
                 st.rerun()
-            if c2.button("Cancel       ", use_container_width=True):
-                st.session_state.pop("confirm_purge", None)
-                st.rerun()
+        st.caption("")
+
+    _kill_col, _ = st.columns([2, 6])
+    if _kill_col.button("⏹ Kill all stuck", use_container_width=True, disabled=len(_active) == 0):
+        killed = kill_stuck_tasks(get_db_path())
+        st.success(f"Killed {killed} task(s).")
+        st.rerun()
+
+    st.divider()
+
+    # ── Rarely needed (collapsed) ─────────────────────────────────────────────
+    with st.expander("More options", expanded=False):
+        _rare1, _rare2, _rare3 = st.columns(3)
+
+        with _rare1:
+            st.markdown("**Purge email data**")
+            st.caption("Clears all email thread logs and email-sourced pending jobs.")
+            if st.button("📧 Purge Email Data", use_container_width=True):
+                st.session_state["confirm_dz"] = "email"
+            if st.session_state.get("confirm_dz") == "email":
+                st.warning("Deletes all email contacts and email-sourced jobs. Cannot be undone.")
+                _ec1, _ec2 = st.columns(2)
+                if _ec1.button("Yes, purge emails", type="primary", use_container_width=True, key="dz_email_confirm"):
+                    contacts, jobs = purge_email_data(get_db_path())
+                    st.success(f"Purged {contacts} email contacts, {jobs} email jobs.")
+                    st.session_state.pop("confirm_dz", None)
+                    st.rerun()
+                if _ec2.button("Cancel", use_container_width=True, key="dz_email_cancel"):
+                    st.session_state.pop("confirm_dz", None)
+                    st.rerun()
+
+        with _rare2:
+            st.markdown("**Purge non-remote**")
+            st.caption("Removes pending/approved/rejected on-site listings from the DB.")
+            if st.button("🏢 Purge On-site Jobs", use_container_width=True):
+                st.session_state["confirm_dz"] = "non_remote"
+            if st.session_state.get("confirm_dz") == "non_remote":
+                st.warning("Deletes all non-remote jobs not yet applied to. Cannot be undone.")
+                _rc1, _rc2 = st.columns(2)
+                if _rc1.button("Yes, purge on-site", type="primary", use_container_width=True, key="dz_nonremote_confirm"):
+                    deleted = purge_non_remote(get_db_path())
+                    st.success(f"Purged {deleted} non-remote jobs.")
+                    st.session_state.pop("confirm_dz", None)
+                    st.rerun()
+                if _rc2.button("Cancel", use_container_width=True, key="dz_nonremote_cancel"):
+                    st.session_state.pop("confirm_dz", None)
+                    st.rerun()
+
+        with _rare3:
+            st.markdown("**Wipe all + re-scrape**")
+            st.caption("Deletes all non-applied jobs then immediately runs a fresh discovery.")
+            if st.button("🔄 Wipe + Re-scrape", use_container_width=True):
+                st.session_state["confirm_dz"] = "rescrape"
+            if st.session_state.get("confirm_dz") == "rescrape":
+                st.warning("Wipes ALL pending, approved, and rejected jobs, then re-scrapes. Applied and synced records are kept.")
+                _wc1, _wc2 = st.columns(2)
+                if _wc1.button("Yes, wipe + scrape", type="primary", use_container_width=True, key="dz_rescrape_confirm"):
+                    purge_jobs(get_db_path(), statuses=["pending", "approved", "rejected"])
+                    submit_task(get_db_path(), "discovery", 0)
+                    st.session_state.pop("confirm_dz", None)
+                    st.rerun()
+                if _wc2.button("Cancel", use_container_width=True, key="dz_rescrape_cancel"):
+                    st.session_state.pop("confirm_dz", None)
+                    st.rerun()
 
 # ── Setup banners ─────────────────────────────────────────────────────────────
 if _profile and _profile.wizard_complete:

@@ -15,6 +15,7 @@ import ssl as ssl_mod
 import subprocess
 import sys
 import threading
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -23,7 +24,7 @@ from urllib.parse import urlparse
 import requests
 import yaml
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, HTTPException, Response, UploadFile
+from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -32,9 +33,17 @@ PEREGRINE_ROOT = Path("/Library/Development/CircuitForge/peregrine")
 if str(PEREGRINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PEREGRINE_ROOT))
 
+from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
 from scripts.credential_store import get_credential, set_credential, delete_credential  # noqa: E402
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
+
+_CLOUD_MODE       = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
+_CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
+_DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
+
+# Per-request DB path — set by cloud_session_middleware; falls back to DB_PATH
+_request_db: ContextVar[str | None] = ContextVar("_request_db", default=None)
 
 app = FastAPI(title="Peregrine Dev API")
 
@@ -46,8 +55,65 @@ app.add_middleware(
 )
 
 
+_log = logging.getLogger("peregrine.session")
+
+def _resolve_cf_user_id(cookie_str: str) -> str | None:
+    """Extract cf_session JWT from Cookie string and return Directus user_id.
+
+    Directus signs with the raw bytes of its JWT_SECRET (which is base64-encoded
+    in env). Try the raw string first, then fall back to base64-decoded bytes.
+    """
+    if not cookie_str:
+        _log.debug("_resolve_cf_user_id: empty cookie string")
+        return None
+    m = re.search(r'(?:^|;)\s*cf_session=([^;]+)', cookie_str)
+    if not m:
+        _log.debug("_resolve_cf_user_id: no cf_session in cookie: %s…", cookie_str[:80])
+        return None
+    token = m.group(1).strip()
+    import base64
+    import jwt  # PyJWT
+    secrets_to_try: list[str | bytes] = [_DIRECTUS_SECRET]
+    try:
+        secrets_to_try.append(base64.b64decode(_DIRECTUS_SECRET))
+    except Exception:
+        pass
+    # Skip exp verification — we use the token for routing only, not auth.
+    # Directus manages actual auth; Caddy gates on cookie presence.
+    decode_opts = {"verify_exp": False}
+    for secret in secrets_to_try:
+        try:
+            payload = jwt.decode(token, secret, algorithms=["HS256"], options=decode_opts)
+            user_id = payload.get("id") or payload.get("sub")
+            if user_id:
+                _log.debug("_resolve_cf_user_id: resolved user_id=%s", user_id)
+                return user_id
+        except Exception as exc:
+            _log.debug("_resolve_cf_user_id: decode failed (%s): %s", type(exc).__name__, exc)
+            continue
+    _log.warning("_resolve_cf_user_id: all secrets failed for token prefix %s…", token[:20])
+    return None
+
+
+@app.middleware("http")
+async def cloud_session_middleware(request: Request, call_next):
+    """In cloud mode, resolve per-user staging.db from the X-CF-Session header."""
+    if _CLOUD_MODE and _DIRECTUS_SECRET:
+        cookie_header = request.headers.get("X-CF-Session", "")
+        user_id = _resolve_cf_user_id(cookie_header)
+        if user_id:
+            user_db = str(_CLOUD_DATA_ROOT / user_id / "peregrine" / "staging.db")
+            token = _request_db.set(user_db)
+            try:
+                return await call_next(request)
+            finally:
+                _request_db.reset(token)
+    return await call_next(request)
+
+
 def _get_db():
-    db = sqlite3.connect(DB_PATH)
+    path = _request_db.get() or DB_PATH
+    db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row
     return db
 
@@ -66,7 +132,10 @@ def _strip_html(text: str | None) -> str | None:
 
 @app.on_event("startup")
 def _startup():
-    """Ensure digest_queue table exists (dev-api may run against an existing DB)."""
+    """Load .env then ensure digest_queue table exists."""
+    # Load .env before any runtime env reads — safe because startup doesn't run
+    # when dev_api is imported by tests (only when uvicorn actually starts).
+    _load_env(PEREGRINE_ROOT / ".env")
     db = _get_db()
     try:
         db.execute("""
@@ -620,6 +689,117 @@ def download_pdf(job_id: int):
         raise HTTPException(501, "reportlab not installed — install it to generate PDFs")
 
 
+# ── Application Q&A endpoints ─────────────────────────────────────────────────
+
+def _ensure_qa_column(db) -> None:
+    """Add application_qa TEXT column to jobs if not present (idempotent)."""
+    try:
+        db.execute("ALTER TABLE jobs ADD COLUMN application_qa TEXT")
+        db.commit()
+    except Exception:
+        pass  # Column already exists
+
+
+class QAItem(BaseModel):
+    id: str
+    question: str
+    answer: str
+
+
+class QAPayload(BaseModel):
+    items: List[QAItem]
+
+
+class QASuggestPayload(BaseModel):
+    question: str
+
+
+@app.get("/api/jobs/{job_id}/qa")
+def get_qa(job_id: int):
+    db = _get_db()
+    _ensure_qa_column(db)
+    row = db.execute("SELECT application_qa FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    db.close()
+    if not row:
+        raise HTTPException(404, "Job not found")
+    try:
+        items = json.loads(row["application_qa"] or "[]")
+    except Exception:
+        items = []
+    return {"items": items}
+
+
+@app.patch("/api/jobs/{job_id}/qa")
+def save_qa(job_id: int, payload: QAPayload):
+    db = _get_db()
+    _ensure_qa_column(db)
+    row = db.execute("SELECT id FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not row:
+        db.close()
+        raise HTTPException(404, "Job not found")
+    db.execute(
+        "UPDATE jobs SET application_qa = ? WHERE id = ?",
+        (json.dumps([item.model_dump() for item in payload.items]), job_id),
+    )
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/qa/suggest")
+def suggest_qa_answer(job_id: int, payload: QASuggestPayload):
+    """Synchronously generate an LLM answer for an application Q&A question."""
+    db = _get_db()
+    job_row = db.execute(
+        "SELECT title, company, description FROM jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    db.close()
+    if not job_row:
+        raise HTTPException(404, "Job not found")
+
+    # Load resume summary for context
+    resume_context = ""
+    try:
+        resume_path = _resume_path()
+        if resume_path.exists():
+            with open(resume_path) as f:
+                resume_data = yaml.safe_load(f) or {}
+            parts = []
+            if resume_data.get("name"):
+                parts.append(f"Candidate: {resume_data['name']}")
+            if resume_data.get("skills"):
+                parts.append(f"Skills: {', '.join(resume_data['skills'][:20])}")
+            if resume_data.get("experience"):
+                exp = resume_data["experience"]
+                if isinstance(exp, list) and exp:
+                    titles = [e.get("title", "") for e in exp[:3] if e.get("title")]
+                    if titles:
+                        parts.append(f"Recent roles: {', '.join(titles)}")
+            if resume_data.get("career_summary"):
+                parts.append(f"Summary: {resume_data['career_summary'][:400]}")
+            resume_context = "\n".join(parts)
+    except Exception:
+        pass
+
+    prompt = (
+        f"You are helping a job applicant answer an application question.\n\n"
+        f"Job: {job_row['title']} at {job_row['company']}\n"
+        f"Job description excerpt:\n{(job_row['description'] or '')[:800]}\n\n"
+        f"Candidate background:\n{resume_context or 'Not provided'}\n\n"
+        f"Application question: {payload.question}\n\n"
+        "Write a concise, professional answer (2–4 sentences) in first person. "
+        "Be specific and genuine. Do not use hollow filler phrases."
+    )
+
+    try:
+        from scripts.llm_router import LLMRouter
+        router = LLMRouter()
+        answer = router.complete(prompt)
+        return {"answer": answer.strip()}
+    except Exception as e:
+        raise HTTPException(500, f"LLM generation failed: {e}")
+
+
 # ── GET /api/interviews ────────────────────────────────────────────────────────
 
 PIPELINE_STATUSES = {
@@ -713,6 +893,230 @@ def email_sync_status():
         "last_completed_at": row_dict["last_completed_at"],
         "error":             row_dict.get("error"),
     }
+
+
+# ── Task management routes ─────────────────────────────────────────────────────
+
+def _db_path() -> Path:
+    """Return the effective staging.db path (cloud-aware)."""
+    return Path(_request_db.get() or DB_PATH)
+
+
+@app.get("/api/tasks")
+def list_active_tasks():
+    from scripts.db import get_active_tasks
+    return get_active_tasks(_db_path())
+
+
+@app.delete("/api/tasks/{task_id}")
+def cancel_task_by_id(task_id: int):
+    from scripts.db import cancel_task
+    ok = cancel_task(_db_path(), task_id)
+    return {"ok": ok}
+
+
+@app.post("/api/tasks/kill")
+def kill_stuck():
+    from scripts.db import kill_stuck_tasks
+    killed = kill_stuck_tasks(_db_path())
+    return {"killed": killed}
+
+
+@app.post("/api/tasks/discovery", status_code=202)
+def trigger_discovery():
+    from scripts.task_runner import submit_task
+    task_id, is_new = submit_task(_db_path(), "discovery", 0)
+    return {"task_id": task_id, "is_new": is_new}
+
+
+@app.post("/api/tasks/email-sync", status_code=202)
+def trigger_email_sync_task():
+    from scripts.task_runner import submit_task
+    task_id, is_new = submit_task(_db_path(), "email_sync", 0)
+    return {"task_id": task_id, "is_new": is_new}
+
+
+@app.post("/api/tasks/enrich", status_code=202)
+def trigger_enrich_task():
+    from scripts.task_runner import submit_task
+    task_id, is_new = submit_task(_db_path(), "enrich_descriptions", 0)
+    return {"task_id": task_id, "is_new": is_new}
+
+
+@app.post("/api/tasks/score")
+def trigger_score():
+    try:
+        result = subprocess.run(
+            [sys.executable, "scripts/match.py"],
+            capture_output=True, text=True, cwd=str(PEREGRINE_ROOT),
+        )
+        if result.returncode == 0:
+            return {"ok": True, "output": result.stdout}
+        raise HTTPException(status_code=500, detail=result.stderr)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/tasks/sync")
+def trigger_notion_sync():
+    try:
+        from scripts.sync import sync_to_notion
+        count = sync_to_notion(_db_path())
+        return {"ok": True, "count": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Bulk job actions ───────────────────────────────────────────────────────────
+
+class BulkArchiveBody(BaseModel):
+    statuses: List[str]
+
+
+@app.post("/api/jobs/archive")
+def bulk_archive_jobs(body: BulkArchiveBody):
+    from scripts.db import archive_jobs
+    n = archive_jobs(_db_path(), statuses=body.statuses)
+    return {"archived": n}
+
+
+class BulkPurgeBody(BaseModel):
+    statuses: Optional[List[str]] = None
+    target: Optional[str] = None  # "email", "non_remote", "rescrape"
+
+
+@app.post("/api/jobs/purge")
+def bulk_purge_jobs(body: BulkPurgeBody):
+    from scripts.db import purge_jobs, purge_email_data, purge_non_remote
+    if body.target == "email":
+        contacts, jobs = purge_email_data(_db_path())
+        return {"ok": True, "contacts": contacts, "jobs": jobs}
+    if body.target == "non_remote":
+        n = purge_non_remote(_db_path())
+        return {"ok": True, "deleted": n}
+    if body.target == "rescrape":
+        purge_jobs(_db_path(), statuses=["pending", "approved", "rejected"])
+        from scripts.task_runner import submit_task
+        submit_task(_db_path(), "discovery", 0)
+        return {"ok": True}
+    statuses = body.statuses or ["pending", "rejected"]
+    n = purge_jobs(_db_path(), statuses=statuses)
+    return {"ok": True, "deleted": n}
+
+
+class AddJobsBody(BaseModel):
+    urls: List[str]
+
+
+@app.post("/api/jobs/add", status_code=202)
+def add_jobs_by_url(body: AddJobsBody):
+    try:
+        from datetime import datetime as _dt
+        from scripts.scrape_url import canonicalize_url
+        from scripts.db import get_existing_urls, insert_job
+        from scripts.task_runner import submit_task
+        db_path = _db_path()
+        existing = get_existing_urls(db_path)
+        queued = 0
+        for raw_url in body.urls:
+            url = canonicalize_url(raw_url.strip())
+            if not url.startswith("http") or url in existing:
+                continue
+            job_id = insert_job(db_path, {
+                "title": "Importing...", "company": "", "url": url,
+                "source": "manual", "location": "", "description": "",
+                "date_found": _dt.now().isoformat()[:10],
+            })
+            if job_id:
+                submit_task(db_path, "scrape_url", job_id)
+                queued += 1
+        return {"queued": queued}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/jobs/upload-csv", status_code=202)
+async def upload_jobs_csv(file: UploadFile):
+    try:
+        import csv as _csv
+        import io as _io
+        from datetime import datetime as _dt
+        from scripts.scrape_url import canonicalize_url
+        from scripts.db import get_existing_urls, insert_job
+        from scripts.task_runner import submit_task
+        content = await file.read()
+        reader = _csv.DictReader(_io.StringIO(content.decode("utf-8", errors="replace")))
+        urls: list[str] = []
+        for row in reader:
+            for val in row.values():
+                if val and val.strip().startswith("http"):
+                    urls.append(val.strip())
+                    break
+        db_path = _db_path()
+        existing = get_existing_urls(db_path)
+        queued = 0
+        for raw_url in urls:
+            url = canonicalize_url(raw_url)
+            if not url.startswith("http") or url in existing:
+                continue
+            job_id = insert_job(db_path, {
+                "title": "Importing...", "company": "", "url": url,
+                "source": "manual", "location": "", "description": "",
+                "date_found": _dt.now().isoformat()[:10],
+            })
+            if job_id:
+                submit_task(db_path, "scrape_url", job_id)
+                queued += 1
+        return {"queued": queued, "total": len(urls)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Setup banners ──────────────────────────────────────────────────────────────
+
+_SETUP_BANNERS = [
+    {"key": "connect_cloud",       "text": "Connect a cloud service for resume/cover letter storage",  "link": "/settings?tab=integrations"},
+    {"key": "setup_email",         "text": "Set up email sync to catch recruiter outreach",             "link": "/settings?tab=email"},
+    {"key": "setup_email_labels",  "text": "Set up email label filters for auto-classification",        "link": "/settings?tab=email"},
+    {"key": "tune_mission",        "text": "Tune your mission preferences for better cover letters",     "link": "/settings?tab=profile"},
+    {"key": "configure_keywords",  "text": "Configure keywords and blocklist for smarter search",       "link": "/settings?tab=search"},
+    {"key": "upload_corpus",       "text": "Upload your cover letter corpus for voice fine-tuning",     "link": "/settings?tab=fine-tune"},
+    {"key": "configure_linkedin",  "text": "Configure LinkedIn Easy Apply automation",                  "link": "/settings?tab=integrations"},
+    {"key": "setup_searxng",       "text": "Set up company research with SearXNG",                     "link": "/settings?tab=system"},
+    {"key": "target_companies",    "text": "Build a target company list for focused outreach",          "link": "/settings?tab=search"},
+    {"key": "setup_notifications", "text": "Set up notifications for stage changes",                   "link": "/settings?tab=integrations"},
+    {"key": "tune_model",          "text": "Tune a custom cover letter model on your writing",          "link": "/settings?tab=fine-tune"},
+    {"key": "review_training",     "text": "Review and curate training data for model tuning",         "link": "/settings?tab=fine-tune"},
+    {"key": "setup_calendar",      "text": "Set up calendar sync to track interview dates",            "link": "/settings?tab=integrations"},
+]
+
+
+@app.get("/api/config/setup-banners")
+def get_setup_banners():
+    try:
+        cfg = _load_user_config()
+        if not cfg.get("wizard_complete"):
+            return []
+        dismissed = set(cfg.get("dismissed_banners", []))
+        return [b for b in _SETUP_BANNERS if b["key"] not in dismissed]
+    except Exception:
+        return []
+
+
+@app.post("/api/config/setup-banners/{key}/dismiss")
+def dismiss_setup_banner(key: str):
+    try:
+        cfg = _load_user_config()
+        dismissed = cfg.get("dismissed_banners", [])
+        if key not in dismissed:
+            dismissed.append(key)
+            cfg["dismissed_banners"] = dismissed
+            _save_user_config(cfg)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── POST /api/stage-signals/{id}/dismiss ─────────────────────────────────
@@ -948,13 +1352,16 @@ def get_app_config():
     valid_tiers = {"free", "paid", "premium", "ultra"}
     raw_tier = os.environ.get("APP_TIER", "free")
 
-    # wizard_complete: read from user.yaml so the guard reflects live state
-    wizard_complete = True
-    try:
-        cfg = load_user_profile(_user_yaml_path())
-        wizard_complete = bool(cfg.get("wizard_complete", False))
-    except Exception:
-        wizard_complete = False
+    # Cloud users always bypass the wizard — they configure through Settings
+    is_cloud = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
+    if is_cloud:
+        wizard_complete = True
+    else:
+        try:
+            cfg = load_user_profile(_user_yaml_path())
+            wizard_complete = bool(cfg.get("wizard_complete", False))
+        except Exception:
+            wizard_complete = False
 
     return {
         "isCloud": os.environ.get("CLOUD_MODE", "").lower() in ("1", "true"),
@@ -988,12 +1395,12 @@ from scripts.user_profile import load_user_profile, save_user_profile
 
 
 def _user_yaml_path() -> str:
-    """Resolve user.yaml path relative to the current STAGING_DB location.
+    """Resolve user.yaml path relative to the active staging.db.
 
-    Never falls back to another user's config directory — callers must handle
-    a missing file gracefully (return defaults / empty wizard state).
+    In cloud mode the ContextVar holds the per-user db path; elsewhere
+    falls back to STAGING_DB env var.  Never crosses user boundaries.
     """
-    db = os.environ.get("STAGING_DB", "/devl/peregrine/staging.db")
+    db = _request_db.get() or os.environ.get("STAGING_DB", "/devl/peregrine/staging.db")
     return os.path.join(os.path.dirname(db), "config", "user.yaml")
 
 
@@ -1061,6 +1468,23 @@ class IdentitySyncPayload(BaseModel):
     phone: str = ""
     linkedin_url: str = ""
 
+class UIPrefPayload(BaseModel):
+    preference: str  # "streamlit" | "vue"
+
+@app.post("/api/settings/ui-preference")
+def set_ui_preference(payload: UIPrefPayload):
+    """Persist UI preference to user.yaml so Streamlit doesn't re-set the cookie."""
+    if payload.preference not in ("streamlit", "vue"):
+        raise HTTPException(status_code=400, detail="preference must be 'streamlit' or 'vue'")
+    try:
+        data = load_user_profile(_user_yaml_path())
+        data["ui_preference"] = payload.preference
+        save_user_profile(_user_yaml_path(), data)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/settings/resume/sync-identity")
 def sync_identity(payload: IdentitySyncPayload):
     """Sync identity fields from profile store back to user.yaml."""
@@ -1117,9 +1541,54 @@ class ResumePayload(BaseModel):
     veteran_status: str = ""; disability: str = ""
     skills: List[str] = []; domains: List[str] = []; keywords: List[str] = []
 
+def _config_dir() -> Path:
+    """Resolve per-user config directory. Always co-located with user.yaml."""
+    return Path(_user_yaml_path()).parent
+
 def _resume_path() -> Path:
     """Resolve plain_text_resume.yaml co-located with user.yaml (user-isolated)."""
-    return Path(_user_yaml_path()).parent / "plain_text_resume.yaml"
+    return _config_dir() / "plain_text_resume.yaml"
+
+def _search_prefs_path() -> Path:
+    return _config_dir() / "search_profiles.yaml"
+
+def _license_path() -> Path:
+    return _config_dir() / "license.yaml"
+
+def _tokens_path() -> Path:
+    return _config_dir() / "tokens.yaml"
+
+def _normalize_experience(raw: list) -> list:
+    """Normalize AIHawk-style experience entries to the Vue WorkEntry schema.
+
+    Parser / AIHawk stores: bullets (list[str]), start_date, end_date
+    Vue WorkEntry expects:   responsibilities (str), period (str)
+    """
+    out = []
+    for e in raw:
+        if not isinstance(e, dict):
+            continue
+        entry = dict(e)
+        # bullets → responsibilities
+        if "responsibilities" not in entry or not entry["responsibilities"]:
+            bullets = entry.pop("bullets", None) or []
+            if isinstance(bullets, list):
+                entry["responsibilities"] = "\n".join(b for b in bullets if b)
+            elif isinstance(bullets, str):
+                entry["responsibilities"] = bullets
+        else:
+            entry.pop("bullets", None)
+        # start_date + end_date → period
+        if "period" not in entry or not entry["period"]:
+            start = entry.pop("start_date", "") or ""
+            end = entry.pop("end_date", "") or ""
+            entry["period"] = f"{start} – {end}".strip(" –") if (start or end) else ""
+        else:
+            entry.pop("start_date", None)
+            entry.pop("end_date", None)
+        out.append(entry)
+    return out
+
 
 @app.get("/api/settings/resume")
 def get_resume():
@@ -1130,6 +1599,8 @@ def get_resume():
         with open(resume_path) as f:
             data = yaml.safe_load(f) or {}
         data["exists"] = True
+        if "experience" in data and isinstance(data["experience"], list):
+            data["experience"] = _normalize_experience(data["experience"])
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1177,8 +1648,13 @@ async def upload_resume(file: UploadFile):
             raw_text = extract_text_from_docx(file_bytes)
 
         result, err = structure_resume(raw_text)
-        if err:
-            return {"ok": False, "error": err, "data": result}
+        if err and not result:
+            return {"ok": False, "error": err}
+        # Persist parsed data so store.load() reads the updated file
+        resume_path = _resume_path()
+        resume_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(resume_path, "w") as f:
+            yaml.dump(result, f, allow_unicode=True, default_flow_style=False)
         result["exists"] = True
         return {"ok": True, "data": result}
     except Exception as e:
@@ -1198,14 +1674,13 @@ class SearchPrefsPayload(BaseModel):
     blocklist_industries: List[str] = []
     blocklist_locations: List[str] = []
 
-SEARCH_PREFS_PATH = Path("config/search_profiles.yaml")
-
 @app.get("/api/settings/search")
 def get_search_prefs():
     try:
-        if not SEARCH_PREFS_PATH.exists():
+        p = _search_prefs_path()
+        if not p.exists():
             return {}
-        with open(SEARCH_PREFS_PATH) as f:
+        with open(p) as f:
             data = yaml.safe_load(f) or {}
         return data.get("default", {})
     except Exception as e:
@@ -1214,12 +1689,14 @@ def get_search_prefs():
 @app.put("/api/settings/search")
 def save_search_prefs(payload: SearchPrefsPayload):
     try:
+        p = _search_prefs_path()
         data = {}
-        if SEARCH_PREFS_PATH.exists():
-            with open(SEARCH_PREFS_PATH) as f:
+        if p.exists():
+            with open(p) as f:
                 data = yaml.safe_load(f) or {}
         data["default"] = payload.model_dump()
-        with open(SEARCH_PREFS_PATH, "w") as f:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True}
     except Exception as e:
@@ -1347,7 +1824,7 @@ def stop_service(name: str):
 
 # ── Settings: System — Email ──────────────────────────────────────────────────
 
-EMAIL_PATH = Path("config/email.yaml")
+# EMAIL_PATH is resolved per-request via _config_dir()
 EMAIL_CRED_SERVICE = "peregrine"
 EMAIL_CRED_KEY = "imap_password"
 
@@ -1359,8 +1836,9 @@ EMAIL_YAML_FIELDS = ("host", "port", "ssl", "username", "sent_folder", "lookback
 def get_email_config():
     try:
         config = {}
-        if EMAIL_PATH.exists():
-            with open(EMAIL_PATH) as f:
+        ep = _config_dir() / "email.yaml"
+        if ep.exists():
+            with open(ep) as f:
                 config = yaml.safe_load(f) or {}
         # Never return the password — only indicate whether it's set
         password = get_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY)
@@ -1374,7 +1852,8 @@ def get_email_config():
 @app.put("/api/settings/system/email")
 def save_email_config(payload: dict):
     try:
-        EMAIL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        ep = _config_dir() / "email.yaml"
+        ep.parent.mkdir(parents=True, exist_ok=True)
         # Extract password before writing yaml; discard the sentinel boolean regardless
         password = payload.pop("password", None)
         payload.pop("password_set", None)  # always discard — boolean sentinel, not a secret
@@ -1382,7 +1861,7 @@ def save_email_config(payload: dict):
             set_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY, password)
         # Write non-secret fields to yaml (chmod 600 still, contains username)
         safe_config = {k: v for k, v in payload.items() if k in EMAIL_YAML_FIELDS}
-        fd = os.open(str(EMAIL_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd = os.open(str(ep), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             yaml.dump(safe_config, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True}
@@ -1601,12 +2080,7 @@ def finetune_local_status():
 
 # ── Settings: License ─────────────────────────────────────────────────────────
 
-# CONFIG_DIR resolves relative to staging.db location (same convention as _user_yaml_path)
-CONFIG_DIR = Path(os.path.dirname(DB_PATH)) / "config"
-if not CONFIG_DIR.exists():
-    CONFIG_DIR = Path("/devl/job-seeker/config")
-
-LICENSE_PATH = CONFIG_DIR / "license.yaml"
+# _config_dir() / _license_path() / _tokens_path() are per-request (see helpers above)
 
 
 def _load_user_config() -> dict:
@@ -1622,8 +2096,9 @@ def _save_user_config(cfg: dict) -> None:
 @app.get("/api/settings/license")
 def get_license():
     try:
-        if LICENSE_PATH.exists():
-            with open(LICENSE_PATH) as f:
+        lp = _license_path()
+        if lp.exists():
+            with open(lp) as f:
                 data = yaml.safe_load(f) or {}
         else:
             data = {}
@@ -1647,9 +2122,10 @@ def activate_license(payload: LicenseActivatePayload):
         key = payload.key.strip()
         if not re.match(r'^CFG-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$', key):
             return {"ok": False, "error": "Invalid key format"}
+        lp = _license_path()
         data = {"tier": "paid", "key": key, "active": True}
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        fd = os.open(str(LICENSE_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        lp.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True, "tier": "paid"}
@@ -1660,11 +2136,12 @@ def activate_license(payload: LicenseActivatePayload):
 @app.post("/api/settings/license/deactivate")
 def deactivate_license():
     try:
-        if LICENSE_PATH.exists():
-            with open(LICENSE_PATH) as f:
+        lp = _license_path()
+        if lp.exists():
+            with open(lp) as f:
                 data = yaml.safe_load(f) or {}
             data["active"] = False
-            fd = os.open(str(LICENSE_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            fd = os.open(str(lp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w") as f:
                 yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True}
@@ -1682,18 +2159,19 @@ def create_backup(payload: BackupCreatePayload):
     try:
         import zipfile
         import datetime
-        backup_dir = Path("data/backups")
+        cfg_dir = _config_dir()
+        backup_dir = cfg_dir.parent / "backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         dest = backup_dir / f"peregrine_backup_{ts}.zip"
         file_count = 0
         with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
-            for cfg_file in CONFIG_DIR.glob("*.yaml"):
+            for cfg_file in cfg_dir.glob("*.yaml"):
                 if cfg_file.name not in ("tokens.yaml",):
                     zf.write(cfg_file, f"config/{cfg_file.name}")
                     file_count += 1
             if payload.include_db:
-                db_path = Path(DB_PATH)
+                db_path = Path(_request_db.get() or DB_PATH)
                 if db_path.exists():
                     zf.write(db_path, "data/staging.db")
                     file_count += 1
@@ -1737,15 +2215,14 @@ def save_privacy(payload: dict):
 
 # ── Settings: Developer ───────────────────────────────────────────────────────
 
-TOKENS_PATH = CONFIG_DIR / "tokens.yaml"
-
 @app.get("/api/settings/developer")
 def get_developer():
     try:
         cfg = _load_user_config()
         tokens = {}
-        if TOKENS_PATH.exists():
-            with open(TOKENS_PATH) as f:
+        tp = _tokens_path()
+        if tp.exists():
+            with open(tp) as f:
                 tokens = yaml.safe_load(f) or {}
         return {
             "dev_tier_override": cfg.get("dev_tier_override"),
@@ -1980,7 +2457,7 @@ def wizard_save_step(payload: WizardStepPayload):
         # Persist search preferences to search_profiles.yaml
         titles = data.get("titles", [])
         locations = data.get("locations", [])
-        search_path = SEARCH_PREFS_PATH
+        search_path = _search_prefs_path()
         existing_search: dict = {}
         if search_path.exists():
             with open(search_path) as f:
