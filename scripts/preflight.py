@@ -498,10 +498,6 @@ def main() -> None:
         if ollama_info and ollama_info.get("external"):
             env_updates["OLLAMA_HOST"] = f"http://host.docker.internal:{ollama_info['resolved']}"
 
-        ollama_research_info = ports.get("ollama_research")
-        if ollama_research_info and ollama_research_info.get("external"):
-            env_updates["OLLAMA_RESEARCH_HOST"] = f"http://host.docker.internal:{ollama_research_info['resolved']}"
-
         if offload_gb > 0:
             env_updates["CPU_OFFLOAD_GB"] = str(offload_gb)
         # GPU info for the app container (which lacks nvidia-smi access)
