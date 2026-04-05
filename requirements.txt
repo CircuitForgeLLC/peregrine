@@ -3,7 +3,7 @@
 # Keep in sync with environment.yml
 
 # ── CircuitForge shared core ───────────────────────────────────────────────
-# Requires circuitforge-core >= 0.7.0 (config.load_env, db, tasks, resources).
+# Requires circuitforge-core >= 0.8.0 (config.load_env, db, tasks; resources moved to circuitforge-orch).
 # Local dev / Docker (parent-context build): path install works because
 # circuitforge-core/ is a sibling directory.
 # CI / fresh checkouts: falls back to the Forgejo VCS URL below.
