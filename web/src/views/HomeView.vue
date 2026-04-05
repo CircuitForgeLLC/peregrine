@@ -53,6 +53,13 @@
           :loading="taskRunning === 'score'"
           @click="scoreUnscored"
         />
+        <WorkflowButton
+          emoji="🔍"
+          label="Fill Missing Descriptions"
+          description="Re-fetch truncated job descriptions"
+          :loading="taskRunning === 'enrich'"
+          @click="runEnrich"
+        />
       </div>
 
       <button
@@ -80,7 +87,6 @@
             ? `Last enriched ${formatRelative(store.status.enrichment_last_run)}`
             : 'Auto-enrichment active' }}
         </span>
-        <button class="btn-ghost btn-ghost--sm" @click="runEnrich">Run Now</button>
       </div>
     </section>
 
@@ -162,22 +168,192 @@
       </div>
     </section>
 
-    <!-- Advanced -->
+    <!-- Danger Zone -->
     <section class="home__section">
-      <details class="advanced">
-        <summary class="advanced__summary">Advanced</summary>
-        <div class="advanced__body">
-          <p class="advanced__warning">⚠️ These actions are destructive and cannot be undone.</p>
-          <div class="home__actions home__actions--danger">
-            <button class="action-btn action-btn--danger" @click="confirmPurge">
-              🗑️ Purge Pending + Rejected
-            </button>
-            <button class="action-btn action-btn--danger" @click="killTasks">
-              🛑 Kill Stuck Tasks
+      <details class="danger-zone">
+        <summary class="danger-zone__summary">⚠️ Danger Zone</summary>
+        <div class="danger-zone__body">
+
+          <!-- Queue reset -->
+          <div class="dz-block">
+            <p class="dz-block__title">Queue reset</p>
+            <p class="dz-block__desc">
+              Archive clears your review queue while keeping job URLs for dedup — same listings
+              won't resurface on the next discovery run. Use hard purge only for a full clean slate
+              including dedup history.
+            </p>
+
+            <fieldset class="dz-scope" aria-label="Clear scope">
+              <legend class="dz-scope__legend">Clear scope</legend>
+              <label class="dz-scope__option">
+                <input type="radio" v-model="dangerScope" value="pending" />
+                Pending only
+              </label>
+              <label class="dz-scope__option">
+                <input type="radio" v-model="dangerScope" value="pending_approved" />
+                Pending + approved (stale search)
+              </label>
+            </fieldset>
+
+            <div class="dz-actions">
+              <button
+                class="action-btn action-btn--primary"
+                :disabled="!!confirmAction"
+                @click="beginConfirm('archive')"
+              >
+                📦 Archive &amp; reset
+              </button>
+              <button
+                class="action-btn action-btn--secondary"
+                :disabled="!!confirmAction"
+                @click="beginConfirm('purge')"
+              >
+                🗑 Hard purge (delete)
+              </button>
+            </div>
+
+            <!-- Inline confirm -->
+            <div v-if="confirmAction" class="dz-confirm" role="alertdialog" aria-live="assertive">
+              <p v-if="confirmAction.type === 'archive'" class="dz-confirm__msg dz-confirm__msg--info">
+                Archive <strong>{{ confirmAction.statuses.join(' + ') }}</strong> jobs?
+                URLs are kept for dedup — nothing is permanently deleted.
+              </p>
+              <p v-else class="dz-confirm__msg dz-confirm__msg--warn">
+                Permanently delete <strong>{{ confirmAction.statuses.join(' + ') }}</strong> jobs?
+                This removes URLs from dedup history too. Cannot be undone.
+              </p>
+              <div class="dz-confirm__actions">
+                <button class="action-btn action-btn--primary" @click="executeConfirm">
+                  {{ confirmAction.type === 'archive' ? 'Yes, archive' : 'Yes, delete' }}
+                </button>
+                <button class="action-btn action-btn--secondary" @click="confirmAction = null">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <hr class="dz-divider" />
+
+          <!-- Background tasks -->
+          <div class="dz-block">
+            <p class="dz-block__title">Background tasks — {{ activeTasks.length }} active</p>
+            <template v-if="activeTasks.length > 0">
+              <div
+                v-for="task in activeTasks"
+                :key="task.id"
+                class="dz-task"
+              >
+                <span class="dz-task__icon">{{ taskIcon(task.task_type) }}</span>
+                <span class="dz-task__type">{{ task.task_type.replace(/_/g, ' ') }}</span>
+                <span class="dz-task__label">
+                  {{ task.title ? `${task.title}${task.company ? ' @ ' + task.company : ''}` : `job #${task.job_id}` }}
+                </span>
+                <span class="dz-task__status">{{ task.status }}</span>
+                <button
+                  class="btn-ghost btn-ghost--sm dz-task__cancel"
+                  @click="cancelTaskById(task.id)"
+                  :aria-label="`Cancel ${task.task_type} task`"
+                >
+                  ✕
+                </button>
+              </div>
+            </template>
+            <button
+              class="action-btn action-btn--secondary dz-kill"
+              :disabled="activeTasks.length === 0"
+              @click="killAll"
+            >
+              ⏹ Kill all stuck
             </button>
           </div>
+
+          <hr class="dz-divider" />
+
+          <!-- More options -->
+          <details class="dz-more">
+            <summary class="dz-more__summary">More options</summary>
+            <div class="dz-more__body">
+
+              <!-- Email purge -->
+              <div class="dz-more__item">
+                <p class="dz-block__title">Purge email data</p>
+                <p class="dz-block__desc">Clears all email thread logs and email-sourced pending jobs.</p>
+                <template v-if="moreConfirm === 'email'">
+                  <p class="dz-confirm__msg dz-confirm__msg--warn">
+                    Deletes all email contacts and email-sourced jobs. Cannot be undone.
+                  </p>
+                  <div class="dz-confirm__actions">
+                    <button class="action-btn action-btn--primary" @click="executePurgeTarget('email')">Yes, purge emails</button>
+                    <button class="action-btn action-btn--secondary" @click="moreConfirm = null">Cancel</button>
+                  </div>
+                </template>
+                <button v-else class="action-btn action-btn--secondary" @click="moreConfirm = 'email'">
+                  📧 Purge Email Data
+                </button>
+              </div>
+
+              <!-- Non-remote purge -->
+              <div class="dz-more__item">
+                <p class="dz-block__title">Purge non-remote</p>
+                <p class="dz-block__desc">Removes pending/approved/rejected on-site listings from the DB.</p>
+                <template v-if="moreConfirm === 'non_remote'">
+                  <p class="dz-confirm__msg dz-confirm__msg--warn">
+                    Deletes all non-remote jobs not yet applied to. Cannot be undone.
+                  </p>
+                  <div class="dz-confirm__actions">
+                    <button class="action-btn action-btn--primary" @click="executePurgeTarget('non_remote')">Yes, purge on-site</button>
+                    <button class="action-btn action-btn--secondary" @click="moreConfirm = null">Cancel</button>
+                  </div>
+                </template>
+                <button v-else class="action-btn action-btn--secondary" @click="moreConfirm = 'non_remote'">
+                  🏢 Purge On-site Jobs
+                </button>
+              </div>
+
+              <!-- Wipe + re-scrape -->
+              <div class="dz-more__item">
+                <p class="dz-block__title">Wipe all + re-scrape</p>
+                <p class="dz-block__desc">Deletes all non-applied jobs then immediately runs a fresh discovery.</p>
+                <template v-if="moreConfirm === 'rescrape'">
+                  <p class="dz-confirm__msg dz-confirm__msg--warn">
+                    Wipes ALL pending, approved, and rejected jobs, then re-scrapes.
+                    Applied and synced records are kept.
+                  </p>
+                  <div class="dz-confirm__actions">
+                    <button class="action-btn action-btn--primary" @click="executePurgeTarget('rescrape')">Yes, wipe + scrape</button>
+                    <button class="action-btn action-btn--secondary" @click="moreConfirm = null">Cancel</button>
+                  </div>
+                </template>
+                <button v-else class="action-btn action-btn--secondary" @click="moreConfirm = 'rescrape'">
+                  🔄 Wipe + Re-scrape
+                </button>
+              </div>
+
+            </div>
+          </details>
+
         </div>
       </details>
+    </section>
+
+    <!-- Setup banners -->
+    <section v-if="banners.length > 0" class="home__section" aria-labelledby="setup-heading">
+      <h2 id="setup-heading" class="home__section-title">Finish setting up Peregrine</h2>
+      <div class="banners">
+        <div v-for="banner in banners" :key="banner.key" class="banner">
+          <span class="banner__icon" aria-hidden="true">💡</span>
+          <span class="banner__text">{{ banner.text }}</span>
+          <RouterLink :to="banner.link" class="banner__link">Go to settings →</RouterLink>
+          <button
+            class="btn-ghost btn-ghost--sm banner__dismiss"
+            @click="dismissBanner(banner.key)"
+            :aria-label="`Dismiss: ${banner.text}`"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
     </section>
 
     <!-- Stoop speed toast — easter egg 9.2 -->
@@ -190,7 +366,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useJobsStore } from '../stores/jobs'
 import { useApiFetch } from '../composables/useApi'
@@ -231,6 +407,8 @@ function formatRelative(isoStr: string) {
   return hrs === 1 ? '1 hour ago' : `${hrs} hours ago`
 }
 
+// ── Task execution ─────────────────────────────────────────────────────────
+
 const taskRunning = ref<string | null>(null)
 const stoopToast  = ref(false)
 
@@ -239,13 +417,16 @@ async function runTask(key: string, endpoint: string) {
   await useApiFetch(endpoint, { method: 'POST' })
   taskRunning.value = null
   store.refresh()
+  fetchActiveTasks()
 }
 
 const runDiscovery    = () => runTask('discovery', '/api/tasks/discovery')
 const syncEmails      = () => runTask('email', '/api/tasks/email-sync')
 const scoreUnscored   = () => runTask('score', '/api/tasks/score')
 const syncIntegration = () => runTask('sync', '/api/tasks/sync')
-const runEnrich       = () => useApiFetch('/api/tasks/enrich', { method: 'POST' })
+const runEnrich       = () => runTask('enrich', '/api/tasks/enrich')
+
+// ── Add jobs ───────────────────────────────────────────────────────────────
 
 const addTab   = ref<'url' | 'csv'>('url')
 const urlInput = ref('')
@@ -269,6 +450,8 @@ function handleCsvUpload(e: Event) {
   useApiFetch('/api/jobs/upload-csv', { method: 'POST', body: form })
 }
 
+// ── Backlog archive ────────────────────────────────────────────────────────
+
 async function archiveByStatus(statuses: string[]) {
   await useApiFetch('/api/jobs/archive', {
     method: 'POST',
@@ -278,26 +461,100 @@ async function archiveByStatus(statuses: string[]) {
   store.refresh()
 }
 
-function confirmPurge() {
-  // TODO: replace with ConfirmModal component
-  if (confirm('Permanently delete all pending and rejected jobs? This cannot be undone.')) {
-    useApiFetch('/api/jobs/purge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target: 'pending_rejected' }),
-    })
-    store.refresh()
-  }
+// ── Danger Zone ────────────────────────────────────────────────────────────
+
+interface TaskRow { id: number; task_type: string; status: string; title?: string; company?: string; job_id: number }
+interface Banner  { key: string; text: string; link: string }
+interface ConfirmAction { type: 'archive' | 'purge'; statuses: string[] }
+
+const activeTasks   = ref<TaskRow[]>([])
+const dangerScope   = ref<'pending' | 'pending_approved'>('pending')
+const confirmAction = ref<ConfirmAction | null>(null)
+const moreConfirm   = ref<string | null>(null)
+const banners       = ref<Banner[]>([])
+
+let taskPollInterval: ReturnType<typeof setInterval> | null = null
+
+async function fetchActiveTasks() {
+  const { data } = await useApiFetch<TaskRow[]>('/api/tasks')
+  activeTasks.value = data ?? []
 }
 
-async function killTasks() {
+async function fetchBanners() {
+  const { data } = await useApiFetch<Banner[]>('/api/config/setup-banners')
+  banners.value = data ?? []
+}
+
+function scopeStatuses(): string[] {
+  return dangerScope.value === 'pending' ? ['pending'] : ['pending', 'approved']
+}
+
+function beginConfirm(type: 'archive' | 'purge') {
+  moreConfirm.value = null
+  confirmAction.value = { type, statuses: scopeStatuses() }
+}
+
+async function executeConfirm() {
+  const action = confirmAction.value
+  confirmAction.value = null
+  if (!action) return
+  const endpoint = action.type === 'archive' ? '/api/jobs/archive' : '/api/jobs/purge'
+  const key      = action.type === 'archive' ? 'statuses'          : 'statuses'
+  await useApiFetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [key]: action.statuses }),
+  })
+  store.refresh()
+  fetchActiveTasks()
+}
+
+async function cancelTaskById(id: number) {
+  await useApiFetch(`/api/tasks/${id}`, { method: 'DELETE' })
+  fetchActiveTasks()
+}
+
+async function killAll() {
   await useApiFetch('/api/tasks/kill', { method: 'POST' })
+  fetchActiveTasks()
+}
+
+async function executePurgeTarget(target: string) {
+  moreConfirm.value = null
+  await useApiFetch('/api/jobs/purge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target }),
+  })
+  store.refresh()
+  fetchActiveTasks()
+}
+
+async function dismissBanner(key: string) {
+  await useApiFetch(`/api/config/setup-banners/${key}/dismiss`, { method: 'POST' })
+  banners.value = banners.value.filter(b => b.key !== key)
+}
+
+function taskIcon(taskType: string): string {
+  const icons: Record<string, string> = {
+    cover_letter: '✉️', company_research: '🔍', discovery: '🌐',
+    enrich_descriptions: '📝', email_sync: '📧', score: '📊',
+    scrape_url: '🔗',
+  }
+  return icons[taskType] ?? '⚙️'
 }
 
 onMounted(async () => {
   store.refresh()
   const { data } = await useApiFetch<{ name: string }>('/api/config/user')
   if (data?.name) userName.value = data.name
+  fetchActiveTasks()
+  fetchBanners()
+  taskPollInterval = setInterval(fetchActiveTasks, 5000)
+})
+
+onUnmounted(() => {
+  if (taskPollInterval) clearInterval(taskPollInterval)
 })
 </script>
 
@@ -392,12 +649,11 @@ onMounted(async () => {
 
 .home__actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--space-3);
 }
 
 .home__actions--secondary { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.home__actions--danger    { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 
 .sync-banner {
   display: flex;
@@ -451,9 +707,7 @@ onMounted(async () => {
 
 .action-btn--secondary       { background: var(--color-surface-alt); color: var(--color-text); border: 1px solid var(--color-border); }
 .action-btn--secondary:hover { background: var(--color-border-light); }
-
-.action-btn--danger       { background: transparent; color: var(--color-error); border: 1px solid var(--color-error); }
-.action-btn--danger:hover { background: rgba(192, 57, 43, 0.08); }
+.action-btn--secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .enrichment-row {
   display: flex;
@@ -528,13 +782,15 @@ onMounted(async () => {
 
 .add-jobs__textarea:focus { outline: 2px solid var(--app-primary); outline-offset: 1px; }
 
-.advanced {
+/* ── Danger Zone ──────────────────────────────────────── */
+
+.danger-zone {
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
 }
 
-.advanced__summary {
+.danger-zone__summary {
   padding: var(--space-3) var(--space-4);
   cursor: pointer;
   font-size: var(--text-sm);
@@ -544,20 +800,171 @@ onMounted(async () => {
   user-select: none;
 }
 
-.advanced__summary::-webkit-details-marker { display: none; }
-.advanced__summary::before { content: '▶  '; font-size: 0.7em; }
-details[open] > .advanced__summary::before { content: '▼  '; }
+.danger-zone__summary::-webkit-details-marker { display: none; }
+.danger-zone__summary::before { content: '▶  '; font-size: 0.7em; }
+details[open] > .danger-zone__summary::before { content: '▼  '; }
 
-.advanced__body { padding: 0 var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+.danger-zone__body {
+  padding: 0 var(--space-4) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
 
-.advanced__warning {
+.dz-block { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.dz-block__title {
   font-size: var(--text-sm);
-  color: var(--color-warning);
-  background: rgba(212, 137, 26, 0.08);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.dz-block__desc {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.dz-scope {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.dz-scope__legend {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+  float: left;
+  width: 100%;
+}
+
+.dz-scope__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.dz-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.dz-confirm {
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
-  border-left: 3px solid var(--color-warning);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
+
+.dz-confirm__msg {
+  font-size: var(--text-sm);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border-left: 3px solid;
+}
+
+.dz-confirm__msg--info {
+  background: rgba(52, 152, 219, 0.1);
+  border-color: var(--app-primary);
+  color: var(--color-text);
+}
+
+.dz-confirm__msg--warn {
+  background: rgba(192, 57, 43, 0.08);
+  border-color: var(--color-error);
+  color: var(--color-text);
+}
+
+.dz-confirm__actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.dz-divider {
+  border: none;
+  border-top: 1px solid var(--color-border-light);
+  margin: 0;
+}
+
+.dz-task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+.dz-task__icon  { flex-shrink: 0; }
+.dz-task__type  { font-family: var(--font-mono); color: var(--color-text-muted); min-width: 120px; }
+.dz-task__label { flex: 1; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dz-task__status { color: var(--color-text-muted); font-style: italic; }
+.dz-task__cancel { margin-left: var(--space-2); }
+
+.dz-kill { align-self: flex-start; }
+
+.dz-more {
+  background: transparent;
+  border: none;
+}
+
+.dz-more__summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  list-style: none;
+  user-select: none;
+  padding: var(--space-1) 0;
+}
+
+.dz-more__summary::-webkit-details-marker { display: none; }
+.dz-more__summary::before { content: '▶  '; font-size: 0.7em; }
+details[open] > .dz-more__summary::before { content: '▼  '; }
+
+.dz-more__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-5);
+  margin-top: var(--space-4);
+}
+
+.dz-more__item { display: flex; flex-direction: column; gap: var(--space-2); }
+
+/* ── Setup banners ────────────────────────────────────── */
+
+.banners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.banner__icon  { flex-shrink: 0; }
+.banner__text  { flex: 1; color: var(--color-text); }
+.banner__link  { color: var(--app-primary); text-decoration: none; white-space: nowrap; font-weight: 500; }
+.banner__link:hover { text-decoration: underline; }
+.banner__dismiss { margin-left: var(--space-1); }
+
+/* ── Toast ────────────────────────────────────────────── */
 
 .stoop-toast {
   position: fixed;
@@ -588,6 +995,7 @@ details[open] > .advanced__summary::before { content: '▼  '; }
   .home { padding: var(--space-4); gap: var(--space-6); }
   .home__greeting { font-size: var(--text-2xl); }
   .home__metrics { grid-template-columns: repeat(3, 1fr); }
+  .dz-more__body { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {
