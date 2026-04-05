@@ -479,8 +479,8 @@ elif step == 5:
                                        key="ollama_model_input")
     else:
         st.info(f"Local mode ({profile}): Ollama provides inference.")
-        import os as _os
-        _ollama_host_env = _os.environ.get("OLLAMA_HOST", "")
+        import os
+        _ollama_host_env = os.environ.get("OLLAMA_HOST", "")
         if _ollama_host_env:
             st.caption(f"OLLAMA_HOST from .env: `{_ollama_host_env}`")
         anthropic_key = openai_url = openai_key = ""
@@ -564,7 +564,7 @@ elif step == 5:
             if profile == "remote":
                 if ollama_host:
                     env_lines = _set_env(env_lines, "OLLAMA_HOST", ollama_host)
-                if ollama_model and ollama_model != "llama3.2:3b":
+                if ollama_model:
                     env_lines = _set_env(env_lines, "OLLAMA_MODEL", ollama_model)
                 if ollama_host or ollama_model:
                     env_path.write_text("\n".join(env_lines) + "\n")

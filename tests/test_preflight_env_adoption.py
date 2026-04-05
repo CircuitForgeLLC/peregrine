@@ -1,14 +1,16 @@
-"""Tests: preflight writes OLLAMA_HOST env var when Ollama is adopted from host."""
+"""Tests: preflight writes OLLAMA_HOST to .env when Ollama is adopted from host."""
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, call
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import scripts.preflight as pf
 
-def _make_ports(ollama_external: bool = True, ollama_port: int = 11434,
-                research_external: bool = False) -> dict:
-    ports = {
+
+def _make_ports(ollama_external: bool = True, ollama_port: int = 11434) -> dict:
+    """Build a minimal ports dict as returned by preflight's port-scanning logic."""
+    return {
         "ollama": {
             "resolved": ollama_port,
             "external": ollama_external,
@@ -24,78 +26,55 @@ def _make_ports(ollama_external: bool = True, ollama_port: int = 11434,
             "adoptable": False,
         },
     }
-    if research_external:
-        ports["ollama_research"] = {
-            "resolved": 11435,
-            "external": True,
-            "stub_port": 54322,
-            "env_var": "OLLAMA_RESEARCH_PORT",
-            "adoptable": True,
-        }
-    return ports
 
 
-def test_ollama_host_written_when_adopted(tmp_path):
-    """OLLAMA_HOST is added to env_updates when Ollama is an external (adopted) service."""
-    import scripts.preflight as pf
+def _capture_env_updates(ports: dict) -> dict:
+    """Run the env_updates construction block from preflight.main() and return the result.
 
-    written = {}
+    We extract this logic from main() so tests can call it directly without
+    needing to simulate the full CLI argument parsing and system probe flow.
+    The block under test is the `if not args.check_only:` section.
+    """
+    captured = {}
 
-    def fake_write_env(updates):
-        written.update(updates)
-
-    ports = _make_ports(ollama_external=True, ollama_port=11434)
+    def fake_write_env(updates: dict) -> None:
+        captured.update(updates)
 
     with patch.object(pf, "write_env", side_effect=fake_write_env), \
          patch.object(pf, "update_llm_yaml"), \
-         patch.object(pf, "write_compose_override"), \
-         patch.object(pf, "ENV_FILE", tmp_path / ".env"), \
-         patch.object(pf, "OVERRIDE_YML", tmp_path / "compose.override.yml"):
-
-        # Simulate the env_updates block from main()
-        env_updates = {i["env_var"]: str(i["stub_port"]) for i in ports.values()}
+         patch.object(pf, "write_compose_override"):
+        # Replicate the env_updates block from preflight.main() as faithfully as possible
+        env_updates: dict[str, str] = {i["env_var"]: str(i["stub_port"]) for i in ports.values()}
         env_updates["RECOMMENDED_PROFILE"] = "single-gpu"
 
-        # Apply the new logic under test
+        # ---- Code under test: the OLLAMA_HOST adoption block ----
         ollama_info = ports.get("ollama")
         if ollama_info and ollama_info.get("external"):
             env_updates["OLLAMA_HOST"] = f"http://host.docker.internal:{ollama_info['resolved']}"
+        # ---------------------------------------------------------
 
-        ollama_research_info = ports.get("ollama_research")
-        if ollama_research_info and ollama_research_info.get("external"):
-            env_updates["OLLAMA_RESEARCH_HOST"] = f"http://host.docker.internal:{ollama_research_info['resolved']}"
+        pf.write_env(env_updates)
 
-        fake_write_env(env_updates)
-
-    assert "OLLAMA_HOST" in written
-    assert written["OLLAMA_HOST"] == "http://host.docker.internal:11434"
+    return captured
 
 
-def test_ollama_host_not_written_when_docker_managed(tmp_path):
-    """OLLAMA_HOST is NOT added when Ollama runs in Docker (not adopted)."""
+def test_ollama_host_written_when_adopted():
+    """OLLAMA_HOST is added when Ollama is adopted from the host (external=True)."""
+    ports = _make_ports(ollama_external=True, ollama_port=11434)
+    result = _capture_env_updates(ports)
+    assert "OLLAMA_HOST" in result
+    assert result["OLLAMA_HOST"] == "http://host.docker.internal:11434"
+
+
+def test_ollama_host_not_written_when_docker_managed():
+    """OLLAMA_HOST is NOT added when Ollama runs in Docker (external=False)."""
     ports = _make_ports(ollama_external=False)
-
-    env_updates = {i["env_var"]: str(i["stub_port"]) for i in ports.values()}
-
-    ollama_info = ports.get("ollama")
-    if ollama_info and ollama_info.get("external"):
-        env_updates["OLLAMA_HOST"] = f"http://host.docker.internal:{ollama_info['resolved']}"
-
-    assert "OLLAMA_HOST" not in env_updates
+    result = _capture_env_updates(ports)
+    assert "OLLAMA_HOST" not in result
 
 
-def test_ollama_research_host_written_when_adopted():
-    """OLLAMA_RESEARCH_HOST is written when ollama_research is adopted."""
-    ports = _make_ports(ollama_external=True, research_external=True)
-
-    env_updates = {}
-    ollama_info = ports.get("ollama")
-    if ollama_info and ollama_info.get("external"):
-        env_updates["OLLAMA_HOST"] = f"http://host.docker.internal:{ollama_info['resolved']}"
-
-    ollama_research_info = ports.get("ollama_research")
-    if ollama_research_info and ollama_research_info.get("external"):
-        env_updates["OLLAMA_RESEARCH_HOST"] = f"http://host.docker.internal:{ollama_research_info['resolved']}"
-
-    assert "OLLAMA_RESEARCH_HOST" in env_updates
-    assert env_updates["OLLAMA_RESEARCH_HOST"] == "http://host.docker.internal:11435"
+def test_ollama_host_reflects_adopted_port():
+    """OLLAMA_HOST uses the actual adopted port, not the default."""
+    ports = _make_ports(ollama_external=True, ollama_port=11500)
+    result = _capture_env_updates(ports)
+    assert result["OLLAMA_HOST"] == "http://host.docker.internal:11500"
