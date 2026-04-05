@@ -35,6 +35,7 @@ if str(PEREGRINE_ROOT) not in sys.path:
 
 from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
 from scripts.credential_store import get_credential, set_credential, delete_credential  # noqa: E402
+from scripts.db_migrate import migrate_db  # noqa: E402
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 
@@ -132,23 +133,11 @@ def _strip_html(text: str | None) -> str | None:
 
 @app.on_event("startup")
 def _startup():
-    """Load .env then ensure digest_queue table exists."""
+    """Load .env then run pending SQLite migrations."""
     # Load .env before any runtime env reads — safe because startup doesn't run
     # when dev_api is imported by tests (only when uvicorn actually starts).
     _load_env(PEREGRINE_ROOT / ".env")
-    db = _get_db()
-    try:
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS digest_queue (
-              id             INTEGER PRIMARY KEY,
-              job_contact_id INTEGER NOT NULL REFERENCES job_contacts(id),
-              created_at     TEXT DEFAULT (datetime('now')),
-              UNIQUE(job_contact_id)
-            )
-        """)
-        db.commit()
-    finally:
-        db.close()
+    migrate_db(Path(DB_PATH))
 
 
 # ── Link extraction helpers ───────────────────────────────────────────────
