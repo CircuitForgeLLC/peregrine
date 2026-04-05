@@ -17,6 +17,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logging.basicConfig(level=logging.WARNING, format="%(name)s %(levelname)s: %(message)s")
 
+# Load .env before any os.environ reads — safe to call inside Docker too
+# (uses setdefault, so Docker-injected vars take precedence over .env values)
+from circuitforge_core.config.settings import load_env as _load_env
+_load_env(Path(__file__).parent.parent / ".env")
+
 IS_DEMO = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 import streamlit as st
