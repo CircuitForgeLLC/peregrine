@@ -1532,6 +1532,108 @@ def save_profile(payload: UserProfilePayload):
         raise HTTPException(500, f"Could not save profile: {e}")
 
 
+# ── Settings: My Profile — LLM generation endpoints ─────────────────────────
+
+def _resume_context_snippet() -> str:
+    """Load a concise resume snippet for use as LLM generation context."""
+    try:
+        rp = _resume_path()
+        if not rp.exists():
+            return ""
+        with open(rp) as f:
+            resume_data = yaml.safe_load(f) or {}
+        parts: list[str] = []
+        if resume_data.get("name"):
+            parts.append(f"Candidate: {resume_data['name']}")
+        if resume_data.get("skills"):
+            parts.append(f"Skills: {', '.join(resume_data['skills'][:20])}")
+        if resume_data.get("experience"):
+            exp = resume_data["experience"]
+            if isinstance(exp, list) and exp:
+                titles = [e.get("title", "") for e in exp[:3] if e.get("title")]
+                if titles:
+                    parts.append(f"Recent roles: {', '.join(titles)}")
+        return "\n".join(parts)
+    except Exception:
+        return ""
+
+
+@app.post("/api/settings/profile/generate-summary")
+def generate_career_summary():
+    """LLM-generate a career summary from the candidate's resume profile."""
+    context = _resume_context_snippet()
+    if not context:
+        raise HTTPException(400, "Resume profile is empty — add experience and skills first")
+    prompt = (
+        "You are a professional resume writer.\n\n"
+        f"Candidate background:\n{context}\n\n"
+        "Write a 2–3 sentence professional career summary in first person. "
+        "Be specific, highlight key strengths, and avoid hollow filler phrases like "
+        "'results-driven' or 'passionate self-starter'."
+    )
+    try:
+        from scripts.llm_router import LLMRouter
+        summary = LLMRouter().complete(prompt)
+        return {"summary": summary.strip()}
+    except Exception as e:
+        raise HTTPException(500, f"LLM generation failed: {e}")
+
+
+@app.post("/api/settings/profile/generate-missions")
+def generate_mission_preferences():
+    """LLM-generate 3 mission/industry preferences from the candidate's resume."""
+    context = _resume_context_snippet()
+    prompt = (
+        "You are helping a job seeker identify mission-aligned industries they would enjoy working in.\n\n"
+        + (f"Candidate background:\n{context}\n\n" if context else "")
+        + "Suggest 3 mission-aligned industries or causes the candidate might care about "
+        "(e.g. animal welfare, education, accessibility, climate tech, healthcare). "
+        "Return a JSON array with exactly 3 objects, each with 'tag' (slug, no spaces), "
+        "'label' (human-readable name), and 'note' (one sentence on why it fits). "
+        "Only output the JSON array, no other text."
+    )
+    try:
+        from scripts.llm_router import LLMRouter
+        import json as _json
+        raw = LLMRouter().complete(prompt)
+        # Extract JSON array from the response
+        start = raw.find("[")
+        end = raw.rfind("]") + 1
+        if start == -1 or end == 0:
+            raise ValueError("LLM did not return a JSON array")
+        items = _json.loads(raw[start:end])
+        # Normalise to {industry, note} — LLM may return {tag, label, note}
+        missions = [
+            {"industry": m.get("label") or m.get("tag") or str(m), "note": m.get("note", "")}
+            for m in items if isinstance(m, dict)
+        ]
+        return {"mission_preferences": missions}
+    except Exception as e:
+        raise HTTPException(500, f"LLM generation failed: {e}")
+
+
+@app.post("/api/settings/profile/generate-voice")
+def generate_candidate_voice():
+    """LLM-generate a candidate voice/writing-style note from the resume profile."""
+    context = _resume_context_snippet()
+    if not context:
+        raise HTTPException(400, "Resume profile is empty — add experience and skills first")
+    prompt = (
+        "You are a professional writing coach helping a job seeker articulate their communication style.\n\n"
+        f"Candidate background:\n{context}\n\n"
+        "Write a 1–2 sentence note describing the candidate's professional voice and writing style "
+        "for use in cover letter generation. This should capture tone (e.g. direct, warm, precise), "
+        "values that come through in their writing, and any standout personality. "
+        "Write it in third person as a style directive (e.g. 'Writes in a clear, direct tone...')."
+    )
+    try:
+        from scripts.llm_router import LLMRouter
+        voice = LLMRouter().complete(prompt)
+        return {"voice": voice.strip()}
+    except Exception as e:
+        raise HTTPException(500, f"LLM generation failed: {e}")
+
+
 # ── Settings: Resume Profile endpoints ───────────────────────────────────────
 
 class WorkEntry(BaseModel):
@@ -1710,13 +1812,59 @@ def save_search_prefs(payload: SearchPrefsPayload):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class SearchSuggestPayload(BaseModel):
+    type: str          # "titles" | "locations" | "exclude_keywords"
+    current: List[str] = []
+
 @app.post("/api/settings/search/suggest")
-def suggest_search(body: dict):
+def suggest_search(payload: SearchSuggestPayload):
+    """LLM-generate suggestions for job titles, locations, or exclude keywords."""
+    context = _resume_context_snippet()
+    current_str = ", ".join(payload.current) if payload.current else "none"
+
+    if payload.type == "titles":
+        prompt = (
+            "You are a career advisor helping a job seeker identify relevant job titles.\n\n"
+            + (f"Candidate background:\n{context}\n\n" if context else "")
+            + f"Current job titles they're searching for: {current_str}\n\n"
+            "Suggest 5 additional relevant job titles they may have missed. "
+            "Return only a JSON array of strings, no other text. "
+            "Example: [\"Senior Software Engineer\", \"Staff Engineer\"]"
+        )
+    elif payload.type == "locations":
+        prompt = (
+            "You are a career advisor helping a job seeker identify relevant job markets.\n\n"
+            + (f"Candidate background:\n{context}\n\n" if context else "")
+            + f"Current locations they're searching in: {current_str}\n\n"
+            "Suggest 5 relevant locations or remote options they may have missed. "
+            "Include 'Remote' if not already listed. "
+            "Return only a JSON array of strings, no other text."
+        )
+    elif payload.type == "exclude_keywords":
+        prompt = (
+            "You are a job search assistant helping a job seeker filter out irrelevant listings.\n\n"
+            + (f"Candidate background:\n{context}\n\n" if context else "")
+            + f"Keywords they already exclude: {current_str}\n\n"
+            "Suggest 5–8 keywords or phrases they should add to their exclude list to avoid "
+            "irrelevant postings (e.g. management roles they don't want, clearance requirements, "
+            "technologies they don't work with). "
+            "Return only a JSON array of strings, no other text."
+        )
+    else:
+        raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
+
     try:
-        # Stub — LLM suggest for paid tier
-        return {"suggestions": []}
+        import json as _json
+        from scripts.llm_router import LLMRouter
+        raw = LLMRouter().complete(prompt)
+        start = raw.find("[")
+        end   = raw.rfind("]") + 1
+        if start == -1 or end == 0:
+            return {"suggestions": []}
+        suggestions = _json.loads(raw[start:end])
+        return {"suggestions": [str(s) for s in suggestions if s]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, f"LLM generation failed: {e}")
 
 
 # ── Settings: System — LLM Backends + BYOK endpoints ─────────────────────────

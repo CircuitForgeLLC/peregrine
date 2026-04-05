@@ -62,6 +62,13 @@
             rows="3"
             placeholder="How you write and communicate — used to shape cover letter voice."
           />
+          <button
+            v-if="config.tier !== 'free'"
+            class="btn-generate"
+            type="button"
+            @click="generateVoice"
+            :disabled="generatingVoice"
+          >{{ generatingVoice ? 'Generating…' : 'Generate ✦' }}</button>
         </div>
 
         <div v-if="!config.isCloud" class="field-row">
@@ -210,6 +217,7 @@ const config = useAppConfigStore()
 const newNdaCompany = ref('')
 const generatingSummary = ref(false)
 const generatingMissions = ref(false)
+const generatingVoice = ref(false)
 
 onMounted(() => { store.load() })
 
@@ -264,6 +272,15 @@ async function generateMissions() {
       id: crypto.randomUUID(), industry: m.industry ?? '', note: m.note ?? '',
     }))
   }
+}
+
+async function generateVoice() {
+  generatingVoice.value = true
+  const { data, error } = await useApiFetch<{ voice?: string }>(
+    '/api/settings/profile/generate-voice', { method: 'POST' }
+  )
+  generatingVoice.value = false
+  if (!error && data?.voice) store.candidate_voice = data.voice
 }
 </script>
 
