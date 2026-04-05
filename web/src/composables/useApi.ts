@@ -2,12 +2,15 @@ export type ApiError =
   | { kind: 'network'; message: string }
   | { kind: 'http'; status: number; detail: string }
 
+// Strip trailing slash so '/peregrine/' + '/api/...' → '/peregrine/api/...'
+const _apiBase = import.meta.env.BASE_URL.replace(/\/$/, '')
+
 export async function useApiFetch<T>(
   url: string,
   opts?: RequestInit,
 ): Promise<{ data: T | null; error: ApiError | null }> {
   try {
-    const res = await fetch(url, opts)
+    const res = await fetch(_apiBase + url, opts)
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
       return { data: null, error: { kind: 'http', status: res.status, detail } }
@@ -31,7 +34,7 @@ export function useApiSSE(
   onComplete?: () => void,
   onError?: (e: Event) => void,
 ): () => void {
-  const es = new EventSource(url)
+  const es = new EventSource(_apiBase + url)
   es.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data) as Record<string, unknown>

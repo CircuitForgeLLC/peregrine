@@ -15,7 +15,13 @@
         <div class="empty-card">
           <h3>Upload & Parse</h3>
           <p>Upload a PDF, DOCX, or ODT and we'll extract your info automatically.</p>
-          <input type="file" accept=".pdf,.docx,.odt" @change="handleUpload" ref="fileInput" />
+          <input type="file" accept=".pdf,.docx,.odt" @change="handleFileSelect" ref="fileInput" />
+          <button
+            v-if="pendingFile"
+            @click="handleUpload"
+            :disabled="uploading"
+            style="margin-top:10px"
+          >{{ uploading ? 'Parsing…' : `Parse "${pendingFile.name}"` }}</button>
           <p v-if="uploadError" class="error">{{ uploadError }}</p>
         </div>
         <!-- Blank -->
@@ -24,8 +30,8 @@
           <p>Start with a blank form and fill in your details.</p>
           <button @click="store.createBlank()" :disabled="store.loading">Start from Scratch</button>
         </div>
-        <!-- Wizard -->
-        <div class="empty-card">
+        <!-- Wizard — self-hosted only -->
+        <div v-if="!config.isCloud" class="empty-card">
           <h3>Run Setup Wizard</h3>
           <p>Walk through the onboarding wizard to set up your profile step by step.</p>
           <RouterLink to="/setup">Open Setup Wizard →</RouterLink>
@@ -35,6 +41,21 @@
 
     <!-- Full form (when resume exists) -->
     <template v-else-if="store.hasResume">
+      <!-- Replace resume via upload -->
+      <section class="form-section replace-section">
+        <h3>Replace Resume</h3>
+        <p class="section-note">Upload a new PDF, DOCX, or ODT to re-parse and overwrite the current data.</p>
+        <input type="file" accept=".pdf,.docx,.odt" @change="handleFileSelect" ref="replaceFileInput" />
+        <button
+          v-if="pendingFile"
+          @click="handleUpload"
+          :disabled="uploading"
+          class="btn-primary"
+          style="margin-top:10px"
+        >{{ uploading ? 'Parsing…' : `Parse "${pendingFile.name}"` }}</button>
+        <p v-if="uploadError" class="error">{{ uploadError }}</p>
+      </section>
+
       <!-- Personal Information -->
       <section class="form-section">
         <h3>Personal Information</h3>
@@ -221,17 +242,22 @@ import { ref, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useResumeStore } from '../../stores/settings/resume'
 import { useProfileStore } from '../../stores/settings/profile'
+import { useAppConfigStore } from '../../stores/appConfig'
 import { useApiFetch } from '../../composables/useApi'
 
 const store = useResumeStore()
 const profileStore = useProfileStore()
+const config = useAppConfigStore()
 const { loadError } = storeToRefs(store)
 const showSelfId = ref(false)
 const skillInput = ref('')
 const domainInput = ref('')
 const kwInput = ref('')
 const uploadError = ref<string | null>(null)
+const uploading = ref(false)
+const pendingFile = ref<File | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const replaceFileInput = ref<HTMLInputElement | null>(null)
 
 onMounted(async () => {
   await store.load()
@@ -246,9 +272,16 @@ onMounted(async () => {
   }
 })
 
-async function handleUpload(event: Event) {
+function handleFileSelect(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
+  pendingFile.value = file ?? null
+  uploadError.value = null
+}
+
+async function handleUpload() {
+  const file = pendingFile.value
   if (!file) return
+  uploading.value = true
   uploadError.value = null
   const formData = new FormData()
   formData.append('file', file)
@@ -256,10 +289,14 @@ async function handleUpload(event: Event) {
     '/api/settings/resume/upload',
     { method: 'POST', body: formData }
   )
+  uploading.value = false
   if (error || !data?.ok) {
     uploadError.value = data?.error ?? (typeof error === 'string' ? error : (error?.kind === 'network' ? error.message : error?.detail ?? 'Upload failed'))
     return
   }
+  pendingFile.value = null
+  if (fileInput.value) fileInput.value.value = ''
+  if (replaceFileInput.value) replaceFileInput.value.value = ''
   if (data.data) {
     await store.load()
   }
@@ -307,4 +344,5 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3, 16px); col
 .section-note { font-size: 0.8rem; color: var(--color-text-secondary, #94a3b8); margin-bottom: 16px; }
 .toggle-btn { margin-left: 10px; padding: 2px 10px; background: transparent; border: 1px solid var(--color-border, rgba(255,255,255,0.15)); border-radius: 4px; color: var(--color-text-secondary, #94a3b8); cursor: pointer; font-size: 0.78rem; }
 .loading { text-align: center; padding: var(--space-8, 48px); color: var(--color-text-secondary, #94a3b8); }
+.replace-section { background: var(--color-surface-2, rgba(255,255,255,0.03)); border-radius: 8px; padding: var(--space-4, 24px); }
 </style>

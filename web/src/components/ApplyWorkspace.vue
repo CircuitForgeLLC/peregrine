@@ -56,6 +56,49 @@
               <span v-if="gaps.length > 6" class="gaps-more">+{{ gaps.length - 6 }}</span>
             </div>
 
+            <!-- Resume Highlights -->
+            <div
+              v-if="resumeSkills.length || resumeDomains.length || resumeKeywords.length"
+              class="resume-highlights"
+            >
+              <button class="section-toggle" @click="highlightsExpanded = !highlightsExpanded">
+                <span class="section-toggle__label">My Resume Highlights</span>
+                <span class="section-toggle__icon" aria-hidden="true">{{ highlightsExpanded ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="highlightsExpanded" class="highlights-body">
+                <div v-if="resumeSkills.length" class="chips-group">
+                  <span class="chips-group__label">Skills</span>
+                  <div class="chips-wrap">
+                    <span
+                      v-for="s in resumeSkills" :key="s"
+                      class="hl-chip"
+                      :class="{ 'hl-chip--match': jobMatchSet.has(s.toLowerCase()) }"
+                    >{{ s }}</span>
+                  </div>
+                </div>
+                <div v-if="resumeDomains.length" class="chips-group">
+                  <span class="chips-group__label">Domains</span>
+                  <div class="chips-wrap">
+                    <span
+                      v-for="d in resumeDomains" :key="d"
+                      class="hl-chip"
+                      :class="{ 'hl-chip--match': jobMatchSet.has(d.toLowerCase()) }"
+                    >{{ d }}</span>
+                  </div>
+                </div>
+                <div v-if="resumeKeywords.length" class="chips-group">
+                  <span class="chips-group__label">Keywords</span>
+                  <div class="chips-wrap">
+                    <span
+                      v-for="k in resumeKeywords" :key="k"
+                      class="hl-chip"
+                      :class="{ 'hl-chip--match': jobMatchSet.has(k.toLowerCase()) }"
+                    >{{ k }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <a v-if="job.url" :href="job.url" target="_blank" rel="noopener noreferrer" class="job-details__link">
               View listing ↗
             </a>
@@ -150,6 +193,61 @@
 
           <!-- ── ATS Resume Optimizer ──────────────────────────────── -->
           <ResumeOptimizerPanel :job-id="props.jobId" />
+
+          <!-- ── Application Q&A ───────────────────────────────────── -->
+          <div class="qa-section">
+            <button class="section-toggle" @click="qaExpanded = !qaExpanded">
+              <span class="section-toggle__label">Application Q&amp;A</span>
+              <span v-if="qaItems.length" class="qa-count">{{ qaItems.length }}</span>
+              <span class="section-toggle__icon" aria-hidden="true">{{ qaExpanded ? '▲' : '▼' }}</span>
+            </button>
+
+            <div v-if="qaExpanded" class="qa-body">
+              <p v-if="!qaItems.length" class="qa-empty">
+                No questions yet — add one below to get LLM-suggested answers.
+              </p>
+
+              <div v-for="(item, i) in qaItems" :key="item.id" class="qa-item">
+                <div class="qa-item__header">
+                  <span class="qa-item__q">{{ item.question }}</span>
+                  <button class="qa-item__del" aria-label="Remove question" @click="removeQA(i)">✕</button>
+                </div>
+                <textarea
+                  class="qa-item__answer"
+                  :value="item.answer"
+                  placeholder="Your answer…"
+                  rows="3"
+                  @input="updateAnswer(item.id, ($event.target as HTMLTextAreaElement).value)"
+                />
+                <button
+                  class="btn-ghost btn-ghost--sm qa-suggest-btn"
+                  :disabled="suggesting === item.id"
+                  @click="suggestAnswer(item)"
+                >
+                  {{ suggesting === item.id ? '✨ Thinking…' : '✨ Suggest' }}
+                </button>
+              </div>
+
+              <div class="qa-add">
+                <input
+                  v-model="newQuestion"
+                  class="qa-add__input"
+                  placeholder="Add a question from the application…"
+                  @keydown.enter.prevent="addQA"
+                />
+                <button class="btn-ghost btn-ghost--sm" :disabled="!newQuestion.trim()" @click="addQA">Add</button>
+              </div>
+
+              <button
+                v-if="qaItems.length"
+                class="btn-ghost qa-save-btn"
+                :disabled="qaSaved || qaSaving"
+                @click="saveQA"
+              >
+                {{ qaSaving ? 'Saving…' : (qaSaved ? '✓ Saved' : 'Save All') }}
+              </button>
+            </div>
+          </div>
 
           <!-- ── Bottom action bar ──────────────────────────────────── -->
           <div class="workspace__actions">
@@ -359,6 +457,96 @@ async function rejectListing() {
   setTimeout(() => emit('job-removed'), 1000)
 }
 
+// ─── Resume highlights ────────────────────────────────────────────────────────
+
+const resumeSkills      = ref<string[]>([])
+const resumeDomains     = ref<string[]>([])
+const resumeKeywords    = ref<string[]>([])
+const highlightsExpanded = ref(false)
+
+// Words from the resume that also appear in the job description text
+const jobMatchSet = computed<Set<string>>(() => {
+  const desc = (job.value?.description ?? '').toLowerCase()
+  const all  = [...resumeSkills.value, ...resumeDomains.value, ...resumeKeywords.value]
+  return new Set(all.filter(t => desc.includes(t.toLowerCase())))
+})
+
+async function fetchResume() {
+  const { data } = await useApiFetch<{ skills?: string[]; domains?: string[]; keywords?: string[] }>(
+    '/api/settings/resume',
+  )
+  if (!data) return
+  resumeSkills.value   = data.skills   ?? []
+  resumeDomains.value  = data.domains  ?? []
+  resumeKeywords.value = data.keywords ?? []
+  if (resumeSkills.value.length || resumeDomains.value.length || resumeKeywords.value.length) {
+    highlightsExpanded.value = true
+  }
+}
+
+// ─── Application Q&A ─────────────────────────────────────────────────────────
+
+interface QAItem { id: string; question: string; answer: string }
+
+const qaItems    = ref<QAItem[]>([])
+const qaExpanded = ref(false)
+const qaSaved    = ref(true)
+const qaSaving   = ref(false)
+const newQuestion = ref('')
+const suggesting  = ref<string | null>(null)
+
+function addQA() {
+  const q = newQuestion.value.trim()
+  if (!q) return
+  qaItems.value = [...qaItems.value, { id: crypto.randomUUID(), question: q, answer: '' }]
+  newQuestion.value = ''
+  qaSaved.value = false
+  qaExpanded.value = true
+}
+
+function removeQA(index: number) {
+  qaItems.value = qaItems.value.filter((_, i) => i !== index)
+  qaSaved.value = false
+}
+
+function updateAnswer(id: string, value: string) {
+  qaItems.value = qaItems.value.map(q => q.id === id ? { ...q, answer: value } : q)
+  qaSaved.value = false
+}
+
+async function saveQA() {
+  qaSaving.value = true
+  const { error } = await useApiFetch(`/api/jobs/${props.jobId}/qa`, {
+    method:  'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ items: qaItems.value }),
+  })
+  qaSaving.value = false
+  if (error) { showToast('Save failed — please try again'); return }
+  qaSaved.value = true
+}
+
+async function suggestAnswer(item: QAItem) {
+  suggesting.value = item.id
+  const { data, error } = await useApiFetch<{ answer: string }>(`/api/jobs/${props.jobId}/qa/suggest`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ question: item.question }),
+  })
+  suggesting.value = null
+  if (error || !data?.answer) { showToast('Suggestion failed — check your LLM backend'); return }
+  qaItems.value = qaItems.value.map(q => q.id === item.id ? { ...q, answer: data.answer } : q)
+  qaSaved.value = false
+}
+
+async function fetchQA() {
+  const { data } = await useApiFetch<{ items: QAItem[] }>(`/api/jobs/${props.jobId}/qa`)
+  if (data?.items?.length) {
+    qaItems.value    = data.items
+    qaExpanded.value = true
+  }
+}
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 const toast = ref<string | null>(null)
@@ -405,6 +593,10 @@ async function fetchJob() {
 onMounted(async () => {
   await fetchJob()
   loadingJob.value = false
+
+  // Load resume highlights and saved Q&A in parallel
+  fetchResume()
+  fetchQA()
 
   // Check if a generation task is already in flight
   if (clState.value === 'none') {
@@ -842,6 +1034,205 @@ declare module '../stores/review' {
 
 .toast-enter-active, .toast-leave-active { transition: opacity 250ms ease, transform 250ms ease; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
+
+/* ── Resume Highlights ───────────────────────────────────────────────── */
+
+.resume-highlights {
+  border-top: 1px solid var(--color-border-light);
+  padding-top: var(--space-3);
+}
+
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  color: var(--color-text-muted);
+}
+
+.section-toggle__label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 1;
+}
+
+.section-toggle__icon {
+  font-size: var(--text-xs);
+}
+
+.highlights-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.chips-group { display: flex; flex-direction: column; gap: 4px; }
+
+.chips-group__label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  opacity: 0.7;
+}
+
+.chips-wrap { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.hl-chip {
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border-light);
+  color: var(--color-text-muted);
+}
+
+.hl-chip--match {
+  background: rgba(39, 174, 96, 0.10);
+  border-color: rgba(39, 174, 96, 0.35);
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+/* ── Application Q&A ─────────────────────────────────────────────────── */
+
+.qa-section {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.qa-section > .section-toggle {
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-text);
+}
+
+.qa-section > .section-toggle:hover { background: var(--color-surface-alt); }
+
+.qa-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--app-primary-light);
+  color: var(--app-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.qa-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.qa-empty {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-2) 0;
+}
+
+.qa-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.qa-item:last-of-type { border-bottom: none; }
+
+.qa-item__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.qa-item__q {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.4;
+  flex: 1;
+}
+
+.qa-item__del {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  padding: 2px 4px;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 150ms;
+}
+
+.qa-item__del:hover { opacity: 1; color: var(--color-error); }
+
+.qa-item__answer {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 72px;
+}
+
+.qa-item__answer:focus {
+  outline: none;
+  border-color: var(--app-primary);
+}
+
+.qa-suggest-btn { align-self: flex-end; }
+
+.qa-add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.qa-add__input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  min-height: 36px;
+}
+
+.qa-add__input:focus {
+  outline: none;
+  border-color: var(--app-primary);
+}
+
+.qa-add__input::placeholder { color: var(--color-text-muted); }
+
+.qa-save-btn { align-self: flex-end; }
 
 /* ── Responsive ──────────────────────────────────────────────────────── */
 

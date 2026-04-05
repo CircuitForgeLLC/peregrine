@@ -383,6 +383,19 @@ def mark_applied(db_path: Path = DEFAULT_DB, ids: list[int] = None) -> None:
     conn.close()
 
 
+def cancel_task(db_path: Path = DEFAULT_DB, task_id: int = 0) -> bool:
+    """Cancel a single queued/running task by id. Returns True if a row was updated."""
+    conn = sqlite3.connect(db_path)
+    count = conn.execute(
+        "UPDATE background_tasks SET status='failed', error='Cancelled by user',"
+        " finished_at=datetime('now') WHERE id=? AND status IN ('queued','running')",
+        (task_id,),
+    ).rowcount
+    conn.commit()
+    conn.close()
+    return count > 0
+
+
 def kill_stuck_tasks(db_path: Path = DEFAULT_DB) -> int:
     """Mark all queued/running background tasks as failed. Returns count killed."""
     conn = sqlite3.connect(db_path)

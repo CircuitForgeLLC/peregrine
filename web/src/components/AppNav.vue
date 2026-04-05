@@ -40,6 +40,9 @@
         <Cog6ToothIcon class="sidebar__icon" aria-hidden="true" />
         <span class="sidebar__label">Settings</span>
       </RouterLink>
+      <button class="sidebar__classic-btn" @click="switchToClassic" title="Switch to Classic (Streamlit) UI">
+        ⚡ Classic
+      </button>
     </div>
   </nav>
 
@@ -103,6 +106,23 @@ const isHackerMode = computed(() =>
 function exitHackerMode() {
   delete document.documentElement.dataset.theme
   localStorage.removeItem('cf-hacker-mode')
+}
+
+const _apiBase = import.meta.env.BASE_URL.replace(/\/$/, '')
+
+async function switchToClassic() {
+  // Persist preference via API so Streamlit reads streamlit from user.yaml
+  // and won't re-set the cookie back to vue (avoids the ?prgn_switch rerun cycle)
+  try {
+    await fetch(_apiBase + '/api/settings/ui-preference', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preference: 'streamlit' }),
+    })
+  } catch { /* non-fatal — cookie below is enough for immediate redirect */ }
+  document.cookie = 'prgn_ui=streamlit; path=/; SameSite=Lax'
+  // Navigate to root (no query params) — Caddy routes to Streamlit based on cookie
+  window.location.href = window.location.origin + '/'
 }
 
 const navLinks = computed(() => [
@@ -270,6 +290,29 @@ const mobileLinks = [
 
 .sidebar__link--footer {
   margin: 0;
+}
+
+.sidebar__classic-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  margin-top: var(--space-1);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 150ms, background 150ms;
+  white-space: nowrap;
+}
+
+.sidebar__classic-btn:hover {
+  opacity: 1;
+  background: var(--color-surface-alt);
 }
 
 /* ── Mobile tab bar (<1024px) ───────────────────────── */
