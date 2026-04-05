@@ -6,7 +6,7 @@ import { useAppConfigStore } from '../../stores/appConfig'
 
 const store = useFineTuneStore()
 const config = useAppConfigStore()
-const { step, inFlightJob, jobStatus, pairsCount, quotaRemaining } = storeToRefs(store)
+const { step, inFlightJob, jobStatus, pairsCount, quotaRemaining, pairs, pairsLoading } = storeToRefs(store)
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedFiles = ref<File[]>([])
@@ -45,6 +45,7 @@ async function checkLocalModel() {
 
 onMounted(async () => {
   store.startPolling()
+  await store.loadPairs()
   if (store.step === 3 && !config.isCloud) await checkLocalModel()
 })
 onUnmounted(() => { store.stopPolling(); store.resetStep() })
@@ -98,6 +99,22 @@ onUnmounted(() => { store.stopPolling(); store.resetStep() })
           {{ inFlightJob ? 'Extracting…' : 'Extract Pairs' }}
         </button>
         <button @click="store.step = 3" class="btn-secondary">Skip → Train</button>
+      </div>
+
+      <!-- Training pairs list -->
+      <div v-if="pairs.length > 0" class="pairs-list">
+        <h4>Training Pairs <span class="pairs-badge">{{ pairs.length }}</span></h4>
+        <p class="section-note">Review and remove any low-quality pairs before training.</p>
+        <div v-if="pairsLoading" class="pairs-loading">Loading…</div>
+        <ul v-else class="pairs-items">
+          <li v-for="pair in pairs" :key="pair.index" class="pair-item">
+            <div class="pair-info">
+              <span class="pair-instruction">{{ pair.instruction }}</span>
+              <span class="pair-source">{{ pair.source_file }}</span>
+            </div>
+            <button class="pair-delete" @click="store.deletePair(pair.index)" title="Remove this pair">✕</button>
+          </li>
+        </ul>
       </div>
     </section>
 
@@ -160,4 +177,16 @@ onUnmounted(() => { store.stopPolling(); store.resetStep() })
 .status-running { background: var(--color-warning-bg, #fef3c7); color: var(--color-warning-fg, #92400e); }
 .status-ok { color: var(--color-success, #16a34a); }
 .status-fail { color: var(--color-error, #dc2626); }
+
+.pairs-list { margin-top: var(--space-6, 1.5rem); }
+.pairs-list h4 { font-size: 0.95rem; font-weight: 600; margin: 0 0 var(--space-2, 0.5rem); display: flex; align-items: center; gap: 0.5rem; }
+.pairs-badge { background: var(--color-primary, #2d5a27); color: #fff; font-size: 0.75rem; padding: 1px 7px; border-radius: var(--radius-full, 9999px); }
+.pairs-loading { color: var(--color-text-muted); font-size: 0.875rem; padding: var(--space-2, 0.5rem) 0; }
+.pairs-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2, 0.5rem); max-height: 280px; overflow-y: auto; }
+.pair-item { display: flex; align-items: center; gap: var(--space-3, 0.75rem); padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); background: var(--color-surface-alt); border: 1px solid var(--color-border-light); border-radius: var(--radius-md); }
+.pair-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pair-instruction { font-size: 0.85rem; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pair-source { font-size: 0.75rem; color: var(--color-text-muted); }
+.pair-delete { flex-shrink: 0; background: none; border: none; color: var(--color-error); cursor: pointer; font-size: 0.9rem; padding: 2px 4px; border-radius: var(--radius-sm); transition: background 150ms; }
+.pair-delete:hover { background: var(--color-error); color: #fff; }
 </style>

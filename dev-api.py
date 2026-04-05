@@ -2169,16 +2169,71 @@ def save_deploy_config(payload: dict):
 
 # ── Settings: Fine-Tune ───────────────────────────────────────────────────────
 
+_TRAINING_JSONL = Path("/Library/Documents/JobSearch/training_data/cover_letters.jsonl")
+
+
+def _load_training_pairs() -> list[dict]:
+    """Load training pairs from the JSONL file. Returns empty list if missing."""
+    if not _TRAINING_JSONL.exists():
+        return []
+    pairs = []
+    with open(_TRAINING_JSONL, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    pairs.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    return pairs
+
+
+def _save_training_pairs(pairs: list[dict]) -> None:
+    _TRAINING_JSONL.parent.mkdir(parents=True, exist_ok=True)
+    with open(_TRAINING_JSONL, "w", encoding="utf-8") as f:
+        for p in pairs:
+            f.write(json.dumps(p, ensure_ascii=False) + "\n")
+
+
 @app.get("/api/settings/fine-tune/status")
 def finetune_status():
     try:
+        pairs_count = len(_load_training_pairs())
         from scripts.task_runner import get_task_status
         task = get_task_status("finetune_extract")
-        if not task:
-            return {"status": "idle", "pairs_count": 0}
-        return {"status": task.get("status", "idle"), "pairs_count": task.get("result_count", 0)}
+        if task:
+            # Prefer the DB task count if available and larger (recent extraction)
+            db_count = task.get("result_count", 0) or 0
+            pairs_count = max(pairs_count, db_count)
+        status = task.get("status", "idle") if task else "idle"
+        # Stub quota for self-hosted; cloud overrides via its own middleware
+        return {"status": status, "pairs_count": pairs_count, "quota_remaining": None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/settings/fine-tune/pairs")
+def list_training_pairs():
+    """Return training pairs with index for display and removal."""
+    pairs = _load_training_pairs()
+    return {
+        "pairs": [
+            {"index": i, "instruction": p.get("instruction", ""), "source_file": p.get("source_file", "")}
+            for i, p in enumerate(pairs)
+        ],
+        "total": len(pairs),
+    }
+
+
+@app.delete("/api/settings/fine-tune/pairs/{index}")
+def delete_training_pair(index: int):
+    """Remove a training pair by index."""
+    pairs = _load_training_pairs()
+    if index < 0 or index >= len(pairs):
+        raise HTTPException(404, "Pair index out of range")
+    pairs.pop(index)
+    _save_training_pairs(pairs)
+    return {"ok": True, "remaining": len(pairs)}
 
 
 @app.post("/api/settings/fine-tune/extract")
@@ -2211,12 +2266,11 @@ async def finetune_upload(files: list[UploadFile]):
 
 @app.post("/api/settings/fine-tune/submit")
 def finetune_submit():
+    """Trigger prepare_training_data extraction and queue fine-tune background task."""
     try:
-        # Cloud-only: submit a managed fine-tune job
-        # In dev mode, stub a job_id for local testing
-        import uuid
-        job_id = str(uuid.uuid4())
-        return {"job_id": job_id}
+        from scripts.task_runner import submit_task
+        task_id, is_new = submit_task(Path(DB_PATH), "prepare_training", None)
+        return {"job_id": str(task_id), "is_new": is_new}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
