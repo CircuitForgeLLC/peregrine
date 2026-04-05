@@ -145,7 +145,7 @@ def test_get_resume_missing_returns_not_exists(tmp_path, monkeypatch):
     """GET /api/settings/resume when file missing returns {exists: false}."""
     fake_path = tmp_path / "config" / "plain_text_resume.yaml"
     # Ensure the path doesn't exist
-    monkeypatch.setattr("dev_api.RESUME_PATH", fake_path)
+    monkeypatch.setattr("dev_api._resume_path", lambda: fake_path)
 
     from dev_api import app
     c = TestClient(app)
@@ -157,7 +157,7 @@ def test_get_resume_missing_returns_not_exists(tmp_path, monkeypatch):
 def test_post_resume_blank_creates_file(tmp_path, monkeypatch):
     """POST /api/settings/resume/blank creates the file."""
     fake_path = tmp_path / "config" / "plain_text_resume.yaml"
-    monkeypatch.setattr("dev_api.RESUME_PATH", fake_path)
+    monkeypatch.setattr("dev_api._resume_path", lambda: fake_path)
 
     from dev_api import app
     c = TestClient(app)
@@ -170,7 +170,7 @@ def test_post_resume_blank_creates_file(tmp_path, monkeypatch):
 def test_get_resume_after_blank_returns_exists(tmp_path, monkeypatch):
     """GET /api/settings/resume after blank creation returns {exists: true}."""
     fake_path = tmp_path / "config" / "plain_text_resume.yaml"
-    monkeypatch.setattr("dev_api.RESUME_PATH", fake_path)
+    monkeypatch.setattr("dev_api._resume_path", lambda: fake_path)
 
     from dev_api import app
     c = TestClient(app)
@@ -212,7 +212,7 @@ def test_get_search_prefs_returns_dict(tmp_path, monkeypatch):
     fake_path.parent.mkdir(parents=True, exist_ok=True)
     with open(fake_path, "w") as f:
         yaml.dump({"default": {"remote_preference": "remote", "job_boards": []}}, f)
-    monkeypatch.setattr("dev_api.SEARCH_PREFS_PATH", fake_path)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
 
     from dev_api import app
     c = TestClient(app)
@@ -227,7 +227,7 @@ def test_put_get_search_roundtrip(tmp_path, monkeypatch):
     """PUT then GET search prefs round-trip: saved field is returned."""
     fake_path = tmp_path / "config" / "search_profiles.yaml"
     fake_path.parent.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr("dev_api.SEARCH_PREFS_PATH", fake_path)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
 
     from dev_api import app
     c = TestClient(app)
@@ -253,7 +253,7 @@ def test_put_get_search_roundtrip(tmp_path, monkeypatch):
 def test_get_search_missing_file_returns_empty(tmp_path, monkeypatch):
     """GET /api/settings/search when file missing returns empty dict."""
     fake_path = tmp_path / "config" / "search_profiles.yaml"
-    monkeypatch.setattr("dev_api.SEARCH_PREFS_PATH", fake_path)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
 
     from dev_api import app
     c = TestClient(app)
@@ -363,7 +363,7 @@ def test_get_services_cpu_profile(client):
 def test_get_email_has_password_set_bool(tmp_path, monkeypatch):
     """GET /api/settings/system/email has password_set (bool) and no password key."""
     fake_email_path = tmp_path / "email.yaml"
-    monkeypatch.setattr("dev_api.EMAIL_PATH", fake_email_path)
+    monkeypatch.setattr("dev_api._config_dir", lambda: fake_email_path.parent)
     with patch("dev_api.get_credential", return_value=None):
         from dev_api import app
         c = TestClient(app)
@@ -378,7 +378,7 @@ def test_get_email_has_password_set_bool(tmp_path, monkeypatch):
 def test_get_email_password_set_true_when_stored(tmp_path, monkeypatch):
     """password_set is True when credential is stored."""
     fake_email_path = tmp_path / "email.yaml"
-    monkeypatch.setattr("dev_api.EMAIL_PATH", fake_email_path)
+    monkeypatch.setattr("dev_api._config_dir", lambda: fake_email_path.parent)
     with patch("dev_api.get_credential", return_value="secret"):
         from dev_api import app
         c = TestClient(app)
@@ -426,10 +426,14 @@ def test_finetune_status_returns_status_and_pairs_count(client):
     assert "pairs_count" in data
 
 
-def test_finetune_status_idle_when_no_task(client):
+def test_finetune_status_idle_when_no_task(tmp_path, monkeypatch):
     """Status is 'idle' and pairs_count is 0 when no task exists."""
+    fake_jsonl = tmp_path / "cover_letters.jsonl"  # does not exist -> 0 pairs
+    monkeypatch.setattr("dev_api._TRAINING_JSONL", fake_jsonl)
     with patch("scripts.task_runner.get_task_status", return_value=None, create=True):
-        resp = client.get("/api/settings/fine-tune/status")
+        from dev_api import app
+        c = TestClient(app)
+        resp = c.get("/api/settings/fine-tune/status")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "idle"
@@ -441,7 +445,7 @@ def test_finetune_status_idle_when_no_task(client):
 def test_get_license_returns_tier_and_active(tmp_path, monkeypatch):
     """GET /api/settings/license returns tier and active fields."""
     fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api.LICENSE_PATH", fake_license)
+    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
 
     from dev_api import app
     c = TestClient(app)
@@ -455,7 +459,7 @@ def test_get_license_returns_tier_and_active(tmp_path, monkeypatch):
 def test_get_license_defaults_to_free(tmp_path, monkeypatch):
     """GET /api/settings/license defaults to free tier when no file."""
     fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api.LICENSE_PATH", fake_license)
+    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
 
     from dev_api import app
     c = TestClient(app)
@@ -469,8 +473,7 @@ def test_get_license_defaults_to_free(tmp_path, monkeypatch):
 def test_activate_license_valid_key_returns_ok(tmp_path, monkeypatch):
     """POST activate with valid key format returns {ok: true}."""
     fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api.LICENSE_PATH", fake_license)
-    monkeypatch.setattr("dev_api.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
 
     from dev_api import app
     c = TestClient(app)
@@ -482,8 +485,7 @@ def test_activate_license_valid_key_returns_ok(tmp_path, monkeypatch):
 def test_activate_license_invalid_key_returns_ok_false(tmp_path, monkeypatch):
     """POST activate with bad key format returns {ok: false}."""
     fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api.LICENSE_PATH", fake_license)
-    monkeypatch.setattr("dev_api.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
 
     from dev_api import app
     c = TestClient(app)
@@ -495,8 +497,7 @@ def test_activate_license_invalid_key_returns_ok_false(tmp_path, monkeypatch):
 def test_deactivate_license_returns_ok(tmp_path, monkeypatch):
     """POST /api/settings/license/deactivate returns 200 with ok."""
     fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api.LICENSE_PATH", fake_license)
-    monkeypatch.setattr("dev_api.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
 
     from dev_api import app
     c = TestClient(app)
@@ -508,8 +509,7 @@ def test_deactivate_license_returns_ok(tmp_path, monkeypatch):
 def test_activate_then_deactivate(tmp_path, monkeypatch):
     """Activate then deactivate: active goes False."""
     fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api.LICENSE_PATH", fake_license)
-    monkeypatch.setattr("dev_api.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
 
     from dev_api import app
     c = TestClient(app)
@@ -580,7 +580,7 @@ def test_get_developer_returns_expected_fields(tmp_path, monkeypatch):
     _write_user_yaml(user_yaml)
     monkeypatch.setenv("STAGING_DB", str(db_dir / "staging.db"))
     fake_tokens = tmp_path / "tokens.yaml"
-    monkeypatch.setattr("dev_api.TOKENS_PATH", fake_tokens)
+    monkeypatch.setattr("dev_api._tokens_path", lambda: fake_tokens)
 
     from dev_api import app
     c = TestClient(app)
@@ -602,7 +602,7 @@ def test_put_dev_tier_then_get(tmp_path, monkeypatch):
     _write_user_yaml(user_yaml)
     monkeypatch.setenv("STAGING_DB", str(db_dir / "staging.db"))
     fake_tokens = tmp_path / "tokens.yaml"
-    monkeypatch.setattr("dev_api.TOKENS_PATH", fake_tokens)
+    monkeypatch.setattr("dev_api._tokens_path", lambda: fake_tokens)
 
     from dev_api import app
     c = TestClient(app)

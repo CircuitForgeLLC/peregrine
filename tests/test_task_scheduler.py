@@ -109,24 +109,33 @@ def test_missing_budget_logs_warning(tmp_db, caplog):
         ts.LLM_TASK_TYPES = frozenset(original)
 
 
-def test_cpu_only_system_gets_unlimited_vram(tmp_db, monkeypatch):
-    """_available_vram is 999.0 when _get_gpus() returns empty list."""
-    # Patch the module-level _get_gpus in task_scheduler (not preflight)
-    # so __init__'s _ts_mod._get_gpus() call picks up the mock.
+def test_cpu_only_system_creates_scheduler(tmp_db, monkeypatch):
+    """Scheduler constructs without error when _get_gpus() returns empty list.
+
+    LocalScheduler has no VRAM gating — it runs tasks regardless of GPU count.
+    VRAM-aware scheduling is handled by circuitforge_orch's coordinator.
+    """
     monkeypatch.setattr("scripts.task_scheduler._get_gpus", lambda: [])
     s = TaskScheduler(tmp_db, _noop_run_task)
-    assert s._available_vram == 999.0
+    # Scheduler still has correct budgets configured; no VRAM attribute expected
+    # Scheduler constructed successfully; budgets contain all LLM task types.
+    # Does not assert exact values -- a sibling test may write a config override
+    # to the shared pytest tmp dir, causing _load_config_overrides to pick it up.
+    assert set(s._budgets.keys()) >= LLM_TASK_TYPES
 
 
-def test_gpu_vram_summed_across_all_gpus(tmp_db, monkeypatch):
-    """_available_vram sums vram_total_gb across all detected GPUs."""
+def test_gpu_detection_does_not_affect_local_scheduler(tmp_db, monkeypatch):
+    """LocalScheduler ignores GPU VRAM — it has no _available_vram attribute.
+
+    VRAM-gated concurrency requires circuitforge_orch (Paid tier).
+    """
     fake_gpus = [
         {"name": "RTX 3090", "vram_total_gb": 24.0, "vram_free_gb": 20.0},
         {"name": "RTX 3090", "vram_total_gb": 24.0, "vram_free_gb": 18.0},
     ]
     monkeypatch.setattr("scripts.task_scheduler._get_gpus", lambda: fake_gpus)
     s = TaskScheduler(tmp_db, _noop_run_task)
-    assert s._available_vram == 48.0
+    assert not hasattr(s, "_available_vram")
 
 
 def test_enqueue_adds_taskspec_to_deque(tmp_db):
@@ -206,40 +215,37 @@ def _make_recording_run_task(log: list, done_event: threading.Event, expected: i
     return _run
 
 
-def _start_scheduler(tmp_db, run_task_fn, available_vram=999.0):
+def _start_scheduler(tmp_db, run_task_fn):
     s = TaskScheduler(tmp_db, run_task_fn)
-    s._available_vram = available_vram
     s.start()
     return s
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-def test_deepest_queue_wins_first_slot(tmp_db):
-    """Type with more queued tasks starts first when VRAM only fits one type."""
+def test_all_task_types_complete(tmp_db):
+    """Scheduler runs tasks from multiple types; all complete.
+
+    LocalScheduler runs type batches concurrently (no VRAM gating).
+    VRAM-gated sequential scheduling requires circuitforge_orch.
+    """
     log, done = [], threading.Event()
 
-    # Build scheduler but DO NOT start it yet — enqueue all tasks first
-    # so the scheduler sees the full picture on its very first wake.
     run_task_fn = _make_recording_run_task(log, done, 4)
     s = TaskScheduler(tmp_db, run_task_fn)
-    s._available_vram = 3.0  # fits cover_letter (2.5) but not +company_research (5.0)
 
-    # Enqueue cover_letter (3 tasks) and company_research (1 task) before start.
-    # cover_letter has the deeper queue and must win the first batch slot.
     for i in range(3):
         s.enqueue(i + 1, "cover_letter", i + 1, None)
     s.enqueue(4, "company_research", 4, None)
 
-    s.start()  # scheduler now sees all tasks atomically on its first iteration
+    s.start()
     assert done.wait(timeout=5.0), "timed out — not all 4 tasks completed"
     s.shutdown()
 
     assert len(log) == 4
-    cl = [i for i, (_, t) in enumerate(log) if t == "cover_letter"]
-    cr = [i for i, (_, t) in enumerate(log) if t == "company_research"]
+    cl = [t for _, t in log if t == "cover_letter"]
+    cr = [t for _, t in log if t == "company_research"]
     assert len(cl) == 3 and len(cr) == 1
-    assert max(cl) < min(cr), "All cover_letter tasks must finish before company_research starts"
 
 
 def test_fifo_within_type(tmp_db):
@@ -256,8 +262,8 @@ def test_fifo_within_type(tmp_db):
     assert [task_id for task_id, _ in log] == [10, 20, 30]
 
 
-def test_concurrent_batches_when_vram_allows(tmp_db):
-    """Two type batches start simultaneously when VRAM fits both."""
+def test_concurrent_batches_different_types(tmp_db):
+    """Two type batches run concurrently (LocalScheduler has no VRAM gating)."""
     started = {"cover_letter": threading.Event(), "company_research": threading.Event()}
     all_done = threading.Event()
     log = []
@@ -268,8 +274,7 @@ def test_concurrent_batches_when_vram_allows(tmp_db):
         if len(log) >= 2:
             all_done.set()
 
-    # VRAM=10.0 fits both cover_letter (2.5) and company_research (5.0) simultaneously
-    s = _start_scheduler(tmp_db, run_task, available_vram=10.0)
+    s = _start_scheduler(tmp_db, run_task)
     s.enqueue(1, "cover_letter", 1, None)
     s.enqueue(2, "company_research", 2, None)
 
@@ -307,8 +312,15 @@ def test_new_tasks_picked_up_mid_batch(tmp_db):
     assert log == [1, 2]
 
 
-def test_worker_crash_releases_vram(tmp_db):
-    """If _run_task raises, _reserved_vram returns to 0 and scheduler continues."""
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_worker_crash_does_not_stall_scheduler(tmp_db):
+    """If _run_task raises, the scheduler continues processing the next task.
+
+    The batch_worker intentionally lets the RuntimeError propagate to the thread
+    boundary (so LocalScheduler can detect crash vs. normal exit). This produces
+    a PytestUnhandledThreadExceptionWarning -- suppressed here because it is the
+    expected behavior under test.
+    """
     log, done = [], threading.Event()
 
     def run_task(db_path, task_id, task_type, job_id, params):
@@ -317,16 +329,15 @@ def test_worker_crash_releases_vram(tmp_db):
         log.append(task_id)
         done.set()
 
-    s = _start_scheduler(tmp_db, run_task, available_vram=3.0)
+    s = _start_scheduler(tmp_db, run_task)
     s.enqueue(1, "cover_letter", 1, None)
     s.enqueue(2, "cover_letter", 2, None)
 
     assert done.wait(timeout=5.0), "timed out — task 2 never completed after task 1 crash"
     s.shutdown()
 
-    # Second task still ran, VRAM was released
+    # Second task still ran despite first crashing
     assert 2 in log
-    assert s._reserved_vram == 0.0
 
 
 def test_get_scheduler_returns_singleton(tmp_db):

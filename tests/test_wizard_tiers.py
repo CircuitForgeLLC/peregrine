@@ -121,7 +121,8 @@ def test_byok_false_preserves_original_gating():
 # ── Vue UI Beta & Demo Tier tests ──────────────────────────────────────────────
 
 def test_vue_ui_beta_free_tier():
-    assert can_use("free", "vue_ui_beta") is False
+    # Vue SPA is open to all tiers (issue #20 — beta restriction removed)
+    assert can_use("free", "vue_ui_beta") is True
 
 
 def test_vue_ui_beta_paid_tier():

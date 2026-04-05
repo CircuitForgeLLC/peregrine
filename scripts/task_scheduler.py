@@ -22,7 +22,7 @@ from typing import Callable, Optional
 
 from circuitforge_core.tasks.scheduler import (
     TaskSpec,                        # re-export unchanged
-    TaskScheduler as _CoreTaskScheduler,
+    LocalScheduler as _CoreTaskScheduler,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,15 +94,6 @@ class TaskScheduler(_CoreTaskScheduler):
     def __init__(self, db_path: Path, run_task_fn: Callable) -> None:
         budgets, max_depth = _load_config_overrides(db_path)
 
-        # Resolve VRAM using module-level _get_gpus so tests can monkeypatch it
-        try:
-            gpus = _get_gpus()
-            available_vram: float = (
-                sum(g["vram_total_gb"] for g in gpus) if gpus else 999.0
-            )
-        except Exception:
-            available_vram = 999.0
-
         # Warn under this module's logger for any task types with no VRAM budget
         # (mirrors the core warning but captures under scripts.task_scheduler
         # so existing tests using caplog.at_level(logger="scripts.task_scheduler") pass)
@@ -113,19 +104,12 @@ class TaskScheduler(_CoreTaskScheduler):
                     "defaulting to 0.0 GB (unlimited concurrency for this type)", t
                 )
 
-        coordinator_url = os.environ.get(
-            "CF_ORCH_URL", "http://localhost:7700"
-        ).rstrip("/")
-
         super().__init__(
             db_path=db_path,
             run_task_fn=run_task_fn,
             task_types=LLM_TASK_TYPES,
             vram_budgets=budgets,
-            available_vram_gb=available_vram,
             max_queue_depth=max_depth,
-            coordinator_url=coordinator_url,
-            service_name="peregrine",
         )
 
     def enqueue(
