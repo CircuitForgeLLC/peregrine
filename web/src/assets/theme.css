@@ -73,11 +73,11 @@
 }
 
 /* ── Accessible Solarpunk — dark (system dark mode) ─
-   Activates when OS/browser is in dark mode.
-   Uses :not([data-theme="hacker"]) so the Konami easter
-   egg always wins over the system preference.            */
+   Activates when OS/browser is in dark mode AND no
+   explicit theme is selected. Explicit [data-theme="*"]
+   always wins over the system preference.               */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="hacker"]) {
+  :root:not([data-theme]) {
     /* Brand — lighter greens readable on dark surfaces */
     --color-primary: #6ab870;
     --color-primary-hover: #7ecb84;
@@ -159,6 +159,153 @@
   --color-accent-glow-sm: rgba(0, 255, 65, 0.15);
   --color-accent-glow-md: rgba(0, 255, 65, 0.4);
   --color-accent-glow-lg: rgba(0, 255, 65, 0.6);
+}
+
+/* ── Explicit light — forces light even on dark-OS ─ */
+[data-theme="light"] {
+  --color-primary: #2d5a27;
+  --color-primary-hover: #234820;
+  --color-primary-light: #e8f2e7;
+  --color-surface: #eaeff8;
+  --color-surface-alt: #dde4f0;
+  --color-surface-raised: #f5f7fc;
+  --color-border: #a8b8d0;
+  --color-border-light: #ccd5e6;
+  --color-text: #1a2338;
+  --color-text-muted: #4a5c7a;
+  --color-text-inverse: #eaeff8;
+  --color-accent: #c4732a;
+  --color-accent-hover: #a85c1f;
+  --color-accent-light: #fdf0e4;
+  --color-success: #3a7a32;
+  --color-error: #c0392b;
+  --color-warning: #d4891a;
+  --color-info: #1e6091;
+  --shadow-sm: 0 1px 3px rgba(26, 35, 56, 0.08), 0 1px 2px rgba(26, 35, 56, 0.04);
+  --shadow-md: 0 4px 12px rgba(26, 35, 56, 0.1),  0 2px 4px rgba(26, 35, 56, 0.06);
+  --shadow-lg: 0 10px 30px rgba(26, 35, 56, 0.12), 0 4px 8px rgba(26, 35, 56, 0.06);
+}
+
+/* ── Explicit dark — forces dark even on light-OS ── */
+[data-theme="dark"] {
+  --color-primary: #6ab870;
+  --color-primary-hover: #7ecb84;
+  --color-primary-light: #162616;
+  --color-surface: #16202e;
+  --color-surface-alt: #1e2a3a;
+  --color-surface-raised: #263547;
+  --color-border: #2d4060;
+  --color-border-light: #233352;
+  --color-text: #e4eaf5;
+  --color-text-muted: #8da0bc;
+  --color-text-inverse: #16202e;
+  --color-accent: #e8a84a;
+  --color-accent-hover: #f5bc60;
+  --color-accent-light: #2d1e0a;
+  --color-success: #5eb85e;
+  --color-error: #e05252;
+  --color-warning: #e8a84a;
+  --color-info: #4da6e8;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3),  0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Solarized Dark ──────────────────────────────── */
+/* Ethan Schoonover's Solarized palette (dark variant) */
+[data-theme="solarized-dark"] {
+  --color-primary: #2aa198;       /* cyan — used as primary brand color */
+  --color-primary-hover: #35b8ad;
+  --color-primary-light: #002b36;
+
+  --color-surface: #002b36;       /* base03 */
+  --color-surface-alt: #073642;   /* base02 */
+  --color-surface-raised: #0d4352;
+
+  --color-border: #073642;
+  --color-border-light: #0a4a5a;
+
+  --color-text: #839496;          /* base0 */
+  --color-text-muted: #657b83;    /* base00 */
+  --color-text-inverse: #002b36;
+
+  --color-accent: #b58900;        /* yellow */
+  --color-accent-hover: #cb9f10;
+  --color-accent-light: #1a1300;
+
+  --color-success: #859900;       /* green */
+  --color-error: #dc322f;         /* red */
+  --color-warning: #b58900;       /* yellow */
+  --color-info: #268bd2;          /* blue */
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4),  0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Solarized Light ─────────────────────────────── */
+[data-theme="solarized-light"] {
+  --color-primary: #2aa198;       /* cyan */
+  --color-primary-hover: #1e8a82;
+  --color-primary-light: #eee8d5;
+
+  --color-surface: #fdf6e3;       /* base3 */
+  --color-surface-alt: #eee8d5;   /* base2 */
+  --color-surface-raised: #fffdf7;
+
+  --color-border: #d3c9b0;
+  --color-border-light: #e4dacc;
+
+  --color-text: #657b83;          /* base00 */
+  --color-text-muted: #839496;    /* base0 */
+  --color-text-inverse: #fdf6e3;
+
+  --color-accent: #b58900;        /* yellow */
+  --color-accent-hover: #9a7300;
+  --color-accent-light: #fdf0c0;
+
+  --color-success: #859900;       /* green */
+  --color-error: #dc322f;         /* red */
+  --color-warning: #b58900;       /* yellow */
+  --color-info: #268bd2;          /* blue */
+
+  --shadow-sm: 0 1px 3px rgba(101, 123, 131, 0.12), 0 1px 2px rgba(101, 123, 131, 0.08);
+  --shadow-md: 0 4px 12px rgba(101, 123, 131, 0.15), 0 2px 4px rgba(101, 123, 131, 0.08);
+  --shadow-lg: 0 10px 30px rgba(101, 123, 131, 0.18), 0 4px 8px rgba(101, 123, 131, 0.08);
+}
+
+/* ── Colorblind-safe (deuteranopia/protanopia) ────── */
+/* Avoids red/green confusion. Uses blue+orange as the
+   primary pair; cyan+magenta as semantic differentiators.
+   Based on Wong (2011) 8-color colorblind-safe palette. */
+[data-theme="colorblind"] {
+  --color-primary: #0072B2;       /* blue — safe primary */
+  --color-primary-hover: #005a8e;
+  --color-primary-light: #e0f0fa;
+
+  --color-surface: #f4f6fb;
+  --color-surface-alt: #e6eaf4;
+  --color-surface-raised: #fafbfe;
+
+  --color-border: #b0bcd8;
+  --color-border-light: #cdd5e8;
+
+  --color-text: #1a2338;
+  --color-text-muted: #4a5c7a;
+  --color-text-inverse: #f4f6fb;
+
+  --color-accent: #E69F00;        /* orange — safe secondary */
+  --color-accent-hover: #c98900;
+  --color-accent-light: #fdf4dc;
+
+  --color-success: #009E73;       /* teal-green — distinct from red/green confusion zone */
+  --color-error: #CC0066;         /* magenta-red — distinguishable from green */
+  --color-warning: #E69F00;       /* orange */
+  --color-info: #56B4E9;          /* sky blue */
+
+  --shadow-sm: 0 1px 3px rgba(26, 35, 56, 0.08), 0 1px 2px rgba(26, 35, 56, 0.04);
+  --shadow-md: 0 4px 12px rgba(26, 35, 56, 0.1),  0 2px 4px rgba(26, 35, 56, 0.06);
+  --shadow-lg: 0 10px 30px rgba(26, 35, 56, 0.12), 0 4px 8px rgba(26, 35, 56, 0.06);
 }
 
 /* ── Base resets ─────────────────────────────────── */

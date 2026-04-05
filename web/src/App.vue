@@ -16,12 +16,14 @@ import { computed, onMounted } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import { useMotion } from './composables/useMotion'
 import { useHackerMode, useKonamiCode } from './composables/useEasterEgg'
+import { useTheme } from './composables/useTheme'
 import AppNav from './components/AppNav.vue'
 import { useDigestStore } from './stores/digest'
 
 const motion = useMotion()
 const route = useRoute()
 const { toggle, restore } = useHackerMode()
+const { initTheme } = useTheme()
 const digestStore = useDigestStore()
 
 const isWizard = computed(() => route.path.startsWith('/setup'))
@@ -29,7 +31,8 @@ const isWizard = computed(() => route.path.startsWith('/setup'))
 useKonamiCode(toggle)
 
 onMounted(() => {
-  restore()  // re-apply hacker mode from localStorage on hard reload
+  initTheme()  // apply persisted theme (hacker mode takes priority inside initTheme)
+  restore()    // kept for hacker mode re-entry on hard reload (initTheme handles it, belt+suspenders)
   digestStore.fetchAll()  // populate badge immediately, before user visits Digest tab
 })
 </script>

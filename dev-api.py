@@ -1457,6 +1457,25 @@ class IdentitySyncPayload(BaseModel):
     phone: str = ""
     linkedin_url: str = ""
 
+_VALID_THEMES = frozenset({"auto", "light", "dark", "solarized-dark", "solarized-light", "colorblind"})
+
+class ThemePayload(BaseModel):
+    theme: str
+
+@app.post("/api/settings/theme")
+def set_theme(payload: ThemePayload):
+    """Persist the user's chosen theme to user.yaml."""
+    if payload.theme not in _VALID_THEMES:
+        raise HTTPException(status_code=400, detail=f"Invalid theme: {payload.theme}")
+    try:
+        data = load_user_profile(_user_yaml_path())
+        data["theme"] = payload.theme
+        save_user_profile(_user_yaml_path(), data)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class UIPrefPayload(BaseModel):
     preference: str  # "streamlit" | "vue"
 

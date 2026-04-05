@@ -34,6 +34,22 @@
       </button>
     </div>
 
+    <!-- Theme picker -->
+    <div class="sidebar__theme" v-if="!isHackerMode">
+      <label class="sidebar__theme-label" for="theme-select">Theme</label>
+      <select
+        id="theme-select"
+        class="sidebar__theme-select"
+        :value="currentTheme"
+        @change="setTheme(($event.target as HTMLSelectElement).value as Theme)"
+        aria-label="Select theme"
+      >
+        <option v-for="opt in THEME_OPTIONS" :key="opt.value" :value="opt.value">
+          {{ opt.icon }} {{ opt.label }}
+        </option>
+      </select>
+    </div>
+
     <!-- Settings at bottom -->
     <div class="sidebar__footer">
       <RouterLink to="/settings" class="sidebar__link sidebar__link--footer" active-class="sidebar__link--active">
@@ -79,7 +95,10 @@ import {
 } from '@heroicons/vue/24/outline'
 
 import { useDigestStore } from '../stores/digest'
+import { useTheme, THEME_OPTIONS, type Theme } from '../composables/useTheme'
+
 const digestStore = useDigestStore()
+const { currentTheme, setTheme, restoreTheme } = useTheme()
 
 // Logo click easter egg — 9.6: Click the Bird 5× rapidly
 const logoClickCount = ref(0)
@@ -104,8 +123,8 @@ const isHackerMode = computed(() =>
 )
 
 function exitHackerMode() {
-  delete document.documentElement.dataset.theme
   localStorage.removeItem('cf-hacker-mode')
+  restoreTheme()
 }
 
 const _apiBase = import.meta.env.BASE_URL.replace(/\/$/, '')
@@ -313,6 +332,47 @@ const mobileLinks = [
 .sidebar__classic-btn:hover {
   opacity: 1;
   background: var(--color-surface-alt);
+}
+
+/* ── Theme picker ───────────────────────────────────── */
+.sidebar__theme {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--color-border-light);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sidebar__theme-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sidebar__theme-select {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  cursor: pointer;
+  appearance: auto;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.sidebar__theme-select:hover {
+  border-color: var(--color-primary);
+  background: var(--color-surface-raised);
+}
+
+.sidebar__theme-select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* ── Mobile tab bar (<1024px) ───────────────────────── */
