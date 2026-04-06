@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup.sh — Peregrine dependency installer
+# install.sh — Peregrine dependency installer
 # Installs Docker, Docker Compose v2, and (optionally) NVIDIA Container Toolkit.
 # Supports: Ubuntu/Debian, Fedora/RHEL/CentOS, Arch Linux, macOS (Homebrew).
 # Windows: not supported — use WSL2 with Ubuntu.
@@ -90,15 +90,11 @@ configure_git_safe_dir() {
 }
 
 activate_git_hooks() {
-    local repo_dir hooks_installer
+    local repo_dir
     repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    hooks_installer="/Library/Development/CircuitForge/circuitforge-hooks/install.sh"
-    if [[ -f "$hooks_installer" ]]; then
-        bash "$hooks_installer" --quiet
-        success "CircuitForge hooks activated (circuitforge-hooks)."
-    elif [[ -d "$repo_dir/.githooks" ]]; then
+    if [[ -d "$repo_dir/.githooks" ]]; then
         git -C "$repo_dir" config core.hooksPath .githooks
-        success "Git hooks activated (.githooks/) — circuitforge-hooks not found, using local fallback."
+        success "Git hooks activated (.githooks/)."
     fi
 }
 
@@ -341,6 +337,31 @@ setup_env() {
     fi
 }
 
+# ── License key (optional) ────────────────────────────────────────────────────
+capture_license_key() {
+    [[ ! -t 0 ]] && return   # skip in non-interactive installs (curl | bash)
+    local env_file
+    env_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.env"
+    [[ ! -f "$env_file" ]] && return   # setup_env() creates it; nothing to write into yet
+
+    echo ""
+    info "License key (optional)"
+    echo -e "  Peregrine works without a key for personal self-hosted use."
+    echo -e "  Paid-tier users: enter your ${YELLOW}CFG-XXXX-…${NC} key to unlock cloud LLM and integrations."
+    echo ""
+    read -rp "  CircuitForge license key [press Enter to skip]: " _key || true
+    if [[ -n "$_key" ]]; then
+        if echo "$_key" | grep -qE '^CFG-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$'; then
+            _update_env_key "$env_file" "CF_LICENSE_KEY" "$_key"
+            _update_env_key "$env_file" "HEIMDALL_URL" "https://license.circuitforge.tech"
+            success "License key saved — paid-tier features enabled."
+        else
+            warn "Key format looks wrong (expected CFG-XXXX-AAAA-BBBB-CCCC) — skipping."
+            info "Add it manually to .env as CF_LICENSE_KEY= later."
+        fi
+    fi
+}
+
 # ── Model weights storage ───────────────────────────────────────────────────────
 _update_env_key() {
     # Portable in-place key=value update for .env files (Linux + macOS).
@@ -416,7 +437,14 @@ main() {
     fi
     install_ollama_macos
     setup_env
+    capture_license_key
     configure_model_paths
+
+    # Read the actual port from .env so next-steps reflects any customisation
+    local _script_dir _port
+    _script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    _port="$(grep -E '^STREAMLIT_PORT=' "$_script_dir/.env" 2>/dev/null | cut -d= -f2-)"
+    _port="${_port:-8502}"
 
     echo ""
     success "All dependencies installed."
@@ -429,7 +457,7 @@ main() {
     else
         echo -e "     ${YELLOW}./manage.sh start --profile cpu${NC}      # local Ollama inference (CPU)"
     fi
-    echo -e "  2. Open ${YELLOW}http://localhost:8501${NC} — the setup wizard will guide you"
+    echo -e "  2. Open ${YELLOW}http://localhost:${_port}${NC} — the setup wizard will guide you"
     echo -e "  (Tip: edit ${YELLOW}.env${NC} any time to adjust ports or model paths)"
     echo ""
     if groups "$USER" 2>/dev/null | grep -q docker; then

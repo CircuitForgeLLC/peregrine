@@ -144,7 +144,7 @@ Shipped in v0.4.0. Ongoing maintenance and known decisions:
 
 ## Container Runtime
 
-- ~~**Podman support**~~ — ✅ Done: `Makefile` auto-detects `docker compose` / `podman compose` / `podman-compose`; `compose.podman-gpu.yml` CDI override for GPU profiles; `setup.sh` detects existing Podman and skips Docker install.
+- ~~**Podman support**~~ — ✅ Done: `Makefile` auto-detects `docker compose` / `podman compose` / `podman-compose`; `compose.podman-gpu.yml` CDI override for GPU profiles; `install.sh` detects existing Podman and skips Docker install.
 - **FastAPI migration path** — When concurrent-user scale demands it: port Streamlit pages to FastAPI + React/HTMX, keep `scripts/` layer unchanged, replace daemon threads with Celery + Redis. The `scripts/` separation already makes this clean.
 
 ---

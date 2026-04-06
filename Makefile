@@ -45,7 +45,7 @@ endif
 PROFILE_ARG := $(if $(filter remote,$(PROFILE)),,--profile $(PROFILE))
 
 setup:          ## Install dependencies (Docker or Podman + NVIDIA toolkit)
-	@bash setup.sh
+	@bash install.sh
 
 preflight:      ## Check ports + system resources; write .env
 	@$(PYTHON) scripts/preflight.py

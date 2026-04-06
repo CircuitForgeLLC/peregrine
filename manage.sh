@@ -84,7 +84,7 @@ case "$CMD" in
 
     setup)
         info "Running dependency installer..."
-        bash setup.sh
+        bash install.sh
         ;;
 
     preflight)

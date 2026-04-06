@@ -337,7 +337,7 @@ webhook_url: "https://discord.com/api/webhooks/..."
 
 ## .env
 
-Docker port and path overrides. Created from `.env.example` by `setup.sh`. Gitignored.
+Docker port and path overrides. Created from `.env.example` by `install.sh`. Gitignored.
 
 ```bash
 # Ports (change if defaults conflict with existing services)
