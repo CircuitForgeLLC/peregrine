@@ -88,6 +88,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useApiFetch } from '../composables/useApi'
+import { useAppConfigStore } from '../stores/appConfig'
+import { showToast } from '../composables/useToast'
+
+const config = useAppConfigStore()
 
 const props = defineProps<{
   jobId: number
@@ -181,6 +185,7 @@ async function load() {
 }
 
 async function generate() {
+  if (config.isDemo) { showToast('AI features are disabled in demo mode'); state.value = 'empty'; return }
   state.value = 'generating'
   stage.value = null
   errorMsg.value = null

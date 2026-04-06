@@ -56,6 +56,9 @@ router.beforeEach(async (to, _from, next) => {
   const config = useAppConfigStore()
   if (!config.loaded) await config.load()
 
+  // Demo mode: pre-seeded data, no wizard needed — route freely
+  if (config.isDemo) return next()
+
   // Wizard gate runs first for every route except /setup itself
   if (!to.path.startsWith('/setup') && !config.wizardComplete) {
     return next('/setup')
