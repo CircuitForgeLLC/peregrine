@@ -124,12 +124,6 @@ def sync_ui_cookie(yaml_path: Path, tier: str) -> None:
         # UI components must not crash the app — silent fallback to default
         pref = "streamlit"
 
-    # Demo mode: Vue SPA has no demo data wiring — always serve Streamlit.
-    # (The tier downgrade check below is skipped in demo mode, but we must
-    # also block the Vue navigation itself so Caddy doesn't route to a blank SPA.)
-    if pref == "vue" and _DEMO_MODE:
-        pref = "streamlit"
-
     # Tier downgrade protection (skip in demo — demo bypasses tier gate)
     if pref == "vue" and not _DEMO_MODE and not can_use(tier, "vue_ui_beta"):
         if profile is not None:

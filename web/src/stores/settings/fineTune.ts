@@ -1,6 +1,8 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
+import { useAppConfigStore } from '../appConfig'
+import { showToast } from '../../composables/useToast'
 
 export interface TrainingPair {
   index: number
@@ -41,6 +43,7 @@ export const useFineTuneStore = defineStore('settings/fineTune', () => {
   }
 
   async function submitJob() {
+    if (useAppConfigStore().isDemo) { showToast('AI features are disabled in demo mode'); return }
     const { data, error } = await useApiFetch<{ job_id: string }>('/api/settings/fine-tune/submit', { method: 'POST' })
     if (!error && data) { inFlightJob.value = true; jobStatus.value = 'queued' }
   }

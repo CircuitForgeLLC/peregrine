@@ -283,8 +283,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useApiFetch } from '../composables/useApi'
+import { useAppConfigStore } from '../stores/appConfig'
 import type { Job } from '../stores/review'
 import ResumeOptimizerPanel from './ResumeOptimizerPanel.vue'
+
+const config = useAppConfigStore()
 
 const props = defineProps<{ jobId: number }>()
 
@@ -379,6 +382,7 @@ async function pollTaskStatus() {
 
 async function generate() {
   if (generating.value) return
+  if (config.isDemo) { showToast('AI features are disabled in demo mode'); return }
   generating.value = true
   clState.value    = 'queued'
   taskError.value  = null
