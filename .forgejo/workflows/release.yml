@@ -1,0 +1,71 @@
+# Tag-triggered release workflow.
+# Generates changelog and creates Forgejo release on v* tags.
+# Copied from Circuit-Forge/cf-agents workflows/release.yml
+#
+# Docker push is intentionally disabled — BSL 1.1 registry policy not yet resolved.
+# Tracked in Circuit-Forge/cf-agents#3. Re-enable the Docker steps when that lands.
+#
+# Required secrets: FORGEJO_RELEASE_TOKEN
+# (GHCR_TOKEN not needed until Docker push is enabled)
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Changelog ────────────────────────────────────────────────────────────
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v3
+        id: cliff
+        with:
+          config: .cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGES.md
+
+      # ── Docker (disabled — BSL registry policy pending cf-agents#3) ──────────
+      # - name: Set up QEMU
+      #   uses: docker/setup-qemu-action@v3
+      # - name: Set up Buildx
+      #   uses: docker/setup-buildx-action@v3
+      # - name: Log in to GHCR
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: ghcr.io
+      #     username: ${{ github.actor }}
+      #     password: ${{ secrets.GHCR_TOKEN }}
+      # - name: Build and push Docker image
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: .
+      #     push: true
+      #     platforms: linux/amd64,linux/arm64
+      #     tags: |
+      #       ghcr.io/circuitforgellc/peregrine:${{ github.ref_name }}
+      #       ghcr.io/circuitforgellc/peregrine:latest
+      #     cache-from: type=gha
+      #     cache-to: type=gha,mode=max
+
+      # ── Forgejo Release ───────────────────────────────────────────────────────
+      - name: Create Forgejo release
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_RELEASE_TOKEN }}
+          REPO: ${{ github.event.repository.name }}
+          TAG: ${{ github.ref_name }}
+          NOTES: ${{ steps.cliff.outputs.content }}
+        run: |
+          curl -sS -X POST \
+            "https://git.opensourcesolarpunk.com/api/v1/repos/Circuit-Forge/${REPO}/releases" \
+            -H "Authorization: token ${FORGEJO_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg tag "$TAG" --arg body "$NOTES" \
+                  '{tag_name: $tag, name: $tag, body: $body}')"

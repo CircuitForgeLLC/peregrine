@@ -1,0 +1,34 @@
+# Mirror push to GitHub and Codeberg on every push to main or tag.
+# Copied from Circuit-Forge/cf-agents workflows/mirror.yml
+# Required secrets: GITHUB_MIRROR_TOKEN, CODEBERG_MIRROR_TOKEN
+
+name: Mirror
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirror to GitHub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_MIRROR_TOKEN }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/CircuitForgeLLC/${REPO}.git"
+          git push github --mirror
+
+      - name: Mirror to Codeberg
+        env:
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_MIRROR_TOKEN }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          git remote add codeberg "https://CircuitForge:${CODEBERG_TOKEN}@codeberg.org/CircuitForge/${REPO}.git"
+          git push codeberg --mirror
