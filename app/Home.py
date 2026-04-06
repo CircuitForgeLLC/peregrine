@@ -25,7 +25,6 @@ from scripts.task_runner import submit_task
 from app.cloud_session import resolve_session, get_db_path
 
 _CONFIG_DIR = Path(__file__).parent.parent / "config"
-_NOTION_CONNECTED = (_CONFIG_DIR / "integrations" / "notion.yaml").exists()
 
 resolve_session("peregrine")
 init_db(get_db_path())
@@ -134,7 +133,7 @@ def _queue_url_imports(db_path: Path, urls: list) -> int:
 
 
 st.title(f"🔍 {_name}'s Job Search")
-st.caption("Discover → Review → Sync to Notion")
+st.caption("Discover → Review → Sync" + (" to Notion" if _notion_configured() else ""))
 
 st.divider()
 
@@ -146,7 +145,7 @@ def _live_counts():
     col1.metric("Pending Review", counts.get("pending", 0))
     col2.metric("Approved", counts.get("approved", 0))
     col3.metric("Applied", counts.get("applied", 0))
-    col4.metric("Synced to Notion", counts.get("synced", 0))
+    col4.metric("Synced" + (" to Notion" if _notion_configured() else ""), counts.get("synced", 0))
     col5.metric("Rejected", counts.get("rejected", 0))
 
 
@@ -237,7 +236,7 @@ with mid:
 
 with right:
     approved_count = get_job_counts(get_db_path()).get("approved", 0)
-    if _NOTION_CONNECTED:
+    if _notion_configured():
         st.subheader("Send to Notion")
         st.caption("Push all approved jobs to your Notion tracking database.")
         if approved_count == 0:
