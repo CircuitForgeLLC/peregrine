@@ -24,6 +24,8 @@ from urllib.parse import urlparse
 import requests
 import yaml
 from bs4 import BeautifulSoup
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -46,7 +48,18 @@ _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
 # Per-request DB path — set by cloud_session_middleware; falls back to DB_PATH
 _request_db: ContextVar[str | None] = ContextVar("_request_db", default=None)
 
-app = FastAPI(title="Peregrine Dev API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load .env then run pending SQLite migrations on startup."""
+    # Load .env before any runtime env reads — safe because lifespan doesn't run
+    # when dev_api is imported by tests (only when uvicorn actually starts).
+    _load_env(PEREGRINE_ROOT / ".env")
+    from scripts.db_migrate import migrate_db
+    migrate_db(Path(DB_PATH))
+    yield
+
+
+app = FastAPI(title="Peregrine Dev API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -139,14 +152,6 @@ def _strip_html(text: str | None) -> str | None:
     return cleaned.strip() or None
 
 
-@app.on_event("startup")
-def _startup():
-    """Load .env then run pending SQLite migrations."""
-    # Load .env before any runtime env reads — safe because startup doesn't run
-    # when dev_api is imported by tests (only when uvicorn actually starts).
-    _load_env(PEREGRINE_ROOT / ".env")
-    from scripts.db_migrate import migrate_db
-    migrate_db(Path(DB_PATH))
 
 
 # ── Link extraction helpers ───────────────────────────────────────────────
