@@ -59,7 +59,7 @@ make start PROFILE=single-gpu
 
 **3.** Open http://localhost:8501 — the setup wizard guides you through the rest.
 
-> **macOS / Apple Silicon:** Docker Desktop must be running. For Metal GPU-accelerated inference, install Ollama natively before starting — `setup.sh` will prompt you to do this. See [Apple Silicon GPU](#apple-silicon-gpu) below.
+> **macOS / Apple Silicon:** Docker Desktop must be running. For Metal GPU-accelerated inference, install Ollama natively before starting — `install.sh` will prompt you to do this. See [Apple Silicon GPU](#apple-silicon-gpu) below.
 > **Windows:** Not supported — use WSL2 with Ubuntu.
 
 ### Installing to `/opt` or other system directories
@@ -103,7 +103,7 @@ After `./manage.sh setup`, log out and back in for docker group membership to ta
 
 Docker Desktop on macOS runs in a Linux VM — it cannot access the Apple GPU. Metal-accelerated inference requires Ollama to run **natively** on the host.
 
-`setup.sh` handles this automatically: it offers to install Ollama via Homebrew, starts it as a background service, and explains what happens next. If Ollama is running on port 11434 when you start Peregrine, preflight detects it, stubs out the Docker Ollama container, and routes inference through the native process — which uses Metal automatically.
+`install.sh` handles this automatically: it offers to install Ollama via Homebrew, starts it as a background service, and explains what happens next. If Ollama is running on port 11434 when you start Peregrine, preflight detects it, stubs out the Docker Ollama container, and routes inference through the native process — which uses Metal automatically.
 
 To do it manually:
 

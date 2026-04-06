@@ -12,7 +12,7 @@ Peregrine automates the full job search lifecycle: discovery, matching, cover le
 # 1. Clone and install dependencies
 git clone https://git.circuitforge.io/circuitforge/peregrine
 cd peregrine
-bash setup.sh
+bash install.sh
 
 # 2. Start Peregrine
 make start                        # no GPU, API-only

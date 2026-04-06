@@ -7,7 +7,7 @@ This page walks through a full Peregrine installation from scratch.
 ## Prerequisites
 
 - **Git** — to clone the repository
-- **Internet connection** — `setup.sh` downloads Docker and other dependencies
+- **Internet connection** — `install.sh` downloads Docker and other dependencies
 - **Operating system**: Ubuntu/Debian, Fedora/RHEL, Arch Linux, or macOS (with Docker Desktop)
 
 !!! warning "Windows"
@@ -18,19 +18,19 @@ This page walks through a full Peregrine installation from scratch.
 ## Step 1 — Clone the repository
 
 ```bash
-git clone https://git.circuitforge.io/circuitforge/peregrine
+git clone https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine
 cd peregrine
 ```
 
 ---
 
-## Step 2 — Run setup.sh
+## Step 2 — Run install.sh
 
 ```bash
-bash setup.sh
+bash install.sh
 ```
 
-`setup.sh` performs the following automatically:
+`install.sh` performs the following automatically:
 
 1. **Detects your platform** (Ubuntu/Debian, Fedora/RHEL, Arch, macOS)
 2. **Installs Git** if not already present
@@ -40,10 +40,10 @@ bash setup.sh
 6. **Creates `.env` from `.env.example`** — edit `.env` to customise ports and model storage paths before starting
 
 !!! note "macOS"
-    `setup.sh` installs Docker Desktop via Homebrew (`brew install --cask docker`) then exits. Open Docker Desktop, start it, then re-run the script.
+    `install.sh` installs Docker Desktop via Homebrew (`brew install --cask docker`) then exits. Open Docker Desktop, start it, then re-run the script.
 
 !!! note "GPU requirement"
-    For GPU support, `nvidia-smi` must return output before you run `setup.sh`. Install your NVIDIA driver first. The Container Toolkit installation will fail silently if the driver is not present.
+    For GPU support, `nvidia-smi` must return output before you run `install.sh`. Install your NVIDIA driver first. The Container Toolkit installation will fail silently if the driver is not present.
 
 ---
 
@@ -107,7 +107,7 @@ The first-run wizard launches automatically. See [First-Run Wizard](first-run-wi
 Only NVIDIA GPUs are supported. AMD ROCm is not currently supported.
 
 Requirements:
-- NVIDIA driver installed and `nvidia-smi` working before running `setup.sh`
+- NVIDIA driver installed and `nvidia-smi` working before running `install.sh`
 - CUDA 12.x recommended (CUDA 11.x may work but is untested)
 - Minimum 8 GB VRAM for `single-gpu` profile with default models
 - For `dual-gpu`: GPU 0 is assigned to Ollama, GPU 1 to vLLM

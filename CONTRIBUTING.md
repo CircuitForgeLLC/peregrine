@@ -34,7 +34,7 @@ full instructions.
 ```bash
 git clone https://git.opensourcesolarpunk.com/pyr0ball/peregrine.git
 cd peregrine
-./setup.sh        # installs deps, activates git hooks
+./install.sh        # installs deps, activates git hooks
 ./manage.sh start
 ```
 
