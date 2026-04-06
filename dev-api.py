@@ -33,7 +33,7 @@ PEREGRINE_ROOT = Path("/Library/Development/CircuitForge/peregrine")
 if str(PEREGRINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PEREGRINE_ROOT))
 
-from circuitforge_core.api.feedback import make_feedback_router as _make_feedback_router  # noqa: E402
+from circuitforge_core.api import make_feedback_router as _make_feedback_router  # noqa: E402
 from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
 from scripts.credential_store import get_credential, set_credential, delete_credential  # noqa: E402
 
