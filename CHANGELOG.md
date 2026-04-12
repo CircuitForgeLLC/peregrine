@@ -9,6 +9,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.6] — 2026-04-12
+
+### Added
+
+- **Resume Review Modal** — paged tabbed dialog replaces the inline resume review
+  section in the Apply workspace. Pages through Skills diff, Summary diff, one page
+  per experience entry, and a Confirm summary. Color-coded tab status: unvisited
+  (gray), in-progress (indigo), accepted (green), partial (amber), skipped (slate).
+  Full ARIA tabs pattern with focus trap and `Teleport to body`.
+- **Resume Library** — new `/resumes` page for managing saved resumes. Two-column
+  layout: list sidebar + full-text preview pane. Supports import (.txt, .pdf, .docx,
+  .odt, .yaml), rename (Edit), set as default, download (txt/pdf/yaml), and delete
+  (guarded: disabled when only resume or is default). 5 MB upload limit.
+- **ResumeLibraryCard** — compact widget shown above the ATS Resume Optimizer in the
+  Apply workspace. Displays the currently active resume for the job (job-specific or
+  global default), with Switch and Manage deep links.
+- **Resume library API** — `GET/POST /api/resumes`, `GET/PATCH/DELETE /api/resumes/{id}`,
+  `POST /api/resumes/{id}/set-default`, `POST /api/resumes/import`,
+  `GET/PATCH /api/jobs/{job_id}/resume`. `approve_resume` extended with
+  `save_to_library` + `resume_name` params to save optimized resumes directly.
+- **`resumes` DB migration** — `migrations/005_resumes_table.sql` adds `resumes` table
+  (10 columns) and `resume_id` FK on `jobs`.
+- **Resumes nav link** — Document icon entry added after Apply in the main nav.
+
+### Changed
+
+- Resume optimizer "Awaiting review" state now triggers the Review Modal instead of
+  rendering an inline diff; save-to-library checkbox and name input surfaced on the
+  preview confirmation step.
+
+---
+
 ## [0.8.5] — 2026-04-02
 
 ### Added
