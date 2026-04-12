@@ -89,8 +89,8 @@ onMounted(load)
 
 <style scoped>
 .rlc {
-  background: var(--app-surface-alt, #f8fafc);
-  border: 1px solid var(--app-border, #e2e8f0);
+  background: var(--color-surface-alt, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
   border-radius: var(--radius-md, 0.5rem);
   padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
   display: flex;
@@ -133,28 +133,28 @@ onMounted(load)
 
 .rlc__meta {
   font-size: var(--font-xs, 0.75rem);
-  color: var(--app-text-muted, #64748b);
+  color: var(--color-text-muted, #64748b);
 }
 
 .rlc__optimized-badge {
   font-size: var(--font-xs, 0.75rem);
-  color: var(--app-accent, #6366f1);
+  color: var(--color-accent, #6366f1);
   font-weight: 500;
 }
 
 .rlc__empty {
   font-size: var(--font-sm, 0.875rem);
-  color: var(--app-text-muted, #64748b);
+  color: var(--color-text-muted, #64748b);
 }
 
 .rlc__import-link {
-  color: var(--app-accent, #6366f1);
+  color: var(--color-accent, #6366f1);
   text-decoration: underline;
 }
 
 .rlc__loading {
   font-size: var(--font-sm, 0.875rem);
-  color: var(--app-text-muted, #64748b);
+  color: var(--color-text-muted, #64748b);
 }
 
 .rlc__picker {
@@ -163,8 +163,8 @@ onMounted(load)
   left: 0;
   right: 0;
   z-index: 10;
-  background: var(--app-surface, #fff);
-  border: 1px solid var(--app-border, #e2e8f0);
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
   border-radius: var(--radius-md, 0.5rem);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   margin-top: 4px;
@@ -188,11 +188,11 @@ onMounted(load)
 
 .rlc__picker-item:hover,
 .rlc__picker-item--active {
-  background: var(--app-surface-alt, #f8fafc);
+  background: var(--color-surface-alt, #f8fafc);
 }
 
 .rlc__picker-meta {
   font-size: var(--font-xs, 0.75rem);
-  color: var(--app-text-muted, #64748b);
+  color: var(--color-text-muted, #64748b);
 }
 </style>
