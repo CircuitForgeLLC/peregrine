@@ -50,6 +50,9 @@
       </select>
     </div>
 
+    <!-- Background task queue (desktop: inline list; mobile: fixed pill above tab bar) -->
+    <TaskIndicator />
+
     <!-- Settings at bottom -->
     <div class="sidebar__footer">
       <RouterLink to="/settings" class="sidebar__link sidebar__link--footer" active-class="sidebar__link--active">
@@ -92,10 +95,12 @@ import {
   MagnifyingGlassIcon,
   NewspaperIcon,
   Cog6ToothIcon,
+  DocumentTextIcon,
 } from '@heroicons/vue/24/outline'
 
 import { useDigestStore } from '../stores/digest'
 import { useTheme, THEME_OPTIONS, type Theme } from '../composables/useTheme'
+import TaskIndicator from './TaskIndicator.vue'
 
 const digestStore = useDigestStore()
 const { currentTheme, setTheme, restoreTheme } = useTheme()
@@ -148,6 +153,7 @@ const navLinks = computed(() => [
   { to: '/',           icon: HomeIcon,                   label: 'Home' },
   { to: '/review',     icon: ClipboardDocumentListIcon,  label: 'Job Review' },
   { to: '/apply',      icon: PencilSquareIcon,           label: 'Apply' },
+  { to: '/resumes',    icon: DocumentTextIcon,           label: 'Resumes' },
   { to: '/interviews', icon: CalendarDaysIcon,           label: 'Interviews' },
   { to: '/digest',     icon: NewspaperIcon,              label: 'Digest',
     badge: digestStore.entries.length || undefined },
