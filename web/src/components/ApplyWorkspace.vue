@@ -191,6 +191,9 @@
             ↺ Regenerate
           </button>
 
+          <!-- ── Resume Library Card ──────────────────────────────── -->
+          <ResumeLibraryCard :job-id="props.jobId" class="apply__resume-card" />
+
           <!-- ── ATS Resume Optimizer ──────────────────────────────── -->
           <ResumeOptimizerPanel :job-id="props.jobId" />
 
@@ -286,6 +289,7 @@ import { useApiFetch } from '../composables/useApi'
 import { useAppConfigStore } from '../stores/appConfig'
 import type { Job } from '../stores/review'
 import ResumeOptimizerPanel from './ResumeOptimizerPanel.vue'
+import ResumeLibraryCard from './ResumeLibraryCard.vue'
 
 const config = useAppConfigStore()
 
