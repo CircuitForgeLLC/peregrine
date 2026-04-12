@@ -16,6 +16,8 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.user_profile import UserProfile
@@ -43,104 +45,53 @@ SYSTEM_CONTEXT = _build_system_context()
 
 
 # ── Mission-alignment detection ───────────────────────────────────────────────
-# When a company/JD signals one of these preferred industries, the cover letter
-# prompt injects a hint so Para 3 can reflect genuine personal connection.
+# Domains and their keyword signals are loaded from config/mission_domains.yaml.
 # This does NOT disclose any personal disability or family information.
 
+_MISSION_DOMAINS_PATH = Path(__file__).parent.parent / "config" / "mission_domains.yaml"
+
+
+def load_mission_domains(path: Path | None = None) -> dict[str, dict]:
+    """Load mission domain config from YAML. Returns dict keyed by domain name."""
+    p = path or _MISSION_DOMAINS_PATH
+    if not p.exists():
+        return {}
+    with p.open(encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+    return data.get("domains", {}) if data else {}
+
+
+_MISSION_DOMAINS: dict[str, dict] = load_mission_domains()
 _MISSION_SIGNALS: dict[str, list[str]] = {
-    "music": [
-        "music", "spotify", "tidal", "soundcloud", "bandcamp", "apple music",
-        "distrokid", "cd baby", "landr", "beatport", "reverb", "vinyl",
-        "streaming", "artist", "label", "live nation", "ticketmaster", "aeg",
-        "songkick", "concert", "venue", "festival", "audio", "podcast",
-        "studio", "record", "musician", "playlist",
-    ],
-    "animal_welfare": [
-        "animal", "shelter", "rescue", "humane society", "spca", "aspca",
-        "veterinary", "vet ", "wildlife", "pet ", "adoption", "foster",
-        "dog", "cat", "feline", "canine", "sanctuary", "zoo",
-    ],
-    "education": [
-        "education", "school", "learning", "student", "edtech", "classroom",
-        "curriculum", "tutoring", "academic", "university", "kids", "children",
-        "youth", "literacy", "khan academy", "duolingo", "chegg", "coursera",
-        "instructure", "canvas lms", "clever", "district", "teacher",
-        "k-12", "k12", "grade", "pedagogy",
-    ],
-    "social_impact": [
-        "nonprofit", "non-profit", "501(c)", "social impact", "mission-driven",
-        "public benefit", "community", "underserved", "equity", "justice",
-        "humanitarian", "advocacy", "charity", "foundation", "ngo",
-        "social good", "civic", "public health", "mental health", "food security",
-        "housing", "homelessness", "poverty", "workforce development",
-    ],
-    # Health is listed last — it's a genuine but lower-priority connection than
-    # music/animals/education/social_impact. detect_mission_alignment returns on first
-    # match, so dict order = preference order.
-    "health": [
-        "patient", "patients", "healthcare", "health tech", "healthtech",
-        "pharma", "pharmaceutical", "clinical", "medical",
-        "hospital", "clinic", "therapy", "therapist",
-        "rare disease", "life sciences", "life science",
-        "treatment", "prescription", "biotech", "biopharma", "medtech",
-        "behavioral health", "population health",
-        "care management", "care coordination", "oncology", "specialty pharmacy",
-        "provider network", "payer", "health plan", "benefits administration",
-        "ehr", "emr", "fhir", "hipaa",
-    ],
-}
-
-_candidate = _profile.name if _profile else "the candidate"
-
-_MISSION_DEFAULTS: dict[str, str] = {
-    "music": (
-        f"This company is in the music industry — an industry {_candidate} finds genuinely "
-        "compelling. Para 3 should warmly and specifically reflect this authentic alignment, "
-        "not as a generic fan statement, but as an honest statement of where they'd love to "
-        "apply their skills."
-    ),
-    "animal_welfare": (
-        f"This organization works in animal welfare/rescue — a mission {_candidate} finds "
-        "genuinely meaningful. Para 3 should reflect this authentic connection warmly and "
-        "specifically, tying their skills to this mission."
-    ),
-    "education": (
-        f"This company works in education or EdTech — a domain that resonates with "
-        f"{_candidate}'s values. Para 3 should reflect this authentic connection specifically "
-        "and warmly."
-    ),
-    "social_impact": (
-        f"This organization is mission-driven / social impact focused — exactly the kind of "
-        f"cause {_candidate} cares deeply about. Para 3 should warmly reflect their genuine "
-        "desire to apply their skills to work that makes a real difference in people's lives."
-    ),
-    "health": (
-        f"This company works in healthcare, life sciences, or patient care. "
-        f"Do NOT write about {_candidate}'s passion for pharmaceuticals or healthcare as an "
-        "industry. Instead, Para 3 should reflect genuine care for the PEOPLE these companies "
-        "exist to serve — those navigating complex, often invisible, or unusual health journeys; "
-        "patients facing rare or poorly understood conditions; individuals whose situations don't "
-        "fit a clean category. The connection is to the humans behind the data, not the industry. "
-        "If the user has provided a personal note, use that to anchor Para 3 specifically."
-    ),
+    domain: cfg.get("signals", []) for domain, cfg in _MISSION_DOMAINS.items()
 }
 
 
 def _build_mission_notes(profile=None, candidate_name: str | None = None) -> dict[str, str]:
-    """Merge user's custom mission notes with generic defaults."""
+    """Merge user's custom mission notes with YAML defaults.
+
+    For domains defined in mission_domains.yaml the default_note is used when
+    the user has not provided a custom note in user.yaml mission_preferences.
+
+    For user-defined domains (keys in mission_preferences that are NOT in the
+    YAML config), the custom note is used as-is; no signal detection applies.
+    """
     p = profile or _profile
-    name = candidate_name or _candidate
+    name = candidate_name or (p.name if p else "the candidate")
     prefs = p.mission_preferences if p else {}
-    notes = {}
-    for industry, default_note in _MISSION_DEFAULTS.items():
-        custom = (prefs.get(industry) or "").strip()
+    notes: dict[str, str] = {}
+
+    for domain, cfg in _MISSION_DOMAINS.items():
+        default_note = (cfg.get("default_note") or "").strip()
+        custom = (prefs.get(domain) or "").strip()
         if custom:
-            notes[industry] = (
+            notes[domain] = (
                 f"Mission alignment — {name} shared: \"{custom}\". "
                 "Para 3 should warmly and specifically reflect this authentic connection."
             )
         else:
-            notes[industry] = default_note
+            notes[domain] = default_note
+
     return notes
 
 
@@ -150,12 +101,15 @@ _MISSION_NOTES = _build_mission_notes()
 def detect_mission_alignment(
     company: str, description: str, mission_notes: dict | None = None
 ) -> str | None:
-    """Return a mission hint string if company/JD matches a preferred industry, else None."""
+    """Return a mission hint string if company/JD matches a configured domain, else None.
+
+    Checks domains in YAML file order (dict order = match priority).
+    """
     notes = mission_notes if mission_notes is not None else _MISSION_NOTES
     text = f"{company} {description}".lower()
-    for industry, signals in _MISSION_SIGNALS.items():
+    for domain, signals in _MISSION_SIGNALS.items():
         if any(sig in text for sig in signals):
-            return notes[industry]
+            return notes.get(domain)
     return None
 
 

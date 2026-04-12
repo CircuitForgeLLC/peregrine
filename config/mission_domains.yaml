@@ -1,0 +1,258 @@
+# Mission domain signal configuration for cover letter generation.
+#
+# When a job description or company name matches signals in a domain,
+# the cover letter prompt injects a Para 3 hint to reflect genuine personal
+# alignment. Dict order = match priority (first match wins).
+#
+# Users can add custom domains under `mission_preferences` in user.yaml.
+# Any key in mission_preferences that is NOT listed here is treated as a
+# user-defined domain: no signal detection, custom note only (skipped if
+# the job description doesn't contain the key as a literal word).
+#
+# Schema per domain:
+#   signals: list[str]   — lowercase keywords to scan for in "company + JD"
+#   default_note: str    — hint injected when user has no custom note for domain
+
+domains:
+  music:
+    signals:
+      - music
+      - spotify
+      - tidal
+      - soundcloud
+      - bandcamp
+      - apple music
+      - distrokid
+      - cd baby
+      - landr
+      - beatport
+      - reverb
+      - vinyl
+      - streaming
+      - artist
+      - label
+      - live nation
+      - ticketmaster
+      - aeg
+      - songkick
+      - concert
+      - venue
+      - festival
+      - audio
+      - podcast
+      - studio
+      - record
+      - musician
+      - playlist
+    default_note: >
+      This company is in the music industry — an industry the candidate finds genuinely
+      compelling. Para 3 should warmly and specifically reflect this authentic alignment,
+      not as a generic fan statement, but as an honest statement of where they'd love to
+      apply their skills.
+
+  animal_welfare:
+    signals:
+      - animal
+      - shelter
+      - rescue
+      - humane society
+      - spca
+      - aspca
+      - veterinary
+      - "vet "
+      - wildlife
+      - "pet "
+      - adoption
+      - foster
+      - dog
+      - cat
+      - feline
+      - canine
+      - sanctuary
+      - zoo
+    default_note: >
+      This organization works in animal welfare/rescue — a mission the candidate finds
+      genuinely meaningful. Para 3 should reflect this authentic connection warmly and
+      specifically, tying their skills to this mission.
+
+  education:
+    signals:
+      - education
+      - school
+      - learning
+      - student
+      - edtech
+      - classroom
+      - curriculum
+      - tutoring
+      - academic
+      - university
+      - kids
+      - children
+      - youth
+      - literacy
+      - khan academy
+      - duolingo
+      - chegg
+      - coursera
+      - instructure
+      - canvas lms
+      - clever
+      - district
+      - teacher
+      - k-12
+      - k12
+      - grade
+      - pedagogy
+    default_note: >
+      This company works in education or EdTech — a domain that resonates with the
+      candidate's values. Para 3 should reflect this authentic connection specifically
+      and warmly.
+
+  social_impact:
+    signals:
+      - nonprofit
+      - non-profit
+      - "501(c)"
+      - social impact
+      - mission-driven
+      - public benefit
+      - community
+      - underserved
+      - equity
+      - justice
+      - humanitarian
+      - advocacy
+      - charity
+      - foundation
+      - ngo
+      - social good
+      - civic
+      - public health
+      - mental health
+      - food security
+      - housing
+      - homelessness
+      - poverty
+      - workforce development
+    default_note: >
+      This organization is mission-driven / social impact focused — exactly the kind of
+      cause the candidate cares deeply about. Para 3 should warmly reflect their genuine
+      desire to apply their skills to work that makes a real difference in people's lives.
+
+  # Health listed last — genuine but lower-priority connection.
+  health:
+    signals:
+      - patient
+      - patients
+      - healthcare
+      - health tech
+      - healthtech
+      - pharma
+      - pharmaceutical
+      - clinical
+      - medical
+      - hospital
+      - clinic
+      - therapy
+      - therapist
+      - rare disease
+      - life sciences
+      - life science
+      - treatment
+      - prescription
+      - biotech
+      - biopharma
+      - medtech
+      - behavioral health
+      - population health
+      - care management
+      - care coordination
+      - oncology
+      - specialty pharmacy
+      - provider network
+      - payer
+      - health plan
+      - benefits administration
+      - ehr
+      - emr
+      - fhir
+      - hipaa
+    default_note: >
+      This company works in healthcare, life sciences, or patient care.
+      Do NOT write about the candidate's passion for pharmaceuticals or healthcare as an
+      industry. Instead, Para 3 should reflect genuine care for the PEOPLE these companies
+      exist to serve: those navigating complex, often invisible, or unusual health journeys;
+      patients facing rare or poorly understood conditions; individuals whose situations don't
+      fit a clean category. The connection is to the humans behind the data, not the industry.
+      If the user has provided a personal note, use that to anchor Para 3 specifically.
+
+  # Extended domains — added 2026-04-12
+
+  privacy:
+    signals:
+      - privacy
+      - data rights
+      - surveillance
+      - gdpr
+      - ccpa
+      - anonymity
+      - end-to-end encryption
+      - open source
+      - decentralized
+      - self-hosted
+      - zero knowledge
+      - data sovereignty
+      - digital rights
+      - eff
+      - electronic frontier
+    default_note: >
+      This company operates in the privacy, data rights, or digital rights space —
+      a domain the candidate genuinely cares about. Para 3 should reflect their
+      authentic belief in user autonomy and data sovereignty, not as abstract principle
+      but as something that shapes how they approach their work.
+
+  accessibility:
+    signals:
+      - accessibility
+      - assistive technology
+      - a11y
+      - wcag
+      - screen reader
+      - adaptive technology
+      - disability
+      - neurodivergent
+      - neurodiversity
+      - adhd
+      - autism
+      - inclusive design
+      - universal design
+      - accommodations
+      - ada compliance
+    default_note: >
+      This company works in accessibility or assistive technology — a mission the
+      candidate feels genuine, personal alignment with. Para 3 should reflect authentic
+      investment in building tools and systems that work for everyone, especially those
+      whose needs are most often overlooked in mainstream product development.
+
+  open_source:
+    signals:
+      - open source
+      - open-source
+      - linux foundation
+      - apache foundation
+      - free software
+      - gnu
+      - contributor
+      - maintainer
+      - upstream
+      - community-driven
+      - innersource
+      - copyleft
+      - mozilla
+      - wikimedia
+    default_note: >
+      This organization is rooted in open source culture — a community the candidate
+      actively participates in and believes in. Para 3 should reflect genuine investment
+      in the collaborative, transparent, and community-driven approach to building
+      software that lasts.
