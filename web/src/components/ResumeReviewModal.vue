@@ -22,6 +22,7 @@
             v-for="(page, idx) in pages"
             :key="page.id"
             role="tab"
+            :id="`rrm-tab-${page.id}`"
             :aria-selected="idx === currentIdx"
             :aria-controls="`rrm-panel-${page.id}`"
             class="rrm__tab"
@@ -43,7 +44,7 @@
           :id="`rrm-panel-${currentPage.id}`"
           class="rrm__content"
           role="tabpanel"
-          :aria-labelledby="`rrm-title-${jobId}`"
+          :aria-labelledby="`rrm-tab-${currentPage.id}`"
         >
           <!-- Skills page -->
           <template v-if="currentPage.type === 'skills'">

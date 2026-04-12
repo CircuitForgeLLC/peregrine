@@ -425,32 +425,38 @@ async function runFullRewrite() {
 }
 
 function toggleGap(term: string) {
-  if (selectedGaps.value.has(term)) selectedGaps.value.delete(term)
-  else selectedGaps.value.add(term)
+  const next = new Set(selectedGaps.value)
+  if (next.has(term)) next.delete(term)
+  else next.add(term)
+  selectedGaps.value = next
 }
 
 function toggleSkill(skill: string) {
-  if (approvedSkills.value.has(skill)) {
+  const nextSkills = new Set(approvedSkills.value)
+  const nextFramings = new Map(skillFramings.value)
+  if (nextSkills.has(skill)) {
     // Unchecking: move to framing state, defaulting to 'skip'
-    approvedSkills.value.delete(skill)
-    if (!skillFramings.value.has(skill)) {
-      skillFramings.value.set(skill, { mode: 'skip', context: '' })
+    nextSkills.delete(skill)
+    if (!nextFramings.has(skill)) {
+      nextFramings.set(skill, { mode: 'skip', context: '' })
     }
   } else {
     // Re-checking: back to approved, remove framing
-    approvedSkills.value.add(skill)
-    skillFramings.value.delete(skill)
+    nextSkills.add(skill)
+    nextFramings.delete(skill)
   }
+  approvedSkills.value = nextSkills
+  skillFramings.value = nextFramings
 }
 
 function setFramingMode(skill: string, mode: GapFramingMode) {
-  const existing = skillFramings.value.get(skill) ?? { mode: 'skip', context: '' }
-  skillFramings.value.set(skill, { ...existing, mode })
+  const existing = skillFramings.value.get(skill) ?? { mode: 'skip' as GapFramingMode, context: '' }
+  skillFramings.value = new Map(skillFramings.value).set(skill, { ...existing, mode })
 }
 
 function setFramingContext(skill: string, context: string) {
-  const existing = skillFramings.value.get(skill) ?? { mode: 'skip', context: '' }
-  skillFramings.value.set(skill, { ...existing, context })
+  const existing = skillFramings.value.get(skill) ?? { mode: 'skip' as GapFramingMode, context: '' }
+  skillFramings.value = new Map(skillFramings.value).set(skill, { ...existing, context })
 }
 
 async function handleReviewSubmit(decisions: Record<string, unknown>) {
