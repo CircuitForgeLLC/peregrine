@@ -1,4 +1,11 @@
 backends:
+  cf_text:
+    api_key: any
+    base_url: http://host.docker.internal:8006/v1
+    enabled: true
+    model: cf-text
+    supports_images: false
+    type: openai_compat
   anthropic:
     api_key_env: ANTHROPIC_API_KEY
     enabled: false
@@ -34,7 +41,7 @@ backends:
     supports_images: false
     type: openai_compat
   vision_service:
-    base_url: http://host.docker.internal:8002
+    base_url: http://vision:8002
     enabled: true
     supports_images: true
     type: vision_service
@@ -58,6 +65,7 @@ backends:
     supports_images: false
     type: openai_compat
 fallback_order:
+- cf_text
 - ollama
 - claude_code
 - vllm
@@ -67,6 +75,7 @@ research_fallback_order:
 - claude_code
 - vllm_research
 - ollama_research
+- cf_text
 - github_copilot
 - anthropic
 vision_fallback_order:
