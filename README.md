@@ -4,6 +4,7 @@
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](./LICENSE-BSL)
 [![CI](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml/badge.svg)](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-docs.circuitforge.tech-orange)](https://docs.circuitforge.tech/peregrine/)
 
 **Job search pipeline — by [Circuit Forge LLC](https://circuitforge.tech)**
 
