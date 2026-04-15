@@ -143,6 +143,8 @@ _MIGRATIONS = [
     ("calendar_event_id",  "TEXT"),
     ("optimized_resume",   "TEXT"),   # ATS-rewritten resume text (paid tier)
     ("ats_gap_report",     "TEXT"),   # JSON gap report (free tier)
+    ("date_posted",        "TEXT"),   # Original posting date from job board (shadow listing detection)
+    ("hired_feedback",     "TEXT"),   # JSON: optional post-hire "what helped" response
 ]
 
 
@@ -202,8 +204,8 @@ def insert_job(db_path: Path = DEFAULT_DB, job: dict = None) -> Optional[int]:
     try:
         cursor = conn.execute(
             """INSERT INTO jobs
-               (title, company, url, source, location, is_remote, salary, description, date_found)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (title, company, url, source, location, is_remote, salary, description, date_found, date_posted)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 job.get("title", ""),
                 job.get("company", ""),
@@ -214,6 +216,7 @@ def insert_job(db_path: Path = DEFAULT_DB, job: dict = None) -> Optional[int]:
                 job.get("salary", ""),
                 job.get("description", ""),
                 job.get("date_found", ""),
+                job.get("date_posted", "") or "",
             ),
         )
         conn.commit()

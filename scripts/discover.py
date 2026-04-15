@@ -307,6 +307,10 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                     elif job_dict.get("salary_source") and str(job_dict["salary_source"]) not in ("nan", "None", ""):
                         salary_str = str(job_dict["salary_source"])
 
+                    _dp = job_dict.get("date_posted")
+                    date_posted_str = (
+                        _dp.isoformat() if hasattr(_dp, "isoformat") else str(_dp)
+                    ) if _dp and str(_dp) not in ("nan", "None", "") else ""
                     row = {
                         "url":         url,
                         "title":       _s(job_dict.get("title")),
@@ -316,6 +320,7 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                         "is_remote":   bool(job_dict.get("is_remote", False)),
                         "salary":      salary_str,
                         "description": _s(job_dict.get("description")),
+                        "date_posted": date_posted_str,
                         "_exclude_kw": exclude_kw,
                     }
                     if _insert_if_new(row, _s(job_dict.get("site"))):

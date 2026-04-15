@@ -7,7 +7,7 @@
     }"
     :aria-label="`${job.title} at ${job.company}`"
   >
-    <!-- Score badge + remote badge -->
+    <!-- Score badge + remote badge + shadow badge -->
     <div class="job-card__badges">
       <span
         v-if="job.match_score !== null"
@@ -18,6 +18,18 @@
         {{ job.match_score }}%
       </span>
       <span v-if="job.is_remote" class="remote-badge">Remote</span>
+      <span
+        v-if="job.shadow_score === 'shadow'"
+        class="shadow-badge shadow-badge--shadow"
+        :title="`Posted 30+ days before discovery — may already be filled`"
+        aria-label="Possible shadow listing: posted long before discovery"
+      >Ghost post</span>
+      <span
+        v-else-if="job.shadow_score === 'stale'"
+        class="shadow-badge shadow-badge--stale"
+        :title="`Posted 14+ days before discovery — listing may be stale`"
+        aria-label="Stale listing: posted over 2 weeks before discovery"
+      >Stale</span>
     </div>
 
     <!-- Title + company -->
@@ -176,6 +188,28 @@ const formattedDate = computed(() => {
   font-weight: 600;
   background: var(--app-primary-light);
   color: var(--app-primary);
+}
+
+.shadow-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: help;
+}
+
+.shadow-badge--shadow {
+  background: rgba(99, 99, 99, 0.15);
+  color: var(--color-text-muted);
+  border: 1px solid rgba(99, 99, 99, 0.3);
+}
+
+.shadow-badge--stale {
+  background: rgba(212, 137, 26, 0.12);
+  color: var(--score-mid);
+  border: 1px solid rgba(212, 137, 26, 0.25);
 }
 
 .job-card__title {

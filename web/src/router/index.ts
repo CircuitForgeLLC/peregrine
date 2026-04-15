@@ -12,6 +12,7 @@ export const router = createRouter({
     { path: '/apply/:id', component: () => import('../views/ApplyWorkspaceView.vue') },
     { path: '/resumes',   component: () => import('../views/ResumesView.vue') },
     { path: '/interviews', component: () => import('../views/InterviewsView.vue') },
+    { path: '/contacts',   component: () => import('../views/ContactsView.vue') },
     { path: '/digest',     component: () => import('../views/DigestView.vue') },
     { path: '/prep',       component: () => import('../views/InterviewPrepView.vue') },
     { path: '/prep/:id',   component: () => import('../views/InterviewPrepView.vue') },

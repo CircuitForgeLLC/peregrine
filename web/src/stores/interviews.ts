@@ -30,6 +30,7 @@ export interface PipelineJob {
   offer_at:         string | null
   hired_at:         string | null
   survey_at:        string | null
+  hired_feedback:   string | null  // JSON: { what_helped, factors }
   stage_signals:    StageSignal[]  // undismissed signals, newest first
 }
 

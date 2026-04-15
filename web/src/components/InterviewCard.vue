@@ -191,6 +191,37 @@ const columnColor = computed(() => {
   }
   return map[props.job.status] ?? 'var(--color-border)'
 })
+
+// ── Hired feedback ─────────────────────────────────────────────────────────────
+const FEEDBACK_FACTORS = [
+  'Resume match',
+  'Cover letter',
+  'Interview prep',
+  'Company research',
+  'Network / referral',
+  'Salary negotiation',
+] as const
+
+const feedbackDismissed = ref(false)
+const feedbackSaved     = ref(!!props.job.hired_feedback)
+const feedbackText      = ref('')
+const feedbackFactors   = ref<string[]>([])
+const feedbackSaving    = ref(false)
+
+const showFeedbackWidget = computed(() =>
+  props.job.status === 'hired' && !feedbackDismissed.value && !feedbackSaved.value
+)
+
+async function saveFeedback() {
+  feedbackSaving.value = true
+  const { error } = await useApiFetch(`/api/jobs/${props.job.id}/hired-feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ what_helped: feedbackText.value, factors: feedbackFactors.value }),
+  })
+  feedbackSaving.value = false
+  if (!error) feedbackSaved.value = true
+}
 </script>
 
 <template>
@@ -307,6 +338,38 @@ const columnColor = computed(() => {
         @click.stop="sigExpanded = !sigExpanded"
       >{{ sigExpanded ? '− less' : `+${(job.stage_signals?.length ?? 1) - 1} more` }}</button>
     </template>
+
+    <!-- Hired feedback widget -->
+    <div v-if="showFeedbackWidget" class="hired-feedback" @click.stop>
+      <div class="hired-feedback__header">
+        <span class="hired-feedback__title">What helped you land this role?</span>
+        <button class="hired-feedback__dismiss" @click="feedbackDismissed = true" aria-label="Dismiss feedback">✕</button>
+      </div>
+      <div class="hired-feedback__factors">
+        <label
+          v-for="factor in FEEDBACK_FACTORS"
+          :key="factor"
+          class="hired-feedback__factor"
+        >
+          <input type="checkbox" :value="factor" v-model="feedbackFactors" />
+          {{ factor }}
+        </label>
+      </div>
+      <textarea
+        v-model="feedbackText"
+        class="hired-feedback__textarea"
+        placeholder="Anything else that made the difference…"
+        rows="2"
+      />
+      <button
+        class="hired-feedback__save"
+        :disabled="feedbackSaving"
+        @click="saveFeedback"
+      >{{ feedbackSaving ? 'Saving…' : 'Save reflection' }}</button>
+    </div>
+    <div v-else-if="job.status === 'hired' && feedbackSaved" class="hired-feedback hired-feedback--saved">
+      Reflection saved.
+    </div>
   </article>
 </template>
 
@@ -532,5 +595,81 @@ const columnColor = computed(() => {
 .btn-sig-expand {
   background: none; border: none; font-size: 0.75em; color: var(--color-info); cursor: pointer;
   padding: 4px 12px; text-align: left;
+}
+
+/* ── Hired feedback widget ── */
+.hired-feedback {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  background: rgba(39, 174, 96, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.hired-feedback--saved {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-2) var(--space-4);
+}
+.hired-feedback__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.hired-feedback__title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-success);
+}
+.hired-feedback__dismiss {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  padding: 2px 4px;
+}
+.hired-feedback__factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.hired-feedback__factor {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.hired-feedback__textarea {
+  width: 100%;
+  font-size: var(--text-sm);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  resize: vertical;
+  box-sizing: border-box;
+}
+.hired-feedback__textarea:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: 2px;
+}
+.hired-feedback__save {
+  align-self: flex-end;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  background: var(--color-success);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.hired-feedback__save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>
