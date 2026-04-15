@@ -773,32 +773,17 @@ async def import_resume_endpoint(file: UploadFile, name: str = ""):
         text = content.decode("utf-8", errors="replace")
 
     elif ext in (".pdf", ".docx", ".odt"):
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-        try:
-            if ext == ".pdf":
-                import pdfplumber
-                with pdfplumber.open(tmp_path) as pdf:
-                    text = "\n".join(p.extract_text() or "" for p in pdf.pages)
-            elif ext == ".docx":
-                from docx import Document
-                doc = Document(tmp_path)
-                text = "\n".join(p.text for p in doc.paragraphs)
-            else:
-                import zipfile
-                from xml.etree import ElementTree as ET
-                with zipfile.ZipFile(tmp_path) as z:
-                    xml = z.read("content.xml")
-                ET_root = ET.fromstring(xml)
-                text = "\n".join(
-                    el.text or ""
-                    for el in ET_root.iter(
-                        "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}p"
-                    )
-                )
-        finally:
-            os.unlink(tmp_path)
+        from scripts.resume_parser import (
+            extract_text_from_pdf as _extract_pdf,
+            extract_text_from_docx as _extract_docx,
+            extract_text_from_odt as _extract_odt,
+        )
+        if ext == ".pdf":
+            text = _extract_pdf(content)
+        elif ext == ".docx":
+            text = _extract_docx(content)
+        else:
+            text = _extract_odt(content)
 
     elif ext in (".yaml", ".yml"):
         import yaml as _yaml
