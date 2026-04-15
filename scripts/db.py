@@ -130,6 +130,32 @@ CREATE TABLE IF NOT EXISTS digest_queue (
 )
 """
 
+CREATE_REFERENCES = """
+CREATE TABLE IF NOT EXISTS references_ (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    relationship TEXT,
+    company      TEXT,
+    email        TEXT,
+    phone        TEXT,
+    notes        TEXT,
+    tags         TEXT DEFAULT '[]',
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+);
+"""
+
+CREATE_JOB_REFERENCES = """
+CREATE TABLE IF NOT EXISTS job_references (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id       INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    reference_id INTEGER NOT NULL REFERENCES references_(id) ON DELETE CASCADE,
+    prep_email   TEXT,
+    rec_letter   TEXT,
+    UNIQUE(job_id, reference_id)
+);
+"""
+
 _MIGRATIONS = [
     ("cover_letter",       "TEXT"),
     ("applied_at",         "TEXT"),
@@ -178,6 +204,9 @@ def _migrate_db(db_path: Path) -> None:
         conn.execute("ALTER TABLE background_tasks ADD COLUMN params TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
+    # Ensure references tables exist (CREATE IF NOT EXISTS is idempotent)
+    conn.execute(CREATE_REFERENCES)
+    conn.execute(CREATE_JOB_REFERENCES)
     conn.commit()
     conn.close()
 
@@ -191,6 +220,8 @@ def init_db(db_path: Path = DEFAULT_DB) -> None:
     conn.execute(CREATE_BACKGROUND_TASKS)
     conn.execute(CREATE_SURVEY_RESPONSES)
     conn.execute(CREATE_DIGEST_QUEUE)
+    conn.execute(CREATE_REFERENCES)
+    conn.execute(CREATE_JOB_REFERENCES)
     conn.commit()
     conn.close()
     _migrate_db(db_path)
