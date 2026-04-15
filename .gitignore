@@ -40,8 +40,11 @@ pytest-output.txt
 docs/superpowers/
 
 data/email_score.jsonl
+data/email_score.jsonl.bad-labels
 data/email_label_queue.jsonl
 data/email_compare_sample.jsonl
+data/.feedback_ratelimit.json
+data/config/
 
 config/label_tool.yaml
 config/server.yaml
