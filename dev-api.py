@@ -58,6 +58,20 @@ async def lifespan(app: FastAPI):
     _load_env(PEREGRINE_ROOT / ".env")
     from scripts.db_migrate import migrate_db
     migrate_db(Path(DB_PATH))
+
+    # Cloud mode: sweep all known user DBs at startup so schema changes land
+    # for every user on deploy, not only on their next request.
+    if _CLOUD_MODE and _CLOUD_DATA_ROOT.is_dir():
+        import logging as _log
+        _sweep_log = _log.getLogger("peregrine.startup")
+        for user_db in _CLOUD_DATA_ROOT.glob("*/peregrine/staging.db"):
+            try:
+                migrate_db(user_db)
+                _migrated_db_paths.add(str(user_db))
+                _sweep_log.info("Migrated user DB: %s", user_db)
+            except Exception as exc:
+                _sweep_log.warning("Migration failed for %s: %s", user_db, exc)
+
     yield
 
 
