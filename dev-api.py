@@ -1571,6 +1571,225 @@ def list_contacts(job_id: Optional[int] = None, direction: Optional[str] = None,
     return {"total": total, "contacts": [dict(r) for r in rows]}
 
 
+# ── References ─────────────────────────────────────────────────────────────────
+
+class ReferencePayload(BaseModel):
+    name:         str
+    relationship: str = ""
+    company:      str = ""
+    email:        str = ""
+    phone:        str = ""
+    notes:        str = ""
+    tags:         list[str] = []
+
+class PrepEmailPayload(BaseModel):
+    job_id: int
+
+class RecLetterPayload(BaseModel):
+    job_id:       int
+    talking_points: str = ""
+
+
+@app.get("/api/references")
+def list_references():
+    db = _get_db()
+    rows = db.execute(
+        "SELECT * FROM references_ ORDER BY name ASC"
+    ).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/references")
+def create_reference(payload: ReferencePayload):
+    db = _get_db()
+    cur = db.execute(
+        """INSERT INTO references_ (name, relationship, company, email, phone, notes, tags)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (payload.name, payload.relationship, payload.company,
+         payload.email, payload.phone, payload.notes,
+         json.dumps(payload.tags)),
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM references_ WHERE id = ?", (cur.lastrowid,)).fetchone()
+    db.close()
+    return dict(row)
+
+
+@app.patch("/api/references/{ref_id}")
+def update_reference(ref_id: int, payload: ReferencePayload):
+    db = _get_db()
+    row = db.execute("SELECT id FROM references_ WHERE id = ?", (ref_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Reference not found")
+    db.execute(
+        """UPDATE references_ SET name=?, relationship=?, company=?, email=?, phone=?,
+           notes=?, tags=?, updated_at=datetime('now') WHERE id=?""",
+        (payload.name, payload.relationship, payload.company,
+         payload.email, payload.phone, payload.notes,
+         json.dumps(payload.tags), ref_id),
+    )
+    db.commit()
+    updated = db.execute("SELECT * FROM references_ WHERE id = ?", (ref_id,)).fetchone()
+    db.close()
+    return dict(updated)
+
+
+@app.delete("/api/references/{ref_id}")
+def delete_reference(ref_id: int):
+    db = _get_db()
+    db.execute("DELETE FROM references_ WHERE id = ?", (ref_id,))
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+
+@app.get("/api/references/for-job/{job_id}")
+def references_for_job(job_id: int):
+    db = _get_db()
+    rows = db.execute(
+        """SELECT r.*, jr.prep_email, jr.rec_letter, jr.id AS jr_id
+           FROM references_ r
+           JOIN job_references jr ON jr.reference_id = r.id
+           WHERE jr.job_id = ?
+           ORDER BY r.name ASC""",
+        (job_id,),
+    ).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/references/{ref_id}/link-job")
+def link_reference_to_job(ref_id: int, body: PrepEmailPayload):
+    db = _get_db()
+    try:
+        db.execute(
+            "INSERT INTO job_references (job_id, reference_id) VALUES (?, ?)",
+            (body.job_id, ref_id),
+        )
+        db.commit()
+    except Exception:
+        pass  # already linked
+    db.close()
+    return {"ok": True}
+
+
+@app.delete("/api/references/{ref_id}/unlink-job/{job_id}")
+def unlink_reference_from_job(ref_id: int, job_id: int):
+    db = _get_db()
+    db.execute(
+        "DELETE FROM job_references WHERE reference_id = ? AND job_id = ?",
+        (ref_id, job_id),
+    )
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+
+@app.post("/api/references/{ref_id}/prep-email")
+def generate_prep_email(ref_id: int, payload: PrepEmailPayload):
+    """Draft a short 'heads up' email to send a reference before they hear from the hiring team."""
+    db = _get_db()
+    ref_row = db.execute("SELECT * FROM references_ WHERE id = ?", (ref_id,)).fetchone()
+    if not ref_row:
+        db.close()
+        raise HTTPException(404, "Reference not found")
+    job_row = db.execute(
+        "SELECT title, company, description FROM jobs WHERE id = ?", (payload.job_id,)
+    ).fetchone()
+    if not job_row:
+        db.close()
+        raise HTTPException(404, "Job not found")
+    ref = dict(ref_row)
+    job = dict(job_row)
+    db.close()
+
+    prompt = f"""Draft a short, warm email to send to a professional reference before a job interview.
+
+Reference: {ref['name']} ({ref['relationship']} at {ref['company']})
+Role applying for: {job['title']} at {job['company']}
+Job description excerpt: {(job['description'] or '')[:500]}
+
+The email should:
+- Be 3-4 short paragraphs max
+- Thank them for being a reference
+- Briefly describe the role and why it's a good fit
+- Mention 1-2 specific accomplishments they could speak to
+- Give them a heads-up they may be contacted soon
+- Be warm and professional, not overly formal
+
+Return only the email body (no subject line)."""
+
+    try:
+        from scripts.llm_router import LLMRouter
+        router = LLMRouter()
+        email_text = router.complete(prompt)
+    except Exception as e:
+        raise HTTPException(500, f"LLM generation failed: {e}")
+
+    # Persist to job_references
+    db = _get_db()
+    db.execute(
+        """INSERT INTO job_references (job_id, reference_id, prep_email)
+           VALUES (?, ?, ?)
+           ON CONFLICT(job_id, reference_id) DO UPDATE SET prep_email = excluded.prep_email""",
+        (payload.job_id, ref_id, email_text),
+    )
+    db.commit()
+    db.close()
+    return {"prep_email": email_text}
+
+
+@app.post("/api/references/{ref_id}/rec-letter")
+def generate_rec_letter(ref_id: int, payload: RecLetterPayload):
+    """Draft a recommendation letter the reference can edit and send on their letterhead."""
+    db = _get_db()
+    ref_row = db.execute("SELECT * FROM references_ WHERE id = ?", (ref_id,)).fetchone()
+    if not ref_row:
+        db.close()
+        raise HTTPException(404, "Reference not found")
+    job_row = db.execute(
+        "SELECT title, company, description FROM jobs WHERE id = ?", (payload.job_id,)
+    ).fetchone()
+    if not job_row:
+        db.close()
+        raise HTTPException(404, "Job not found")
+    ref = dict(ref_row)
+    job = dict(job_row)
+    db.close()
+
+    prompt = f"""Draft a professional recommendation letter that {ref['name']} ({ref['relationship']}) could send on their letterhead for a candidate applying to {job['title']} at {job['company']}.
+
+Key talking points to highlight: {payload.talking_points or 'general professional excellence, collaboration, initiative'}
+
+The letter should:
+- Be addressed generically (Dear Hiring Manager)
+- Be 3-4 paragraphs
+- Sound natural — written from the recommender's voice, not the candidate's
+- Highlight specific, credible observations a {ref['relationship']} would have
+- Close with strong endorsement and contact offer
+
+Return only the letter body."""
+
+    try:
+        from scripts.llm_router import LLMRouter
+        router = LLMRouter()
+        letter_text = router.complete(prompt)
+    except Exception as e:
+        raise HTTPException(500, f"LLM generation failed: {e}")
+
+    db = _get_db()
+    db.execute(
+        """INSERT INTO job_references (job_id, reference_id, rec_letter)
+           VALUES (?, ?, ?)
+           ON CONFLICT(job_id, reference_id) DO UPDATE SET rec_letter = excluded.rec_letter""",
+        (payload.job_id, ref_id, letter_text),
+    )
+    db.commit()
+    db.close()
+    return {"rec_letter": letter_text}
+
+
 # ── GET /api/interviews ────────────────────────────────────────────────────────
 
 PIPELINE_STATUSES = {
