@@ -28,7 +28,7 @@
               <span v-if="job.is_remote" class="remote-badge">Remote</span>
             </div>
 
-            <h1 class="job-details__title">{{ job.title }}</h1>
+            <h2 class="job-details__title">{{ job.title }}</h2>
             <div class="job-details__company">
               {{ job.company }}
               <span v-if="job.location" aria-hidden="true"> · </span>
@@ -38,7 +38,7 @@
 
             <!-- Description -->
             <div class="job-details__desc" :class="{ 'job-details__desc--clamped': !descExpanded }">
-              {{ job.description ?? 'No description available.' }}
+              <MarkdownView :content="job.description ?? 'No description available.'" />
             </div>
             <button
               v-if="(job.description?.length ?? 0) > 300"
@@ -199,7 +199,7 @@
 
           <!-- ── Application Q&A ───────────────────────────────────── -->
           <div class="qa-section">
-            <button class="section-toggle" @click="qaExpanded = !qaExpanded">
+            <button class="section-toggle" :aria-expanded="qaExpanded" @click="qaExpanded = !qaExpanded">
               <span class="section-toggle__label">Application Q&amp;A</span>
               <span v-if="qaItems.length" class="qa-count">{{ qaItems.length }}</span>
               <span class="section-toggle__icon" aria-hidden="true">{{ qaExpanded ? '▲' : '▼' }}</span>
@@ -290,6 +290,7 @@ import { useAppConfigStore } from '../stores/appConfig'
 import type { Job } from '../stores/review'
 import ResumeOptimizerPanel from './ResumeOptimizerPanel.vue'
 import ResumeLibraryCard from './ResumeLibraryCard.vue'
+import MarkdownView from './MarkdownView.vue'
 
 const config = useAppConfigStore()
 
@@ -458,6 +459,10 @@ async function markApplied() {
 
 async function rejectListing() {
   if (actioning.value) return
+  const title = job.value?.title ?? 'this listing'
+  const company = job.value?.company ?? ''
+  const label = company ? `"${title}" at ${company}` : `"${title}"`
+  if (!window.confirm(`Reject ${label}? This cannot be undone.`)) return
   actioning.value = 'reject'
   await useApiFetch(`/api/jobs/${props.jobId}/reject`, { method: 'POST' })
   actioning.value = null
@@ -706,7 +711,6 @@ declare module '../stores/review' {
   font-size: var(--text-sm);
   color: var(--color-text);
   line-height: 1.6;
-  white-space: pre-wrap;
   overflow-wrap: break-word;
 }
 
@@ -860,7 +864,7 @@ declare module '../stores/review' {
   overflow: hidden;
 }
 
-.cl-editor__textarea:focus { outline: none; }
+.cl-editor__textarea:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; }
 
 .cl-regen {
   align-self: flex-end;
@@ -1209,8 +1213,11 @@ declare module '../stores/review' {
 }
 
 .qa-item__answer:focus {
-  outline: none;
   border-color: var(--app-primary);
+}
+.qa-item__answer:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: 2px;
 }
 
 .qa-suggest-btn { align-self: flex-end; }
@@ -1234,8 +1241,11 @@ declare module '../stores/review' {
 }
 
 .qa-add__input:focus {
-  outline: none;
   border-color: var(--app-primary);
+}
+.qa-add__input:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: 2px;
 }
 
 .qa-add__input::placeholder { color: var(--color-text-muted); }

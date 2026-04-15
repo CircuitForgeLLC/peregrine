@@ -277,7 +277,8 @@ def _load_resume_and_keywords() -> tuple[dict, list[str]]:
     return resume, keywords
 
 
-def research_company(job: dict, use_scraper: bool = True, on_stage=None) -> dict:
+def research_company(job: dict, use_scraper: bool = True, on_stage=None,
+                     config_path: "Path | None" = None) -> dict:
     """
     Generate a pre-interview research brief for a job.
 
@@ -295,7 +296,7 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None) -> dict
     """
     from scripts.llm_router import LLMRouter
 
-    router = LLMRouter()
+    router = LLMRouter(config_path=config_path) if config_path else LLMRouter()
     research_order = router.config.get("research_fallback_order") or router.config["fallback_order"]
     company = job.get("company") or "the company"
     title = job.get("title") or "this role"

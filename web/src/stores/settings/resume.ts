@@ -31,6 +31,11 @@ export const useResumeStore = defineStore('settings/resume', () => {
   const veteran_status = ref(''); const disability = ref('')
   // Keywords
   const skills = ref<string[]>([]); const domains = ref<string[]>([]); const keywords = ref<string[]>([])
+  // LLM suggestions (pending, not yet accepted)
+  const skillSuggestions = ref<string[]>([])
+  const domainSuggestions = ref<string[]>([])
+  const keywordSuggestions = ref<string[]>([])
+  const suggestingField = ref<'skills' | 'domains' | 'keywords' | null>(null)
 
   function syncFromProfile(p: { name: string; email: string; phone: string; linkedin_url: string }) {
     name.value = p.name; email.value = p.email
@@ -100,6 +105,30 @@ export const useResumeStore = defineStore('settings/resume', () => {
     experience.value.splice(idx, 1)
   }
 
+  async function suggestTags(field: 'skills' | 'domains' | 'keywords') {
+    suggestingField.value = field
+    const current = field === 'skills' ? skills.value : field === 'domains' ? domains.value : keywords.value
+    const { data } = await useApiFetch<{ suggestions: string[] }>('/api/settings/resume/suggest-tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: field, current }),
+    })
+    suggestingField.value = null
+    if (!data?.suggestions) return
+    const existing = field === 'skills' ? skills.value : field === 'domains' ? domains.value : keywords.value
+    const fresh = data.suggestions.filter(s => !existing.includes(s))
+    if (field === 'skills') skillSuggestions.value = fresh
+    else if (field === 'domains') domainSuggestions.value = fresh
+    else keywordSuggestions.value = fresh
+  }
+
+  function acceptTagSuggestion(field: 'skills' | 'domains' | 'keywords', value: string) {
+    addTag(field, value)
+    if (field === 'skills') skillSuggestions.value = skillSuggestions.value.filter(s => s !== value)
+    else if (field === 'domains') domainSuggestions.value = domainSuggestions.value.filter(s => s !== value)
+    else keywordSuggestions.value = keywordSuggestions.value.filter(s => s !== value)
+  }
+
   function addTag(field: 'skills' | 'domains' | 'keywords', value: string) {
     const arr = field === 'skills' ? skills.value : field === 'domains' ? domains.value : keywords.value
     const trimmed = value.trim()
@@ -119,7 +148,8 @@ export const useResumeStore = defineStore('settings/resume', () => {
     experience, salary_min, salary_max, notice_period, remote, relocation, assessment, background_check,
     gender, pronouns, ethnicity, veteran_status, disability,
     skills, domains, keywords,
+    skillSuggestions, domainSuggestions, keywordSuggestions, suggestingField,
     syncFromProfile, load, save, createBlank,
-    addExperience, removeExperience, addTag, removeTag,
+    addExperience, removeExperience, addTag, removeTag, suggestTags, acceptTagSuggestion,
   }
 })

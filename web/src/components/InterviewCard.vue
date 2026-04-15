@@ -4,6 +4,44 @@ import type { PipelineJob } from '../stores/interviews'
 import type { StageSignal, PipelineStage } from '../stores/interviews'
 import { useApiFetch } from '../composables/useApi'
 
+// ── Date picker ────────────────────────────────────────────────────────────────
+const DATE_STAGES = new Set(['phone_screen', 'interviewing'])
+
+function toDatetimeLocal(iso: string | null | undefined): string {
+  if (!iso) return ''
+  // Trim seconds/ms so <input type="datetime-local"> accepts it
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+async function onDateChange(value: string) {
+  if (!value) return
+  const prev = props.job.interview_date
+  // Optimistic update
+  props.job.interview_date = new Date(value).toISOString()
+  const { error } = await useApiFetch(`/api/jobs/${props.job.id}/interview_date`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ interview_date: value }),
+  })
+  if (error) props.job.interview_date = prev
+}
+
+// ── Calendar push ──────────────────────────────────────────────────────────────
+type CalPushStatus = 'idle' | 'loading' | 'synced' | 'failed'
+const calPushStatus = ref<CalPushStatus>('idle')
+let calPushTimer: ReturnType<typeof setTimeout> | null = null
+
+async function pushCalendar() {
+  if (calPushStatus.value === 'loading') return
+  calPushStatus.value = 'loading'
+  const { error } = await useApiFetch(`/api/jobs/${props.job.id}/calendar_push`, { method: 'POST' })
+  calPushStatus.value = error ? 'failed' : 'synced'
+  if (calPushTimer) clearTimeout(calPushTimer)
+  calPushTimer = setTimeout(() => { calPushStatus.value = 'idle' }, 3000)
+}
+
 const props = defineProps<{
   job: PipelineJob
   focused?: boolean
@@ -178,6 +216,17 @@ const columnColor = computed(() => {
       <div v-if="interviewDateLabel" class="date-chip">
         {{ dateChipIcon }} {{ interviewDateLabel }}
       </div>
+      <!-- Inline date picker for phone_screen and interviewing -->
+      <div v-if="DATE_STAGES.has(job.status)" class="date-picker-wrap">
+        <input
+          type="datetime-local"
+          class="date-picker"
+          :value="toDatetimeLocal(job.interview_date)"
+          :aria-label="`Interview date for ${job.title}`"
+          @change="onDateChange(($event.target as HTMLInputElement).value)"
+          @click.stop
+        />
+      </div>
     </div>
     <footer class="card-footer">
       <button class="card-action" @click.stop="emit('move', job.id)">Move to… ›</button>
@@ -188,6 +237,20 @@ const columnColor = computed(() => {
         class="card-action"
         @click.stop="emit('survey', job.id)"
       >Survey →</button>
+      <!-- Calendar push — phone_screen and interviewing only -->
+      <button
+        v-if="DATE_STAGES.has(job.status)"
+        class="card-action card-action--cal"
+        :class="`card-action--cal-${calPushStatus}`"
+        :disabled="calPushStatus === 'loading'"
+        @click.stop="pushCalendar"
+        :aria-label="`Push ${job.title} to calendar`"
+      >
+        <span v-if="calPushStatus === 'loading'">⏳</span>
+        <span v-else-if="calPushStatus === 'synced'">Synced ✓</span>
+        <span v-else-if="calPushStatus === 'failed'">Failed ✗</span>
+        <span v-else>📅 Calendar</span>
+      </button>
     </footer>
     <!-- Signal banners -->
     <template v-if="job.stage_signals?.length">
@@ -338,6 +401,31 @@ const columnColor = computed(() => {
   align-self: flex-start;
 }
 
+.date-picker-wrap {
+  margin-top: 4px;
+}
+
+.date-picker {
+  width: 100%;
+  font-size: 0.72rem;
+  padding: 3px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color var(--transition, 150ms);
+}
+
+.date-picker:hover,
+.date-picker:focus {
+  border-color: var(--color-info);
+}
+.date-picker:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
 
 .card-footer {
   border-top: 1px solid var(--color-border-light);
@@ -361,6 +449,26 @@ const columnColor = computed(() => {
 
 .card-action:hover {
   background: var(--color-surface);
+}
+
+.card-action--cal {
+  margin-left: auto;
+  min-width: 72px;
+  text-align: center;
+  transition: background var(--transition, 150ms), color var(--transition, 150ms);
+}
+
+.card-action--cal-synced {
+  color: var(--color-success);
+}
+
+.card-action--cal-failed {
+  color: var(--color-error);
+}
+
+.card-action--cal:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .signal-banner {

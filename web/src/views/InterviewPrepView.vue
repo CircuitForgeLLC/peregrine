@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import { usePrepStore } from '../stores/prep'
 import { useInterviewsStore } from '../stores/interviews'
+import { useApiFetch } from '../composables/useApi'
 import type { PipelineJob } from '../stores/interviews'
+import type { QAItem } from '../stores/prep'
+import MarkdownView from '../components/MarkdownView.vue'
 
 const route  = useRoute()
 const router = useRouter()
@@ -26,8 +29,24 @@ const PREP_VALID_STATUSES = ['phone_screen', 'interviewing', 'offer'] as const
 const job = ref<PipelineJob | null>(null)
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-type TabId = 'jd' | 'email' | 'letter'
+type TabId = 'jd' | 'email' | 'letter' | 'qa'
 const activeTab = ref<TabId>('jd')
+
+// ── Q&A tab state ─────────────────────────────────────────────────────────────
+const qaMessages = ref<QAItem[]>([])
+const qaInput = ref('')
+const qaSubmitting = ref(false)
+const qaError = ref<string | null>(null)
+const qaChatEl = ref<HTMLElement | null>(null)
+
+// ── Log Contact form state ────────────────────────────────────────────────────
+const logDirection = ref<'inbound' | 'outbound'>('outbound')
+const logSubject = ref('')
+const logAddr = ref('')
+const logBody = ref('')
+const logSubmitting = ref(false)
+const logError = ref<string | null>(null)
+const logSuccess = ref(false)
 
 // ── Call notes (localStorage via @vueuse/core) ────────────────────────────────
 const notesKey     = computed(() => `cf-prep-notes-${jobId.value ?? 'none'}`)
@@ -61,6 +80,7 @@ async function guardAndLoad() {
 
   job.value = found
   await prepStore.fetchFor(jobId.value)
+  initQA()
 }
 
 onMounted(() => {
@@ -198,6 +218,77 @@ async function onGenerate() {
   if (jobId.value === null) return
   await prepStore.generateResearch(jobId.value)
 }
+
+// ── Q&A: seed from store on mount, then handle submissions ───────────────────
+function initQA() {
+  qaMessages.value = [...prepStore.qaItems]
+}
+
+async function scrollQAToBottom() {
+  await nextTick()
+  if (qaChatEl.value) {
+    qaChatEl.value.scrollTop = qaChatEl.value.scrollHeight
+  }
+}
+
+async function onAskQuestion() {
+  const question = qaInput.value.trim()
+  if (!question || qaSubmitting.value || jobId.value === null) return
+
+  qaSubmitting.value = true
+  qaError.value = null
+
+  const { data, error: fetchError } = await useApiFetch<{ answer: string }>(
+    `/api/jobs/${jobId.value}/qa/suggest`,
+    { method: 'POST', body: JSON.stringify({ question, context: 'mock_interview' }) }
+  )
+
+  if (fetchError || !data) {
+    qaError.value = 'Could not get an answer. Please try again.'
+  } else {
+    qaMessages.value = [...qaMessages.value, { question, answer: data.answer }]
+    qaInput.value = ''
+    scrollQAToBottom()
+  }
+
+  qaSubmitting.value = false
+}
+
+// ── Log Contact: POST then refresh contacts ───────────────────────────────────
+async function onLogContact() {
+  if (!logSubject.value.trim() || logSubmitting.value || jobId.value === null) return
+
+  logSubmitting.value = true
+  logError.value = null
+  logSuccess.value = false
+
+  const { error: fetchError } = await useApiFetch(
+    `/api/jobs/${jobId.value}/contacts`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        direction: logDirection.value,
+        subject: logSubject.value.trim(),
+        from_addr: logAddr.value.trim() || null,
+        body: logBody.value.trim() || null,
+        received_at: new Date().toISOString(),
+      }),
+    }
+  )
+
+  if (fetchError) {
+    logError.value = 'Could not log contact. Please try again.'
+  } else {
+    logSuccess.value = true
+    logSubject.value = ''
+    logAddr.value = ''
+    logBody.value = ''
+    logDirection.value = 'outbound'
+    await prepStore.fetchContacts(jobId.value)
+  }
+
+  logSubmitting.value = false
+}
 </script>
 
 <template>
@@ -303,7 +394,7 @@ async function onGenerate() {
                 <span aria-hidden="true">{{ sec.icon }}</span> {{ sec.title }}
               </h2>
               <p v-if="sec.caption" class="section-caption">{{ sec.caption }}</p>
-              <div class="section-body">{{ sec.content }}</div>
+              <MarkdownView :content="sec.content" class="section-body" />
             </section>
           </div>
 
@@ -354,6 +445,17 @@ async function onGenerate() {
             >
               Cover Letter
             </button>
+            <button
+              id="tab-qa"
+              class="tab-btn"
+              :class="{ 'tab-btn--active': activeTab === 'qa' }"
+              role="tab"
+              :aria-selected="activeTab === 'qa'"
+              aria-controls="tabpanel-qa"
+              @click="activeTab = 'qa'"
+            >
+              Practice Q&amp;A
+            </button>
           </div>
 
           <!-- ── JD tab ── -->
@@ -379,7 +481,7 @@ async function onGenerate() {
             </div>
 
             <div v-if="prepStore.fullJob?.description" class="jd-body">
-              {{ prepStore.fullJob.description }}
+              <MarkdownView :content="prepStore.fullJob.description" />
             </div>
             <div v-else class="tab-empty">
               <span class="empty-bird">🦅</span>
@@ -421,6 +523,61 @@ async function onGenerate() {
               <span class="empty-bird">🦅</span>
               <p>No email history for this job.</p>
             </div>
+
+            <!-- Log Contact form -->
+            <div class="log-contact-form">
+              <h3 class="log-contact-title">Log Contact</h3>
+              <div class="log-contact-fields">
+                <div class="log-field">
+                  <label class="log-label" for="log-direction">Direction</label>
+                  <select id="log-direction" v-model="logDirection" class="log-select">
+                    <option value="outbound">Outbound</option>
+                    <option value="inbound">Inbound</option>
+                  </select>
+                </div>
+                <div class="log-field">
+                  <label class="log-label" for="log-subject">Subject</label>
+                  <input
+                    id="log-subject"
+                    v-model="logSubject"
+                    class="log-input"
+                    type="text"
+                    placeholder="e.g. Following up on application"
+                  />
+                </div>
+                <div class="log-field">
+                  <label class="log-label" for="log-addr">
+                    {{ logDirection === 'inbound' ? 'From' : 'To' }}
+                  </label>
+                  <input
+                    id="log-addr"
+                    v-model="logAddr"
+                    class="log-input"
+                    type="email"
+                    :placeholder="logDirection === 'inbound' ? 'sender@company.com' : 'recruiter@company.com'"
+                  />
+                </div>
+                <div class="log-field log-field--full">
+                  <label class="log-label" for="log-body">Notes (optional)</label>
+                  <textarea
+                    id="log-body"
+                    v-model="logBody"
+                    class="log-textarea"
+                    placeholder="Paste email body or add notes…"
+                    rows="3"
+                  ></textarea>
+                </div>
+              </div>
+              <div v-if="logError" class="log-error" role="alert">{{ logError }}</div>
+              <div v-if="logSuccess" class="log-success" role="status">Contact logged.</div>
+              <button
+                class="btn-primary log-submit"
+                :disabled="!logSubject.trim() || logSubmitting"
+                @click="onLogContact"
+              >
+                {{ logSubmitting ? 'Logging…' : 'Log' }}
+              </button>
+            </div>
           </div>
 
           <!-- ── Cover letter tab ── -->
@@ -432,12 +589,68 @@ async function onGenerate() {
             aria-labelledby="tab-letter"
           >
             <div v-if="prepStore.fullJob?.cover_letter" class="letter-body">
-              {{ prepStore.fullJob.cover_letter }}
+              <MarkdownView :content="prepStore.fullJob.cover_letter" />
             </div>
             <div v-else class="tab-empty">
               <span class="empty-bird">🦅</span>
               <p>No cover letter generated yet.</p>
             </div>
+          </div>
+
+          <!-- ── Practice Q&A tab ── -->
+          <div
+            v-show="activeTab === 'qa'"
+            id="tabpanel-qa"
+            class="tab-panel tab-panel--qa"
+            role="tabpanel"
+            aria-labelledby="tab-qa"
+          >
+            <!-- Error state -->
+            <div v-if="prepStore.qaError" class="error-state" role="alert">
+              {{ prepStore.qaError }}
+            </div>
+
+            <!-- Chat history -->
+            <div ref="qaChatEl" class="qa-chat">
+              <div
+                v-for="(item, idx) in qaMessages"
+                :key="idx"
+                class="qa-exchange"
+              >
+                <div class="qa-question">
+                  <span class="qa-label">You</span>
+                  <p class="qa-text">{{ item.question }}</p>
+                </div>
+                <div class="qa-answer">
+                  <span class="qa-label">Coach</span>
+                  <MarkdownView :content="item.answer" class="qa-text" />
+                </div>
+              </div>
+              <div v-if="qaMessages.length === 0 && !prepStore.qaError" class="qa-empty">
+                <span class="empty-bird">🦅</span>
+                <p>Ask a practice question to get started.</p>
+              </div>
+            </div>
+
+            <!-- Input area -->
+            <div class="qa-input-row">
+              <textarea
+                v-model="qaInput"
+                class="qa-textarea"
+                placeholder="Ask a practice question…"
+                rows="2"
+                :disabled="qaSubmitting"
+                @keydown.enter.exact.prevent="onAskQuestion"
+              ></textarea>
+              <button
+                class="btn-primary qa-ask-btn"
+                :disabled="!qaInput.trim() || qaSubmitting"
+                @click="onAskQuestion"
+              >
+                {{ qaSubmitting ? '…' : 'Ask' }}
+              </button>
+            </div>
+            <div v-if="qaError" class="error-state qa-error" role="alert">{{ qaError }}</div>
           </div>
 
           <!-- ── Call notes ── -->
@@ -762,9 +975,6 @@ async function onGenerate() {
 
 .section-body {
   font-size: var(--text-sm);
-  color: var(--color-text);
-  line-height: 1.6;
-  white-space: pre-wrap;
 }
 
 /* ── Empty state ─────────────────────────────────────────────────────────── */
@@ -866,9 +1076,6 @@ async function onGenerate() {
 
 .jd-body {
   font-size: var(--text-sm);
-  color: var(--color-text);
-  line-height: 1.7;
-  white-space: pre-wrap;
   max-height: 60vh;
   overflow-y: auto;
 }
@@ -921,9 +1128,6 @@ async function onGenerate() {
 /* Cover letter tab */
 .letter-body {
   font-size: var(--text-sm);
-  color: var(--color-text);
-  line-height: 1.8;
-  white-space: pre-wrap;
 }
 
 /* ── Call notes ──────────────────────────────────────────────────────────── */
@@ -970,5 +1174,228 @@ async function onGenerate() {
   color: var(--color-text-muted);
   margin: 0;
   font-style: italic;
+}
+
+/* ── Practice Q&A tab ────────────────────────────────────────────────────── */
+.tab-panel--qa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.qa-chat {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 55vh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-right: var(--space-1);
+}
+
+.qa-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.qa-empty p {
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.qa-exchange {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.qa-question,
+.qa-answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+.qa-question {
+  background: color-mix(in srgb, var(--app-primary) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--app-primary) 20%, transparent);
+  align-self: flex-end;
+  max-width: 90%;
+}
+
+.qa-answer {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  align-self: flex-start;
+  max-width: 90%;
+}
+
+.qa-label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.qa-text {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: 1.6;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.qa-input-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.qa-textarea {
+  flex: 1;
+  min-width: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: 1.5;
+  resize: none;
+  box-sizing: border-box;
+}
+.qa-textarea::placeholder { color: var(--color-text-muted); }
+.qa-textarea:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: 2px;
+  border-color: var(--app-primary);
+}
+.qa-textarea:disabled { opacity: 0.6; }
+
+.qa-ask-btn {
+  flex-shrink: 0;
+  align-self: flex-end;
+  padding: var(--space-2) var(--space-4);
+}
+
+.qa-error {
+  margin-top: 0;
+}
+
+/* ── Log Contact form ────────────────────────────────────────────────────── */
+.log-contact-form {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-light);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.log-contact-title {
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.log-contact-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2) var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .log-contact-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.log-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.log-field--full {
+  grid-column: 1 / -1;
+}
+
+.log-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.log-input,
+.log-select {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  box-sizing: border-box;
+  width: 100%;
+}
+.log-input::placeholder { color: var(--color-text-muted); }
+.log-input:focus-visible,
+.log-select:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: 2px;
+  border-color: var(--app-primary);
+}
+
+.log-textarea {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+  width: 100%;
+}
+.log-textarea::placeholder { color: var(--color-text-muted); }
+.log-textarea:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: 2px;
+  border-color: var(--app-primary);
+}
+
+.log-error {
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface));
+  color: var(--color-error);
+  border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.log-success {
+  background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface));
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 25%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.log-submit {
+  align-self: flex-start;
 }
 </style>

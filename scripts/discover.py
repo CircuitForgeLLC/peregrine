@@ -34,11 +34,38 @@ CUSTOM_SCRAPERS: dict[str, object] = {
 }
 
 
+def _normalize_profiles(raw: dict) -> dict:
+    """Normalize search_profiles.yaml to the canonical {profiles: [...]} format.
+
+    The onboarding wizard (pre-fix) wrote a flat `default: {...}` structure.
+    Canonical format is `profiles: [{name, titles/job_titles, boards, ...}]`.
+    This converts on load so both formats work without a migration.
+    """
+    if "profiles" in raw:
+        return raw
+    # Wizard-written format: top-level keys are profile names (usually "default")
+    profiles = []
+    for name, body in raw.items():
+        if not isinstance(body, dict):
+            continue
+        # job_boards: [{name, enabled}] → boards: [name] (enabled only)
+        job_boards = body.pop("job_boards", None)
+        if job_boards and "boards" not in body:
+            body["boards"] = [b["name"] for b in job_boards if b.get("enabled", True)]
+        # blocklist_* keys live in load_blocklist, not per-profile — drop them
+        body.pop("blocklist_companies", None)
+        body.pop("blocklist_industries", None)
+        body.pop("blocklist_locations", None)
+        profiles.append({"name": name, **body})
+    return {"profiles": profiles}
+
+
 def load_config(config_dir: Path | None = None) -> tuple[dict, dict]:
     cfg = config_dir or CONFIG_DIR
     profiles_path = cfg / "search_profiles.yaml"
     notion_path = cfg / "notion.yaml"
-    profiles = yaml.safe_load(profiles_path.read_text())
+    raw = yaml.safe_load(profiles_path.read_text()) or {}
+    profiles = _normalize_profiles(raw)
     notion_cfg = yaml.safe_load(notion_path.read_text()) if notion_path.exists() else {"field_map": {}, "token": None, "database_id": None}
     return profiles, notion_cfg
 
@@ -212,14 +239,43 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
         _rp = profile.get("remote_preference", "both")
         _is_remote: bool | None = True if _rp == "remote" else (False if _rp == "onsite" else None)
 
+        # When filtering for remote-only, also drop hybrid roles at the description level.
+        # Job boards (especially LinkedIn) tag hybrid listings as is_remote=True, so the
+        # board-side filter alone is not reliable.  We match specific work-arrangement
+        # phrases to avoid false positives like "hybrid cloud" or "hybrid architecture".
+        _HYBRID_PHRASES = [
+            "hybrid role", "hybrid position", "hybrid work", "hybrid schedule",
+            "hybrid model", "hybrid arrangement", "hybrid opportunity",
+            "in-office/remote", "in office/remote", "remote/in-office",
+            "remote/office", "office/remote",
+            "days in office", "days per week in", "days onsite", "days on-site",
+            "required to be in office", "required in office",
+        ]
+        if _rp == "remote":
+            exclude_kw = exclude_kw + _HYBRID_PHRASES
+
         for location in profile["locations"]:
 
             # ── JobSpy boards ──────────────────────────────────────────────────
             if boards:
-                print(f"  [jobspy] {location} — boards: {', '.join(boards)}")
+                # Validate boards against the installed JobSpy Site enum.
+                # One unsupported name in the list aborts the entire scrape_jobs() call.
+                try:
+                    from jobspy import Site as _Site
+                    _valid = {s.value for s in _Site}
+                    _filtered = [b for b in boards if b in _valid]
+                    _dropped  = [b for b in boards if b not in _valid]
+                    if _dropped:
+                        print(f"  [jobspy] Skipping unsupported boards: {', '.join(_dropped)}")
+                except ImportError:
+                    _filtered = boards  # fallback: pass through unchanged
+                if not _filtered:
+                    print(f"  [jobspy] No valid boards for {location} — skipping")
+                    continue
+                print(f"  [jobspy] {location} — boards: {', '.join(_filtered)}")
                 try:
                     jobspy_kwargs: dict = dict(
-                        site_name=boards,
+                        site_name=_filtered,
                         search_term=" OR ".join(f'"{t}"' for t in (profile.get("titles") or profile.get("job_titles", []))),
                         location=location,
                         results_wanted=results_per_board,

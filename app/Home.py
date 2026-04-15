@@ -14,23 +14,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.user_profile import UserProfile
 
-_USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
-_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
-_name = _profile.name if _profile else "Job Seeker"
-
 from scripts.db import init_db, get_job_counts, purge_jobs, purge_email_data, \
     purge_non_remote, archive_jobs, kill_stuck_tasks, cancel_task, \
     get_task_for_job, get_active_tasks, insert_job, get_existing_urls
 from scripts.task_runner import submit_task
-from app.cloud_session import resolve_session, get_db_path
-
-_CONFIG_DIR = Path(__file__).parent.parent / "config"
+from app.cloud_session import resolve_session, get_db_path, get_config_dir
 
 resolve_session("peregrine")
 init_db(get_db_path())
 
+_CONFIG_DIR = get_config_dir()
+_USER_YAML = _CONFIG_DIR / "user.yaml"
+_profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
+_name = _profile.name if _profile else "Job Seeker"
+
 def _email_configured() -> bool:
-    _e = Path(__file__).parent.parent / "config" / "email.yaml"
+    _e = get_config_dir() / "email.yaml"
     if not _e.exists():
         return False
     import yaml as _yaml
@@ -38,7 +37,7 @@ def _email_configured() -> bool:
     return bool(_cfg.get("username") or _cfg.get("user") or _cfg.get("imap_host"))
 
 def _notion_configured() -> bool:
-    _n = Path(__file__).parent.parent / "config" / "notion.yaml"
+    _n = get_config_dir() / "notion.yaml"
     if not _n.exists():
         return False
     import yaml as _yaml
@@ -46,7 +45,7 @@ def _notion_configured() -> bool:
     return bool(_cfg.get("token"))
 
 def _keywords_configured() -> bool:
-    _k = Path(__file__).parent.parent / "config" / "resume_keywords.yaml"
+    _k = get_config_dir() / "resume_keywords.yaml"
     if not _k.exists():
         return False
     import yaml as _yaml

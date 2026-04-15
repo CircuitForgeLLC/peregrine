@@ -61,6 +61,7 @@ services:
       - OPENAI_COMPAT_KEY=${OPENAI_COMPAT_KEY:-}
       - PEREGRINE_GPU_COUNT=${PEREGRINE_GPU_COUNT:-0}
       - PEREGRINE_GPU_NAMES=${PEREGRINE_GPU_NAMES:-}
+      - CF_ORCH_URL=${CF_ORCH_URL:-http://host.docker.internal:7700}
       - PYTHONUNBUFFERED=1
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -126,6 +127,31 @@ services:
     environment:
       - VISION_MODEL=${VISION_MODEL:-vikhyatk/moondream2}
       - VISION_REVISION=${VISION_REVISION:-2025-01-09}
+    profiles: [single-gpu, dual-gpu-ollama, dual-gpu-vllm, dual-gpu-mixed]
+    restart: unless-stopped
+
+  cf-orch-agent:
+    build:
+      context: ..
+      dockerfile: peregrine/Dockerfile.cfcore
+    command: ["/bin/sh", "/app/docker/cf-orch-agent/start.sh"]
+    ports:
+      - "${CF_ORCH_AGENT_PORT:-7701}:7701"
+    environment:
+      - CF_ORCH_COORDINATOR_URL=${CF_ORCH_COORDINATOR_URL:-http://host.docker.internal:7700}
+      - CF_ORCH_NODE_ID=${CF_ORCH_NODE_ID:-peregrine}
+      - CF_ORCH_AGENT_PORT=${CF_ORCH_AGENT_PORT:-7701}
+      - CF_ORCH_ADVERTISE_HOST=${CF_ORCH_ADVERTISE_HOST:-}
+      - PYTHONUNBUFFERED=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     profiles: [single-gpu, dual-gpu-ollama, dual-gpu-vllm, dual-gpu-mixed]
     restart: unless-stopped
 

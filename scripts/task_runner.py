@@ -16,6 +16,61 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+
+def _normalize_aihawk_resume(raw: dict) -> dict:
+    """Convert a plain_text_resume.yaml (AIHawk format) into the optimizer struct.
+
+    Handles two AIHawk variants:
+    - Newer Peregrine wizard output: already uses bullets/start_date/end_date/career_summary
+    - Older raw AIHawk format: uses responsibilities (str), period ("YYYY – Present")
+    """
+    import re as _re
+
+    def _split_responsibilities(text: str) -> list[str]:
+        lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+        return lines if lines else [text.strip()]
+
+    def _parse_period(period: str) -> tuple[str, str]:
+        parts = _re.split(r"\s*[–—-]\s*", period, maxsplit=1)
+        start = parts[0].strip() if parts else ""
+        end = parts[1].strip() if len(parts) > 1 else "Present"
+        return start, end
+
+    experience = []
+    for entry in raw.get("experience", []):
+        if "responsibilities" in entry:
+            bullets = _split_responsibilities(entry["responsibilities"])
+        else:
+            bullets = entry.get("bullets", [])
+
+        if "period" in entry:
+            start_date, end_date = _parse_period(entry["period"])
+        else:
+            start_date = entry.get("start_date", "")
+            end_date = entry.get("end_date", "Present")
+
+        experience.append({
+            "title": entry.get("title", ""),
+            "company": entry.get("company", ""),
+            "start_date": start_date,
+            "end_date": end_date,
+            "bullets": bullets,
+        })
+
+    # career_summary may be a string or absent; assessment field is a legacy bool in some profiles
+    career_summary = raw.get("career_summary", "")
+    if not isinstance(career_summary, str):
+        career_summary = ""
+
+    return {
+        "career_summary": career_summary,
+        "experience": experience,
+        "education": raw.get("education", []),
+        "skills": raw.get("skills", []),
+        "achievements": raw.get("achievements", []),
+    }
+
+
 from scripts.db import (
     DEFAULT_DB,
     insert_task,
@@ -196,9 +251,12 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
         elif task_type == "company_research":
             from scripts.company_research import research_company
+            _cfg_dir = Path(db_path).parent / "config"
+            _user_llm_cfg = _cfg_dir / "llm.yaml"
             result = research_company(
                 job,
                 on_stage=lambda s: update_task_stage(db_path, task_id, s),
+                config_path=_user_llm_cfg if _user_llm_cfg.exists() else None,
             )
             save_research(db_path, job_id=job_id, **result)
 
@@ -287,13 +345,25 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             )
             from scripts.user_profile import load_user_profile
 
+            _user_yaml = Path(db_path).parent / "config" / "user.yaml"
             description = job.get("description", "")
-            resume_path = load_user_profile().get("resume_path", "")
+            resume_path = load_user_profile(str(_user_yaml)).get("resume_path", "")
 
             # Parse the candidate's resume
             update_task_stage(db_path, task_id, "parsing resume")
-            resume_text = Path(resume_path).read_text(errors="replace") if resume_path else ""
-            resume_struct, parse_err = structure_resume(resume_text)
+            _plain_yaml = Path(db_path).parent / "config" / "plain_text_resume.yaml"
+            if resume_path and Path(resume_path).exists():
+                resume_text = Path(resume_path).read_text(errors="replace")
+                resume_struct, parse_err = structure_resume(resume_text)
+            elif _plain_yaml.exists():
+                import yaml as _yaml
+                _raw = _yaml.safe_load(_plain_yaml.read_text(encoding="utf-8")) or {}
+                resume_struct = _normalize_aihawk_resume(_raw)
+                resume_text = resume_struct.get("career_summary", "")
+                parse_err = ""
+            else:
+                resume_text = ""
+                resume_struct, parse_err = structure_resume("")
 
             # Extract keyword gaps and build gap report (free tier)
             update_task_stage(db_path, task_id, "extracting keyword gaps")
@@ -301,21 +371,38 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             prioritized = prioritize_gaps(gaps, resume_struct)
             gap_report = _json.dumps(prioritized, indent=2)
 
-            # Full rewrite (paid tier only)
-            rewritten_text = ""
+            # Full rewrite (paid tier only) → enters awaiting_review, not completed
             p = _json.loads(params or "{}")
+            selected_gaps = p.get("selected_gaps", None)
+            if selected_gaps is not None:
+                selected_set = set(selected_gaps)
+                prioritized = [g for g in prioritized if g.get("term") in selected_set]
             if p.get("full_rewrite", False):
                 update_task_stage(db_path, task_id, "rewriting resume sections")
-                candidate_voice = load_user_profile().get("candidate_voice", "")
+                candidate_voice = load_user_profile(str(_user_yaml)).get("candidate_voice", "")
                 rewritten = rewrite_for_ats(resume_struct, prioritized, job, candidate_voice)
                 if hallucination_check(resume_struct, rewritten):
-                    rewritten_text = render_resume_text(rewritten)
+                    from scripts.resume_optimizer import build_review_diff
+                    from scripts.db import save_resume_draft
+                    draft = build_review_diff(resume_struct, rewritten)
+                    # Attach gap report to draft for reference in the review UI
+                    draft["gap_report"] = prioritized
+                    save_resume_draft(db_path, job_id=job_id,
+                                      draft_json=_json.dumps(draft))
+                    # Save gap report now; final text written after user review
+                    save_optimized_resume(db_path, job_id=job_id,
+                                          text="", gap_report=gap_report)
+                    # Park task in awaiting_review — finalize endpoint resolves it
+                    update_task_status(db_path, task_id, "awaiting_review")
+                    return
                 else:
                     log.warning("[task_runner] resume_optimize hallucination check failed for job %d", job_id)
-
-            save_optimized_resume(db_path, job_id=job_id,
-                                  text=rewritten_text,
-                                  gap_report=gap_report)
+                    save_optimized_resume(db_path, job_id=job_id,
+                                          text="", gap_report=gap_report)
+            else:
+                # Gap-only run (free tier): save report, no draft
+                save_optimized_resume(db_path, job_id=job_id,
+                                      text="", gap_report=gap_report)
 
         elif task_type == "prepare_training":
             from scripts.prepare_training_data import build_records, write_jsonl, DEFAULT_OUTPUT

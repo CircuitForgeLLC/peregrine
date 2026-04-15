@@ -309,6 +309,40 @@ function daysSince(dateStr: string | null) {
   if (!dateStr) return null
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
 }
+
+// ── Rejected analytics section ─────────────────────────────────────────────────
+const rejectedExpanded = ref(false)
+
+const REJECTION_STAGES = ['applied', 'phone_screen', 'interviewing', 'offer'] as const
+type RejectionStage = typeof REJECTION_STAGES[number]
+
+const REJECTION_STAGE_LABELS: Record<RejectionStage, string> = {
+  applied:       'Applied',
+  phone_screen:  'Phone Screen',
+  interviewing:  'Interviewing',
+  offer:         'Offer',
+}
+
+const rejectedByStage = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const job of store.rejected) {
+    const stage = job.rejection_stage ?? 'applied'
+    counts[stage] = (counts[stage] ?? 0) + 1
+  }
+  return counts
+})
+
+function formatRejectionDate(job: PipelineJob): string {
+  // Use the most recent stage timestamp as rejection date
+  const candidates = [job.offer_at, job.interviewing_at, job.phone_screen_at, job.applied_at]
+  for (const ts of candidates) {
+    if (ts) {
+      const d = new Date(ts)
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+    }
+  }
+  return '—'
+}
 </script>
 
 <template>
@@ -519,26 +553,56 @@ function daysSince(dateStr: string | null) {
       </div>
     </section>
 
-    <!-- Rejected accordion -->
-    <details class="rejected-accordion" v-if="store.rejected.length > 0">
-      <summary class="rejected-summary">
-        ✗ Rejected ({{ store.rejected.length }})
-        <span class="rejected-hint">— expand for details</span>
-      </summary>
-      <div class="rejected-body">
-        <div class="rejected-stats">
-          <div class="stat-chip">
-            <span class="stat-num">{{ store.rejected.length }}</span>
-            <span class="stat-lbl">Total</span>
+    <!-- Rejected analytics section -->
+    <section v-if="store.rejected.length > 0" class="rejected-section" aria-label="Rejected jobs">
+      <button
+        class="rejected-toggle"
+        :aria-expanded="rejectedExpanded"
+        aria-controls="rejected-body"
+        @click="rejectedExpanded = !rejectedExpanded"
+      >
+        <span class="rejected-chevron" :class="{ 'is-expanded': rejectedExpanded }">▸</span>
+        <span class="rejected-toggle-label">Rejected ({{ store.rejected.length }})</span>
+      </button>
+
+      <div
+        id="rejected-body"
+        class="rejected-body"
+        :class="{ 'is-expanded': rejectedExpanded }"
+      >
+        <!-- Stage breakdown stats bar -->
+        <div class="rejected-stats-bar" role="list" aria-label="Rejections by stage">
+          <div
+            v-for="stage in REJECTION_STAGES"
+            :key="stage"
+            class="rejected-stat-chip"
+            :class="{ 'rejected-stat-chip--active': (rejectedByStage[stage] ?? 0) > 0 }"
+            role="listitem"
+          >
+            <span class="rejected-stat-num">{{ rejectedByStage[stage] ?? 0 }}</span>
+            <span class="rejected-stat-lbl">{{ REJECTION_STAGE_LABELS[stage] }}</span>
           </div>
         </div>
-        <div v-for="job in store.rejected" :key="job.id" class="rejected-row">
-          <span class="rejected-title">{{ job.title }} — {{ job.company }}</span>
-          <span class="rejected-stage">{{ job.rejection_stage ?? 'No response' }}</span>
-          <button class="btn-unrej" @click="openMove(job.id)">Move →</button>
+
+        <!-- Flat list of rejected jobs -->
+        <div class="rejected-list">
+          <div v-for="job in store.rejected" :key="job.id" class="rejected-row">
+            <div class="rejected-row-info">
+              <span class="rejected-job-title">{{ job.title }}</span>
+              <span class="rejected-job-company">{{ job.company }}</span>
+            </div>
+            <div class="rejected-row-meta">
+              <span
+                class="rejected-stage-badge"
+                :class="`rejected-stage-badge--${job.rejection_stage ?? 'applied'}`"
+              >{{ REJECTION_STAGE_LABELS[job.rejection_stage as RejectionStage] ?? job.rejection_stage ?? 'Applied' }}</span>
+              <span class="rejected-date">{{ formatRejectionDate(job) }}</span>
+              <button class="btn-unrej" @click="openMove(job.id)" :aria-label="`Move ${job.title}`">Move →</button>
+            </div>
+          </div>
         </div>
       </div>
-    </details>
+    </section>
 
     <MoveToSheet
       v-if="moveTarget"
@@ -561,8 +625,8 @@ function daysSince(dateStr: string | null) {
 
 <style scoped>
 .interviews-view {
-  padding: var(--space-4) var(--space-4) var(--space-12);
-  max-width: 1100px; margin: 0 auto; position: relative;
+  padding: var(--space-4) var(--space-6) var(--space-12);
+  max-width: 1400px; margin: 0 auto; position: relative;
 }
 .confetti-canvas { position: fixed; inset: 0; z-index: 300; pointer-events: none; display: none; }
 .hired-toast {
@@ -704,14 +768,17 @@ function daysSince(dateStr: string | null) {
 }
 
 .kanban {
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-4); margin-bottom: var(--space-6);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
 }
-@media (max-width: 720px) { .kanban { grid-template-columns: 1fr; } }
+@media (max-width: 768px) { .kanban { grid-template-columns: 1fr; } }
 .kanban-col {
   background: var(--color-surface); border-radius: 10px;
-  padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3);
   transition: box-shadow 150ms;
+  min-height: 200px;
 }
 .kanban-col--focused { box-shadow: 0 0 0 2px var(--color-primary); }
 .col-header {
@@ -727,24 +794,230 @@ function daysSince(dateStr: string | null) {
 .empty-bird-float { font-size: 1.75rem; animation: float 3s ease-in-out infinite; }
 @keyframes float  { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
 .empty-msg        { font-size: 0.8rem; color: var(--color-text-muted); line-height: 1.5; }
-.rejected-accordion { border: 1px solid var(--color-border-light); border-radius: 10px; overflow: hidden; }
-.rejected-summary {
-  list-style: none; padding: var(--space-3) var(--space-4);
-  background: color-mix(in srgb, var(--color-error) 10%, var(--color-surface));
-  cursor: pointer; font-weight: 700; font-size: 0.85rem; color: var(--color-error);
-  display: flex; align-items: center; gap: var(--space-2);
+/* Rejected analytics section */
+.rejected-section {
+  border: 1px solid color-mix(in srgb, var(--color-error) 25%, var(--color-border-light));
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: var(--space-4);
 }
-.rejected-summary::-webkit-details-marker { display: none; }
-.rejected-hint  { font-weight: 400; color: var(--color-text-muted); font-size: 0.75rem; }
-.rejected-body  { padding: var(--space-3) var(--space-4); background: color-mix(in srgb, var(--color-error) 4%, var(--color-surface-raised)); display: flex; flex-direction: column; gap: var(--space-2); }
-.rejected-stats { display: flex; gap: var(--space-3); margin-bottom: var(--space-2); }
-.stat-chip      { background: var(--color-surface-raised); border-radius: 6px; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-light); text-align: center; }
-.stat-num       { display: block; font-size: 1.25rem; font-weight: 700; color: var(--color-error); }
-.stat-lbl       { font-size: 0.7rem; color: var(--color-text-muted); }
-.rejected-row   { display: flex; align-items: center; gap: var(--space-3); background: var(--color-surface-raised); border-radius: 6px; padding: var(--space-2) var(--space-3); border-left: 3px solid var(--color-error); }
-.rejected-title { flex: 1; font-weight: 600; font-size: 0.875rem; }
-.rejected-stage { font-size: 0.75rem; color: var(--color-text-muted); }
-.btn-unrej      { background: none; border: 1px solid var(--color-border); border-radius: 6px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; color: var(--color-info); cursor: pointer; }
+
+.rejected-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface));
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--color-error);
+  text-align: left;
+}
+
+.rejected-toggle:hover {
+  background: color-mix(in srgb, var(--color-error) 12%, var(--color-surface));
+}
+
+.rejected-chevron {
+  font-size: 0.75em;
+  display: inline-block;
+  transition: transform 200ms;
+  color: var(--color-error);
+}
+
+.rejected-chevron.is-expanded {
+  transform: rotate(90deg);
+}
+
+.rejected-toggle-label {
+  flex: 1;
+}
+
+.rejected-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 300ms ease;
+}
+
+.rejected-body.is-expanded {
+  max-height: 2000px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rejected-body, .rejected-chevron { transition: none; }
+}
+
+/* Stats bar */
+.rejected-stats-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) 0;
+  background: color-mix(in srgb, var(--color-error) 4%, var(--color-surface-raised));
+}
+
+.rejected-stat-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  padding: var(--space-2) var(--space-3);
+  min-width: 72px;
+  opacity: 0.5;
+  transition: opacity 150ms;
+}
+
+.rejected-stat-chip--active {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--color-error) 40%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface-raised));
+}
+
+.rejected-stat-num {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-error);
+  line-height: 1.1;
+}
+
+.rejected-stat-lbl {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  text-align: center;
+  margin-top: 2px;
+}
+
+/* Flat rejected list */
+.rejected-list {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: color-mix(in srgb, var(--color-error) 4%, var(--color-surface-raised));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.rejected-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  background: var(--color-surface-raised);
+  border-radius: 6px;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid color-mix(in srgb, var(--color-error) 60%, transparent);
+  flex-wrap: wrap;
+}
+
+.rejected-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.rejected-job-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rejected-job-company {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.rejected-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.rejected-stage-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 99px;
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--color-error) 14%, var(--color-surface-raised));
+  color: var(--color-error);
+  border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+  white-space: nowrap;
+}
+
+/* Tone down badges for earlier stages */
+.rejected-stage-badge--applied {
+  background: color-mix(in srgb, var(--color-text-muted) 10%, var(--color-surface-raised));
+  color: var(--color-text-muted);
+  border-color: var(--color-border-light);
+}
+
+.rejected-stage-badge--phone_screen {
+  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface-raised));
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+
+.rejected-stage-badge--interviewing {
+  background: color-mix(in srgb, var(--color-info) 12%, var(--color-surface-raised));
+  color: var(--color-info);
+  border-color: color-mix(in srgb, var(--color-info) 30%, transparent);
+}
+
+.rejected-stage-badge--offer {
+  background: color-mix(in srgb, var(--color-error) 14%, var(--color-surface-raised));
+  color: var(--color-error);
+  border-color: color-mix(in srgb, var(--color-error) 30%, transparent);
+}
+
+.rejected-date {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.btn-unrej {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-info);
+  cursor: pointer;
+}
+
+.btn-unrej:hover {
+  background: var(--color-surface-alt);
+}
+
+@media (max-width: 540px) {
+  .rejected-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .rejected-row-meta {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .rejected-stats-bar {
+    gap: var(--space-1);
+  }
+  .rejected-stat-chip {
+    min-width: 60px;
+    padding: var(--space-1) var(--space-2);
+  }
+}
 .empty-bird     { font-size: 1.25rem; }
 .pre-list-pagination {
   display: flex; align-items: center; justify-content: center; gap: var(--space-2);

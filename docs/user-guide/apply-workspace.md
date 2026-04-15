@@ -1,5 +1,7 @@
 # Apply Workspace
 
+![Peregrine apply workspace with cover letter generator and ATS optimizer](../screenshots/03-apply.png)
+
 The Apply Workspace is where you generate cover letters, export application documents, and record that you have applied to a job.
 
 ---

@@ -7,35 +7,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-_WORKTREE = "/Library/Development/CircuitForge/peregrine/.worktrees/feature-vue-spa"
-
-# ── Path bootstrap ────────────────────────────────────────────────────────────
-# dev_api.py inserts /Library/Development/CircuitForge/peregrine into sys.path
-# at import time; the worktree has credential_store but the main repo doesn't.
-# Insert the worktree first so 'scripts' resolves to the worktree version, then
-# pre-cache it in sys.modules so Python won't re-look-up when dev_api adds the
-# main peregrine root.
-if _WORKTREE not in sys.path:
-    sys.path.insert(0, _WORKTREE)
-# Pre-cache the worktree scripts package and submodules before dev_api import
-import importlib, types
-
-def _ensure_worktree_scripts():
-    import importlib.util as _ilu
-    _wt = _WORKTREE
-    # Only load if not already loaded from the worktree
-    _spec = _ilu.spec_from_file_location("scripts", f"{_wt}/scripts/__init__.py",
-                                          submodule_search_locations=[f"{_wt}/scripts"])
-    if _spec is None:
-        return
-    _mod = _ilu.module_from_spec(_spec)
-    sys.modules.setdefault("scripts", _mod)
-    try:
-        _spec.loader.exec_module(_mod)
-    except Exception:
-        pass
-
-_ensure_worktree_scripts()
+# credential_store.py was merged to main repo — no worktree path manipulation needed
 
 
 @pytest.fixture(scope="module")
@@ -211,7 +183,8 @@ def test_get_search_prefs_returns_dict(tmp_path, monkeypatch):
     fake_path = tmp_path / "config" / "search_profiles.yaml"
     fake_path.parent.mkdir(parents=True, exist_ok=True)
     with open(fake_path, "w") as f:
-        yaml.dump({"default": {"remote_preference": "remote", "job_boards": []}}, f)
+        yaml.dump({"default": {"remote_preference": "remote",
+                               "job_boards": [{"name": "linkedin", "enabled": True}]}}, f)
     monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
 
     from dev_api import app

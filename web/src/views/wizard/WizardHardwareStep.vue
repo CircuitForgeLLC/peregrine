@@ -5,15 +5,15 @@
       Peregrine uses your hardware profile to choose the right inference setup.
     </p>
 
-    <div v-if="wizard.loading" class="step__info">Detecting hardware…</div>
+    <div v-if="detecting" class="step__info">Detecting hardware…</div>
 
     <template v-else>
       <div v-if="wizard.hardware.gpus.length" class="step__success">
-        ✅ Detected {{ wizard.hardware.gpus.length }} GPU(s):
+        ✅ Detected {{ wizard.hardware.gpus.length }} local GPU(s):
         {{ wizard.hardware.gpus.join(', ') }}
       </div>
       <div v-else class="step__info">
-        No NVIDIA GPUs detected. "Remote" or "CPU" mode recommended.
+        No local NVIDIA GPUs detected. "Remote", "CPU", or "cf-orch" mode recommended.
       </div>
 
       <div class="step__field">
@@ -23,15 +23,59 @@
           <option value="cpu">CPU — local Ollama, no GPU</option>
           <option value="single-gpu">Single GPU — local Ollama + one GPU</option>
           <option value="dual-gpu">Dual GPU — local Ollama + two GPUs</option>
+          <option value="cf-orch">
+            cf-orch — CircuitForge GPU cluster
+            {{ orchAvailable ? `(${orchGpus.length} GPU(s) available)` : '(configure endpoint below)' }}
+          </option>
         </select>
       </div>
 
+      <!-- cf-orch cluster summary -->
+      <template v-if="selectedProfile === 'cf-orch'">
+        <div v-if="orchAvailable" class="step__orch-nodes">
+          <p class="step__orch-label">Available nodes:</p>
+          <div
+            v-for="gpu in orchGpus"
+            :key="`${gpu.node}-${gpu.name}`"
+            class="step__orch-row"
+          >
+            <span class="step__orch-node">{{ gpu.node }}</span>
+            <span class="step__orch-name">{{ gpu.name }}</span>
+            <span class="step__orch-vram">
+              {{ Math.round(gpu.vram_free_mb / 1024 * 10) / 10 }} /
+              {{ Math.round(gpu.vram_total_mb / 1024 * 10) / 10 }} GB free
+            </span>
+          </div>
+        </div>
+
+        <div class="step__field">
+          <label class="step__label" for="orch-url">cf-orch coordinator URL</label>
+          <input
+            id="orch-url"
+            v-model="orchUrl"
+            type="url"
+            class="step__input"
+            placeholder="http://10.1.10.71:7700"
+          />
+          <p class="step__field-hint">
+            The coordinator serves public inference endpoints for paid+ users.
+            Leave blank to use the default cluster URL from Settings.
+          </p>
+        </div>
+
+        <div class="step__tier-note">
+          <span aria-hidden="true">🔒</span>
+          cf-orch inference requires a <strong>Paid</strong> license or higher.
+          You can select this profile now; it will activate once your license is verified.
+        </div>
+      </template>
+
       <div
-        v-if="selectedProfile !== 'remote' && !wizard.hardware.gpus.length"
+        v-else-if="selectedProfile !== 'remote' && !wizard.hardware.gpus.length"
         class="step__warning"
       >
-        ⚠️ No GPUs detected — a GPU profile may not work. Choose CPU or Remote
-        if you don't have a local NVIDIA GPU.
+        ⚠️ No local GPUs detected — a GPU profile may not work. Choose CPU, Remote,
+        or cf-orch if you have access to the cluster.
       </div>
     </template>
 
@@ -47,17 +91,52 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWizardStore } from '../../stores/wizard'
+import { useApiFetch } from '../../composables/useApi'
 import './wizard.css'
 
 const wizard = useWizardStore()
 const router = useRouter()
 const selectedProfile = ref(wizard.hardware.selectedProfile)
 
-onMounted(() => wizard.detectHardware())
+// Local loading flag — does NOT touch wizard.loading, avoiding the
+// WizardLayout unmount loop that was causing the infinite spinner.
+const detecting = ref(false)
+
+// cf-orch cluster state
+const orchAvailable = ref(false)
+const orchGpus = ref<Array<{ node: string; name: string; vram_total_mb: number; vram_free_mb: number }>>([])
+const orchUrl = ref('')
+
+onMounted(async () => {
+  detecting.value = true
+  const { data } = await useApiFetch<{
+    gpus: string[]
+    suggested_profile: string
+    profiles: string[]
+    cf_orch_available: boolean
+    cf_orch_gpus: Array<{ node: string; name: string; vram_total_mb: number; vram_free_mb: number }>
+  }>('/api/wizard/hardware')
+  detecting.value = false
+  if (!data) return
+
+  wizard.hardware.gpus = data.gpus
+  wizard.hardware.suggestedProfile = data.suggested_profile as typeof wizard.hardware.suggestedProfile
+  if (!wizard.hardware.selectedProfile || wizard.hardware.selectedProfile === 'remote') {
+    wizard.hardware.selectedProfile = data.suggested_profile as typeof wizard.hardware.selectedProfile
+    selectedProfile.value = wizard.hardware.selectedProfile
+  }
+
+  orchAvailable.value = data.cf_orch_available ?? false
+  orchGpus.value = data.cf_orch_gpus ?? []
+})
 
 async function next() {
-  wizard.hardware.selectedProfile = selectedProfile.value
-  const ok = await wizard.saveStep(1, { inference_profile: selectedProfile.value })
+  wizard.hardware.selectedProfile = selectedProfile.value as typeof wizard.hardware.selectedProfile
+  const stepData: Record<string, unknown> = { inference_profile: selectedProfile.value }
+  if (selectedProfile.value === 'cf-orch' && orchUrl.value) {
+    stepData.cf_orch_url = orchUrl.value
+  }
+  const ok = await wizard.saveStep(1, stepData)
   if (ok) router.push('/setup/tier')
 }
 </script>

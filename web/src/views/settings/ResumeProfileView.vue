@@ -196,29 +196,53 @@
       <section class="form-section">
         <h3>Skills & Keywords</h3>
         <div class="tag-section">
-          <label>Skills</label>
+          <div class="tag-section-header">
+            <label>Skills</label>
+            <button @click="store.suggestTags('skills')" :disabled="store.suggestingField === 'skills'" class="btn-suggest">
+              {{ store.suggestingField === 'skills' ? 'Thinking…' : '✦ Suggest' }}
+            </button>
+          </div>
           <div class="tags">
             <span v-for="skill in store.skills" :key="skill" class="tag">
               {{ skill }} <button @click="store.removeTag('skills', skill)">×</button>
             </span>
           </div>
+          <div v-if="store.skillSuggestions.length > 0" class="suggestions">
+            <span v-for="s in store.skillSuggestions" :key="s" class="suggestion-chip" @click="store.acceptTagSuggestion('skills', s)" title="Click to add">+ {{ s }}</span>
+          </div>
           <input v-model="skillInput" @keydown.enter.prevent="store.addTag('skills', skillInput); skillInput = ''" placeholder="Add skill, press Enter" />
         </div>
         <div class="tag-section">
-          <label>Domains</label>
+          <div class="tag-section-header">
+            <label>Domains</label>
+            <button @click="store.suggestTags('domains')" :disabled="store.suggestingField === 'domains'" class="btn-suggest">
+              {{ store.suggestingField === 'domains' ? 'Thinking…' : '✦ Suggest' }}
+            </button>
+          </div>
           <div class="tags">
             <span v-for="domain in store.domains" :key="domain" class="tag">
               {{ domain }} <button @click="store.removeTag('domains', domain)">×</button>
             </span>
           </div>
+          <div v-if="store.domainSuggestions.length > 0" class="suggestions">
+            <span v-for="s in store.domainSuggestions" :key="s" class="suggestion-chip" @click="store.acceptTagSuggestion('domains', s)" title="Click to add">+ {{ s }}</span>
+          </div>
           <input v-model="domainInput" @keydown.enter.prevent="store.addTag('domains', domainInput); domainInput = ''" placeholder="Add domain, press Enter" />
         </div>
         <div class="tag-section">
-          <label>Keywords</label>
+          <div class="tag-section-header">
+            <label>Keywords</label>
+            <button @click="store.suggestTags('keywords')" :disabled="store.suggestingField === 'keywords'" class="btn-suggest">
+              {{ store.suggestingField === 'keywords' ? 'Thinking…' : '✦ Suggest' }}
+            </button>
+          </div>
           <div class="tags">
             <span v-for="kw in store.keywords" :key="kw" class="tag">
               {{ kw }} <button @click="store.removeTag('keywords', kw)">×</button>
             </span>
+          </div>
+          <div v-if="store.keywordSuggestions.length > 0" class="suggestions">
+            <span v-for="s in store.keywordSuggestions" :key="s" class="suggestion-chip" @click="store.acceptTagSuggestion('keywords', s)" title="Click to add">+ {{ s }}</span>
           </div>
           <input v-model="kwInput" @keydown.enter.prevent="store.addTag('keywords', kwInput); kwInput = ''" placeholder="Add keyword, press Enter" />
         </div>
@@ -304,45 +328,83 @@ async function handleUpload() {
 </script>
 
 <style scoped>
-.resume-profile { max-width: 720px; margin: 0 auto; padding: var(--space-4, 24px); }
-h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: var(--space-6, 32px); color: var(--color-text-primary, #e2e8f0); }
-h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3, 16px); color: var(--color-text-primary, #e2e8f0); }
-.form-section { margin-bottom: var(--space-8, 48px); padding-bottom: var(--space-6, 32px); border-bottom: 1px solid var(--color-border, rgba(255,255,255,0.08)); }
-.field-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--space-3, 16px); }
-.field-row label { font-size: 0.82rem; color: var(--color-text-secondary, #94a3b8); }
+.resume-profile { max-width: 720px; margin: 0 auto; padding: var(--space-4); }
+h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: var(--space-6); }
+h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
+.form-section { margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--color-border); }
+.field-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--space-3); }
+.field-row label { font-size: 0.82rem; color: var(--color-text-muted); }
 .field-row input, .field-row textarea, .field-row select {
-  background: var(--color-surface-2, rgba(255,255,255,0.05));
-  border: 1px solid var(--color-border, rgba(255,255,255,0.12));
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  color: var(--color-text-primary, #e2e8f0);
+  color: var(--color-text);
   padding: 7px 10px;
   font-size: 0.88rem;
   width: 100%;
   box-sizing: border-box;
 }
-.sync-label { font-size: 0.72rem; color: var(--color-accent, #7c3aed); margin-left: 6px; }
-.checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 0.88rem; color: var(--color-text-primary, #e2e8f0); cursor: pointer; }
-.experience-card { border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-radius: 8px; padding: var(--space-4, 24px); margin-bottom: var(--space-4, 24px); }
-.remove-btn { margin-top: 8px; padding: 4px 12px; border-radius: 4px; background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); cursor: pointer; font-size: 0.82rem; }
-.empty-state { text-align: center; padding: var(--space-8, 48px) 0; }
-.empty-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4, 24px); margin-top: var(--space-6, 32px); }
-.empty-card { background: var(--color-surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-radius: 10px; padding: var(--space-4, 24px); text-align: left; }
+.sync-label { font-size: 0.72rem; color: var(--color-accent); margin-left: 6px; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 0.88rem; color: var(--color-text); cursor: pointer; }
+.experience-card { border: 1px solid var(--color-border); border-radius: 8px; padding: var(--space-4); margin-bottom: var(--space-4); }
+.remove-btn {
+  margin-top: 8px; padding: 4px 12px; border-radius: 4px;
+  background: color-mix(in srgb, var(--color-error) 15%, transparent);
+  color: var(--color-error);
+  border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+  cursor: pointer; font-size: 0.82rem;
+}
+.empty-state { text-align: center; padding: var(--space-8) 0; }
+.empty-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); margin-top: var(--space-6); }
+.empty-card { background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 10px; padding: var(--space-4); text-align: left; }
 .empty-card h3 { margin-bottom: 8px; }
-.empty-card p { font-size: 0.85rem; color: var(--color-text-secondary, #94a3b8); margin-bottom: 16px; }
-.empty-card button, .empty-card a { padding: 8px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; text-decoration: none; display: inline-block; background: var(--color-accent, #7c3aed); color: #fff; border: none; }
-.tag-section { margin-bottom: var(--space-4, 24px); }
-.tag-section label { font-size: 0.82rem; color: var(--color-text-secondary, #94a3b8); display: block; margin-bottom: 6px; }
+.empty-card p { font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 16px; }
+.empty-card button, .empty-card a { padding: 8px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; text-decoration: none; display: inline-block; background: var(--color-accent); color: var(--color-text-inverse); border: none; }
+.tag-section { margin-bottom: var(--space-4); }
+.tag-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.tag-section-header label { font-size: 0.82rem; color: var(--color-text-muted); margin: 0; }
+.tag-section label { font-size: 0.82rem; color: var(--color-text-muted); display: block; margin-bottom: 6px; }
+.btn-suggest {
+  padding: 4px 12px; border-radius: 6px;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  color: var(--color-accent); cursor: pointer; font-size: 0.78rem; white-space: nowrap; transition: background 0.15s;
+}
+.btn-suggest:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 28%, transparent); }
+.btn-suggest:disabled { opacity: 0.55; cursor: default; }
+.suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.suggestion-chip {
+  padding: 3px 10px; border-radius: 12px; font-size: 0.78rem;
+  background: var(--color-surface-alt);
+  border: 1px dashed var(--color-border);
+  color: var(--color-text-muted); cursor: pointer; transition: all 0.15s;
+}
+.suggestion-chip:hover {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  color: var(--color-accent);
+}
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.tag { padding: 3px 10px; background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.3); border-radius: 12px; font-size: 0.78rem; color: var(--color-accent, #a78bfa); display: flex; align-items: center; gap: 5px; }
+.tag {
+  padding: 3px 10px;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: 12px; font-size: 0.78rem; color: var(--color-accent);
+  display: flex; align-items: center; gap: 5px;
+}
 .tag button { background: none; border: none; color: inherit; cursor: pointer; padding: 0; line-height: 1; }
-.tag-section input { background: var(--color-surface-2, rgba(255,255,255,0.05)); border: 1px solid var(--color-border, rgba(255,255,255,0.12)); border-radius: 6px; color: var(--color-text-primary, #e2e8f0); padding: 6px 10px; font-size: 0.85rem; width: 100%; box-sizing: border-box; }
-.form-actions { margin-top: var(--space-6, 32px); display: flex; align-items: center; gap: var(--space-4, 24px); }
-.btn-primary { padding: 9px 24px; background: var(--color-accent, #7c3aed); color: #fff; border: none; border-radius: 7px; font-size: 0.9rem; cursor: pointer; font-weight: 600; }
+.tag-section input { background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); padding: 6px 10px; font-size: 0.85rem; width: 100%; box-sizing: border-box; }
+.form-actions { margin-top: var(--space-6); display: flex; align-items: center; gap: var(--space-4); }
+.btn-primary { padding: 9px 24px; background: var(--color-accent); color: var(--color-text-inverse); border: none; border-radius: 7px; font-size: 0.9rem; cursor: pointer; font-weight: 600; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.error { color: #ef4444; font-size: 0.82rem; }
-.error-banner { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; color: #ef4444; font-size: 0.85rem; padding: 10px 14px; margin-bottom: var(--space-4, 24px); }
-.section-note { font-size: 0.8rem; color: var(--color-text-secondary, #94a3b8); margin-bottom: 16px; }
-.toggle-btn { margin-left: 10px; padding: 2px 10px; background: transparent; border: 1px solid var(--color-border, rgba(255,255,255,0.15)); border-radius: 4px; color: var(--color-text-secondary, #94a3b8); cursor: pointer; font-size: 0.78rem; }
-.loading { text-align: center; padding: var(--space-8, 48px); color: var(--color-text-secondary, #94a3b8); }
-.replace-section { background: var(--color-surface-2, rgba(255,255,255,0.03)); border-radius: 8px; padding: var(--space-4, 24px); }
+.error { color: var(--color-error); font-size: 0.82rem; }
+.error-banner {
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+  border-radius: 6px; color: var(--color-error); font-size: 0.85rem; padding: 10px 14px; margin-bottom: var(--space-4);
+}
+.section-note { font-size: 0.8rem; color: var(--color-text-muted); margin-bottom: 16px; }
+.toggle-btn { margin-left: 10px; padding: 2px 10px; background: transparent; border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-text-muted); cursor: pointer; font-size: 0.78rem; }
+.loading { text-align: center; padding: var(--space-8); color: var(--color-text-muted); }
+.replace-section { background: var(--color-surface-alt); border-radius: 8px; padding: var(--space-4); }
 </style>

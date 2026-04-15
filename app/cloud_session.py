@@ -203,8 +203,16 @@ def get_config_dir() -> Path:
            isolated and never shared across tenants.
     Local: repo-level config/ directory.
     """
-    if CLOUD_MODE and st.session_state.get("db_path"):
-        return Path(st.session_state["db_path"]).parent / "config"
+    if CLOUD_MODE:
+        db_path = st.session_state.get("db_path")
+        if db_path:
+            return Path(db_path).parent / "config"
+        # Session not resolved yet (resolve_session() should have called st.stop() already).
+        # Return an isolated empty temp dir rather than the repo config, which may contain
+        # another user's data baked into the image.
+        _safe = Path("/tmp/peregrine-cloud-noconfig")
+        _safe.mkdir(exist_ok=True)
+        return _safe
     return Path(__file__).parent.parent / "config"
 
 

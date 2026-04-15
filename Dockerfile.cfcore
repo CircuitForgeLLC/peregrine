@@ -26,6 +26,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY circuitforge-core/ /circuitforge-core/
 RUN pip install --no-cache-dir /circuitforge-core
 
+# circuitforge-orch client — needed for LLMRouter cf_orch allocation.
+# Optional: if the directory doesn't exist the COPY will fail at build time; keep
+# cf-orch as a sibling of peregrine in the build context.
+COPY circuitforge-orch/ /circuitforge-orch/
+RUN pip install --no-cache-dir /circuitforge-orch
+
 COPY peregrine/requirements.txt .
 # Skip the cfcore line — already installed above from the local copy
 RUN grep -v 'circuitforge-core' requirements.txt | pip install --no-cache-dir -r /dev/stdin
@@ -38,6 +44,13 @@ RUN playwright install chromium && playwright install-deps chromium
 COPY peregrine/scrapers/ /app/scrapers/
 
 COPY peregrine/ .
+
+# Remove per-user config files that are gitignored but may exist locally.
+# Defense-in-depth: the parent .dockerignore should already exclude these,
+# but an explicit rm guarantees they never end up in the cloud image.
+RUN rm -f config/user.yaml config/plain_text_resume.yaml config/notion.yaml \
+          config/email.yaml config/tokens.yaml config/craigslist.yaml \
+          config/adzuna.yaml .env
 
 EXPOSE 8501
 

@@ -51,6 +51,8 @@ services:
       dockerfile: peregrine/Dockerfile.cfcore
     command: >
       bash -c "uvicorn dev_api:app --host 0.0.0.0 --port 8601"
+    ports:
+      - "127.0.0.1:8601:8601"   # localhost-only — Caddy + avocet imitate tab
     volumes:
       - /devl/menagerie-data:/devl/menagerie-data
       - ./config/llm.cloud.yaml:/app/config/llm.yaml:ro
@@ -65,6 +67,7 @@ services:
       - HEIMDALL_ADMIN_TOKEN=${HEIMDALL_ADMIN_TOKEN}
       - PYTHONUNBUFFERED=1
       - FORGEJO_API_TOKEN=${FORGEJO_API_TOKEN:-}
+      - CF_ORCH_URL=http://host.docker.internal:7700
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -80,6 +83,9 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+
+  # cf-orch-agent: not needed in cloud — a host-native agent already runs on :7701
+  # and is registered with the coordinator. app/api reach it via CF_ORCH_URL.
 
   searxng:
     image: searxng/searxng:latest

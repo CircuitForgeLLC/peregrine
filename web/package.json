@@ -15,9 +15,12 @@
     "@fontsource/fraunces": "^5.2.9",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@heroicons/vue": "^2.2.0",
+    "@types/dompurify": "^3.0.5",
     "@vueuse/core": "^14.2.1",
     "@vueuse/integrations": "^14.2.1",
     "animejs": "^4.3.6",
+    "dompurify": "^3.4.0",
+    "marked": "^18.0.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.25",
     "vue-router": "^5.0.3"

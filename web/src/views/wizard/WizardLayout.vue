@@ -28,7 +28,7 @@
 
       <!-- Step content -->
       <div class="wizard__body">
-        <div v-if="wizard.loading" class="wizard__loading" aria-live="polite">
+        <div v-if="!layoutReady" class="wizard__loading" aria-live="polite">
           <span class="wizard__spinner" aria-hidden="true" />
           Loading…
         </div>
@@ -44,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWizardStore } from '../../stores/wizard'
 import { useAppConfigStore } from '../../stores/appConfig'
@@ -56,9 +56,15 @@ const router = useRouter()
 // Peregrine logo — served from the static assets directory
 const logoSrc = '/static/peregrine_logo_circle.png'
 
+// layoutReady gates the RouterView — separate from wizard.loading so child
+// steps that do their own async work (detectHardware, etc.) don't unmount
+// themselves by setting the shared loading flag.
+const layoutReady = ref(false)
+
 onMounted(async () => {
   if (!config.loaded) await config.load()
   const target = await wizard.loadStatus(config.isCloud)
+  layoutReady.value = true
   if (router.currentRoute.value.path === '/setup') {
     router.replace(target)
   }

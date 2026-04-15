@@ -44,6 +44,30 @@
       </div>
     </section>
 
+    <!-- Custom cover letter model (paid+, cloud) -->
+    <section v-if="config.isCloud && meetsRequiredTier('paid')" class="form-section">
+      <h3>Custom Cover Letter Model</h3>
+      <p class="section-note">
+        Select your fine-tuned Ollama model for cover letter generation.
+        Leave blank to use the cloud default.
+      </p>
+      <div class="field-row">
+        <label>Model</label>
+        <select v-model="coverLetterModel" class="field-select">
+          <option value="">(cloud default)</option>
+          <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
+        </select>
+        <button @click="saveCoverLetterModel" :disabled="clmSaving" class="btn-save-inline">
+          {{ clmSaving ? 'Saving…' : 'Save' }}
+        </button>
+      </div>
+      <p v-if="clmError" class="error">{{ clmError }}</p>
+      <p v-if="clmSaved" class="success">Saved.</p>
+      <p v-if="ollamaModels.length === 0" class="section-note">
+        No Ollama models found — make sure Ollama is running and has models pulled.
+      </p>
+    </section>
+
     <!-- Services section -->
     <section class="form-section">
       <h3>Services</h3>
@@ -62,97 +86,6 @@
           </div>
           <p v-if="store.serviceErrors[svc.name]" class="error">{{ store.serviceErrors[svc.name] }}</p>
         </div>
-      </div>
-    </section>
-
-    <!-- Email section -->
-    <section class="form-section">
-      <h3>Email (IMAP)</h3>
-      <p class="section-note">Used for email sync in the Interviews pipeline.</p>
-      <div class="field-row">
-        <label>IMAP Host</label>
-        <input v-model="(store.emailConfig as any).host" placeholder="imap.gmail.com" />
-      </div>
-      <div class="field-row">
-        <label>Port</label>
-        <input v-model.number="(store.emailConfig as any).port" type="number" placeholder="993" />
-      </div>
-      <label class="checkbox-row">
-        <input type="checkbox" v-model="(store.emailConfig as any).ssl" /> Use SSL
-      </label>
-      <div class="field-row">
-        <label>Username</label>
-        <input v-model="(store.emailConfig as any).username" type="email" />
-      </div>
-      <div class="field-row">
-        <label>Password / App Password</label>
-        <input
-          v-model="emailPasswordInput"
-          type="password"
-          :placeholder="(store.emailConfig as any).password_set ? '••••••• (saved — enter new to change)' : 'Password'"
-        />
-        <span class="field-hint">Gmail: use an App Password. Tip: type ${ENV_VAR_NAME} to use an environment variable.</span>
-      </div>
-      <div class="field-row">
-        <label>Sent Folder</label>
-        <input v-model="(store.emailConfig as any).sent_folder" placeholder="[Gmail]/Sent Mail" />
-      </div>
-      <div class="field-row">
-        <label>Lookback Days</label>
-        <input v-model.number="(store.emailConfig as any).lookback_days" type="number" placeholder="30" />
-      </div>
-      <div class="form-actions">
-        <button @click="handleSaveEmail()" :disabled="store.emailSaving" class="btn-primary">
-          {{ store.emailSaving ? 'Saving…' : 'Save Email Config' }}
-        </button>
-        <button @click="handleTestEmail" class="btn-secondary">Test Connection</button>
-        <span v-if="emailTestResult !== null" :class="emailTestResult ? 'test-ok' : 'test-fail'">
-          {{ emailTestResult ? '✓ Connected' : '✗ Failed' }}
-        </span>
-        <p v-if="store.emailError" class="error">{{ store.emailError }}</p>
-      </div>
-    </section>
-
-    <!-- Integrations -->
-    <section class="form-section">
-      <h3>Integrations</h3>
-      <div v-if="store.integrations.length === 0" class="empty-note">No integrations registered.</div>
-      <div v-for="integration in store.integrations" :key="integration.id" class="integration-card">
-        <div class="integration-header">
-          <span class="integration-name">{{ integration.name }}</span>
-          <div class="integration-badges">
-            <span v-if="!meetsRequiredTier(integration.tier_required)" class="tier-badge">
-              Requires {{ integration.tier_required }}
-            </span>
-            <span :class="['status-badge', integration.connected ? 'badge-connected' : 'badge-disconnected']">
-              {{ integration.connected ? 'Connected' : 'Disconnected' }}
-            </span>
-          </div>
-        </div>
-        <!-- Locked state for insufficient tier -->
-        <div v-if="!meetsRequiredTier(integration.tier_required)" class="tier-locked">
-          <p>Upgrade to {{ integration.tier_required }} to use this integration.</p>
-        </div>
-        <!-- Normal state for sufficient tier -->
-        <template v-else>
-          <div v-if="!integration.connected" class="integration-form">
-            <div v-for="field in integration.fields" :key="field.key" class="field-row">
-              <label>{{ field.label }}</label>
-              <input v-model="integrationInputs[integration.id + ':' + field.key]"
-                     :type="field.type === 'password' ? 'password' : 'text'" />
-            </div>
-            <div class="form-actions">
-              <button @click="handleConnect(integration.id)" class="btn-primary">Connect</button>
-              <button @click="handleTest(integration.id)" class="btn-secondary">Test</button>
-              <span v-if="store.integrationResults[integration.id]" :class="store.integrationResults[integration.id].ok ? 'test-ok' : 'test-fail'">
-                {{ store.integrationResults[integration.id].ok ? '✓ OK' : '✗ ' + store.integrationResults[integration.id].error }}
-              </span>
-            </div>
-          </div>
-          <div v-else>
-            <button @click="store.disconnectIntegration(integration.id)" class="btn-danger">Disconnect</button>
-          </div>
-        </template>
       </div>
     </section>
 
@@ -239,6 +172,7 @@ import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSystemStore } from '../../stores/settings/system'
 import { useAppConfigStore } from '../../stores/appConfig'
+import { useApiFetch } from '../../composables/useApi'
 
 const store = useSystemStore()
 const config = useAppConfigStore()
@@ -287,108 +221,158 @@ async function handleConfirmByok() {
   byokConfirmed.value = false
 }
 
-const emailTestResult = ref<boolean | null>(null)
-const emailPasswordInput = ref('')
-const integrationInputs = ref<Record<string, string>>({})
-async function handleTestEmail() {
-  const result = await store.testEmail()
-  emailTestResult.value = result?.ok ?? false
+// ── Custom cover letter model ─────────────────────────────────────────────────
+const coverLetterModel = ref('')
+const ollamaModels     = ref<string[]>([])
+const clmSaving        = ref(false)
+const clmError         = ref<string | null>(null)
+const clmSaved         = ref(false)
+
+async function loadCoverLetterModel() {
+  const { data } = await useApiFetch<{ model: string }>('/api/settings/llm/cover-letter-model')
+  if (data) coverLetterModel.value = data.model ?? ''
+  const { data: mData } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
+  if (mData) ollamaModels.value = mData.models ?? []
 }
 
-async function handleSaveEmail() {
-  const payload = { ...store.emailConfig, password: emailPasswordInput.value || undefined }
-  await store.saveEmailWithPassword(payload)
-}
-
-async function handleConnect(id: string) {
-  const integration = store.integrations.find(i => i.id === id)
-  if (!integration) return
-  const credentials: Record<string, string> = {}
-  for (const field of integration.fields) {
-    credentials[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
-  }
-  await store.connectIntegration(id, credentials)
-}
-
-async function handleTest(id: string) {
-  const integration = store.integrations.find(i => i.id === id)
-  if (!integration) return
-  const credentials: Record<string, string> = {}
-  for (const field of integration.fields) {
-    credentials[field.key] = integrationInputs.value[`${id}:${field.key}`] ?? ''
-  }
-  await store.testIntegration(id, credentials)
+async function saveCoverLetterModel() {
+  clmSaving.value = true
+  clmError.value  = null
+  clmSaved.value  = false
+  const { error } = await useApiFetch('/api/settings/llm/cover-letter-model', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: coverLetterModel.value }),
+  })
+  clmSaving.value = false
+  if (error) { clmError.value = 'Failed to save model.'; return }
+  clmSaved.value = true
+  setTimeout(() => { clmSaved.value = false }, 3000)
 }
 
 onMounted(async () => {
   await store.loadLlm()
-  await Promise.all([
+  const tasks = [
     store.loadServices(),
-    store.loadEmail(),
-    store.loadIntegrations(),
     store.loadFilePaths(),
     store.loadDeployConfig(),
-  ])
+  ]
+  if (config.isCloud && tierOrder.indexOf(tier.value) >= tierOrder.indexOf('paid')) {
+    tasks.push(loadCoverLetterModel())
+  }
+  await Promise.all(tasks)
 })
 </script>
 
 <style scoped>
-.system-settings { max-width: 720px; margin: 0 auto; padding: var(--space-4, 24px); }
-h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 6px; color: var(--color-text-primary, #e2e8f0); }
-h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3, 16px); color: var(--color-text-primary, #e2e8f0); }
-.tab-note { font-size: 0.82rem; color: var(--color-text-secondary, #94a3b8); margin-bottom: var(--space-6, 32px); }
-.form-section { margin-bottom: var(--space-8, 48px); padding-bottom: var(--space-6, 32px); border-bottom: 1px solid var(--color-border, rgba(255,255,255,0.08)); }
-.section-note { font-size: 0.78rem; color: var(--color-text-secondary, #94a3b8); margin-bottom: 14px; }
+.system-settings { max-width: 720px; margin: 0 auto; padding: var(--space-4); }
+h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 6px; }
+h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
+.tab-note { font-size: 0.82rem; color: var(--color-text-muted); margin-bottom: var(--space-6); }
+.form-section { margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--color-border); }
+.section-note { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 14px; }
 .backend-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
-.backend-card { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--color-surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-radius: 8px; cursor: grab; user-select: none; }
+.backend-card { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 8px; cursor: grab; user-select: none; }
 .backend-card:active { cursor: grabbing; }
-.drag-handle { font-size: 1.1rem; color: var(--color-text-secondary, #64748b); }
-.priority-badge { width: 22px; height: 22px; border-radius: 50%; background: rgba(124,58,237,0.2); color: var(--color-accent, #a78bfa); font-size: 0.72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.backend-id { flex: 1; font-size: 0.9rem; font-family: monospace; color: var(--color-text-primary, #e2e8f0); }
-.toggle-label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.82rem; color: var(--color-text-secondary, #94a3b8); }
-.form-actions { display: flex; align-items: center; gap: var(--space-4, 24px); }
-.btn-primary { padding: 9px 24px; background: var(--color-accent, #7c3aed); color: #fff; border: none; border-radius: 7px; font-size: 0.9rem; cursor: pointer; font-weight: 600; }
+.drag-handle { font-size: 1.1rem; color: var(--color-text-muted); }
+.priority-badge { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--color-accent) 20%, transparent); color: var(--color-accent); font-size: 0.72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.backend-id { flex: 1; font-size: 0.9rem; font-family: monospace; color: var(--color-text); }
+.toggle-label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.82rem; color: var(--color-text-muted); }
+.form-actions { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.btn-primary { padding: 9px 24px; background: var(--color-accent); color: var(--color-text-inverse); border: none; border-radius: 7px; font-size: 0.9rem; cursor: pointer; font-weight: 600; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-cancel { padding: 9px 18px; background: transparent; border: 1px solid var(--color-border, rgba(255,255,255,0.2)); border-radius: 7px; color: var(--color-text-secondary, #94a3b8); cursor: pointer; font-size: 0.9rem; }
-.error-banner { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; color: #ef4444; padding: 10px 14px; margin-bottom: 20px; font-size: 0.85rem; }
-.error { color: #ef4444; font-size: 0.82rem; }
+.btn-cancel { padding: 9px 18px; background: transparent; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text-muted); cursor: pointer; font-size: 0.9rem; }
+.error-banner {
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+  border-radius: 6px; color: var(--color-error); padding: 10px 14px; margin-bottom: 20px; font-size: 0.85rem;
+}
+.error { color: var(--color-error); font-size: 0.82rem; }
 /* BYOK Modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 9999; }
-.modal-card { background: var(--color-surface-1, #1e293b); border: 1px solid var(--color-border, rgba(255,255,255,0.12)); border-radius: 12px; padding: 28px; max-width: 480px; width: 90%; }
-.modal-card h3 { font-size: 1.1rem; margin-bottom: 12px; color: var(--color-text-primary, #e2e8f0); }
-.modal-card p { font-size: 0.88rem; color: var(--color-text-secondary, #94a3b8); margin-bottom: 12px; }
-.modal-card ul { margin: 8px 0 16px 20px; font-size: 0.88rem; color: var(--color-text-primary, #e2e8f0); }
-.byok-warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 6px; padding: 10px 12px; color: #fbbf24 !important; }
-.checkbox-row { display: flex; align-items: flex-start; gap: 8px; font-size: 0.85rem; color: var(--color-text-primary, #e2e8f0); cursor: pointer; margin: 16px 0; }
+.modal-card { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 12px; padding: 28px; max-width: 480px; width: 90%; }
+.modal-card h3 { font-size: 1.1rem; margin-bottom: 12px; }
+.modal-card p { font-size: 0.88rem; color: var(--color-text-muted); margin-bottom: 12px; }
+.modal-card ul { margin: 8px 0 16px 20px; font-size: 0.88rem; color: var(--color-text); }
+.byok-warning {
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+  border-radius: 6px; padding: 10px 12px; color: var(--color-warning) !important;
+}
+.checkbox-row { display: flex; align-items: flex-start; gap: 8px; font-size: 0.85rem; color: var(--color-text); cursor: pointer; margin: 16px 0; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 .service-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.service-card { background: var(--color-surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-radius: 8px; padding: 14px; }
+.service-card { background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; }
 .service-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .service-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.dot-running { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
-.dot-stopped { background: #64748b; }
-.service-name { font-weight: 600; font-size: 0.88rem; color: var(--color-text-primary, #e2e8f0); }
-.service-port { font-size: 0.75rem; color: var(--color-text-secondary, #64748b); font-family: monospace; }
-.service-note { font-size: 0.75rem; color: var(--color-text-secondary, #94a3b8); margin-bottom: 10px; }
+.dot-running { background: var(--color-success); box-shadow: 0 0 6px color-mix(in srgb, var(--color-success) 50%, transparent); }
+.dot-stopped { background: var(--color-text-muted); }
+.service-name { font-weight: 600; font-size: 0.88rem; color: var(--color-text); }
+.service-port { font-size: 0.75rem; color: var(--color-text-muted); font-family: monospace; }
+.service-note { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 10px; }
 .service-actions { display: flex; gap: 6px; }
-.btn-start { padding: 4px 12px; border-radius: 4px; background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); cursor: pointer; font-size: 0.78rem; }
-.btn-stop { padding: 4px 12px; border-radius: 4px; background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); cursor: pointer; font-size: 0.78rem; }
+.btn-start {
+  padding: 4px 12px; border-radius: 4px;
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
+  cursor: pointer; font-size: 0.78rem;
+}
+.btn-stop {
+  padding: 4px 12px; border-radius: 4px;
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+  color: var(--color-error);
+  border: 1px solid color-mix(in srgb, var(--color-error) 20%, transparent);
+  cursor: pointer; font-size: 0.78rem;
+}
 .field-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
-.field-row label { font-size: 0.82rem; color: var(--color-text-secondary, #94a3b8); }
-.field-row input { background: var(--color-surface-2, rgba(255,255,255,0.05)); border: 1px solid var(--color-border, rgba(255,255,255,0.12)); border-radius: 6px; color: var(--color-text-primary, #e2e8f0); padding: 7px 10px; font-size: 0.88rem; }
-.field-hint { font-size: 0.72rem; color: var(--color-text-secondary, #64748b); margin-top: 3px; }
-.btn-secondary { padding: 9px 18px; background: transparent; border: 1px solid var(--color-border, rgba(255,255,255,0.2)); border-radius: 7px; color: var(--color-text-secondary, #94a3b8); cursor: pointer; font-size: 0.88rem; }
-.btn-danger { padding: 6px 14px; border-radius: 6px; background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); cursor: pointer; font-size: 0.82rem; }
-.test-ok { color: #22c55e; font-size: 0.85rem; }
-.test-fail { color: #ef4444; font-size: 0.85rem; }
-.integration-card { background: var(--color-surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
-.integration-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.integration-name { font-weight: 600; font-size: 0.9rem; color: var(--color-text-primary, #e2e8f0); }
-.status-badge { font-size: 0.72rem; padding: 2px 8px; border-radius: 10px; }
-.badge-connected { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
-.badge-disconnected { background: rgba(100,116,139,0.15); color: #94a3b8; border: 1px solid rgba(100,116,139,0.2); }
-.empty-note { font-size: 0.85rem; color: var(--color-text-secondary, #94a3b8); padding: 16px 0; }
-.tier-badge { font-size: 0.68rem; padding: 2px 7px; border-radius: 8px; background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); margin-right: 6px; }
-.tier-locked { padding: 12px 0; font-size: 0.85rem; color: var(--color-text-secondary, #94a3b8); }
-.integration-badges { display: flex; align-items: center; gap: 4px; }
+.field-row label { font-size: 0.82rem; color: var(--color-text-muted); }
+.field-row input { background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); padding: 7px 10px; font-size: 0.88rem; }
+.field-hint { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 3px; }
+.btn-secondary { padding: 9px 18px; background: transparent; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text-muted); cursor: pointer; font-size: 0.88rem; }
+.btn-danger {
+  padding: 6px 14px; border-radius: 6px;
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+  color: var(--color-error);
+  border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
+  cursor: pointer; font-size: 0.82rem;
+}
+.test-ok { color: var(--color-success); font-size: 0.85rem; }
+.test-fail { color: var(--color-error); font-size: 0.85rem; }
+
+.field-select {
+  flex: 1;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  min-width: 0;
+}
+.field-select:focus-visible {
+  outline: 2px solid var(--app-primary);
+  border-color: var(--app-primary);
+}
+
+.btn-save-inline {
+  background: var(--app-primary);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-save-inline:disabled { opacity: 0.6; cursor: default; }
+.btn-save-inline:hover:not(:disabled) { background: var(--app-primary-hover); }
+
+.success {
+  color: var(--color-success);
+  font-size: var(--text-sm);
+  margin: var(--space-1) 0 0;
+}
 </style>
