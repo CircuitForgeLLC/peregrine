@@ -16,7 +16,7 @@ import subprocess
 import sys
 import threading
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List
 from urllib.parse import urlparse
@@ -230,6 +230,28 @@ def _row_to_job(row) -> dict:
     return d
 
 
+def _shadow_score(date_posted: str | None, date_found: str | None) -> str | None:
+    """Return 'shadow', 'stale', or None based on posting age when discovered.
+
+    A job posted >30 days before discovery is a shadow candidate (posted to
+    satisfy legal/HR requirements, likely already filled). 14-30 days is stale.
+    Returns None when dates are unavailable.
+    """
+    if not date_posted or not date_found:
+        return None
+    try:
+        posted = datetime.fromisoformat(date_posted.replace("Z", "+00:00")).replace(tzinfo=timezone.utc)
+        found  = datetime.fromisoformat(date_found.replace("Z", "+00:00")).replace(tzinfo=timezone.utc)
+        days = (found - posted).days
+        if days >= 30:
+            return "shadow"
+        if days >= 14:
+            return "stale"
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
 # ── GET /api/jobs ─────────────────────────────────────────────────────────────
 
 @app.get("/api/jobs")
@@ -237,7 +259,7 @@ def list_jobs(status: str = "pending", limit: int = 50, fields: str = ""):
     db = _get_db()
     rows = db.execute(
         "SELECT id, title, company, url, source, location, is_remote, salary, "
-        "description, match_score, keyword_gaps, date_found, status, cover_letter "
+        "description, match_score, keyword_gaps, date_found, date_posted, status, cover_letter "
         "FROM jobs WHERE status = ? ORDER BY match_score DESC NULLS LAST LIMIT ?",
         (status, limit),
     ).fetchall()
@@ -246,7 +268,7 @@ def list_jobs(status: str = "pending", limit: int = 50, fields: str = ""):
     for r in rows:
         d = _row_to_job(r)
         d["has_cover_letter"] = bool(d.get("cover_letter"))
-        # Don't send full cover_letter text in the list view
+        d["shadow_score"] = _shadow_score(d.get("date_posted"), d.get("date_found"))
         d.pop("cover_letter", None)
         result.append(d)
     return result
@@ -1490,6 +1512,65 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload):
         raise HTTPException(500, f"LLM generation failed: {e}")
 
 
+# ── POST /api/jobs/:id/hired-feedback ─────────────────────────────────────────
+
+class HiredFeedbackPayload(BaseModel):
+    what_helped: str = ""
+    factors: list[str] = []
+
+@app.post("/api/jobs/{job_id}/hired-feedback")
+def save_hired_feedback(job_id: int, payload: HiredFeedbackPayload):
+    db = _get_db()
+    row = db.execute("SELECT status FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Job not found")
+    if row["status"] != "hired":
+        raise HTTPException(400, "Feedback only accepted for hired jobs")
+    db.execute(
+        "UPDATE jobs SET hired_feedback = ? WHERE id = ?",
+        (json.dumps({"what_helped": payload.what_helped, "factors": payload.factors}), job_id),
+    )
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+
+# ── GET /api/contacts ──────────────────────────────────────────────────────────
+
+@app.get("/api/contacts")
+def list_contacts(job_id: Optional[int] = None, direction: Optional[str] = None,
+                  search: Optional[str] = None, limit: int = 100, offset: int = 0):
+    db = _get_db()
+    query = """
+        SELECT jc.id, jc.job_id, jc.direction, jc.subject, jc.from_addr, jc.to_addr,
+               jc.received_at, jc.stage_signal,
+               j.title AS job_title, j.company AS job_company
+        FROM job_contacts jc
+        LEFT JOIN jobs j ON j.id = jc.job_id
+        WHERE 1=1
+    """
+    params: list = []
+    if job_id is not None:
+        query += " AND jc.job_id = ?"
+        params.append(job_id)
+    if direction:
+        query += " AND jc.direction = ?"
+        params.append(direction)
+    if search:
+        query += " AND (jc.from_addr LIKE ? OR jc.to_addr LIKE ? OR jc.subject LIKE ?)"
+        like = f"%{search}%"
+        params += [like, like, like]
+    query += " ORDER BY jc.received_at DESC LIMIT ? OFFSET ?"
+    params += [limit, offset]
+    rows = db.execute(query, params).fetchall()
+    total = db.execute(
+        "SELECT COUNT(*) FROM job_contacts" + (" WHERE job_id = ?" if job_id else ""),
+        ([job_id] if job_id else []),
+    ).fetchone()[0]
+    db.close()
+    return {"total": total, "contacts": [dict(r) for r in rows]}
+
+
 # ── GET /api/interviews ────────────────────────────────────────────────────────
 
 PIPELINE_STATUSES = {
@@ -1509,7 +1590,7 @@ def list_interviews():
         f"SELECT id, title, company, url, location, is_remote, salary, "
         f"match_score, keyword_gaps, status, "
         f"interview_date, rejection_stage, "
-        f"applied_at, phone_screen_at, interviewing_at, offer_at, hired_at, survey_at "
+        f"applied_at, phone_screen_at, interviewing_at, offer_at, hired_at, survey_at, hired_feedback "
         f"FROM jobs WHERE status IN ({placeholders}) "
         f"ORDER BY match_score DESC NULLS LAST",
         list(PIPELINE_STATUSES),

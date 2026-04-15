@@ -96,6 +96,7 @@ import {
   NewspaperIcon,
   Cog6ToothIcon,
   DocumentTextIcon,
+  UsersIcon,
 } from '@heroicons/vue/24/outline'
 
 import { useDigestStore } from '../stores/digest'
@@ -155,6 +156,7 @@ const navLinks = computed(() => [
   { to: '/apply',      icon: PencilSquareIcon,           label: 'Apply' },
   { to: '/resumes',    icon: DocumentTextIcon,           label: 'Resumes' },
   { to: '/interviews', icon: CalendarDaysIcon,           label: 'Interviews' },
+  { to: '/contacts',   icon: UsersIcon,                  label: 'Contacts' },
   { to: '/digest',     icon: NewspaperIcon,              label: 'Digest',
     badge: digestStore.entries.length || undefined },
   { to: '/prep',       icon: LightBulbIcon,              label: 'Interview Prep' },

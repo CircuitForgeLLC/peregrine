@@ -3,19 +3,21 @@ import { ref, computed } from 'vue'
 import { useApiFetch } from '../composables/useApi'
 
 export interface Job {
-  id:           number
-  title:        string
-  company:      string
-  url:          string
-  source:       string | null
-  location:     string | null
-  is_remote:    boolean
-  salary:       string | null
-  description:  string | null
-  match_score:  number | null
-  keyword_gaps: string | null  // JSON-encoded string[]
-  date_found:   string
-  status:       string
+  id:            number
+  title:         string
+  company:       string
+  url:           string
+  source:        string | null
+  location:      string | null
+  is_remote:     boolean
+  salary:        string | null
+  description:   string | null
+  match_score:   number | null
+  keyword_gaps:  string | null  // JSON-encoded string[]
+  date_found:    string
+  date_posted:   string | null
+  shadow_score:  'shadow' | 'stale' | null
+  status:        string
 }
 
 interface UndoEntry {
