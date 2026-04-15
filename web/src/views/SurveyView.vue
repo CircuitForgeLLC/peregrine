@@ -454,11 +454,14 @@ function toggleHistoryEntry(id: number) {
   border: 2px dashed var(--color-border, #e2e8f0);
   margin: var(--space-4);
   border-radius: var(--radius-md, 8px);
-  outline: none;
 }
 
 .screenshot-zone:focus {
-  border-color: var(--color-accent, #3182ce);
+  border-color: var(--color-accent);
+}
+.screenshot-zone:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .drop-hint {

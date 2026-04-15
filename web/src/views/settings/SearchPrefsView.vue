@@ -86,10 +86,16 @@
     <!-- Job Boards -->
     <section class="form-section">
       <h3>Job Boards</h3>
-      <div v-for="board in store.job_boards" :key="board.name" class="board-row">
+      <div v-for="board in store.job_boards" :key="board.name" class="board-row" :class="{ 'board-row--unsupported': board.supported === false }">
         <label class="checkbox-row">
-          <input type="checkbox" :checked="board.enabled" @change="store.toggleBoard(board.name)" />
+          <input
+            type="checkbox"
+            :checked="board.enabled"
+            :disabled="board.supported === false"
+            @change="store.toggleBoard(board.name)"
+          />
           {{ board.name }}
+          <span v-if="board.supported === false" class="board-badge board-badge--pending" title="Not yet implemented — tracked in backlog">coming soon</span>
         </label>
       </div>
       <div class="field-row" style="margin-top: 12px">
@@ -179,37 +185,78 @@ onMounted(() => store.load())
 </script>
 
 <style scoped>
-.search-prefs { max-width: 720px; margin: 0 auto; padding: var(--space-4, 24px); }
-h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: var(--space-6, 32px); color: var(--color-text-primary, #e2e8f0); }
-h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3, 16px); color: var(--color-text-primary, #e2e8f0); }
-.form-section { margin-bottom: var(--space-8, 48px); padding-bottom: var(--space-6, 32px); border-bottom: 1px solid var(--color-border, rgba(255,255,255,0.08)); }
+.search-prefs { max-width: 720px; margin: 0 auto; padding: var(--space-4); }
+h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: var(--space-6); }
+h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
+.form-section { margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--color-border); }
 .remote-options { display: flex; gap: 8px; margin-bottom: 10px; }
-.remote-btn { padding: 8px 18px; border-radius: 6px; border: 1px solid var(--color-border, rgba(255,255,255,0.15)); background: transparent; color: var(--color-text-secondary, #94a3b8); cursor: pointer; font-size: 0.88rem; transition: all 0.15s; }
-.remote-btn.active { background: var(--color-accent, #7c3aed); border-color: var(--color-accent, #7c3aed); color: #fff; }
-.section-note { font-size: 0.78rem; color: var(--color-text-secondary, #94a3b8); margin-top: 8px; }
+.remote-btn { padding: 8px 18px; border-radius: 6px; border: 1px solid var(--color-border); background: transparent; color: var(--color-text-muted); cursor: pointer; font-size: 0.88rem; transition: all 0.15s; }
+.remote-btn.active { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-inverse); }
+.section-note { font-size: 0.78rem; color: var(--color-text-muted); margin-top: 8px; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.tag { padding: 3px 10px; background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.3); border-radius: 12px; font-size: 0.78rem; color: var(--color-accent, #a78bfa); display: flex; align-items: center; gap: 5px; }
+.tag {
+  padding: 3px 10px;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: 12px; font-size: 0.78rem; color: var(--color-accent);
+  display: flex; align-items: center; gap: 5px;
+}
 .tag button { background: none; border: none; color: inherit; cursor: pointer; padding: 0; line-height: 1; }
 .tag-input-row { display: flex; gap: 8px; }
 .tag-input-row input, input[type="text"], input:not([type]) {
-  background: var(--color-surface-2, rgba(255,255,255,0.05));
-  border: 1px solid var(--color-border, rgba(255,255,255,0.12));
-  border-radius: 6px; color: var(--color-text-primary, #e2e8f0);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 6px; color: var(--color-text);
   padding: 7px 10px; font-size: 0.85rem; flex: 1; box-sizing: border-box;
 }
-.btn-suggest { padding: 7px 14px; border-radius: 6px; background: rgba(124,58,237,0.2); border: 1px solid rgba(124,58,237,0.3); color: var(--color-accent, #a78bfa); cursor: pointer; font-size: 0.82rem; white-space: nowrap; }
+.btn-suggest {
+  padding: 7px 14px; border-radius: 6px;
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  color: var(--color-accent); cursor: pointer; font-size: 0.82rem; white-space: nowrap;
+}
 .suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.suggestion-chip { padding: 4px 12px; border-radius: 12px; font-size: 0.78rem; background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); color: var(--color-text-secondary, #94a3b8); cursor: pointer; transition: all 0.15s; }
-.suggestion-chip:hover { background: rgba(124,58,237,0.15); border-color: rgba(124,58,237,0.3); color: var(--color-accent, #a78bfa); }
+.suggestion-chip {
+  padding: 4px 12px; border-radius: 12px; font-size: 0.78rem;
+  background: var(--color-surface-alt);
+  border: 1px dashed var(--color-border);
+  color: var(--color-text-muted); cursor: pointer; transition: all 0.15s;
+}
+.suggestion-chip:hover {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  color: var(--color-accent);
+}
 .board-row { margin-bottom: 8px; }
-.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--color-text-primary, #e2e8f0); cursor: pointer; }
+.board-row--unsupported { opacity: 0.5; }
+.board-row--unsupported input[type="checkbox"] { cursor: not-allowed; }
+
+.board-badge {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  vertical-align: middle;
+}
+.board-badge--pending {
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--color-text); cursor: pointer; }
 .field-row { display: flex; flex-direction: column; gap: 6px; }
-.field-row label { font-size: 0.82rem; color: var(--color-text-secondary, #94a3b8); }
-.blocklist-group { margin-bottom: var(--space-4, 24px); }
-.blocklist-group label { font-size: 0.82rem; color: var(--color-text-secondary, #94a3b8); display: block; margin-bottom: 6px; }
-.form-actions { margin-top: var(--space-6, 32px); display: flex; align-items: center; gap: var(--space-4, 24px); }
-.btn-primary { padding: 9px 24px; background: var(--color-accent, #7c3aed); color: #fff; border: none; border-radius: 7px; font-size: 0.9rem; cursor: pointer; font-weight: 600; }
+.field-row label { font-size: 0.82rem; color: var(--color-text-muted); }
+.blocklist-group { margin-bottom: var(--space-4); }
+.blocklist-group label { font-size: 0.82rem; color: var(--color-text-muted); display: block; margin-bottom: 6px; }
+.form-actions { margin-top: var(--space-6); display: flex; align-items: center; gap: var(--space-4); }
+.btn-primary { padding: 9px 24px; background: var(--color-accent); color: var(--color-text-inverse); border: none; border-radius: 7px; font-size: 0.9rem; cursor: pointer; font-weight: 600; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.error-banner { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; color: #ef4444; padding: 10px 14px; margin-bottom: 20px; font-size: 0.85rem; }
-.error { color: #ef4444; font-size: 0.82rem; }
+.error-banner {
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+  border-radius: 6px; color: var(--color-error); padding: 10px 14px; margin-bottom: 20px; font-size: 0.85rem;
+}
+.error { color: var(--color-error); font-size: 0.82rem; }
 </style>

@@ -301,7 +301,7 @@ def _apply_section_rewrite(resume: dict[str, Any], section: str, rewritten: str)
     elif section == "experience":
         # For experience, we keep the structured entries but replace the bullets.
         # The LLM rewrites the whole section as plain text; we re-parse the bullets.
-        updated["experience"] = _reparse_experience_bullets(resume["experience"], rewritten)
+        updated["experience"] = _reparse_experience_bullets(resume.get("experience", []), rewritten)
     return updated
 
 
@@ -343,6 +343,198 @@ def _reparse_experience_bullets(
         result.append(new_entry)
 
     return result
+
+
+# ── Gap framing ───────────────────────────────────────────────────────────────
+
+def frame_skill_gaps(
+    struct: dict[str, Any],
+    gap_framings: list[dict],
+    job: dict[str, Any],
+    candidate_voice: str = "",
+) -> dict[str, Any]:
+    """Inject honest framing language for skills the candidate doesn't have directly.
+
+    For each gap framing decision the user provided:
+      - mode "adjacent": user has related experience → injects one bridging sentence
+        into the most relevant experience entry's bullets
+      - mode "learning": actively developing the skill → prepends a structured
+        "Developing: X (context)" note to the skills list
+      - mode "skip": no connection at all → no change
+
+    The user-supplied context text is the source of truth. The LLM's job is only
+    to phrase it naturally in resume style — not to invent new claims.
+
+    Args:
+        struct: Resume dict (already processed by apply_review_decisions).
+        gap_framings: List of dicts with keys:
+            skill    — the ATS term the candidate lacks
+            mode     — "adjacent" | "learning" | "skip"
+            context  — candidate's own words describing their related background
+        job: Job dict for role context in prompts.
+        candidate_voice: Free-text style note from user.yaml.
+
+    Returns:
+        New resume dict with framing language injected.
+    """
+    from scripts.llm_router import LLMRouter
+    router = LLMRouter()
+
+    updated = dict(struct)
+    updated["experience"] = [dict(e) for e in (struct.get("experience") or [])]
+
+    adjacent_framings = [f for f in gap_framings if f.get("mode") == "adjacent" and f.get("context")]
+    learning_framings = [f for f in gap_framings if f.get("mode") == "learning" and f.get("context")]
+
+    # ── Adjacent experience: inject bridging sentence into most relevant entry ─
+    for framing in adjacent_framings:
+        skill = framing["skill"]
+        context = framing["context"]
+
+        # Find the experience entry most likely to be relevant (simple keyword match)
+        best_entry_idx = _find_most_relevant_entry(updated["experience"], skill)
+        if best_entry_idx is None:
+            continue
+
+        entry = updated["experience"][best_entry_idx]
+        bullets = list(entry.get("bullets") or [])
+
+        voice_note = (
+            f'\n\nCandidate voice/style: "{candidate_voice}". Match this tone.'
+        ) if candidate_voice else ""
+
+        prompt = (
+            f"You are adding one honest framing sentence to a resume bullet list.\n\n"
+            f"The candidate does not have direct experience with '{skill}', "
+            f"but they have relevant background they described as:\n"
+            f'  "{context}"\n\n'
+            f"Job context: {job.get('title', '')} at {job.get('company', '')}.\n\n"
+            f"RULES:\n"
+            f"1. Add exactly ONE new bullet point that bridges their background to '{skill}'.\n"
+            f"2. Do NOT fabricate anything beyond what their context description says.\n"
+            f"3. Use honest language: 'adjacent experience in', 'strong foundation applicable to', "
+            f"   'directly transferable background in', etc.\n"
+            f"4. Return ONLY the single new bullet text — no prefix, no explanation."
+            f"{voice_note}\n\n"
+            f"Existing bullets for context:\n"
+            + "\n".join(f"  • {b}" for b in bullets[:3])
+        )
+
+        try:
+            new_bullet = router.complete(prompt).strip()
+            new_bullet = re.sub(r"^[•\-–—*◦▪▸►]\s*", "", new_bullet).strip()
+            if new_bullet:
+                bullets.append(new_bullet)
+                new_entry = dict(entry)
+                new_entry["bullets"] = bullets
+                updated["experience"][best_entry_idx] = new_entry
+        except Exception:
+            log.warning(
+                "[resume_optimizer] frame_skill_gaps adjacent failed for skill %r", skill,
+                exc_info=True,
+            )
+
+    # ── Learning framing: add structured note to skills list ──────────────────
+    if learning_framings:
+        skills = list(updated.get("skills") or [])
+        for framing in learning_framings:
+            skill = framing["skill"]
+            context = framing["context"].strip()
+            # Format: "Developing: Kubernetes (strong Docker/container orchestration background)"
+            note = f"Developing: {skill} ({context})" if context else f"Developing: {skill}"
+            if note not in skills:
+                skills.append(note)
+        updated["skills"] = skills
+
+    return updated
+
+
+def _find_most_relevant_entry(
+    experience: list[dict],
+    skill: str,
+) -> int | None:
+    """Return the index of the experience entry most relevant to a skill term.
+
+    Uses simple keyword overlap between the skill and entry title/bullets.
+    Falls back to the most recent (first) entry if no match found.
+    """
+    if not experience:
+        return None
+
+    skill_words = set(skill.lower().split())
+    best_idx = 0
+    best_score = -1
+
+    for i, entry in enumerate(experience):
+        entry_text = (
+            (entry.get("title") or "") + " " +
+            " ".join(entry.get("bullets") or [])
+        ).lower()
+        entry_words = set(entry_text.split())
+        score = len(skill_words & entry_words)
+        if score > best_score:
+            best_score = score
+            best_idx = i
+
+    return best_idx
+
+
+def apply_review_decisions(
+    draft: dict[str, Any],
+    decisions: dict[str, Any],
+) -> dict[str, Any]:
+    """Apply user section-level review decisions to the rewritten struct.
+
+    Handles approved skills, summary accept/reject, and per-entry experience
+    accept/reject. Returns the updated struct; does not call the LLM.
+
+    Args:
+        draft: The review draft dict from build_review_diff (contains
+               "sections" and "rewritten_struct").
+        decisions: Dict of per-section decisions from the review UI:
+            skills:     {"approved_additions": [...]}
+            summary:    {"accepted": bool}
+            experience: {"accepted_entries": [{"title", "company", "accepted"}]}
+
+    Returns:
+        Updated resume struct ready for gap framing and final render.
+    """
+    struct = dict(draft.get("rewritten_struct") or {})
+    sections = draft.get("sections") or []
+
+    # ── Skills: keep original + only approved additions ────────────────────
+    skills_decision = decisions.get("skills", {})
+    approved_additions = set(skills_decision.get("approved_additions") or [])
+    for sec in sections:
+        if sec["section"] == "skills":
+            original_kept = set(sec.get("kept") or [])
+            struct["skills"] = sorted(original_kept | approved_additions)
+            break
+
+    # ── Summary: accept proposed or revert to original ──────────────────────
+    if not decisions.get("summary", {}).get("accepted", True):
+        for sec in sections:
+            if sec["section"] == "summary":
+                struct["career_summary"] = sec.get("original", struct.get("career_summary", ""))
+                break
+
+    # ── Experience: per-entry accept/reject ─────────────────────────────────
+    exp_decisions: dict[str, bool] = {
+        f"{ed.get('title', '')}|{ed.get('company', '')}": ed.get("accepted", True)
+        for ed in (decisions.get("experience", {}).get("accepted_entries") or [])
+    }
+    for sec in sections:
+        if sec["section"] == "experience":
+            for entry_diff in (sec.get("entries") or []):
+                key = f"{entry_diff['title']}|{entry_diff['company']}"
+                if not exp_decisions.get(key, True):
+                    for exp_entry in (struct.get("experience") or []):
+                        if (exp_entry.get("title") == entry_diff["title"] and
+                                exp_entry.get("company") == entry_diff["company"]):
+                            exp_entry["bullets"] = entry_diff["original_bullets"]
+            break
+
+    return struct
 
 
 # ── Hallucination guard ───────────────────────────────────────────────────────
@@ -437,3 +629,207 @@ def render_resume_text(resume: dict[str, Any]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+# ── Review diff builder ────────────────────────────────────────────────────────
+
+def build_review_diff(
+    original: dict[str, Any],
+    rewritten: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a structured diff between original and rewritten resume for the review UI.
+
+    Returns a dict with:
+      sections: list of per-section diffs
+      rewritten_struct: the full rewritten resume dict (used by finalize endpoint)
+
+    Each section diff has:
+      section: "skills" | "summary" | "experience"
+      type: "skills_diff" | "text_diff" | "bullets_diff"
+      For skills_diff:
+        added: list of new skill strings (each requires user approval)
+        removed: list of removed skill strings
+        kept: list of unchanged skills
+      For text_diff (summary):
+        original: str
+        proposed: str
+      For bullets_diff (experience):
+        entries: list of {title, company, original_bullets, proposed_bullets}
+    """
+    sections = []
+
+    # ── Skills diff ────────────────────────────────────────────────────────
+    orig_skills = set(s.strip() for s in (original.get("skills") or []))
+    new_skills  = set(s.strip() for s in (rewritten.get("skills") or []))
+
+    added   = sorted(new_skills - orig_skills)
+    removed = sorted(orig_skills - new_skills)
+    kept    = sorted(orig_skills & new_skills)
+
+    if added or removed:
+        sections.append({
+            "section": "skills",
+            "type":    "skills_diff",
+            "added":   added,
+            "removed": removed,
+            "kept":    kept,
+        })
+
+    # ── Summary diff ───────────────────────────────────────────────────────
+    orig_summary = (original.get("career_summary") or "").strip()
+    new_summary  = (rewritten.get("career_summary") or "").strip()
+
+    if orig_summary != new_summary and new_summary:
+        sections.append({
+            "section":  "summary",
+            "type":     "text_diff",
+            "original": orig_summary,
+            "proposed": new_summary,
+        })
+
+    # ── Experience diff ────────────────────────────────────────────────────
+    orig_exp = original.get("experience") or []
+    new_exp  = rewritten.get("experience") or []
+
+    entry_diffs = []
+    for orig_entry, new_entry in zip(orig_exp, new_exp):
+        orig_bullets = orig_entry.get("bullets") or []
+        new_bullets  = new_entry.get("bullets") or []
+        if orig_bullets != new_bullets:
+            entry_diffs.append({
+                "title":            orig_entry.get("title", ""),
+                "company":          orig_entry.get("company", ""),
+                "original_bullets": orig_bullets,
+                "proposed_bullets": new_bullets,
+            })
+
+    if entry_diffs:
+        sections.append({
+            "section": "experience",
+            "type":    "bullets_diff",
+            "entries": entry_diffs,
+        })
+
+    return {
+        "sections":         sections,
+        "rewritten_struct": rewritten,
+    }
+
+
+# ── PDF export ─────────────────────────────────────────────────────────────────
+
+def export_pdf(resume: dict[str, Any], output_path: str) -> None:
+    """Render a structured resume dict to a clean PDF using reportlab.
+
+    Uses a single-column layout with section headers, consistent spacing,
+    and a readable sans-serif body font suitable for ATS submission.
+
+    Args:
+        resume: Structured resume dict (same format as resume_parser output).
+        output_path: Absolute path for the output .pdf file.
+    """
+    from reportlab.lib.pagesizes import LETTER
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.lib import colors
+
+    MARGIN = 0.75 * inch
+
+    name_style = ParagraphStyle(
+        "name", fontName="Helvetica-Bold", fontSize=16, leading=20,
+        alignment=TA_CENTER, spaceAfter=2,
+    )
+    contact_style = ParagraphStyle(
+        "contact", fontName="Helvetica", fontSize=9, leading=12,
+        alignment=TA_CENTER, spaceAfter=6,
+        textColor=colors.HexColor("#555555"),
+    )
+    section_style = ParagraphStyle(
+        "section", fontName="Helvetica-Bold", fontSize=10, leading=14,
+        spaceBefore=10, spaceAfter=2,
+        textColor=colors.HexColor("#1a1a2e"),
+    )
+    body_style = ParagraphStyle(
+        "body", fontName="Helvetica", fontSize=9, leading=13, alignment=TA_LEFT,
+    )
+    role_style = ParagraphStyle(
+        "role", fontName="Helvetica-Bold", fontSize=9, leading=13,
+    )
+    meta_style = ParagraphStyle(
+        "meta", fontName="Helvetica-Oblique", fontSize=8, leading=12,
+        textColor=colors.HexColor("#555555"), spaceAfter=2,
+    )
+    bullet_style = ParagraphStyle(
+        "bullet", fontName="Helvetica", fontSize=9, leading=13, leftIndent=12,
+    )
+
+    def hr():
+        return HRFlowable(width="100%", thickness=0.5,
+                          color=colors.HexColor("#cccccc"),
+                          spaceAfter=4, spaceBefore=2)
+
+    story = []
+
+    if resume.get("name"):
+        story.append(Paragraph(resume["name"], name_style))
+
+    contact_parts = [p for p in (
+        resume.get("email", ""), resume.get("phone", ""),
+        resume.get("location", ""), resume.get("linkedin", ""),
+    ) if p]
+    if contact_parts:
+        story.append(Paragraph("  |  ".join(contact_parts), contact_style))
+
+    story.append(hr())
+
+    summary = (resume.get("career_summary") or "").strip()
+    if summary:
+        story.append(Paragraph("SUMMARY", section_style))
+        story.append(hr())
+        story.append(Paragraph(summary, body_style))
+        story.append(Spacer(1, 4))
+
+    if resume.get("experience"):
+        story.append(Paragraph("EXPERIENCE", section_style))
+        story.append(hr())
+        for exp in resume["experience"]:
+            dates = f"{exp.get('start_date', '')}–{exp.get('end_date', '')}"
+            story.append(Paragraph(
+                f"{exp.get('title', '')}  |  {exp.get('company', '')}", role_style
+            ))
+            story.append(Paragraph(dates, meta_style))
+            for bullet in (exp.get("bullets") or []):
+                story.append(Paragraph(f"• {bullet}", bullet_style))
+            story.append(Spacer(1, 4))
+
+    if resume.get("education"):
+        story.append(Paragraph("EDUCATION", section_style))
+        story.append(hr())
+        for edu in resume["education"]:
+            degree = f"{edu.get('degree', '')} {edu.get('field', '')}".strip()
+            story.append(Paragraph(
+                f"{degree}  |  {edu.get('institution', '')}  {edu.get('graduation_year', '')}".strip(),
+                body_style,
+            ))
+        story.append(Spacer(1, 4))
+
+    if resume.get("skills"):
+        story.append(Paragraph("SKILLS", section_style))
+        story.append(hr())
+        story.append(Paragraph(", ".join(resume["skills"]), body_style))
+        story.append(Spacer(1, 4))
+
+    if resume.get("achievements"):
+        story.append(Paragraph("ACHIEVEMENTS", section_style))
+        story.append(hr())
+        for a in resume["achievements"]:
+            story.append(Paragraph(f"• {a}", bullet_style))
+
+    doc = SimpleDocTemplate(
+        output_path, pagesize=LETTER,
+        leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=MARGIN, bottomMargin=MARGIN,
+    )
+    doc.build(story)

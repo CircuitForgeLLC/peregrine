@@ -30,8 +30,10 @@ from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Allow importing peregrine scripts for cover letter generation
-PEREGRINE_ROOT = Path("/Library/Development/CircuitForge/peregrine")
+# Allow importing peregrine scripts for cover letter generation.
+# Resolved from __file__ so it works both in Docker (/app) and on the dev
+# machine (/Library/Development/CircuitForge/peregrine) without hardcoding.
+PEREGRINE_ROOT = Path(__file__).resolve().parent
 if str(PEREGRINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PEREGRINE_ROOT))
 
@@ -125,6 +127,10 @@ async def cloud_session_middleware(request: Request, call_next):
         user_id = _resolve_cf_user_id(cookie_header)
         if user_id:
             user_db = str(_CLOUD_DATA_ROOT / user_id / "peregrine" / "staging.db")
+            if user_db not in _migrated_db_paths:
+                from scripts.db_migrate import migrate_db
+                migrate_db(Path(user_db))
+                _migrated_db_paths.add(user_db)
             token = _request_db.set(user_db)
             try:
                 return await call_next(request)
@@ -133,8 +139,15 @@ async def cloud_session_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+_migrated_db_paths: set[str] = set()
+
+
 def _get_db():
     path = _request_db.get() or DB_PATH
+    if path not in _migrated_db_paths:
+        from scripts.db_migrate import migrate_db
+        migrate_db(Path(path))
+        _migrated_db_paths.add(path)
     db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row
     return db
@@ -364,7 +377,7 @@ def generate_cover_letter(job_id: int):
     try:
         from scripts.task_runner import submit_task
         task_id, is_new = submit_task(
-            db_path=Path(DB_PATH),
+            db_path=Path(_request_db.get() or DB_PATH),
             task_type="cover_letter",
             job_id=job_id,
         )
@@ -415,7 +428,7 @@ def get_research_brief(job_id: int):
 def generate_research(job_id: int):
     try:
         from scripts.task_runner import submit_task
-        task_id, is_new = submit_task(db_path=Path(DB_PATH), task_type="company_research", job_id=job_id)
+        task_id, is_new = submit_task(db_path=Path(_request_db.get() or DB_PATH), task_type="company_research", job_id=job_id)
         return {"task_id": task_id, "is_new": is_new}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -443,7 +456,7 @@ def get_optimized_resume(job_id: int):
     """Return the current optimized resume and ATS gap report for a job."""
     from scripts.db import get_optimized_resume as _get
     import json
-    result = _get(db_path=Path(DB_PATH), job_id=job_id)
+    result = _get(db_path=Path(_request_db.get() or DB_PATH), job_id=job_id)
     gap_report = result.get("ats_gap_report", "")
     try:
         gap_report_parsed = json.loads(gap_report) if gap_report else []
@@ -471,7 +484,7 @@ def generate_optimized_resume(job_id: int, body: ResumeOptimizeBody):
         from scripts.task_runner import submit_task
         params = json.dumps({"full_rewrite": body.full_rewrite})
         task_id, is_new = submit_task(
-            db_path=Path(DB_PATH),
+            db_path=Path(_request_db.get() or DB_PATH),
             task_type="resume_optimize",
             job_id=job_id,
             params=params,
@@ -497,6 +510,626 @@ def resume_optimizer_task_status(job_id: int):
     return {"status": row["status"], "stage": row["stage"], "message": row["error"]}
 
 
+@app.get("/api/jobs/{job_id}/resume_optimizer/review")
+def get_resume_review(job_id: int):
+    """Return the pending review draft for this job (populated when task is awaiting_review)."""
+    from scripts.db import get_resume_draft as _get_draft
+    draft = _get_draft(db_path=Path(_request_db.get() or DB_PATH), job_id=job_id)
+    if not draft:
+        return {"draft": None}
+    return {"draft": draft}
+
+
+class GapFramingDecision(BaseModel):
+    skill: str
+    # "adjacent" — has related experience, inject bridging sentence into bullets
+    # "learning" — actively developing the skill, add structured note to skills list
+    # "skip"     — no connection, omit entirely
+    mode: str = "skip"
+    context: str = ""  # candidate's own words; required for adjacent/learning
+
+
+class ResumeReviewBody(BaseModel):
+    # Per-section decisions.  Keys are section names; values are section-type-specific.
+    # skills:     {"approved_additions": [...]}
+    # summary:    {"accepted": bool}
+    # experience: {"accepted_entries": [{"title": str, "company": str, "accepted": bool}]}
+    decisions: dict
+    # One entry per rejected skill, describing how to frame the gap honestly.
+    gap_framings: list[GapFramingDecision] = []
+
+
+@app.post("/api/jobs/{job_id}/resume_optimizer/review")
+def preview_resume_review(job_id: int, body: ResumeReviewBody):
+    """Apply review decisions + gap framings and return the assembled resume for preview.
+
+    Does NOT save yet — the user sees the full assembled resume and confirms
+    via POST /approve before anything is persisted.
+
+    Flow:
+      1. apply_review_decisions() — merges approved skills, summary, experience choices
+      2. frame_skill_gaps()       — injects adjacent/learning framing for rejected skills
+      3. render_resume_text()     — renders to plain text for the preview panel
+      Returns: {preview_text, preview_struct} — struct preserved for the approve step.
+    """
+    import json as _json
+    from scripts.db import get_resume_draft as _get_draft
+    from scripts.resume_optimizer import (
+        apply_review_decisions, frame_skill_gaps, render_resume_text,
+    )
+
+    db_path = Path(_request_db.get() or DB_PATH)
+    draft = _get_draft(db_path=db_path, job_id=job_id)
+    if not draft:
+        raise HTTPException(404, "No pending review draft for this job")
+
+    # Step 1: apply section-level decisions
+    struct = apply_review_decisions(draft, body.decisions)
+
+    # Step 2: inject gap framing for rejected skills (adjacent / learning)
+    framings = [f.model_dump() for f in body.gap_framings if f.mode in ("adjacent", "learning")]
+    if framings:
+        db_path_obj = Path(_request_db.get() or DB_PATH)
+        job_row = _get_db().execute(
+            "SELECT title, company FROM jobs WHERE id=?", (job_id,)
+        ).fetchone()
+        _get_db().close()
+        job = {"title": job_row[0], "company": job_row[1]} if job_row else {}
+
+        from scripts.user_profile import UserProfile
+        from app.cloud_session import get_config_dir
+        _user_yaml = get_config_dir() / "user.yaml"
+        candidate_voice = UserProfile(_user_yaml).candidate_voice if UserProfile.exists(_user_yaml) else ""
+
+        struct = frame_skill_gaps(struct, framings, job, candidate_voice)
+
+    preview_text = render_resume_text(struct)
+    return {"preview_text": preview_text, "preview_struct": struct}
+
+
+@app.post("/api/jobs/{job_id}/resume_optimizer/approve")
+def approve_resume(job_id: int, body: dict):
+    """Save the user-approved assembled resume struct and mark the task complete.
+
+    Expects body: {"preview_struct": {...}}  — the struct returned by /review.
+    Saves both the rendered plain text and the struct (for YAML export).
+    """
+    import json as _json
+    from scripts.db import finalize_resume as _finalize
+
+    db_path = Path(_request_db.get() or DB_PATH)
+    struct = body.get("preview_struct")
+    if not struct:
+        raise HTTPException(400, "preview_struct is required")
+
+    from scripts.resume_optimizer import render_resume_text
+    final_text = render_resume_text(struct)
+
+    # Persist plain text + struct (struct enables YAML export later)
+    _finalize(db_path=db_path, job_id=job_id, final_text=final_text)
+
+    # Store struct alongside the text so YAML round-trip is possible
+    db = _get_db()
+    db.execute(
+        "UPDATE jobs SET resume_final_struct=? WHERE id=?",
+        (_json.dumps(struct), job_id),
+    )
+    db.execute(
+        "UPDATE background_tasks SET status='completed', updated_at=datetime('now') "
+        "WHERE task_type='resume_optimize' AND job_id=? AND status='awaiting_review'",
+        (job_id,),
+    )
+    db.commit()
+    db.close()
+
+    saved_resume_id: int | None = None
+    if body.get("save_to_library"):
+        from scripts.db import create_resume as _create_r
+        import json as _json2
+        resume_name = (body.get("resume_name") or "").strip() or f"Optimized for job {job_id}"
+        saved = _create_r(
+            db_path,
+            name=resume_name,
+            text=final_text,
+            source="optimizer",
+            job_id=job_id,
+            struct_json=_json.dumps(struct) if struct else None,
+        )
+        saved_resume_id = saved["id"]
+
+    return {"optimized_resume": final_text, "saved_resume_id": saved_resume_id}
+
+
+def _get_final_struct(job_id: int) -> dict:
+    """Return the approved resume struct for a job, or raise 404."""
+    import json as _json
+    db = _get_db()
+    row = db.execute(
+        "SELECT resume_final_struct FROM jobs WHERE id=?", (job_id,)
+    ).fetchone()
+    db.close()
+    if not row or not row[0]:
+        raise HTTPException(404, "No approved resume struct for this job — approve first")
+    return _json.loads(row[0])
+
+
+@app.get("/api/jobs/{job_id}/resume_optimizer/export-pdf")
+def export_resume_pdf(job_id: int):
+    """Generate a PDF from the approved resume struct and return it as a download."""
+    import tempfile
+    from scripts.resume_optimizer import export_pdf
+    from fastapi.responses import FileResponse
+
+    struct = _get_final_struct(job_id)
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp.close()
+    export_pdf(struct, tmp.name)
+
+    return FileResponse(
+        tmp.name,
+        media_type="application/pdf",
+        filename=f"resume-optimized-job-{job_id}.pdf",
+    )
+
+
+@app.get("/api/jobs/{job_id}/resume_optimizer/export-yaml")
+def export_resume_yaml(job_id: int):
+    """Return the approved resume struct as a downloadable YAML file."""
+    import yaml
+    from fastapi.responses import Response
+
+    struct = _get_final_struct(job_id)
+    yaml_text = yaml.dump(struct, default_flow_style=False, allow_unicode=True)
+
+    return Response(
+        content=yaml_text,
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": f"attachment; filename=resume-optimized-job-{job_id}.yaml"},
+    )
+
+
+@app.get("/api/jobs/{job_id}/resume_optimizer/history")
+def get_resume_history(job_id: int):
+    """Return the archive of past finalized resume versions (newest first)."""
+    from scripts.db import get_resume_archive as _get_archive
+    archive = _get_archive(db_path=Path(_request_db.get() or DB_PATH), job_id=job_id)
+    return {"history": archive}
+
+
+# ── Resume library endpoints ───────────────────────────────────────────────────
+
+@app.get("/api/resumes")
+def list_resumes_endpoint():
+    from scripts.db import list_resumes as _list
+    return {"resumes": _list(Path(_request_db.get() or DB_PATH))}
+
+
+@app.post("/api/resumes")
+def create_resume_endpoint(body: dict):
+    from scripts.db import create_resume as _create
+    name = (body.get("name") or "").strip()
+    text = (body.get("text") or "").strip()
+    if not name or not text:
+        raise HTTPException(400, "name and text are required")
+    return _create(
+        Path(_request_db.get() or DB_PATH),
+        name=name, text=text,
+        source=body.get("source", "manual"),
+        job_id=body.get("job_id"),
+        struct_json=body.get("struct_json"),
+    )
+
+
+@app.post("/api/resumes/import")
+async def import_resume_endpoint(file: UploadFile, name: str = ""):
+    import os, tempfile, json as _json
+    from scripts.db import create_resume as _create
+    db_path = Path(_request_db.get() or DB_PATH)
+    content = await file.read()
+    MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 MB
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(413, "File too large — 5 MB maximum")
+    filename = file.filename or ""
+    ext = Path(filename).suffix.lower()
+    struct_json: str | None = None
+
+    if ext in (".txt", ".md"):
+        text = content.decode("utf-8", errors="replace")
+
+    elif ext in (".pdf", ".docx", ".odt"):
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        try:
+            if ext == ".pdf":
+                import pdfplumber
+                with pdfplumber.open(tmp_path) as pdf:
+                    text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+            elif ext == ".docx":
+                from docx import Document
+                doc = Document(tmp_path)
+                text = "\n".join(p.text for p in doc.paragraphs)
+            else:
+                import zipfile
+                from xml.etree import ElementTree as ET
+                with zipfile.ZipFile(tmp_path) as z:
+                    xml = z.read("content.xml")
+                ET_root = ET.fromstring(xml)
+                text = "\n".join(
+                    el.text or ""
+                    for el in ET_root.iter(
+                        "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}p"
+                    )
+                )
+        finally:
+            os.unlink(tmp_path)
+
+    elif ext in (".yaml", ".yml"):
+        import yaml as _yaml
+        from scripts.task_runner import _normalize_aihawk_resume
+        raw = _yaml.safe_load(content.decode("utf-8", errors="replace")) or {}
+        struct = _normalize_aihawk_resume(raw)
+        struct_json = _json.dumps(struct)
+        lines = [struct.get("career_summary", "")]
+        for exp in struct.get("experience", []):
+            lines.append(f"{exp.get('title', '')} at {exp.get('company', '')}")
+            lines.extend(f"• {b}" for b in exp.get("bullets", []))
+        text = "\n".join(lines)
+        if not text.strip():
+            raise HTTPException(400, "YAML file contains no readable content")
+
+    else:
+        raise HTTPException(
+            400,
+            f"Unsupported file type: {ext}. Accepted: .txt .md .pdf .docx .odt .yaml .yml",
+        )
+
+    resume_name = name.strip() or Path(filename).stem or "Imported Resume"
+    return _create(db_path, name=resume_name, text=text.strip(), source="import", struct_json=struct_json)
+
+
+@app.get("/api/resumes/{resume_id}")
+def get_resume_endpoint(resume_id: int):
+    from scripts.db import get_resume as _get
+    r = _get(Path(_request_db.get() or DB_PATH), resume_id)
+    if not r:
+        raise HTTPException(404, "Resume not found")
+    return r
+
+
+@app.patch("/api/resumes/{resume_id}")
+def update_resume_endpoint(resume_id: int, body: dict):
+    from scripts.db import get_resume as _get, update_resume as _update
+    db_path = Path(_request_db.get() or DB_PATH)
+    if not _get(db_path, resume_id):
+        raise HTTPException(404, "Resume not found")
+    return _update(db_path, resume_id, name=body.get("name"), text=body.get("text"))
+
+
+@app.delete("/api/resumes/{resume_id}")
+def delete_resume_endpoint(resume_id: int):
+    from scripts.db import get_resume as _get, list_resumes as _list, delete_resume as _delete
+    db_path = Path(_request_db.get() or DB_PATH)
+    r = _get(db_path, resume_id)
+    if not r:
+        raise HTTPException(404, "Resume not found")
+    if len(_list(db_path)) == 1:
+        raise HTTPException(409, "Cannot delete the only resume")
+    if r["is_default"]:
+        raise HTTPException(409, "Cannot delete the default resume — set a new default first")
+    _delete(db_path, resume_id)
+    return {"ok": True}
+
+
+@app.post("/api/resumes/{resume_id}/set-default")
+def set_default_resume_endpoint(resume_id: int):
+    import yaml as _yaml
+    from scripts.db import get_resume as _get, set_default_resume as _set_default
+    db_path = Path(_request_db.get() or DB_PATH)
+    if not _get(db_path, resume_id):
+        raise HTTPException(404, "Resume not found")
+    _set_default(db_path, resume_id)
+    _user_yaml = db_path.parent / "config" / "user.yaml"
+    if _user_yaml.exists():
+        profile = _yaml.safe_load(_user_yaml.read_text(encoding="utf-8")) or {}
+        profile["default_resume_id"] = resume_id
+        _user_yaml.write_text(_yaml.dump(profile, default_flow_style=False, allow_unicode=True))
+    return {"ok": True}
+
+
+# ── Per-job resume endpoints ───────────────────────────────────────────────────
+
+@app.get("/api/jobs/{job_id}/resume")
+def get_job_resume_endpoint(job_id: int):
+    from scripts.db import get_job_resume as _get
+    r = _get(Path(_request_db.get() or DB_PATH), job_id)
+    if not r:
+        raise HTTPException(404, "No resume configured — add one in Resume Manager")
+    return r
+
+
+@app.patch("/api/jobs/{job_id}/resume")
+def set_job_resume_endpoint(job_id: int, body: dict):
+    from scripts.db import get_resume as _get_r, set_job_resume as _set, get_job_resume as _get_job
+    db_path = Path(_request_db.get() or DB_PATH)
+    resume_id = body.get("resume_id")
+    if not resume_id or not _get_r(db_path, resume_id):
+        raise HTTPException(404, "Resume not found")
+    _set(db_path, job_id=job_id, resume_id=resume_id)
+    return _get_job(db_path, job_id)
+
+
+# ── GET /api/imitate/samples ──────────────────────────────────────────────────
+# Avocet "Imitate" tab uses this to build the EXACT prompt Peregrine sends to
+# its LLM — including user voice, mission context, style examples, and full job
+# context. Avocet then routes these prompts through different local models to
+# compare generation quality against the real Peregrine pipeline.
+
+def _imitate_load_profile():
+    """Load UserProfile from config/user.yaml, or None if missing."""
+    try:
+        from scripts.user_profile import UserProfile
+        _yaml = PEREGRINE_ROOT / "config" / "user.yaml"
+        return UserProfile(_yaml) if UserProfile.exists(_yaml) else None
+    except Exception:
+        return None
+
+
+def _imitate_cover_letter(db, profile, limit: int) -> dict:
+    from scripts.generate_cover_letter import (
+        build_prompt, _build_system_context,
+        load_corpus, find_similar_letters, detect_mission_alignment,
+    )
+    rows = db.execute(
+        "SELECT id, title, company, description, cover_letter, status FROM jobs "
+        "WHERE description IS NOT NULL AND description != '' "
+        "  AND status IN ('applied','phone_screen','interviewing','offer','hired') "
+        "ORDER BY applied_at DESC NULLS LAST LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+    system_ctx = _build_system_context(profile)
+    try:
+        corpus = load_corpus()
+    except Exception:
+        corpus = []
+
+    samples = []
+    for r in rows:
+        desc = r["description"] or ""
+        examples = find_similar_letters(desc, corpus) if corpus else []
+        mission_hint = detect_mission_alignment(r["company"], desc)
+        prompt = build_prompt(
+            title=r["title"],
+            company=r["company"],
+            description=desc,
+            examples=examples,
+            mission_hint=mission_hint,
+            system_context=system_ctx,
+            candidate_name=profile.name if profile else None,
+        )
+        samples.append({
+            "id": r["id"],
+            "job_title": r["title"],
+            "company": r["company"],
+            "status": r["status"],
+            "system_prompt": system_ctx,
+            "input_text": prompt,
+            "output_text": r["cover_letter"] or "",
+        })
+    return {"samples": samples, "total": len(samples), "type": "cover_letter"}
+
+
+def _imitate_company_research(db, profile, limit: int) -> dict:
+    rows = db.execute(
+        "SELECT j.id, j.title, j.company, j.description, j.status, "
+        "       cr.raw_output, cr.company_brief "
+        "FROM jobs j LEFT JOIN company_research cr ON cr.job_id = j.id "
+        "WHERE j.description IS NOT NULL AND j.description != '' "
+        "  AND j.status IN ('phone_screen','interviewing','offer','hired') "
+        "ORDER BY j.phone_screen_at DESC NULLS LAST LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+    name = profile.name if profile else "the candidate"
+    career_summary = profile.career_summary if profile else ""
+
+    # Load plain-text resume for context
+    resume_ctx = ""
+    try:
+        import yaml as _yaml
+        _rpath = PEREGRINE_ROOT / "config" / "plain_text_resume.yaml"
+        if _rpath.exists():
+            _rd = _yaml.safe_load(_rpath.read_text(encoding="utf-8")) or {}
+            parts = []
+            for section in ("experience", "skills", "education", "summary"):
+                val = _rd.get(section)
+                if val:
+                    parts.append(f"### {section.title()}\n{val if isinstance(val, str) else str(val)}")
+            resume_ctx = "\n\n".join(parts)[:2000]
+    except Exception:
+        pass
+
+    samples = []
+    for r in rows:
+        jd = (r["description"] or "")[:1500].strip()
+        resume_block = f"\n## Candidate Background\n{resume_ctx}" if resume_ctx else ""
+        career_block = f"Candidate background: {career_summary}\n\n" if career_summary else ""
+        prompt = (
+            f"You are preparing {name} for a job interview.\n"
+            f"{career_block}"
+            f"Role: **{r['title']}** at **{r['company']}**\n\n"
+            f"## Job Description\n{jd}"
+            f"{resume_block}\n\n"
+            f"---\n\n"
+            f"Produce a structured research brief with exactly these markdown section headers:\n\n"
+            f"## Company Overview\n"
+            f"What {r['company']} does, core product/service, business model, size/stage, market positioning.\n\n"
+            f"## Leadership & Culture\n"
+            f"CEO background and leadership style, mission/values statements, Glassdoor themes.\n\n"
+            f"## Tech Stack & Product\n"
+            f"Technologies, platforms, and product direction relevant to the {r['title']} role.\n\n"
+            f"## Funding & Market Position\n"
+            f"Funding stage, key investors, recent rounds, competitor landscape.\n\n"
+            f"## Recent Developments\n"
+            f"News, launches, acquisitions, or press from the past 12-18 months.\n\n"
+            f"## Red Flags & Watch-outs\n"
+            f"Culture issues, layoffs, financial stress, or Glassdoor concerns worth knowing. "
+            f"If nothing notable, write 'No significant red flags identified.'\n\n"
+            f"## Talking Points for {name}\n"
+            f"Five specific talking points for the phone screen. Each must reference a concrete "
+            f"experience and connect to a specific JD signal. 1-2 sentences, ready to speak aloud. "
+            f"Never give generic advice.\n\n"
+            f"---\n"
+            f"⚠️ This brief uses LLM training knowledge only (no live web data). "
+            f"Verify key facts before the call."
+        )
+        samples.append({
+            "id": r["id"],
+            "job_title": r["title"],
+            "company": r["company"],
+            "status": r["status"],
+            "system_prompt": "",
+            "input_text": prompt,
+            "output_text": r["raw_output"] or r["company_brief"] or "",
+        })
+    return {"samples": samples, "total": len(samples), "type": "company_research"}
+
+
+def _imitate_interview_prep(db, profile, limit: int) -> dict:
+    rows = db.execute(
+        "SELECT j.id, j.title, j.company, j.status, "
+        "       cr.talking_points, cr.company_brief "
+        "FROM jobs j LEFT JOIN company_research cr ON cr.job_id = j.id "
+        "WHERE j.status IN ('phone_screen','interviewing','offer','hired') "
+        "ORDER BY j.phone_screen_at DESC NULLS LAST LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+    name = profile.name if profile else "the candidate"
+    samples = []
+    for r in rows:
+        system_prompt = (
+            f"You are a recruiter at {r['company']} conducting a phone screen for the "
+            f"{r['title']} role. Ask one question at a time. After {name} answers, give "
+            f"brief feedback (1-2 sentences), then ask your next question. Be professional but warm."
+        )
+        ctx_parts = []
+        if r["talking_points"]:
+            ctx_parts.append(f"[Candidate talking points]\n{r['talking_points']}")
+        if r["company_brief"]:
+            ctx_parts.append(f"[Company context]\n{r['company_brief'][:500]}")
+        ctx_block = ("\n\n".join(ctx_parts) + "\n\n") if ctx_parts else ""
+        input_text = (
+            f"{ctx_block}"
+            f"Start the mock phone screen for the {r['title']} role at {r['company']}. "
+            f"Ask your first question. Keep it realistic and concise."
+        )
+        samples.append({
+            "id": r["id"],
+            "job_title": r["title"],
+            "company": r["company"],
+            "status": r["status"],
+            "system_prompt": system_prompt,
+            "input_text": input_text,
+            "output_text": "",
+        })
+    return {"samples": samples, "total": len(samples), "type": "interview_prep"}
+
+
+def _imitate_ats_resume(db, profile, limit: int) -> dict:
+    rows = db.execute(
+        "SELECT id, title, company, description, ats_gap_report, status FROM jobs "
+        "WHERE description IS NOT NULL AND description != '' "
+        "  AND status IN ('applied','phone_screen','interviewing','offer','hired') "
+        "ORDER BY applied_at DESC NULLS LAST LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+    candidate_voice = profile.candidate_voice if profile else ""
+    voice_block = (
+        f"\nCandidate voice/style: {candidate_voice}\n"
+        "Preserve this tone in any phrasing suggestions."
+    ) if candidate_voice else ""
+
+    resume_text = ""
+    try:
+        _rpath = PEREGRINE_ROOT / "config" / "plain_text_resume.yaml"
+        if _rpath.exists():
+            resume_text = _rpath.read_text(encoding="utf-8")[:3000]
+    except Exception:
+        pass
+    resume_block = f"\n## Current Resume\n{resume_text}" if resume_text else ""
+
+    samples = []
+    for r in rows:
+        desc = (r["description"] or "")[:1500].strip()
+        prompt = (
+            f"You are an ATS (applicant tracking system) keyword optimization expert.\n\n"
+            f"Analyze the resume below against this job description. Identify keyword gaps "
+            f"(terms in the JD missing or underrepresented in the resume) and for each gap "
+            f"specify which section it belongs in (summary, skills, or experience).\n\n"
+            f"Job: {r['title']} at {r['company']}\n\n"
+            f"## Job Description\n{desc}"
+            f"{resume_block}"
+            f"{voice_block}\n\n"
+            f"Return a JSON array of gap objects, each with keys:\n"
+            f'  "term": the missing keyword\n'
+            f'  "section": summary | skills | experience\n'
+            f'  "priority": high | medium | low\n'
+            f'  "rationale": one sentence explaining the gap\n\n'
+            f"Order by priority descending. Return ONLY the JSON array."
+        )
+        samples.append({
+            "id": r["id"],
+            "job_title": r["title"],
+            "company": r["company"],
+            "status": r["status"],
+            "system_prompt": "",
+            "input_text": prompt,
+            "output_text": r["ats_gap_report"] or "",
+        })
+    return {"samples": samples, "total": len(samples), "type": "ats_resume"}
+
+
+@app.get("/api/imitate/samples")
+def imitate_samples(type: str = "cover_letter", limit: int = 5):
+    """Return the assembled generation prompt Peregrine would send to its LLM.
+
+    Each sample has:
+      system_prompt  the system context (candidate voice, career summary)
+      input_text     the full assembled user prompt (JD + resume + mission + style examples)
+      output_text    existing generated output for comparison (may be empty)
+
+    Avocet sends system_prompt + input_text through different local models to
+    compare which best replicates Peregrine's generation quality.
+
+    type: cover_letter | company_research | interview_prep | ats_resume
+    """
+    limit = max(1, min(limit, 20))
+    db = _get_db()
+    profile = _imitate_load_profile()
+
+    try:
+        if type == "cover_letter":
+            result = _imitate_cover_letter(db, profile, limit)
+        elif type == "company_research":
+            result = _imitate_company_research(db, profile, limit)
+        elif type == "interview_prep":
+            result = _imitate_interview_prep(db, profile, limit)
+        elif type == "ats_resume":
+            result = _imitate_ats_resume(db, profile, limit)
+        else:
+            raise HTTPException(
+                400,
+                f"Unknown type '{type}'. Use: cover_letter, company_research, interview_prep, ats_resume",
+            )
+    finally:
+        db.close()
+
+    return result
+
+
 @app.get("/api/jobs/{job_id}/contacts")
 def get_job_contacts(job_id: int):
     db = _get_db()
@@ -507,6 +1140,60 @@ def get_job_contacts(job_id: int):
     ).fetchall()
     db.close()
     return [dict(r) for r in rows]
+
+
+class LogContactBody(BaseModel):
+    direction:   str
+    subject:     str
+    from_addr:   Optional[str] = None
+    body:        Optional[str] = None
+    received_at: Optional[str] = None
+
+
+@app.post("/api/jobs/{job_id}/contacts")
+def log_contact(job_id: int, payload: LogContactBody):
+    """Log a manually entered inbound or outbound email contact for a job."""
+    db = _get_db()
+    received_at = payload.received_at or datetime.utcnow().isoformat()
+    db.execute(
+        "INSERT INTO job_contacts (job_id, direction, subject, from_addr, body, received_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (job_id, payload.direction, payload.subject, payload.from_addr, payload.body, received_at),
+    )
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+
+class InterviewDateBody(BaseModel):
+    interview_date: Optional[str] = None
+
+
+@app.patch("/api/jobs/{job_id}/interview_date")
+def set_interview_date(job_id: int, payload: InterviewDateBody):
+    """Set or clear the interview date for a job without changing its pipeline status."""
+    interview_date = payload.interview_date  # ISO string or null
+    db = _get_db()
+    db.execute("UPDATE jobs SET interview_date = ? WHERE id = ?", (interview_date, job_id))
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/calendar_push")
+def calendar_push(job_id: int):
+    """Push the job's interview event to the first configured calendar integration."""
+    from scripts.calendar_push import push_interview_event
+    db_path = Path(_request_db.get() or DB_PATH)
+    cfg_dir = db_path.parent / "config"
+    result = push_interview_event(
+        db_path=db_path,
+        job_id=job_id,
+        config_dir=cfg_dir,
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error", "Calendar push failed"))
+    return result
 
 
 # ── Survey endpoints ─────────────────────────────────────────────────────────
@@ -622,7 +1309,7 @@ def save_survey_response(job_id: int, body: SurveySaveBody):
         except Exception:
             raise HTTPException(400, "Invalid image data")
     row_id = insert_survey_response(
-        db_path=Path(DB_PATH),
+        db_path=Path(_request_db.get() or DB_PATH),
         job_id=job_id,
         survey_name=body.survey_name,
         received_at=received_at,
@@ -638,7 +1325,7 @@ def save_survey_response(job_id: int, body: SurveySaveBody):
 
 @app.get("/api/jobs/{job_id}/survey/responses")
 def get_survey_history(job_id: int):
-    return get_survey_responses(db_path=Path(DB_PATH), job_id=job_id)
+    return get_survey_responses(db_path=Path(_request_db.get() or DB_PATH), job_id=job_id)
 
 
 # ── GET /api/jobs/:id/cover_letter/pdf ───────────────────────────────────────
@@ -909,6 +1596,14 @@ def _db_path() -> Path:
 def list_active_tasks():
     from scripts.db import get_active_tasks
     return get_active_tasks(_db_path())
+
+
+@app.get("/api/tasks/active")
+def list_active_tasks_envelope():
+    """Envelope wrapper for the Vue task indicator poll — returns {count, tasks}."""
+    from scripts.db import get_active_tasks
+    tasks = get_active_tasks(_db_path())
+    return {"count": len(tasks), "tasks": tasks}
 
 
 @app.delete("/api/tasks/{task_id}")
@@ -1345,6 +2040,46 @@ def move_job(job_id: int, body: MoveBody):
     return {"ok": True}
 
 
+_HEIMDALL_URL         = os.environ.get("HEIMDALL_URL", "https://license.circuitforge.tech")
+_HEIMDALL_ADMIN_TOKEN = os.environ.get("HEIMDALL_ADMIN_TOKEN", "")
+
+
+def _resolve_cloud_tier() -> str:
+    """Resolve the current user's tier from Heimdall for cloud API responses.
+
+    Extracts the user_id from the per-request DB path set by cloud_session_middleware
+    (format: <CLOUD_DATA_ROOT>/<user_id>/peregrine/staging.db), then calls Heimdall
+    /admin/cloud/resolve.  Returns "free" on any error so the app degrades gracefully.
+    """
+    if not _HEIMDALL_ADMIN_TOKEN:
+        _log.warning("HEIMDALL_ADMIN_TOKEN not set — defaulting API tier to free")
+        return "free"
+    db_path = _request_db.get()
+    if not db_path:
+        return "free"
+    # Extract user_id: .../menagerie-data/<user_id>/peregrine/staging.db
+    try:
+        user_id = Path(db_path).parts[-3]
+    except IndexError:
+        _log.warning("_resolve_cloud_tier: unexpected db_path format: %s", db_path)
+        return "free"
+    try:
+        resp = requests.post(
+            f"{_HEIMDALL_URL}/admin/cloud/resolve",
+            json={"user_id": user_id, "product": "peregrine"},
+            headers={"Authorization": f"Bearer {_HEIMDALL_ADMIN_TOKEN}"},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("tier", "free")
+        if resp.status_code == 404:
+            return "free"
+        _log.warning("Heimdall resolve returned %s for user %s", resp.status_code, user_id)
+    except Exception as exc:
+        _log.warning("Heimdall tier resolve failed for user %s: %s", user_id, exc)
+    return "free"
+
+
 # ── GET /api/config/app ───────────────────────────────────────────────────────
 
 @app.get("/api/config/app")
@@ -1353,10 +2088,13 @@ def get_app_config():
     profile = os.environ.get("INFERENCE_PROFILE", "cpu")
     valid_profiles = {"remote", "cpu", "single-gpu", "dual-gpu"}
     valid_tiers = {"free", "paid", "premium", "ultra"}
-    raw_tier = os.environ.get("APP_TIER", "free")
 
-    # Cloud users always bypass the wizard — they configure through Settings
+    # Cloud: resolve tier from Heimdall (APP_TIER env is single-tenant only).
     is_cloud = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
+    if is_cloud:
+        raw_tier = _resolve_cloud_tier()
+    else:
+        raw_tier = os.environ.get("APP_TIER", "free")
     if is_cloud:
         wizard_complete = True
     else:
@@ -1798,6 +2536,15 @@ class SearchPrefsPayload(BaseModel):
     blocklist_industries: List[str] = []
     blocklist_locations: List[str] = []
 
+def _get_valid_jobspy_boards() -> set[str]:
+    """Return the set of board names supported by the installed JobSpy version."""
+    try:
+        from jobspy import Site
+        return {s.value for s in Site}
+    except Exception:
+        return {"linkedin", "indeed", "zip_recruiter", "glassdoor", "google"}
+
+
 @app.get("/api/settings/search")
 def get_search_prefs():
     try:
@@ -1806,7 +2553,34 @@ def get_search_prefs():
             return {}
         with open(p) as f:
             data = yaml.safe_load(f) or {}
-        return data.get("default", {})
+
+        # Handle both old `default: {...}` format and new `profiles: [...]` format.
+        from scripts.discover import _normalize_profiles
+        normalized = _normalize_profiles(data)
+        profiles = normalized.get("profiles", [])
+        profile = next((pr for pr in profiles if pr.get("name") == "default"), None)
+        if profile is None:
+            # Fall back to reading the raw default key (covers edge cases)
+            profile = data.get("default", {})
+
+        # Annotate job_boards with a `supported` flag so the UI can distinguish
+        # boards that produce real results from ones that are not yet implemented.
+        valid = _get_valid_jobspy_boards()
+        job_boards = profile.get("job_boards", [])
+        if job_boards:
+            profile["job_boards"] = [
+                {**b, "supported": b.get("name", "") in valid}
+                for b in job_boards
+            ]
+        # Also expose boards list (canonical format) with the same annotation
+        boards = profile.get("boards", [])
+        if boards and not job_boards:
+            profile["job_boards"] = [
+                {"name": b, "enabled": True, "supported": b in valid}
+                for b in boards
+            ]
+
+        return profile
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1829,6 +2603,66 @@ def save_search_prefs(payload: SearchPrefsPayload):
 class SearchSuggestPayload(BaseModel):
     type: str          # "titles" | "locations" | "exclude_keywords"
     current: List[str] = []
+
+
+class ResumeTagSuggestPayload(BaseModel):
+    type: str          # "skills" | "domains" | "keywords"
+    current: List[str] = []
+
+
+@app.post("/api/settings/resume/suggest-tags")
+def suggest_resume_tags(payload: ResumeTagSuggestPayload):
+    """LLM-generate suggestions for skills, domains, or keywords based on the resume profile."""
+    context = _resume_context_snippet()
+    current_str = ", ".join(payload.current) if payload.current else "none"
+
+    if payload.type == "skills":
+        prompt = (
+            "You are a career advisor helping a job seeker build their skills list.\n\n"
+            + (f"Candidate background:\n{context}\n\n" if context else "")
+            + f"Skills they already have listed: {current_str}\n\n"
+            "Suggest 8 additional skills, tools, or technologies they likely have based on their "
+            "background but haven't listed yet. Focus on concrete, ATS-friendly terms. "
+            "Return only a JSON array of strings, no other text. "
+            "Example: [\"HubSpot\", \"Tableau\", \"SQL\"]"
+        )
+    elif payload.type == "domains":
+        prompt = (
+            "You are a career advisor helping a job seeker define the industry domains they work in.\n\n"
+            + (f"Candidate background:\n{context}\n\n" if context else "")
+            + f"Domains they already have listed: {current_str}\n\n"
+            "Suggest 6 additional industry domains, verticals, or market segments relevant to their "
+            "background that they haven't listed. Think: 'B2B SaaS', 'enterprise software', "
+            "'financial services', etc. "
+            "Return only a JSON array of strings, no other text."
+        )
+    elif payload.type == "keywords":
+        prompt = (
+            "You are a resume ATS (applicant tracking system) specialist helping a job seeker "
+            "identify important keywords recruiters search for.\n\n"
+            + (f"Candidate background:\n{context}\n\n" if context else "")
+            + f"Keywords they already have listed: {current_str}\n\n"
+            "Suggest 10 additional ATS keywords, phrases, or buzzwords that recruiters in their "
+            "field commonly search for — metrics, methodologies, frameworks, or role-specific "
+            "terminology they may have missed. "
+            "Return only a JSON array of strings, no other text."
+        )
+    else:
+        raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
+
+    try:
+        import json as _json
+        from scripts.llm_router import LLMRouter
+        raw = LLMRouter().complete(prompt)
+        start = raw.find("[")
+        end   = raw.rfind("]") + 1
+        if start == -1 or end == 0:
+            return {"suggestions": []}
+        suggestions = _json.loads(raw[start:end])
+        return {"suggestions": [str(s) for s in suggestions if s]}
+    except Exception as e:
+        raise HTTPException(500, f"LLM generation failed: {e}")
+
 
 @app.post("/api/settings/search/suggest")
 def suggest_search(payload: SearchSuggestPayload):
@@ -1929,6 +2763,73 @@ def byok_ack(payload: ByokAckPayload):
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Settings: per-user cover-letter model ────────────────────────────────────
+
+@app.get("/api/settings/llm/cover-letter-model")
+def get_cover_letter_model():
+    """Return the user's custom cover letter model (from per-user llm.yaml if set)."""
+    cfg_path = _config_dir() / "llm.yaml"
+    if cfg_path.exists():
+        with open(cfg_path) as f:
+            data = yaml.safe_load(f) or {}
+        # Convention: the first backend in fallback_order that targets cover letters
+        # is stored under backends.cover_letter.model
+        model = (data.get("backends", {}).get("cover_letter") or {}).get("model", "")
+        return {"model": model}
+    return {"model": ""}
+
+
+class CoverLetterModelPayload(BaseModel):
+    model: str
+
+
+@app.put("/api/settings/llm/cover-letter-model")
+def set_cover_letter_model(payload: CoverLetterModelPayload):
+    """Write the custom cover letter model into the per-user llm.yaml."""
+    cfg_path = _config_dir() / "llm.yaml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict = {}
+    if cfg_path.exists():
+        with open(cfg_path) as f:
+            data = yaml.safe_load(f) or {}
+    backends = data.setdefault("backends", {})
+    if payload.model:
+        backends["cover_letter"] = {
+            "type": "openai_compat",
+            "enabled": True,
+            "base_url": "http://localhost:11434/v1",
+            "model": payload.model,
+            "api_key": "any",
+            "supports_images": False,
+        }
+        order = data.setdefault("fallback_order", [])
+        if "cover_letter" not in order:
+            order.insert(0, "cover_letter")
+    else:
+        # Clear custom model — remove the backend and drop from fallback order
+        backends.pop("cover_letter", None)
+        data["fallback_order"] = [b for b in data.get("fallback_order", []) if b != "cover_letter"]
+    with open(cfg_path, "w") as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+    return {"ok": True}
+
+
+@app.get("/api/settings/llm/ollama-models")
+def get_ollama_models():
+    """Return available Ollama models by querying the local Ollama API."""
+    try:
+        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        if not ollama_host.startswith("http"):
+            ollama_host = f"http://{ollama_host}"
+        resp = requests.get(f"{ollama_host.rstrip('/')}/api/tags", timeout=3)
+        if resp.status_code == 200:
+            models = [m["name"] for m in resp.json().get("models", [])]
+            return {"models": models}
+    except Exception:
+        pass
+    return {"models": []}
 
 
 # ── Settings: System — Services ───────────────────────────────────────────────
@@ -2528,7 +3429,7 @@ def export_classifier():
 # State is persisted to user.yaml on every step so the wizard can resume
 # after a browser refresh or crash (mirrors the Streamlit wizard behaviour).
 
-_WIZARD_PROFILES = ("remote", "cpu", "single-gpu", "dual-gpu")
+_WIZARD_PROFILES = ("remote", "cpu", "single-gpu", "dual-gpu", "cf-orch")
 _WIZARD_TIERS = ("free", "paid", "premium")
 
 
@@ -2678,7 +3579,8 @@ def wizard_save_step(payload: WizardStepPayload):
             updates["services"] = data["services"]
 
     elif step == 6:
-        # Persist search preferences to search_profiles.yaml
+        # Persist search preferences to search_profiles.yaml in canonical format:
+        #   profiles: [{name, titles, locations, boards, ...}]
         titles = data.get("titles", [])
         locations = data.get("locations", [])
         search_path = _search_prefs_path()
@@ -2686,10 +3588,20 @@ def wizard_save_step(payload: WizardStepPayload):
         if search_path.exists():
             with open(search_path) as f:
                 existing_search = yaml.safe_load(f) or {}
-        default_profile = existing_search.get("default", {})
-        default_profile["job_titles"] = titles
-        default_profile["location"] = locations
-        existing_search["default"] = default_profile
+
+        # Normalize legacy wizard format on read so we can update in place
+        from scripts.discover import _normalize_profiles as _norm
+        existing_search = _norm(existing_search)
+
+        # Find or create the "default" profile entry
+        profiles_list = existing_search.get("profiles", [])
+        default_profile = next((p for p in profiles_list if p.get("name") == "default"), None)
+        if default_profile is None:
+            default_profile = {"name": "default"}
+            profiles_list.append(default_profile)
+        default_profile["titles"] = titles
+        default_profile["locations"] = locations
+        existing_search["profiles"] = profiles_list
         search_path.parent.mkdir(parents=True, exist_ok=True)
         with open(search_path, "w") as f:
             yaml.dump(existing_search, f, allow_unicode=True, default_flow_style=False)
@@ -2705,15 +3617,45 @@ def wizard_save_step(payload: WizardStepPayload):
     return {"ok": True, "step": step}
 
 
+def _fetch_cforch_nodes() -> list[dict]:
+    """Query cf-orch coordinator for live node + GPU data. Returns [] on any error."""
+    url = os.environ.get("CF_ORCH_URL", "").rstrip("/")
+    if not url:
+        return []
+    try:
+        import urllib.request, json as _json
+        req = urllib.request.Request(f"{url}/api/nodes", headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = _json.loads(resp.read())
+            return data.get("nodes", [])
+    except Exception:
+        return []
+
+
 @app.get("/api/wizard/hardware")
 def wizard_hardware():
-    """Detect GPUs and suggest an inference profile."""
+    """Detect local GPUs, suggest an inference profile, and report cf-orch nodes."""
     gpus = _detect_gpus()
     suggested = _suggest_profile(gpus)
+
+    # Enrich with cf-orch cluster data when coordinator URL is configured
+    orch_nodes = _fetch_cforch_nodes()
+    orch_summary = []
+    for node in orch_nodes:
+        for gpu in node.get("gpus", []):
+            orch_summary.append({
+                "node": node["node_id"],
+                "name": gpu["name"],
+                "vram_total_mb": gpu["vram_total_mb"],
+                "vram_free_mb": gpu["vram_free_mb"],
+            })
+
     return {
         "gpus": gpus,
         "suggested_profile": suggested,
         "profiles": list(_WIZARD_PROFILES),
+        "cf_orch_available": len(orch_nodes) > 0,
+        "cf_orch_gpus": orch_summary,
     }
 
 

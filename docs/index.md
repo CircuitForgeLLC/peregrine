@@ -4,6 +4,8 @@
 
 Peregrine automates the full job search lifecycle: discovery, matching, cover letter generation, application tracking, and interview preparation. It is privacy-first and local-first — your data never leaves your machine unless you configure an external integration.
 
+![Peregrine dashboard](screenshots/01-dashboard.png)
+
 ---
 
 ## Quick Start

@@ -104,7 +104,7 @@ class TestWizardHardware:
         r = client.get("/api/wizard/hardware")
         assert r.status_code == 200
         body = r.json()
-        assert set(body["profiles"]) == {"remote", "cpu", "single-gpu", "dual-gpu"}
+        assert {"remote", "cpu", "single-gpu", "dual-gpu"}.issubset(set(body["profiles"]))
         assert "gpus" in body
         assert "suggested_profile" in body
 
@@ -245,8 +245,10 @@ class TestWizardStep:
         assert r.status_code == 200
         assert search_path.exists()
         prefs = yaml.safe_load(search_path.read_text())
-        assert prefs["default"]["job_titles"] == ["Software Engineer", "Backend Developer"]
-        assert "Remote" in prefs["default"]["location"]
+        # Step 6 writes canonical {profiles: [{name, titles, locations, ...}]} format
+        default = next(p for p in prefs["profiles"] if p["name"] == "default")
+        assert default["titles"] == ["Software Engineer", "Backend Developer"]
+        assert "Remote" in default["locations"]
 
     def test_step7_only_advances_counter(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"

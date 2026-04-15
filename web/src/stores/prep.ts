@@ -22,6 +22,11 @@ export interface Contact {
   received_at: string | null
 }
 
+export interface QAItem {
+  question: string
+  answer: string
+}
+
 export interface TaskStatus {
   status: 'queued' | 'running' | 'completed' | 'failed' | 'none' | null
   stage: string | null
@@ -43,6 +48,8 @@ export const usePrepStore = defineStore('prep', () => {
   const research = ref<ResearchBrief | null>(null)
   const contacts = ref<Contact[]>([])
   const contactsError = ref<string | null>(null)
+  const qaItems = ref<QAItem[]>([])
+  const qaError = ref<string | null>(null)
   const taskStatus = ref<TaskStatus>({ status: null, stage: null, message: null })
   const fullJob = ref<FullJobDetail | null>(null)
   const loading = ref(false)
@@ -64,6 +71,8 @@ export const usePrepStore = defineStore('prep', () => {
       research.value = null
       contacts.value = []
       contactsError.value = null
+      qaItems.value = []
+      qaError.value = null
       taskStatus.value = { status: null, stage: null, message: null }
       fullJob.value = null
       error.value = null
@@ -72,9 +81,10 @@ export const usePrepStore = defineStore('prep', () => {
 
     loading.value = true
     try {
-      const [researchResult, contactsResult, taskResult, jobResult] = await Promise.all([
+      const [researchResult, contactsResult, qaResult, taskResult, jobResult] = await Promise.all([
         useApiFetch<ResearchBrief>(`/api/jobs/${jobId}/research`),
         useApiFetch<Contact[]>(`/api/jobs/${jobId}/contacts`),
+        useApiFetch<QAItem[]>(`/api/jobs/${jobId}/qa`),
         useApiFetch<TaskStatus>(`/api/jobs/${jobId}/research/task`),
         useApiFetch<FullJobDetail>(`/api/jobs/${jobId}`),
       ])
@@ -98,6 +108,15 @@ export const usePrepStore = defineStore('prep', () => {
       } else {
         contacts.value = contactsResult.data ?? []
         contactsError.value = null
+      }
+
+      // Q&A failure is non-fatal — degrade the Practice Q&A tab only
+      if (qaResult.error && !(qaResult.error.kind === 'http' && qaResult.error.status === 404)) {
+        qaError.value = 'Could not load Q&A history.'
+        qaItems.value = []
+      } else {
+        qaItems.value = qaResult.data ?? []
+        qaError.value = null
       }
 
       taskStatus.value = taskResult.data ?? { status: null, stage: null, message: null }
@@ -144,11 +163,23 @@ export const usePrepStore = defineStore('prep', () => {
     }, 3000)
   }
 
+  async function fetchContacts(jobId: number) {
+    const { data, error: fetchError } = await useApiFetch<Contact[]>(`/api/jobs/${jobId}/contacts`)
+    if (fetchError) {
+      contactsError.value = 'Could not load email history.'
+    } else {
+      contacts.value = data ?? []
+      contactsError.value = null
+    }
+  }
+
   function clear() {
     _clearInterval()
     research.value = null
     contacts.value = []
     contactsError.value = null
+    qaItems.value = []
+    qaError.value = null
     taskStatus.value = { status: null, stage: null, message: null }
     fullJob.value = null
     loading.value = false
@@ -160,12 +191,15 @@ export const usePrepStore = defineStore('prep', () => {
     research,
     contacts,
     contactsError,
+    qaItems,
+    qaError,
     taskStatus,
     fullJob,
     loading,
     error,
     currentJobId,
     fetchFor,
+    fetchContacts,
     generateResearch,
     pollTask,
     clear,

@@ -278,8 +278,9 @@ onMounted(loadList)
   border: 1px solid var(--color-border, #e2e8f0); border-radius: var(--radius-md, 0.5rem);
   font-family: monospace; font-size: var(--font-sm, 0.875rem); resize: vertical;
   background: var(--color-surface-alt, #f8fafc);
+  color: var(--color-text);
 }
-.rv__textarea:not([readonly]) { background: var(--color-surface, #fff); }
+.rv__textarea:not([readonly]) { background: var(--color-surface); }
 .rv__edit-actions { display: flex; gap: var(--space-2, 0.5rem); }
 .rv__error { color: var(--color-error, #dc2626); font-size: var(--font-sm, 0.875rem); }
 
@@ -298,6 +299,39 @@ onMounted(loadList)
 .rv__download-dropdown button:hover { background: var(--color-surface-alt, #f8fafc); }
 
 .rv__loading, .rv__empty { color: var(--color-text-muted, #64748b); font-size: var(--font-sm, 0.875rem); }
+
+/* Button styles — defined locally since no global button sheet exists yet */
+.btn-secondary {
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--font-sm, 0.875rem);
+  white-space: nowrap;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+}
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-generate {
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-md, 0.5rem);
+  cursor: pointer;
+  font-size: var(--font-sm, 0.875rem);
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+}
+.btn-generate:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @media (max-width: 640px) {
   .rv__layout { grid-template-columns: 1fr; }

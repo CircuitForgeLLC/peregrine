@@ -26,6 +26,7 @@ export const router = createRouter({
         { path: 'resume',      component: () => import('../views/settings/ResumeProfileView.vue') },
         { path: 'search',      component: () => import('../views/settings/SearchPrefsView.vue') },
         { path: 'system',      component: () => import('../views/settings/SystemSettingsView.vue') },
+        { path: 'connections', component: () => import('../views/settings/ConnectionsSettingsView.vue') },
         { path: 'fine-tune',   component: () => import('../views/settings/FineTuneView.vue') },
         { path: 'license',     component: () => import('../views/settings/LicenseView.vue') },
         { path: 'data',        component: () => import('../views/settings/DataView.vue') },

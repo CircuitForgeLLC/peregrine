@@ -77,6 +77,7 @@ body {
 }
 
 /* ── Dark mode ─────────────────────────────────────── */
+/* Covers both: OS-level dark preference AND explicit dark theme selection in UI */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="hacker"]) {
     --app-primary:       #68A8D8;   /* Falcon Blue (dark) — 6.54:1 on #16202e ✅ AA */
@@ -95,6 +96,26 @@ body {
     --status-phone:     #4ec9be;
     --status-offer:     #f5a43a;
   }
+}
+
+/* Explicit [data-theme="dark"] — fires when user picks dark via theme picker
+   on a light-OS machine (where prefers-color-scheme: dark won't match) */
+[data-theme="dark"]:not([data-theme="hacker"]) {
+  --app-primary:       #68A8D8;
+  --app-primary-hover: #7BBDE6;
+  --app-primary-light: #0D1F35;
+
+  --app-accent:        #F6872A;
+  --app-accent-hover:  #FF9840;
+  --app-accent-light:  #2D1505;
+  --app-accent-text:   #1a2338;
+
+  --score-mid-high:   #5ba3d9;
+
+  --status-synced:    #9b8fea;
+  --status-survey:    #b08fea;
+  --status-phone:     #4ec9be;
+  --status-offer:     #f5a43a;
 }
 
 /* ── Hacker mode (Konami easter egg) ──────────────── */

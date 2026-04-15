@@ -61,6 +61,7 @@ const allGroups = [
     { key: 'search', path: '/settings/search', label: 'Search Prefs', show: true },
   ]},
   { label: 'App', items: [
+    { key: 'connections', path: '/settings/connections', label: 'Connections', show: true },
     { key: 'system', path: '/settings/system', label: 'System', show: showSystem },
     { key: 'fine-tune', path: '/settings/fine-tune', label: 'Fine-Tune', show: showFineTune },
   ]},

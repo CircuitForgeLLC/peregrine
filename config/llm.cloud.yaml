@@ -45,6 +45,11 @@ backends:
     model: __auto__
     supports_images: false
     type: openai_compat
+    cf_orch:
+      service: vllm
+      model_candidates:
+        - Qwen2.5-3B-Instruct
+      ttl_s: 300
   vllm_research:
     api_key: ''
     base_url: http://host.docker.internal:8000/v1
@@ -52,6 +57,11 @@ backends:
     model: __auto__
     supports_images: false
     type: openai_compat
+    cf_orch:
+      service: vllm
+      model_candidates:
+        - Qwen2.5-3B-Instruct
+      ttl_s: 300
 fallback_order:
 - vllm
 - ollama

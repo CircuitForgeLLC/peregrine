@@ -1,0 +1,23 @@
+# config/label_tool.yaml — Multi-account IMAP config for the email label tool
+# Copy to config/label_tool.yaml and fill in your credentials.
+# This file is gitignored.
+
+accounts:
+  - name: "Gmail"
+    host: "imap.gmail.com"
+    port: 993
+    username: "you@gmail.com"
+    password: "your-app-password"   # Use an App Password, not your login password
+    folder: "INBOX"
+    days_back: 90
+
+  - name: "Outlook"
+    host: "outlook.office365.com"
+    port: 993
+    username: "you@outlook.com"
+    password: "your-app-password"
+    folder: "INBOX"
+    days_back: 90
+
+# Optional: limit emails fetched per account per run (0 = unlimited)
+max_per_account: 500

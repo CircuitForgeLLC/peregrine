@@ -56,7 +56,56 @@ def migrate_db(db_path: Path) -> list[str]:
             sql = path.read_text(encoding="utf-8")
             log.info("Applying migration %s to %s", version, db_path.name)
             try:
-                con.executescript(sql)
+                # Execute statements individually so that ALTER TABLE ADD COLUMN
+                # errors caused by already-existing columns (pre-migration DBs
+                # created from a newer schema) are treated as no-ops rather than
+                # fatal failures.
+                statements = [s.strip() for s in sql.split(";") if s.strip()]
+                for stmt in statements:
+                    # Strip leading SQL comment lines (-- ...) before processing.
+                    # Checking startswith("--") on the raw chunk would skip entire
+                    # multi-line statements whose first line is a comment.
+                    stripped_lines = [
+                        ln for ln in stmt.splitlines()
+                        if not ln.strip().startswith("--")
+                    ]
+                    stmt = "\n".join(stripped_lines).strip()
+                    if not stmt:
+                        continue
+                    # Pre-check: if this is ADD COLUMN and the column already exists, skip.
+                    # This guards against schema_migrations being ahead of the actual schema
+                    # (e.g. DB reset after migrations were recorded).
+                    stmt_upper = stmt.upper()
+                    if "ALTER TABLE" in stmt_upper and "ADD COLUMN" in stmt_upper:
+                        # Extract table name and column name from the statement
+                        import re as _re
+                        m = _re.match(
+                            r"ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)",
+                            stmt, _re.IGNORECASE
+                        )
+                        if m:
+                            tbl, col = m.group(1), m.group(2)
+                            existing = {
+                                row[1]
+                                for row in con.execute(f"PRAGMA table_info({tbl})")
+                            }
+                            if col in existing:
+                                log.info(
+                                    "Migration %s: column %s.%s already exists, skipping",
+                                    version, tbl, col,
+                                )
+                                continue
+                    try:
+                        con.execute(stmt)
+                    except sqlite3.OperationalError as stmt_exc:
+                        msg = str(stmt_exc).lower()
+                        if "duplicate column name" in msg or "already exists" in msg:
+                            log.info(
+                                "Migration %s: statement already applied, skipping: %s",
+                                version, stmt_exc,
+                            )
+                        else:
+                            raise
                 con.execute(
                     "INSERT INTO schema_migrations (version) VALUES (?)", (version,)
                 )

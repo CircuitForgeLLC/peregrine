@@ -327,3 +327,66 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ── cf-orch hardware step ─────────────────────────────────────── */
+
+.step__orch-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+}
+
+.step__orch-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.step__orch-row {
+  display: grid;
+  grid-template-columns: 6rem 1fr auto;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+  align-items: center;
+}
+
+.step__orch-node {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.step__orch-name {
+  color: var(--color-text-muted);
+}
+
+.step__orch-vram {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.step__field-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+
+.step__tier-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--color-primary, #6366f1) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary, #6366f1) 25%, transparent);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  color: var(--color-text);
+}

@@ -42,6 +42,7 @@ def _build_system_context(profile=None) -> str:
     return " ".join(parts)
 
 SYSTEM_CONTEXT = _build_system_context()
+_candidate = _profile.name if _profile else "the candidate"
 
 
 # ── Mission-alignment detection ───────────────────────────────────────────────
