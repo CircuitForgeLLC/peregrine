@@ -33,6 +33,7 @@
           </span>
           <div class="rv__item-info">
             <span class="rv__item-name">{{ r.name }}</span>
+            <span v-if="r.is_default" class="rv__active-badge">Active profile</span>
             <span class="rv__item-meta">{{ r.word_count }} words · {{ fmtDate(r.created_at) }}</span>
             <span v-if="r.job_id" class="rv__item-source">Built for job #{{ r.job_id }}</span>
           </div>
@@ -50,6 +51,11 @@
           <div class="rv__preview-actions">
             <button v-if="!selected.is_default" class="btn-secondary" @click="setDefault">
               ★ Set as Default
+            </button>
+            <button class="btn-generate" @click="applyToProfile"
+                    :disabled="syncApplying"
+                    aria-describedby="apply-to-profile-desc">
+              {{ syncApplying ? 'Applying…' : '⇩ Apply to profile' }}
             </button>
             <button class="btn-secondary" @click="toggleEdit">
               {{ editing ? 'Cancel' : 'Edit' }}
@@ -90,20 +96,50 @@
           <button class="btn-secondary" @click="toggleEdit">Discard</button>
         </div>
 
+        <p id="apply-to-profile-desc" class="rv__sync-desc">
+          Replaces your resume profile content with this version. Your current profile is backed up first.
+        </p>
+        <p v-if="selected.synced_at" class="rv__synced-at">
+          Last synced to profile: {{ fmtDate(selected.synced_at) }}
+        </p>
+
         <p v-if="actionError" class="rv__error" role="alert">{{ actionError }}</p>
       </div>
     </div>
   </div>
+
+  <!-- Persistent sync notice (dismissible) -->
+  <div v-if="syncNotice" class="rv__sync-notice" role="status" aria-live="polite">
+    Profile updated. Previous content backed up as
+    <strong>{{ syncNotice.backupName }}</strong>.
+    <button class="rv__sync-notice-dismiss" @click="dismissSyncNotice" aria-label="Dismiss">✕</button>
+  </div>
+
+  <ResumeSyncConfirmModal
+    :show="showSyncModal"
+    :current-summary="buildSummary(resumes.find(r => r.is_default === 1) ?? null)"
+    :source-summary="buildSummary(selected)"
+    :blank-fields="selected?.struct_json
+      ? (JSON.parse(selected.struct_json).experience?.length
+        ? ['experience[].industry']
+        : [])
+      : []"
+    @confirm="confirmApplyToProfile"
+    @cancel="showSyncModal = false"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { useApiFetch } from '../composables/useApi'
+import ResumeSyncConfirmModal from '../components/ResumeSyncConfirmModal.vue'
 
 interface Resume {
   id: number; name: string; source: string; job_id: number | null
   text: string; struct_json: string | null; word_count: number
   is_default: number; created_at: string; updated_at: string
+  synced_at: string | null
 }
 
 const resumes      = ref<Resume[]>([])
@@ -115,6 +151,25 @@ const editText     = ref('')
 const saving       = ref(false)
 const actionError  = ref('')
 const showDownloadMenu = ref(false)
+
+const showSyncModal   = ref(false)
+const syncApplying    = ref(false)
+const syncNotice      = ref<{ backupName: string; backupId: number } | null>(null)
+
+interface ContentSummary { name: string; careerSummary: string; latestRole: string }
+
+function buildSummary(r: Resume | null): ContentSummary {
+  if (!r) return { name: '', careerSummary: '', latestRole: '' }
+  try {
+    const s = r.struct_json ? JSON.parse(r.struct_json) : {}
+    const exp = Array.isArray(s.experience) ? s.experience[0] : null
+    return {
+      name:          s.name || r.name,
+      careerSummary: (s.career_summary || '').slice(0, 120),
+      latestRole:    exp ? `${exp.title || ''} at ${exp.company || ''}`.replace(/^ at | at $/, '') : '',
+    }
+  } catch { return { name: r.name, careerSummary: '', latestRole: '' } }
+}
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -185,6 +240,30 @@ async function confirmDelete() {
   await loadList()
 }
 
+async function applyToProfile() {
+  if (!selected.value) return
+  showSyncModal.value = true
+}
+
+async function confirmApplyToProfile() {
+  if (!selected.value) return
+  showSyncModal.value = false
+  syncApplying.value = true
+  actionError.value = ''
+  const { data, error } = await useApiFetch<{
+    ok: boolean; backup_id: number; backup_name: string
+  }>(`/api/resumes/${selected.value.id}/apply-to-profile`, { method: 'POST' })
+  syncApplying.value = false
+  if (error || !data?.ok) {
+    actionError.value = 'Profile sync failed — please try again.'
+    return
+  }
+  syncNotice.value = { backupName: data.backup_name, backupId: data.backup_id }
+  await loadList()
+}
+
+function dismissSyncNotice() { syncNotice.value = null }
+
 async function handleImport(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -221,6 +300,15 @@ function downloadYaml() {
 }
 
 onMounted(loadList)
+
+onBeforeRouteLeave(() => {
+  if (editing.value && (editName.value !== selected.value?.name || editText.value !== selected.value?.text)) {
+    const confirmed = window.confirm(
+      `You have unsaved edits to "${selected.value?.name}". Leave without saving?`
+    )
+    if (!confirmed) return false
+  }
+})
 </script>
 
 <style scoped>
@@ -336,5 +424,33 @@ onMounted(loadList)
 @media (max-width: 640px) {
   .rv__layout { grid-template-columns: 1fr; }
   .rv__list { max-height: 200px; }
+}
+
+.rv__active-badge {
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface-alt));
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+  border-radius: var(--radius-sm, 0.25rem);
+  padding: 1px 6px; margin-left: var(--space-1);
+}
+.rv__sync-desc {
+  font-size: 0.78rem; color: var(--color-text-muted); margin-top: var(--space-1);
+}
+.rv__synced-at {
+  font-size: 0.78rem; color: var(--color-text-muted); margin-top: var(--space-1);
+}
+.rv__sync-notice {
+  position: fixed; bottom: var(--space-6); left: 50%; transform: translateX(-50%);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md); padding: var(--space-3) var(--space-5);
+  font-size: 0.9rem; z-index: 500; max-width: 480px;
+  display: flex; gap: var(--space-3); align-items: center;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+}
+.rv__sync-notice-dismiss {
+  background: none; border: none; cursor: pointer;
+  color: var(--color-text-muted); font-size: 1rem; flex-shrink: 0;
 }
 </style>
