@@ -51,9 +51,25 @@ IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 # Per-request DB path — set by cloud_session_middleware; falls back to DB_PATH
 _request_db: ContextVar[str | None] = ContextVar("_request_db", default=None)
 
+def _load_demo_seed(db_path: str, seed_file: str) -> None:
+    """Load seed SQL into the demo DB if it is empty (no jobs rows yet)."""
+    import sqlite3 as _sqlite3
+    seed_path = Path(seed_file)
+    if not seed_path.exists():
+        return
+    con = _sqlite3.connect(db_path)
+    try:
+        count = con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        if count == 0:
+            con.executescript(seed_path.read_text())
+            con.commit()
+    finally:
+        con.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load .env then run pending SQLite migrations on startup."""
+    """Load .env, run migrations, and (in demo mode) seed the demo DB."""
     # Load .env before any runtime env reads — safe because lifespan doesn't run
     # when dev_api is imported by tests (only when uvicorn actually starts).
     _load_env(PEREGRINE_ROOT / ".env")
@@ -73,6 +89,8 @@ async def lifespan(app: FastAPI):
             except Exception as exc:
                 _sweep_log.warning("Migration failed for %s: %s", user_db, exc)
 
+    if IS_DEMO and (seed_file := os.environ.get("DEMO_SEED_FILE")):
+        _load_demo_seed(DB_PATH, seed_file)
     yield
 
 
