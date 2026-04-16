@@ -8,6 +8,12 @@ export interface WorkEntry {
   industry: string; responsibilities: string; skills: string[]
 }
 
+export interface EducationEntry {
+  id: string
+  institution: string; degree: string; field: string
+  start_date: string; end_date: string
+}
+
 export const useResumeStore = defineStore('settings/resume', () => {
   const hasResume = ref(false)
   const loading = ref(false)
@@ -31,6 +37,11 @@ export const useResumeStore = defineStore('settings/resume', () => {
   const veteran_status = ref(''); const disability = ref('')
   // Keywords
   const skills = ref<string[]>([]); const domains = ref<string[]>([]); const keywords = ref<string[]>([])
+  // Extended profile fields
+  const career_summary = ref('')
+  const education = ref<EducationEntry[]>([])
+  const achievements = ref<string[]>([])
+  const lastSynced = ref<string | null>(null)
   // LLM suggestions (pending, not yet accepted)
   const skillSuggestions = ref<string[]>([])
   const domainSuggestions = ref<string[]>([])
@@ -69,6 +80,9 @@ export const useResumeStore = defineStore('settings/resume', () => {
     skills.value = (data.skills as string[]) ?? []
     domains.value = (data.domains as string[]) ?? []
     keywords.value = (data.keywords as string[]) ?? []
+    career_summary.value = String(data.career_summary ?? '')
+    education.value = ((data.education as Omit<EducationEntry, 'id'>[]) ?? []).map(e => ({ ...e, id: crypto.randomUUID() }))
+    achievements.value = (data.achievements as string[]) ?? []
   }
 
   async function save() {
@@ -84,12 +98,19 @@ export const useResumeStore = defineStore('settings/resume', () => {
       gender: gender.value, pronouns: pronouns.value, ethnicity: ethnicity.value,
       veteran_status: veteran_status.value, disability: disability.value,
       skills: skills.value, domains: domains.value, keywords: keywords.value,
+      career_summary: career_summary.value,
+      education: education.value.map(({ id: _id, ...e }) => e),
+      achievements: achievements.value,
     }
     const { error } = await useApiFetch('/api/settings/resume', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     })
     saving.value = false
-    if (error) saveError.value = 'Save failed — please try again.'
+    if (error) {
+      saveError.value = 'Save failed — please try again.'
+    } else {
+      lastSynced.value = new Date().toISOString()
+    }
   }
 
   async function createBlank() {
@@ -103,6 +124,16 @@ export const useResumeStore = defineStore('settings/resume', () => {
 
   function removeExperience(idx: number) {
     experience.value.splice(idx, 1)
+  }
+
+  function addEducation() {
+    education.value.push({
+      id: crypto.randomUUID(), institution: '', degree: '', field: '', start_date: '', end_date: ''
+    })
+  }
+
+  function removeEducation(idx: number) {
+    education.value.splice(idx, 1)
   }
 
   async function suggestTags(field: 'skills' | 'domains' | 'keywords') {
@@ -149,7 +180,8 @@ export const useResumeStore = defineStore('settings/resume', () => {
     gender, pronouns, ethnicity, veteran_status, disability,
     skills, domains, keywords,
     skillSuggestions, domainSuggestions, keywordSuggestions, suggestingField,
+    career_summary, education, achievements, lastSynced,
     syncFromProfile, load, save, createBlank,
-    addExperience, removeExperience, addTag, removeTag, suggestTags, acceptTagSuggestion,
+    addExperience, removeExperience, addEducation, removeEducation, addTag, removeTag, suggestTags, acceptTagSuggestion,
   }
 })
