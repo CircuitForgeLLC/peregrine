@@ -56,6 +56,23 @@
         <p v-if="uploadError" class="error">{{ uploadError }}</p>
       </section>
 
+      <!-- Sync status label -->
+      <div v-if="store.lastSynced" class="sync-status-label">
+        Content synced from Resume Library — {{ fmtDate(store.lastSynced) }}.
+        Changes here update the default library entry when you save.
+      </div>
+
+      <!-- Career Summary -->
+      <section class="form-section">
+        <h3>Career Summary</h3>
+        <p class="section-note">Used in cover letter generation and as your professional introduction.</p>
+        <div class="field-row">
+          <label for="career-summary">Career summary</label>
+          <textarea id="career-summary" v-model="store.career_summary"
+                    rows="4" placeholder="2-3 sentences summarising your background and what you bring."></textarea>
+        </div>
+      </section>
+
       <!-- Personal Information -->
       <section class="form-section">
         <h3>Personal Information</h3>
@@ -128,6 +145,57 @@
           <button class="remove-btn" @click="store.removeExperience(idx)">Remove</button>
         </div>
         <button @click="store.addExperience()">+ Add Position</button>
+      </section>
+
+      <!-- Education -->
+      <section class="form-section">
+        <h3>Education</h3>
+        <div v-for="(edu, idx) in store.education" :key="edu.id" class="experience-card">
+          <div class="experience-card__header">
+            <span class="experience-card__label">Education {{ idx + 1 }}</span>
+            <button class="btn-remove" @click="store.removeEducation(idx)"
+                    :aria-label="`Remove education entry ${idx + 1}`">Remove</button>
+          </div>
+          <div class="field-row">
+            <label>Institution</label>
+            <input v-model="edu.institution" placeholder="University or school name" />
+          </div>
+          <div class="field-row-grid">
+            <div class="field-row">
+              <label>Degree</label>
+              <input v-model="edu.degree" placeholder="e.g. B.S., M.A., Ph.D." />
+            </div>
+            <div class="field-row">
+              <label>Field of study</label>
+              <input v-model="edu.field" placeholder="e.g. Computer Science" />
+            </div>
+          </div>
+          <div class="field-row-grid">
+            <div class="field-row">
+              <label>Start year</label>
+              <input v-model="edu.start_date" placeholder="2015" />
+            </div>
+            <div class="field-row">
+              <label>End year</label>
+              <input v-model="edu.end_date" placeholder="2019" />
+            </div>
+          </div>
+        </div>
+        <button class="btn-secondary" @click="store.addEducation">+ Add education</button>
+      </section>
+
+      <!-- Achievements -->
+      <section class="form-section">
+        <h3>Achievements</h3>
+        <p class="section-note">Awards, certifications, open-source projects, publications.</p>
+        <div v-for="(ach, idx) in store.achievements" :key="idx" class="achievement-row">
+          <input :value="ach"
+                 @input="store.achievements[idx] = ($event.target as HTMLInputElement).value"
+                 placeholder="Describe the achievement" />
+          <button class="btn-remove" @click="store.achievements.splice(idx, 1)"
+                  :aria-label="`Remove achievement ${idx + 1}`">&#x2715;</button>
+        </div>
+        <button class="btn-secondary" @click="store.achievements.push('')">+ Add achievement</button>
       </section>
 
       <!-- Preferences -->
@@ -302,6 +370,10 @@ function handleFileSelect(event: Event) {
   uploadError.value = null
 }
 
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 async function handleUpload() {
   const file = pendingFile.value
   if (!file) return
@@ -407,4 +479,34 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .toggle-btn { margin-left: 10px; padding: 2px 10px; background: transparent; border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-text-muted); cursor: pointer; font-size: 0.78rem; }
 .loading { text-align: center; padding: var(--space-8); color: var(--color-text-muted); }
 .replace-section { background: var(--color-surface-alt); border-radius: 8px; padding: var(--space-4); }
+.sync-status-label {
+  font-size: 0.82rem; color: var(--color-text-muted);
+  border-left: 3px solid var(--color-primary);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-6);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface-alt));
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.achievement-row {
+  display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-2);
+}
+.achievement-row input { flex: 1; }
+.btn-remove {
+  background: none; border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); padding: 2px var(--space-2);
+  cursor: pointer; color: var(--color-text-muted); font-size: 0.8rem;
+  white-space: nowrap;
+}
+.btn-remove:hover { color: var(--color-error, #dc2626); border-color: var(--color-error, #dc2626); }
+.field-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.btn-secondary {
+  padding: 7px 16px; background: transparent;
+  border: 1px solid var(--color-border); border-radius: 6px;
+  color: var(--color-text-muted); cursor: pointer; font-size: 0.85rem;
+}
+.btn-secondary:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.experience-card__header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3);
+}
+.experience-card__label { font-size: 0.82rem; color: var(--color-text-muted); font-weight: 500; }
 </style>
