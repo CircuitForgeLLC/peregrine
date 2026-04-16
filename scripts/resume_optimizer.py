@@ -70,7 +70,12 @@ def extract_jd_signals(description: str, resume_text: str = "") -> list[str]:
         # Extract JSON array from response (LLM may wrap it in markdown)
         match = re.search(r"\[.*\]", raw, re.DOTALL)
         if match:
-            llm_signals = json.loads(match.group(0))
+            json_str = match.group(0)
+            # LLMs occasionally emit invalid JSON escape sequences (e.g. \s, \d, \p)
+            # that are valid regex but not valid JSON. Replace bare backslashes that
+            # aren't followed by a recognised JSON escape character.
+            json_str = re.sub(r'\\([^"\\/bfnrtu])', r'\1', json_str)
+            llm_signals = json.loads(json_str)
             llm_signals = [s.strip() for s in llm_signals if isinstance(s, str) and s.strip()]
     except Exception:
         log.warning("[resume_optimizer] LLM signal extraction failed", exc_info=True)
