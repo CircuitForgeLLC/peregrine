@@ -274,7 +274,8 @@ function capitalize(s: string) { return s.charAt(0).toUpperCase() + s.slice(1) }
 async function onApprove() {
   const job = store.currentJob
   if (!job) return
-  await store.approve(job)
+  const ok = await store.approve(job)
+  if (!ok) { stackRef.value?.resetCard(); return }
   showUndoToast('approved')
   checkStoopSpeed()
 }
@@ -282,7 +283,8 @@ async function onApprove() {
 async function onReject() {
   const job = store.currentJob
   if (!job) return
-  await store.reject(job)
+  const ok = await store.reject(job)
+  if (!ok) { stackRef.value?.resetCard(); return }
   showUndoToast('rejected')
   checkStoopSpeed()
 }
