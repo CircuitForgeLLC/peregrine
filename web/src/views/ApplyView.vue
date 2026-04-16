@@ -1,6 +1,11 @@
 <template>
   <!-- ── Mobile: full-width list ──────────────────────────────────── -->
   <div v-if="isMobile" class="apply-list">
+    <HintChip
+      v-if="config.isDemo"
+      view-key="apply"
+      message="The Spotify cover letter is ready — open it to see how AI drafts from your resume"
+    />
     <header class="apply-list__header">
       <h1 class="apply-list__title">Apply</h1>
       <p class="apply-list__subtitle">Approved jobs ready for applications</p>
@@ -124,6 +129,10 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useApiFetch } from '../composables/useApi'
 import ApplyWorkspace from '../components/ApplyWorkspace.vue'
+import HintChip from '../components/HintChip.vue'
+import { useAppConfigStore } from '../stores/appConfig'
+
+const config = useAppConfigStore()
 
 // ── Responsive ───────────────────────────────────────────────────────────────
 

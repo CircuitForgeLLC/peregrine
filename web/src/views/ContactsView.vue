@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useApiFetch } from '../composables/useApi'
+import HintChip from '../components/HintChip.vue'
+import { useAppConfigStore } from '../stores/appConfig'
+
+const config = useAppConfigStore()
 
 interface Contact {
   id:           number
@@ -79,6 +83,11 @@ onMounted(fetchContacts)
 
 <template>
   <div class="contacts-view">
+    <HintChip
+      v-if="config.isDemo"
+      view-key="contacts"
+      message="Peregrine logs every recruiter email automatically — no manual entry needed"
+    />
     <header class="contacts-header">
       <h1 class="contacts-title">Contacts</h1>
       <span class="contacts-count" v-if="total > 0">{{ total }} total</span>
