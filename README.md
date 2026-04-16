@@ -10,6 +10,23 @@
 
 > *"Tools for the jobs that the system made hard on purpose."*
 
+**[Try the live demo](https://demo.circuitforge.tech/peregrine)** — no account required, nothing saved.
+
+---
+
+![Job review — swipe right to approve, left to skip](docs/screenshots/02-review-swipe.gif)
+
+<table>
+<tr>
+<td><img src="docs/screenshots/01-dashboard.png" alt="Dashboard with pipeline stats"/></td>
+<td><img src="docs/screenshots/04-interviews.png" alt="Interview kanban with recruiter emails attached"/></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/03-apply.png" alt="Apply workspace with AI cover letter draft"/></td>
+<td><img src="docs/screenshots/02-review.png" alt="Job review card with match score and ghost-post detection"/></td>
+</tr>
+</table>
+
 ---
 
 Job search is a second job nobody hired you for.
