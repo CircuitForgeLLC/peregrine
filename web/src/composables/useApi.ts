@@ -3,6 +3,7 @@ import { showToast } from './useToast'
 export type ApiError =
   | { kind: 'network'; message: string }
   | { kind: 'http'; status: number; detail: string }
+  | { kind: 'demo-blocked' }
 
 // Strip trailing slash so '/peregrine/' + '/api/...' → '/peregrine/api/...'
 const _apiBase = import.meta.env.BASE_URL.replace(/\/$/, '')
@@ -21,7 +22,9 @@ export async function useApiFetch<T>(
           const body = JSON.parse(rawText) as { detail?: string }
           if (body.detail === 'demo-write-blocked') {
             showToast('Demo mode — sign in to save changes')
-            return { data: null, error: null }
+            // Return a truthy error so callers bail early (no optimistic UI update),
+            // but the toast is already shown so no additional error handling needed.
+            return { data: null, error: { kind: 'demo-blocked' as const } }
           }
         } catch { /* not JSON — fall through to normal error */ }
       }

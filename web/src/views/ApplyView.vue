@@ -55,6 +55,11 @@
   <div v-else class="apply-split" :class="{ 'has-selection': selectedJobId !== null }" ref="splitEl">
     <!-- Left: narrow job list -->
     <div class="apply-split__list">
+      <HintChip
+        v-if="config.isDemo"
+        view-key="apply"
+        message="The Spotify cover letter is ready — open it to see how AI drafts from your resume"
+      />
       <div class="split-list__header">
         <h1 class="split-list__title">Apply</h1>
         <span v-if="coverLetterCount >= 5" class="marathon-badge" title="You're on a roll!">

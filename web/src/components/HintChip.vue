@@ -44,7 +44,7 @@ function dismiss(): void {
 .hint-chip__message {
   flex: 1;
   font-size: 0.85rem;
-  color: var(--app-primary-light, #68A8D8);
+  color: var(--color-text, #1a202c);
   line-height: 1.4;
 }
 
