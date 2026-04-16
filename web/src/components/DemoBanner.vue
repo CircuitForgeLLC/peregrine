@@ -27,8 +27,8 @@
   position: sticky;
   top: 0;
   z-index: 200;
-  background: var(--color-surface-raised);
-  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-raised));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 20%, var(--color-border));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -62,7 +62,7 @@
 
 .demo-banner__cta--primary {
   background: var(--color-primary);
-  color: white;
+  color: var(--color-surface);  /* surface is dark in dark mode, light in light mode — always contrasts primary */
 }
 
 .demo-banner__cta--secondary {
