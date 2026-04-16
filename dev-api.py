@@ -2875,12 +2875,34 @@ def get_resume():
 
 @app.put("/api/settings/resume")
 def save_resume(payload: ResumePayload):
+    """Save resume profile. If a default library entry exists, sync content back to it."""
+    import json as _json
+    from scripts.db import (
+        get_resume as _get_resume,
+        update_resume_content as _update_content,
+    )
+    from scripts.resume_sync import profile_to_library
     try:
         resume_path = _resume_path()
         resume_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(resume_path, "w") as f:
+        with open(resume_path, "w", encoding="utf-8") as f:
             yaml.dump(payload.model_dump(), f, allow_unicode=True, default_flow_style=False)
-        return {"ok": True}
+
+        # Profile→library sync: if a default resume exists, update it
+        synced_id: int | None = None
+        db_path = Path(_request_db.get() or DB_PATH)
+        _uy = Path(_user_yaml_path())
+        if _uy.exists():
+            profile_meta = yaml.safe_load(_uy.read_text(encoding="utf-8")) or {}
+            default_id = profile_meta.get("default_resume_id")
+            if default_id:
+                entry = _get_resume(db_path, int(default_id))
+                if entry:
+                    text, struct = profile_to_library(payload.model_dump())
+                    _update_content(db_path, int(default_id), text=text, struct_json=_json.dumps(struct))
+                    synced_id = int(default_id)
+
+        return {"ok": True, "synced_library_entry_id": synced_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
