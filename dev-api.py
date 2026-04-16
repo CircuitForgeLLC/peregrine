@@ -858,6 +858,80 @@ def set_default_resume_endpoint(resume_id: int):
     return {"ok": True}
 
 
+@app.post("/api/resumes/{resume_id}/apply-to-profile")
+def apply_resume_to_profile(resume_id: int):
+    """Sync a library resume entry to the active profile (library→profile direction).
+
+    Workflow:
+      1. Load the library entry (must have struct_json).
+      2. Load current profile to preserve metadata fields.
+      3. Backup current profile content as a new auto-named library entry.
+      4. Merge content fields from the library entry into the profile.
+      5. Write updated plain_text_resume.yaml.
+      6. Mark the library entry synced_at.
+      7. Return backup details for the frontend notification.
+    """
+    import json as _json
+    from scripts.resume_sync import (
+        library_to_profile_content,
+        profile_to_library,
+        make_auto_backup_name,
+    )
+    from scripts.db import get_resume as _get, create_resume as _create
+
+    db_path = Path(_request_db.get() or DB_PATH)
+    entry = _get(db_path, resume_id)
+    if not entry:
+        raise HTTPException(404, "Resume not found")
+
+    struct_json: dict = {}
+    if entry.get("struct_json"):
+        try:
+            struct_json = _json.loads(entry["struct_json"])
+        except Exception:
+            raise HTTPException(422, "Library entry has malformed struct_json — re-import the resume to repair it.")
+
+    resume_path = _resume_path()
+    current_profile: dict = {}
+    if resume_path.exists():
+        with open(resume_path, encoding="utf-8") as f:
+            current_profile = yaml.safe_load(f) or {}
+
+    # Backup current content to library before overwriting
+    backup_text, backup_struct = profile_to_library(current_profile)
+    backup_name = make_auto_backup_name(entry["name"])
+    backup = _create(
+        db_path,
+        name=backup_name,
+        text=backup_text,
+        source="auto_backup",
+        struct_json=_json.dumps(backup_struct),
+    )
+
+    # Merge: overwrite content fields, preserve metadata
+    content = library_to_profile_content(struct_json)
+    CONTENT_FIELDS = {
+        "name", "surname", "email", "phone", "career_summary",
+        "experience", "skills", "education", "achievements",
+    }
+    for field in CONTENT_FIELDS:
+        current_profile[field] = content[field]
+
+    resume_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(resume_path, "w", encoding="utf-8") as f:
+        yaml.dump(current_profile, f, allow_unicode=True, default_flow_style=False)
+
+    from scripts.db import update_resume_synced_at as _mark_synced
+    _mark_synced(db_path, resume_id)
+
+    return {
+        "ok":             True,
+        "backup_id":      backup["id"],
+        "backup_name":    backup_name,
+        "fields_updated": sorted(CONTENT_FIELDS),
+    }
+
+
 # ── Per-job resume endpoints ───────────────────────────────────────────────────
 
 @app.get("/api/jobs/{job_id}/resume")
