@@ -973,6 +973,7 @@ def _resume_as_dict(row) -> dict:
         "is_default":  row["is_default"],
         "created_at":  row["created_at"],
         "updated_at":  row["updated_at"],
+        "synced_at":   row["synced_at"] if "synced_at" in row.keys() else None,
     }
 
 
@@ -1069,6 +1070,44 @@ def set_default_resume(db_path: Path = DEFAULT_DB, resume_id: int = 0) -> None:
     try:
         conn.execute("UPDATE resumes SET is_default=0")
         conn.execute("UPDATE resumes SET is_default=1 WHERE id=?", (resume_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_resume_synced_at(db_path: Path = DEFAULT_DB, resume_id: int = 0) -> None:
+    """Mark a library entry as synced to the profile (library→profile direction)."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE resumes SET synced_at=datetime('now') WHERE id=?",
+            (resume_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_resume_content(
+    db_path: Path = DEFAULT_DB,
+    resume_id: int = 0,
+    text: str = "",
+    struct_json: str | None = None,
+) -> None:
+    """Update text, struct_json, and synced_at for a library entry.
+
+    Called by the profile→library sync path (PUT /api/settings/resume).
+    """
+    word_count = len(text.split()) if text else 0
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """UPDATE resumes
+               SET text=?, struct_json=?, word_count=?,
+                   synced_at=datetime('now'), updated_at=datetime('now')
+               WHERE id=?""",
+            (text, struct_json, word_count, resume_id),
+        )
         conn.commit()
     finally:
         conn.close()
