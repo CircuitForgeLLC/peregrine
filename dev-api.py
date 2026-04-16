@@ -46,6 +46,7 @@ DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 _CLOUD_MODE       = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
 _CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
 _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
+IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 # Per-request DB path — set by cloud_session_middleware; falls back to DB_PATH
 _request_db: ContextVar[str | None] = ContextVar("_request_db", default=None)
@@ -94,6 +95,12 @@ _feedback_router = _make_feedback_router(
 app.include_router(_feedback_router, prefix="/api/feedback")
 
 _log = logging.getLogger("peregrine.session")
+
+
+def _demo_guard() -> None:
+    """Raise 403 if running in demo mode. Call at the top of any write endpoint."""
+    if IS_DEMO:
+        raise HTTPException(status_code=403, detail="demo-write-blocked")
 
 def _resolve_cf_user_id(cookie_str: str) -> str | None:
     """Extract cf_session JWT from Cookie string and return Directus user_id.
@@ -310,6 +317,7 @@ def job_counts():
 
 @app.post("/api/jobs/{job_id}/approve")
 def approve_job(job_id: int):
+    _demo_guard()
     db = _get_db()
     db.execute("UPDATE jobs SET status = 'approved' WHERE id = ?", (job_id,))
     db.commit()
@@ -321,6 +329,7 @@ def approve_job(job_id: int):
 
 @app.post("/api/jobs/{job_id}/reject")
 def reject_job(job_id: int):
+    _demo_guard()
     db = _get_db()
     db.execute("UPDATE jobs SET status = 'rejected' WHERE id = ?", (job_id,))
     db.commit()
@@ -410,6 +419,7 @@ def save_cover_letter(job_id: int, body: CoverLetterBody):
 
 @app.post("/api/jobs/{job_id}/cover_letter/generate")
 def generate_cover_letter(job_id: int):
+    _demo_guard()
     try:
         from scripts.task_runner import submit_task
         task_id, is_new = submit_task(
@@ -1596,6 +1606,7 @@ class HiredFeedbackPayload(BaseModel):
 
 @app.post("/api/jobs/{job_id}/hired-feedback")
 def save_hired_feedback(job_id: int, payload: HiredFeedbackPayload):
+    _demo_guard()
     db = _get_db()
     row = db.execute("SELECT status FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not row:

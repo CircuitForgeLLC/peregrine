@@ -1,3 +1,5 @@
+import { showToast } from './useToast'
+
 export type ApiError =
   | { kind: 'network'; message: string }
   | { kind: 'http'; status: number; detail: string }
@@ -12,8 +14,18 @@ export async function useApiFetch<T>(
   try {
     const res = await fetch(_apiBase + url, opts)
     if (!res.ok) {
-      const detail = await res.text().catch(() => '')
-      return { data: null, error: { kind: 'http', status: res.status, detail } }
+      const rawText = await res.text().catch(() => '')
+      // Demo mode: show toast and swallow the error so callers don't need to handle it
+      if (res.status === 403) {
+        try {
+          const body = JSON.parse(rawText) as { detail?: string }
+          if (body.detail === 'demo-write-blocked') {
+            showToast('Demo mode — sign in to save changes')
+            return { data: null, error: null }
+          }
+        } catch { /* not JSON — fall through to normal error */ }
+      }
+      return { data: null, error: { kind: 'http', status: res.status, detail: rawText } }
     }
     const data = await res.json() as T
     return { data, error: null }
