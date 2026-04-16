@@ -21,11 +21,14 @@ services:
       - "8504:8501"
     volumes:
       - ./demo/config:/app/config
-      - ./demo/data:/app/data
-      # No /docs mount — demo has no personal documents
+      - ./demo:/app/demo:ro   # seed.sql lives here; read-only
+      # /app/data is tmpfs — ephemeral, resets on every container start
+    tmpfs:
+      - /app/data
     environment:
       - DEMO_MODE=true
       - STAGING_DB=/app/data/staging.db
+      - DEMO_SEED_FILE=/app/demo/seed.sql
       - DOCS_DIR=/tmp/demo-docs
       - STREAMLIT_SERVER_BASE_URL_PATH=peregrine
       - PYTHONUNBUFFERED=1
