@@ -139,6 +139,32 @@ def test_profile_to_library_period_split():
     assert struct["experience"][0]["start_date"] == "2023"
     assert struct["experience"][0]["end_date"] == "present"
 
+def test_profile_to_library_period_split_iso_dates():
+    """ISO dates (with hyphens) must round-trip through the period field correctly."""
+    payload = {
+        **PROFILE_PAYLOAD,
+        "experience": [{
+            **PROFILE_PAYLOAD["experience"][0],
+            "period": "2023-01 \u2013 2025-03",
+        }],
+    }
+    _, struct = profile_to_library(payload)
+    assert struct["experience"][0]["start_date"] == "2023-01"
+    assert struct["experience"][0]["end_date"] == "2025-03"
+
+def test_profile_to_library_period_split_em_dash():
+    """Em-dash separator is also handled."""
+    payload = {
+        **PROFILE_PAYLOAD,
+        "experience": [{
+            **PROFILE_PAYLOAD["experience"][0],
+            "period": "2022-06 \u2014 2023-12",
+        }],
+    }
+    _, struct = profile_to_library(payload)
+    assert struct["experience"][0]["start_date"] == "2022-06"
+    assert struct["experience"][0]["end_date"] == "2023-12"
+
 def test_profile_to_library_education_round_trip():
     _, struct = profile_to_library(PROFILE_PAYLOAD)
     assert struct["education"][0]["institution"] == "State University"
