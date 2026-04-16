@@ -2691,10 +2691,17 @@ class WorkEntry(BaseModel):
     title: str = ""; company: str = ""; period: str = ""; location: str = ""
     industry: str = ""; responsibilities: str = ""; skills: List[str] = []
 
+class EducationEntry(BaseModel):
+    institution: str = ""; degree: str = ""; field: str = ""
+    start_date: str = ""; end_date: str = ""
+
 class ResumePayload(BaseModel):
     name: str = ""; email: str = ""; phone: str = ""; linkedin_url: str = ""
     surname: str = ""; address: str = ""; city: str = ""; zip_code: str = ""; date_of_birth: str = ""
+    career_summary: str = ""
     experience: List[WorkEntry] = []
+    education: List[EducationEntry] = []
+    achievements: List[str] = []
     salary_min: int = 0; salary_max: int = 0; notice_period: str = ""
     remote: bool = False; relocation: bool = False
     assessment: bool = False; background_check: bool = False
@@ -2722,32 +2729,46 @@ def _tokens_path() -> Path:
 def _normalize_experience(raw: list) -> list:
     """Normalize AIHawk-style experience entries to the Vue WorkEntry schema.
 
-    Parser / AIHawk stores: bullets (list[str]), start_date, end_date
-    Vue WorkEntry expects:   responsibilities (str), period (str)
+    AIHawk stores:  key_responsibilities (numbered dicts), employment_period, skills_acquired
+    Vue WorkEntry:  responsibilities (str), period (str), skills (list)
+    If already in Vue format (has 'period' key or 'responsibilities' key), pass through unchanged.
     """
     out = []
     for e in raw:
         if not isinstance(e, dict):
             continue
-        entry = dict(e)
-        # bullets → responsibilities
-        if "responsibilities" not in entry or not entry["responsibilities"]:
-            bullets = entry.pop("bullets", None) or []
-            if isinstance(bullets, list):
-                entry["responsibilities"] = "\n".join(b for b in bullets if b)
-            elif isinstance(bullets, str):
-                entry["responsibilities"] = bullets
+        # Already in Vue WorkEntry format — pass through
+        if "period" in e or "responsibilities" in e:
+            out.append({
+                "title":            e.get("title", ""),
+                "company":          e.get("company", ""),
+                "period":           e.get("period", ""),
+                "location":         e.get("location", ""),
+                "industry":         e.get("industry", ""),
+                "responsibilities": e.get("responsibilities", ""),
+                "skills":           e.get("skills") or [],
+            })
+            continue
+        # AIHawk format
+        resps = e.get("key_responsibilities", {})
+        if isinstance(resps, dict):
+            resp_text = "\n".join(v for v in resps.values() if isinstance(v, str))
+        elif isinstance(resps, list):
+            resp_text = "\n".join(str(r) for r in resps)
         else:
-            entry.pop("bullets", None)
-        # start_date + end_date → period
-        if "period" not in entry or not entry["period"]:
-            start = entry.pop("start_date", "") or ""
-            end = entry.pop("end_date", "") or ""
-            entry["period"] = f"{start} – {end}".strip(" –") if (start or end) else ""
-        else:
-            entry.pop("start_date", None)
-            entry.pop("end_date", None)
-        out.append(entry)
+            resp_text = str(resps)
+        period = e.get("employment_period", "")
+        skills_raw = e.get("skills_acquired", [])
+        skills = skills_raw if isinstance(skills_raw, list) else []
+        out.append({
+            "title":            e.get("position", ""),
+            "company":          e.get("company", ""),
+            "period":           period,
+            "location":         e.get("location", ""),
+            "industry":         e.get("industry", ""),
+            "responsibilities": resp_text,
+            "skills":           skills,
+        })
     return out
 
 
@@ -2756,12 +2777,24 @@ def get_resume():
     try:
         resume_path = _resume_path()
         if not resume_path.exists():
+            # Backward compat: check user.yaml for career_summary
+            _uy = Path(_user_yaml_path())
+            if _uy.exists():
+                uy = yaml.safe_load(_uy.read_text(encoding="utf-8")) or {}
+                if uy.get("career_summary"):
+                    return {"exists": False, "legacy_career_summary": uy["career_summary"]}
             return {"exists": False}
-        with open(resume_path) as f:
+        with open(resume_path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         data["exists"] = True
         if "experience" in data and isinstance(data["experience"], list):
             data["experience"] = _normalize_experience(data["experience"])
+        # Backward compat: if career_summary missing from YAML, try user.yaml
+        if not data.get("career_summary"):
+            _uy = Path(_user_yaml_path())
+            if _uy.exists():
+                uy = yaml.safe_load(_uy.read_text(encoding="utf-8")) or {}
+                data["career_summary"] = uy.get("career_summary", "")
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
