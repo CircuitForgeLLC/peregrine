@@ -122,9 +122,15 @@ def profile_to_library(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         period  = (exp.get("period") or "").strip()
         location = (exp.get("location") or "").strip()
 
-        # Split period back to start_date / end_date
-        sep_period = period.replace("\u2013", "-").replace("\u2014", "-")
-        date_parts = [p.strip() for p in sep_period.split("-", 1)]
+        # Split period back to start_date / end_date.
+        # Split on the dash/dash separator BEFORE normalising to plain hyphens
+        # so that ISO dates like "2023-01 – 2025-03" round-trip correctly.
+        if "\u2013" in period:          # en-dash
+            date_parts = [p.strip() for p in period.split("\u2013", 1)]
+        elif "\u2014" in period:        # em-dash
+            date_parts = [p.strip() for p in period.split("\u2014", 1)]
+        else:
+            date_parts = [period.strip()] if period.strip() else []
         start_date = date_parts[0] if date_parts else ""
         end_date   = date_parts[1] if len(date_parts) > 1 else ""
 
