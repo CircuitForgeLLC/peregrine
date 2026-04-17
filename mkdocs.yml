@@ -70,3 +70,6 @@ nav:
     - Tier System: reference/tier-system.md
     - LLM Router: reference/llm-router.md
     - Config Files: reference/config-files.md
+
+extra_javascript:
+  - plausible.js

@@ -11,6 +11,9 @@
       html, body { margin: 0; background: #eaeff8; min-height: 100vh; }
       @media (prefers-color-scheme: dark) { html, body { background: #16202e; } }
     </style>
+    <!-- Plausible analytics: cookie-free, GDPR-compliant, self-hosted.
+         Skips localhost/127.0.0.1. Reports to hostname + circuitforge.tech rollup. -->
+    <script>(function(){if(/localhost|127\.0\.0\.1/.test(location.hostname))return;var s=document.createElement('script');s.defer=true;s.dataset.domain=location.hostname+',circuitforge.tech';s.dataset.api='https://analytics.circuitforge.tech/api/event';s.src='https://analytics.circuitforge.tech/js/script.js';document.head.appendChild(s);})();</script>
   </head>
   <body>
     <!-- Mount target only — App.vue root must NOT use id="app". Gotcha #1. -->
