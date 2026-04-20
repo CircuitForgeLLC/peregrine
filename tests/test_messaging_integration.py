@@ -144,18 +144,18 @@ def test_builtin_template_delete_returns_403(client):
 
 def test_draft_without_llm_returns_402(fresh_db, monkeypatch):
     """POST /api/contacts/{id}/draft-reply with free tier + no LLM configured returns 402."""
-    import sqlite3
     import dev_api
+    from scripts.db import add_contact
 
-    # Insert a job_contacts row so the contact_id exists
-    con = sqlite3.connect(fresh_db)
-    con.execute(
-        "INSERT INTO job_contacts (job_id, direction, subject, from_addr, body) "
-        "VALUES (NULL, 'inbound', 'Test subject', 'hr@example.com', 'We would like to schedule...')"
+    # Insert a job_contacts row via the db helper so schema changes stay in sync
+    contact_id = add_contact(
+        fresh_db,
+        job_id=None,
+        direction="inbound",
+        subject="Test subject",
+        from_addr="hr@example.com",
+        body="We would like to schedule...",
     )
-    con.commit()
-    contact_id = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-    con.close()
 
     # Ensure has_configured_llm returns False at both import locations
     monkeypatch.setattr("app.wizard.tiers.has_configured_llm", lambda *a, **kw: False)
