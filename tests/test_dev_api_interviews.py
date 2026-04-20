@@ -19,7 +19,8 @@ def tmp_db(tmp_path):
             match_score REAL, keyword_gaps TEXT, status TEXT,
             interview_date TEXT, rejection_stage TEXT,
             applied_at TEXT, phone_screen_at TEXT, interviewing_at TEXT,
-            offer_at TEXT, hired_at TEXT, survey_at TEXT
+            offer_at TEXT, hired_at TEXT, survey_at TEXT,
+            hired_feedback TEXT
         );
         CREATE TABLE job_contacts (
             id INTEGER PRIMARY KEY,
