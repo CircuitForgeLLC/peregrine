@@ -36,6 +36,7 @@ services:
       - PYTHONUNBUFFERED=1
       - PEREGRINE_CADDY_PROXY=1
       - CF_ORCH_URL=http://host.docker.internal:7700
+      - CF_APP_NAME=peregrine
       - DEMO_MODE=false
       - FORGEJO_API_TOKEN=${FORGEJO_API_TOKEN:-}
     depends_on:
@@ -52,7 +53,7 @@ services:
     command: >
       bash -c "uvicorn dev_api:app --host 0.0.0.0 --port 8601"
     ports:
-      - "127.0.0.1:8601:8601"   # localhost-only — Caddy + avocet imitate tab
+      - "8601:8601"   # LAN-accessible — Caddy gates the public route; Kuma monitors this port directly
     volumes:
       - /devl/menagerie-data:/devl/menagerie-data
       - ./config/llm.cloud.yaml:/app/config/llm.yaml:ro
@@ -68,6 +69,7 @@ services:
       - PYTHONUNBUFFERED=1
       - FORGEJO_API_TOKEN=${FORGEJO_API_TOKEN:-}
       - CF_ORCH_URL=http://host.docker.internal:7700
+      - CF_APP_NAME=peregrine
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
