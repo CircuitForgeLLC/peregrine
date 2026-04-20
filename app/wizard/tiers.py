@@ -49,6 +49,7 @@ FEATURES: dict[str, str] = {
     "company_research":             "paid",
     "interview_prep":               "paid",
     "survey_assistant":             "paid",
+    "llm_reply_draft":              "paid",
 
     # Orchestration / infrastructure — stays gated
     "email_classifier":             "paid",
@@ -81,6 +82,7 @@ BYOK_UNLOCKABLE: frozenset[str] = frozenset({
     "company_research",
     "interview_prep",
     "survey_assistant",
+    "llm_reply_draft",
 })
 
 # Demo mode flag — read from environment at module load time.
