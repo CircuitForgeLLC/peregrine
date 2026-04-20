@@ -404,6 +404,24 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 save_optimized_resume(db_path, job_id=job_id,
                                       text="", gap_report=gap_report)
 
+        elif task_type == "survey_analyze":
+            import json as _json
+            from scripts.survey_assistant import run_survey_analyze
+            p = _json.loads(params or "{}")
+            _cfg_path = Path(db_path).parent / "config" / "llm.yaml"
+            update_task_stage(db_path, task_id, "analyzing survey")
+            result = run_survey_analyze(
+                text=p.get("text"),
+                image_b64=p.get("image_b64"),
+                mode=p.get("mode", "quick"),
+                config_path=_cfg_path if _cfg_path.exists() else None,
+            )
+            update_task_status(
+                db_path, task_id, "completed",
+                error=_json.dumps(result),
+            )
+            return
+
         elif task_type == "prepare_training":
             from scripts.prepare_training_data import build_records, write_jsonl, DEFAULT_OUTPUT
             records = build_records()

@@ -28,14 +28,33 @@ export interface SurveyResponse {
   created_at: string | null
 }
 
+interface TaskStatus {
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'none' | null
+  stage: string | null
+  result: { output: string; source: string } | null
+  message: string | null
+}
+
 export const useSurveyStore = defineStore('survey', () => {
-  const analysis = ref<SurveyAnalysis | null>(null)
-  const history = ref<SurveyResponse[]>([])
-  const loading = ref(false)
-  const saving = ref(false)
-  const error = ref<string | null>(null)
+  const analysis    = ref<SurveyAnalysis | null>(null)
+  const history     = ref<SurveyResponse[]>([])
+  const loading     = ref(false)
+  const saving      = ref(false)
+  const error       = ref<string | null>(null)
+  const taskStatus  = ref<TaskStatus>({ status: null, stage: null, result: null, message: null })
   const visionAvailable = ref(false)
-  const currentJobId = ref<number | null>(null)
+  const currentJobId    = ref<number | null>(null)
+  // Pending analyze payload held across the poll lifecycle so rawInput/mode survive
+  const _pendingPayload = ref<{ text?: string; image_b64?: string; mode: 'quick' | 'detailed' } | null>(null)
+
+  let pollInterval: ReturnType<typeof setInterval> | null = null
+
+  function _clearInterval() {
+    if (pollInterval !== null) {
+      clearInterval(pollInterval)
+      pollInterval = null
+    }
+  }
 
   async function fetchFor(jobId: number) {
     if (jobId !== currentJobId.value) {
@@ -43,6 +62,7 @@ export const useSurveyStore = defineStore('survey', () => {
       history.value = []
       error.value = null
       visionAvailable.value = false
+      taskStatus.value = { status: null, stage: null, result: null, message: null }
       currentJobId.value = jobId
     }
 
@@ -69,23 +89,55 @@ export const useSurveyStore = defineStore('survey', () => {
     jobId: number,
     payload: { text?: string; image_b64?: string; mode: 'quick' | 'detailed' }
   ) {
+    _clearInterval()
     loading.value = true
     error.value = null
-    const { data, error: fetchError } = await useApiFetch<{ output: string; source: string }>(
+    _pendingPayload.value = payload
+
+    const { data, error: fetchError } = await useApiFetch<{ task_id: number; is_new: boolean }>(
       `/api/jobs/${jobId}/survey/analyze`,
       { method: 'POST', body: JSON.stringify(payload) }
     )
-    loading.value = false
+
     if (fetchError || !data) {
-      error.value = 'Analysis failed. Please try again.'
+      loading.value = false
+      error.value = 'Failed to start analysis. Please try again.'
       return
     }
-    analysis.value = {
-      output: data.output,
-      source: isValidSource(data.source) ? data.source : 'text_paste',
-      mode: payload.mode,
-      rawInput: payload.text ?? null,
-    }
+
+    // Silently attach to the existing task if is_new=false — same task_id, same poll
+    taskStatus.value = { status: 'queued', stage: null, result: null, message: null }
+    pollTask(jobId, data.task_id)
+  }
+
+  function pollTask(jobId: number, taskId: number) {
+    _clearInterval()
+    pollInterval = setInterval(async () => {
+      const { data } = await useApiFetch<TaskStatus>(
+        `/api/jobs/${jobId}/survey/analyze/task?task_id=${taskId}`
+      )
+      if (!data) return
+
+      taskStatus.value = data
+
+      if (data.status === 'completed' || data.status === 'failed') {
+        _clearInterval()
+        loading.value = false
+
+        if (data.status === 'completed' && data.result) {
+          const payload = _pendingPayload.value
+          analysis.value = {
+            output: data.result.output,
+            source: isValidSource(data.result.source) ? data.result.source : 'text_paste',
+            mode:      payload?.mode ?? 'quick',
+            rawInput:  payload?.text ?? null,
+          }
+        } else if (data.status === 'failed') {
+          error.value = data.message ?? 'Analysis failed. Please try again.'
+        }
+        _pendingPayload.value = null
+      }
+    }, 3000)
   }
 
   async function saveResponse(
@@ -96,12 +148,12 @@ export const useSurveyStore = defineStore('survey', () => {
     saving.value = true
     error.value = null
     const body = {
-      survey_name: args.surveyName || undefined,
-      mode: analysis.value.mode,
-      source: analysis.value.source,
-      raw_input: analysis.value.rawInput,
-      image_b64: args.image_b64,
-      llm_output: analysis.value.output,
+      survey_name:    args.surveyName || undefined,
+      mode:           analysis.value.mode,
+      source:         analysis.value.source,
+      raw_input:      analysis.value.rawInput,
+      image_b64:      args.image_b64,
+      llm_output:     analysis.value.output,
       reported_score: args.reportedScore || undefined,
     }
     const { data, error: fetchError } = await useApiFetch<{ id: number }>(
@@ -113,32 +165,34 @@ export const useSurveyStore = defineStore('survey', () => {
       error.value = 'Save failed. Your analysis is preserved — try again.'
       return
     }
-    // Prepend the saved response to history
     const now = new Date().toISOString()
     const saved: SurveyResponse = {
-      id: data.id,
-      survey_name: args.surveyName || null,
-      mode: analysis.value.mode,
-      source: analysis.value.source,
-      raw_input: analysis.value.rawInput,
-      image_path: null,
-      llm_output: analysis.value.output,
+      id:             data.id,
+      survey_name:    args.surveyName || null,
+      mode:           analysis.value.mode,
+      source:         analysis.value.source,
+      raw_input:      analysis.value.rawInput,
+      image_path:     null,
+      llm_output:     analysis.value.output,
       reported_score: args.reportedScore || null,
-      received_at: now,
-      created_at: now,
+      received_at:    now,
+      created_at:     now,
     }
     history.value = [saved, ...history.value]
     analysis.value = null
   }
 
   function clear() {
-    analysis.value = null
-    history.value = []
-    loading.value = false
-    saving.value = false
-    error.value = null
+    _clearInterval()
+    analysis.value       = null
+    history.value        = []
+    loading.value        = false
+    saving.value         = false
+    error.value          = null
+    taskStatus.value     = { status: null, stage: null, result: null, message: null }
     visionAvailable.value = false
-    currentJobId.value = null
+    currentJobId.value   = null
+    _pendingPayload.value = null
   }
 
   return {
@@ -147,6 +201,7 @@ export const useSurveyStore = defineStore('survey', () => {
     loading,
     saving,
     error,
+    taskStatus,
     visionAvailable,
     currentJobId,
     fetchFor,
