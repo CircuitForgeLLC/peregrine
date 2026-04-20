@@ -45,6 +45,39 @@ backends:
     enabled: false
     type: vision_service
     supports_images: true
+
+  # ── cf-orch trunk services ─────────────────────────────────────────────────
+  # These backends allocate via cf-orch rather than connecting to a static URL.
+  # cf-orch starts the service on-demand and returns its URL; the router then
+  # calls it directly using the openai_compat path.
+  # Set CF_ORCH_URL (env) or url below; leave enabled: false if cf-orch is
+  # not deployed in your environment.
+  cf_text:
+    type: openai_compat
+    enabled: false
+    base_url: http://localhost:8008/v1   # fallback when cf-orch is not available
+    model: __auto__
+    api_key: any
+    supports_images: false
+    cf_orch:
+      service: cf-text
+      # model_candidates: leave empty to use the service's default_model,
+      # or specify an alias from the node's catalog (e.g. "qwen2.5-3b").
+      model_candidates: []
+      ttl_s: 3600
+
+  cf_voice:
+    type: openai_compat
+    enabled: false
+    base_url: http://localhost:8009/v1   # fallback when cf-orch is not available
+    model: __auto__
+    api_key: any
+    supports_images: false
+    cf_orch:
+      service: cf-voice
+      model_candidates: []
+      ttl_s: 3600
+
 fallback_order:
 - ollama
 - claude_code
