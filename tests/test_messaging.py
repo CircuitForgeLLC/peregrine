@@ -369,6 +369,12 @@ class TestUpdateTemplate:
         with pytest.raises(PermissionError):
             update_template(db_path, builtin["id"], title="Hacked")
 
+    def test_update_missing_raises_key_error(self, db_path):
+        from scripts.messaging import update_template
+
+        with pytest.raises(KeyError):
+            update_template(db_path, 9999, title="Ghost")
+
 
 class TestDeleteTemplate:
     def test_delete_user_template(self, db_path: Path) -> None:
