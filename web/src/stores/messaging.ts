@@ -56,7 +56,8 @@ export const useMessagingStore = defineStore('messaging', () => {
     const { data, error: fetchErr } = await useApiFetch<MessageTemplate[]>(
       '/api/message-templates'
     )
-    if (!fetchErr) templates.value = data ?? []
+    if (fetchErr) { error.value = 'Could not load templates.'; return }
+    templates.value = data ?? []
   }
 
   async function createMessage(payload: Omit<Message, 'id' | 'logged_at' | 'approved_at' | 'osprey_call_id'>) {
@@ -64,7 +65,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     error.value = null
     const { data, error: fetchErr } = await useApiFetch<Message>(
       '/api/messages',
-      { method: 'POST', body: JSON.stringify(payload) }
+      { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json' } }
     )
     saving.value = false
     if (fetchErr || !data) { error.value = 'Failed to save message.'; return null }
@@ -83,9 +84,10 @@ export const useMessagingStore = defineStore('messaging', () => {
 
   async function createTemplate(payload: Pick<MessageTemplate, 'title' | 'category' | 'body_template'> & { subject_template?: string }) {
     saving.value = true
+    error.value = null
     const { data, error: fetchErr } = await useApiFetch<MessageTemplate>(
       '/api/message-templates',
-      { method: 'POST', body: JSON.stringify(payload) }
+      { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json' } }
     )
     saving.value = false
     if (fetchErr || !data) { error.value = 'Failed to create template.'; return null }
@@ -95,9 +97,10 @@ export const useMessagingStore = defineStore('messaging', () => {
 
   async function updateTemplate(id: number, payload: Partial<Pick<MessageTemplate, 'title' | 'category' | 'subject_template' | 'body_template'>>) {
     saving.value = true
+    error.value = null
     const { data, error: fetchErr } = await useApiFetch<MessageTemplate>(
       `/api/message-templates/${id}`,
-      { method: 'PUT', body: JSON.stringify(payload) }
+      { method: 'PUT', body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json' } }
     )
     saving.value = false
     if (fetchErr || !data) { error.value = 'Failed to update template.'; return null }
@@ -119,7 +122,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     error.value = null
     const { data, error: fetchErr } = await useApiFetch<{ message_id: number }>(
       `/api/contacts/${contactId}/draft-reply`,
-      { method: 'POST' }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } }
     )
     loading.value = false
     if (fetchErr || !data) {
