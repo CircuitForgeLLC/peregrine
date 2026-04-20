@@ -47,6 +47,7 @@ def create_message(
     from_addr: Optional[str],
     to_addr: Optional[str],
     template_id: Optional[int],
+    logged_at: Optional[str] = None,
 ) -> dict:
     """Insert a new message row and return it as a dict."""
     con = _connect(db_path)
@@ -55,12 +56,12 @@ def create_message(
             """
             INSERT INTO messages
                 (job_id, job_contact_id, type, direction, subject, body,
-                 from_addr, to_addr, template_id)
+                 from_addr, to_addr, logged_at, template_id)
             VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (job_id, job_contact_id, type, direction, subject, body,
-             from_addr, to_addr, template_id),
+             from_addr, to_addr, logged_at or _now_utc(), template_id),
         )
         con.commit()
         row = con.execute(

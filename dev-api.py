@@ -4192,6 +4192,7 @@ class MessageCreateBody(BaseModel):
     from_addr: Optional[str] = None
     to_addr: Optional[str] = None
     template_id: Optional[int] = None
+    logged_at: Optional[str] = None
 
 
 class TemplateCreateBody(BaseModel):

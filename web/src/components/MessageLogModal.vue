@@ -5,7 +5,6 @@
       v-if="show"
       class="modal-backdrop"
       @click.self="emit('close')"
-      @keydown.esc="emit('close')"
     >
       <div
         ref="dialogEl"
@@ -14,6 +13,7 @@
         aria-modal="true"
         :aria-label="title"
         tabindex="-1"
+        @keydown.esc="emit('close')"
       >
         <header class="modal-header">
           <h2 class="modal-title">{{ title }}</h2>
@@ -93,21 +93,20 @@ const title = computed(() =>
   props.type === 'call_note' ? 'Log a call' : 'Log an in-person note'
 )
 
-const now = new Date()
-const localNow = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-  .toISOString()
-  .slice(0, 16)
-
 const form = ref({
   direction: '',
   subject: '',
   body: '',
-  logged_at: localNow,
+  logged_at: '',
 })
 
-// Focus the dialog when it opens
+// Focus the dialog when it opens; compute localNow fresh each time
 watch(() => props.show, async (val) => {
   if (val) {
+    const now = new Date()
+    const localNow = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16)
     error.value = null
     form.value = { direction: '', subject: '', body: '', logged_at: localNow }
     await nextTick()
@@ -129,6 +128,7 @@ async function handleSubmit() {
     from_addr: null,
     to_addr: null,
     template_id: null,
+    logged_at: form.value.logged_at || undefined,
   })
   saving.value = false
   if (result) emit('saved')

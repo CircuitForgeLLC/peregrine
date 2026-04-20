@@ -60,7 +60,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     templates.value = data ?? []
   }
 
-  async function createMessage(payload: Omit<Message, 'id' | 'logged_at' | 'approved_at' | 'osprey_call_id'>) {
+  async function createMessage(payload: Omit<Message, 'id' | 'approved_at' | 'osprey_call_id'> & { logged_at?: string }) {
     saving.value = true
     error.value = null
     const { data, error: fetchErr } = await useApiFetch<Message>(
