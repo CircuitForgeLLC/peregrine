@@ -269,7 +269,7 @@ function toggleHistoryEntry(id: number) {
         @click="runAnalyze"
       >
         <span v-if="surveyStore.loading" class="spinner" aria-hidden="true"></span>
-        {{ surveyStore.loading ? 'Analyzing…' : '🔍 Analyze' }}
+        {{ surveyStore.loading ? (surveyStore.taskStatus.stage ? surveyStore.taskStatus.stage + '…' : 'Analyzing…') : '🔍 Analyze' }}
       </button>
 
       <!-- Analyze error -->

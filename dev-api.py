@@ -1297,41 +1297,11 @@ def calendar_push(job_id: int):
 from scripts.llm_router import LLMRouter
 from scripts.db import insert_survey_response, get_survey_responses
 
-_SURVEY_SYSTEM = (
-    "You are a job application advisor helping a candidate answer a culture-fit survey. "
-    "The candidate values collaborative teamwork, clear communication, growth, and impact. "
-    "Choose answers that present them in the best professional light."
+from scripts.survey_assistant import (
+    SURVEY_SYSTEM as _SURVEY_SYSTEM,
+    build_text_prompt as _build_text_prompt,
+    build_image_prompt as _build_image_prompt,
 )
-
-
-def _build_text_prompt(text: str, mode: str) -> str:
-    if mode == "quick":
-        return (
-            "Answer each survey question below. For each, give ONLY the letter of the best "
-            "option and a single-sentence reason. Format exactly as:\n"
-            "1. B — reason here\n2. A — reason here\n\n"
-            f"Survey:\n{text}"
-        )
-    return (
-        "Analyze each survey question below. For each question:\n"
-        "- Briefly evaluate each option (1 sentence each)\n"
-        "- State your recommendation with reasoning\n\n"
-        f"Survey:\n{text}"
-    )
-
-
-def _build_image_prompt(mode: str) -> str:
-    if mode == "quick":
-        return (
-            "This is a screenshot of a culture-fit survey. Read all questions and answer each "
-            "with the letter of the best option for a collaborative, growth-oriented candidate. "
-            "Format: '1. B — brief reason' on separate lines."
-        )
-    return (
-        "This is a screenshot of a culture-fit survey. For each question, evaluate each option "
-        "and recommend the best choice for a collaborative, growth-oriented candidate. "
-        "Include a brief breakdown per option and a clear recommendation."
-    )
 
 
 @app.get("/api/vision/health")
@@ -1353,27 +1323,60 @@ class SurveyAnalyzeBody(BaseModel):
 def survey_analyze(job_id: int, body: SurveyAnalyzeBody):
     if body.mode not in ("quick", "detailed"):
         raise HTTPException(400, f"Invalid mode: {body.mode!r}")
+    import json as _json
+    from scripts.task_runner import submit_task
+    params = _json.dumps({
+        "text":      body.text,
+        "image_b64": body.image_b64,
+        "mode":      body.mode,
+    })
     try:
-        router = LLMRouter()
-        if body.image_b64:
-            prompt = _build_image_prompt(body.mode)
-            output = router.complete(
-                prompt,
-                images=[body.image_b64],
-                fallback_order=router.config.get("vision_fallback_order"),
-            )
-            source = "screenshot"
-        else:
-            prompt = _build_text_prompt(body.text or "", body.mode)
-            output = router.complete(
-                prompt,
-                system=_SURVEY_SYSTEM,
-                fallback_order=router.config.get("research_fallback_order"),
-            )
-            source = "text_paste"
-        return {"output": output, "source": source}
+        task_id, is_new = submit_task(
+            db_path=Path(_request_db.get() or DB_PATH),
+            task_type="survey_analyze",
+            job_id=job_id,
+            params=params,
+        )
+        return {"task_id": task_id, "is_new": is_new}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+# ── GET /api/jobs/:id/survey/analyze/task ────────────────────────────────────
+
+@app.get("/api/jobs/{job_id}/survey/analyze/task")
+def survey_analyze_task(job_id: int, task_id: Optional[int] = None):
+    import json as _json
+    db = _get_db()
+    if task_id is not None:
+        row = db.execute(
+            "SELECT status, stage, error FROM background_tasks WHERE id = ? AND job_id = ?",
+            (task_id, job_id),
+        ).fetchone()
+    else:
+        row = db.execute(
+            "SELECT status, stage, error FROM background_tasks "
+            "WHERE task_type = 'survey_analyze' AND job_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (job_id,),
+        ).fetchone()
+    db.close()
+    if not row:
+        return {"status": "none", "stage": None, "result": None, "message": None}
+    result = None
+    message = row["error"]
+    if row["status"] == "completed" and row["error"]:
+        try:
+            result = _json.loads(row["error"])
+            message = None
+        except (ValueError, TypeError):
+            pass
+    return {
+        "status":  row["status"],
+        "stage":   row["stage"],
+        "result":  result,
+        "message": message,
+    }
 
 
 class SurveySaveBody(BaseModel):
