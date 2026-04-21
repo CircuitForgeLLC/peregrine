@@ -9,6 +9,62 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.0] — 2026-04-20
+
+### Added
+
+- **Messaging tab** (#74) — per-job communication timeline replacing `/contacts`.
+  Unified view of IMAP emails (`job_contacts`) and manually logged entries (`messages`).
+  Log calls and in-person notes with timestamp. Message template library with 4 built-in
+  templates (follow-up, thank-you, accommodation request, withdrawal) and user-created
+  templates with `{{token}}` substitution. LLM draft reply for inbound emails (BYOK-unlockable,
+  BSL 1.1). Draft approval flow with inline editing and one-click clipboard copy. Osprey
+  IVR stub button (Phase 2 placeholder with easter egg). `migrations/008_messaging.sql`.
+- **Public demo experience** (#103) — full read-only demo mode at `demo.circuitforge.tech/peregrine`.
+  `IS_DEMO=true` write-blocks all mutating API endpoints with a toast notification.
+  Ephemeral seed data via tmpfs + `demo/seed.sql` (resets on container start). WelcomeModal
+  on first visit (localStorage-gated). Per-view HintChips guiding new users through the
+  job search flow (localStorage-dismissed). DemoBanner with accessible CTA buttons
+  (WCAG-compliant contrast in light and dark themes). `migrations/006_missing_columns.sql`.
+- **References tracker and recommendation letter system** (#96) — track professional
+  references and generate LLM-drafted recommendation request letters.
+- **Shadow listing detector** — flags duplicate or aggregator-reposted job listings.
+- **Hired feedback widget** — capture post-hire notes and retrospective feedback on jobs.
+- **Interview prep Q&A** — LLM-generated practice questions for the selected job.
+- **Resume library ↔ profile sync** — `POST /api/resumes/{id}/apply-to-profile` pushes
+  a library resume into the active profile; `PUT /api/settings/resume` syncs edits back
+  to the default library entry. `ResumeSyncConfirmModal` shows a before/after diff.
+  `ResumeProfileView` extended with career summary, education, and achievements sections.
+  `migrations/007_resume_sync.sql` adds `synced_at` to `resumes`.
+- **Plausible analytics** — lightweight privacy-preserving analytics in Vue SPA and docs.
+- **cf_text / cf_voice LLM backends** — wire trunk service backends in `llm.yaml`.
+- **Mission alignment domains** — load preferred company domains from
+  `config/mission_domains.yaml` rather than hardcoded values.
+- **GitHub Actions CI** — workflow for public credibility badge (`ci.yml`).
+- **`CF_APP_NAME` cloud annotation** — coordinator pipeline attribution for multi-product
+  cloud deployments.
+
+### Changed
+
+- `/contacts` route now redirects to `/messages`; nav item renamed "Messages" → "Contacts"
+  label removed. `ContactsView.vue` preserved for reference, router points to `MessagingView`.
+- Survey `/analyze` endpoint is now fully async via the task queue (no blocking LLM call
+  on the request thread).
+- nginx config adds `/peregrine/` base-path routing for subdirectory deployments.
+- `compose.demo.yml` updated for Vue/FastAPI architecture with tmpfs demo volume.
+
+### Fixed
+
+- Tier bypass and draft body persistence after page navigation.
+- `canDraftLlm` cleanup and message list `limit` cap.
+- DemoBanner button contrast — semantic surface token instead of hardcoded white.
+- Period split in `profile_to_library` now handles ISO date strings containing hyphens.
+- Cloud startup sweeps all user DBs for pending migrations on deploy.
+- Resume import strips CID glyph references via `resume_parser` extractors.
+- Survey and interview tests updated for `hired_feedback` column and async analyze flow.
+
+---
+
 ## [0.8.6] — 2026-04-12
 
 ### Added
