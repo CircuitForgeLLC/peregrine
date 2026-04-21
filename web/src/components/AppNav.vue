@@ -157,7 +157,7 @@ const navLinks = computed(() => [
   { to: '/apply',      icon: PencilSquareIcon,           label: 'Apply' },
   { to: '/resumes',    icon: DocumentTextIcon,           label: 'Resumes' },
   { to: '/interviews', icon: CalendarDaysIcon,           label: 'Interviews' },
-  { to: '/contacts',    icon: UsersIcon,                  label: 'Contacts' },
+  { to: '/messages',    icon: UsersIcon,                  label: 'Messages' },
   { to: '/references',  icon: IdentificationIcon,         label: 'References' },
   { to: '/digest',     icon: NewspaperIcon,              label: 'Digest',
     badge: digestStore.entries.length || undefined },
