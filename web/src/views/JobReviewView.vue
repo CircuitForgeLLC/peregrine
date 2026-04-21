@@ -1,5 +1,10 @@
 <template>
   <div class="review">
+    <HintChip
+      v-if="config.isDemo"
+      view-key="review"
+      message="Swipe right to approve, left to skip. One of these jobs is a ghost post — can you spot it?"
+    />
     <!-- Header -->
     <header class="review__header">
       <div class="review__title-row">
@@ -214,6 +219,10 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useReviewStore } from '../stores/review'
 import JobCardStack from '../components/JobCardStack.vue'
+import HintChip from '../components/HintChip.vue'
+import { useAppConfigStore } from '../stores/appConfig'
+
+const config = useAppConfigStore()
 
 const store    = useReviewStore()
 const route    = useRoute()
@@ -265,7 +274,8 @@ function capitalize(s: string) { return s.charAt(0).toUpperCase() + s.slice(1) }
 async function onApprove() {
   const job = store.currentJob
   if (!job) return
-  await store.approve(job)
+  const ok = await store.approve(job)
+  if (!ok) { stackRef.value?.resetCard(); return }
   showUndoToast('approved')
   checkStoopSpeed()
 }
@@ -273,7 +283,8 @@ async function onApprove() {
 async function onReject() {
   const job = store.currentJob
   if (!job) return
-  await store.reject(job)
+  const ok = await store.reject(job)
+  if (!ok) { stackRef.value?.resetCard(); return }
   showUndoToast('rejected')
   checkStoopSpeed()
 }

@@ -8,6 +8,10 @@ import { useApiFetch } from '../composables/useApi'
 import InterviewCard from '../components/InterviewCard.vue'
 import MoveToSheet from '../components/MoveToSheet.vue'
 import CompanyResearchModal from '../components/CompanyResearchModal.vue'
+import HintChip from '../components/HintChip.vue'
+import { useAppConfigStore } from '../stores/appConfig'
+
+const config = useAppConfigStore()
 
 const router = useRouter()
 const store  = useInterviewsStore()
@@ -347,6 +351,11 @@ function formatRejectionDate(job: PipelineJob): string {
 
 <template>
   <div class="interviews-view">
+    <HintChip
+      v-if="config.isDemo"
+      view-key="interviews"
+      message="Figma sent an offer — open it to see the hired outcome and post-hire feedback"
+    />
     <canvas ref="confettiCanvas" class="confetti-canvas" aria-hidden="true" />
 
     <Transition name="toast">

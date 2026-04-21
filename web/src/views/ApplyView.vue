@@ -1,6 +1,11 @@
 <template>
   <!-- ── Mobile: full-width list ──────────────────────────────────── -->
   <div v-if="isMobile" class="apply-list">
+    <HintChip
+      v-if="config.isDemo"
+      view-key="apply"
+      message="The Spotify cover letter is ready — open it to see how AI drafts from your resume"
+    />
     <header class="apply-list__header">
       <h1 class="apply-list__title">Apply</h1>
       <p class="apply-list__subtitle">Approved jobs ready for applications</p>
@@ -50,6 +55,11 @@
   <div v-else class="apply-split" :class="{ 'has-selection': selectedJobId !== null }" ref="splitEl">
     <!-- Left: narrow job list -->
     <div class="apply-split__list">
+      <HintChip
+        v-if="config.isDemo"
+        view-key="apply"
+        message="The Spotify cover letter is ready — open it to see how AI drafts from your resume"
+      />
       <div class="split-list__header">
         <h1 class="split-list__title">Apply</h1>
         <span v-if="coverLetterCount >= 5" class="marathon-badge" title="You're on a roll!">
@@ -124,6 +134,10 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useApiFetch } from '../composables/useApi'
 import ApplyWorkspace from '../components/ApplyWorkspace.vue'
+import HintChip from '../components/HintChip.vue'
+import { useAppConfigStore } from '../stores/appConfig'
+
+const config = useAppConfigStore()
 
 // ── Responsive ───────────────────────────────────────────────────────────────
 

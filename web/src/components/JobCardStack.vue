@@ -216,7 +216,23 @@ watch(() => props.job.id, () => {
   }
 })
 
-defineExpose({ dismissApprove, dismissReject, dismissSkip })
+/** Restore card to its neutral state — used when an action is blocked (e.g. demo guard). */
+function resetCard() {
+  dx.value        = 0
+  dy.value        = 0
+  isExiting.value = false
+  isHeld.value    = false
+  if (wrapperEl.value) {
+    wrapperEl.value.style.transition = 'none'
+    wrapperEl.value.style.transform  = ''
+    wrapperEl.value.style.opacity    = ''
+    requestAnimationFrame(() => {
+      if (wrapperEl.value) wrapperEl.value.style.transition = ''
+    })
+  }
+}
+
+defineExpose({ dismissApprove, dismissReject, dismissSkip, resetCard })
 </script>
 
 <style scoped>
