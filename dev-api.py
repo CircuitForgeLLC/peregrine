@@ -26,7 +26,7 @@ import yaml
 from bs4 import BeautifulSoup
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi import FastAPI, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -4178,3 +4178,183 @@ def wizard_complete():
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Messaging models ──────────────────────────────────────────────────────────
+
+class MessageCreateBody(BaseModel):
+    job_id: Optional[int] = None
+    job_contact_id: Optional[int] = None
+    type: str = "email"
+    direction: Optional[str] = None
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    from_addr: Optional[str] = None
+    to_addr: Optional[str] = None
+    template_id: Optional[int] = None
+    logged_at: Optional[str] = None
+
+
+class MessageUpdateBody(BaseModel):
+    body: str
+
+
+class TemplateCreateBody(BaseModel):
+    title: str
+    category: str = "custom"
+    subject_template: Optional[str] = None
+    body_template: str
+
+
+class TemplateUpdateBody(BaseModel):
+    title: Optional[str] = None
+    category: Optional[str] = None
+    subject_template: Optional[str] = None
+    body_template: Optional[str] = None
+
+
+# ── Messaging (MIT) ───────────────────────────────────────────────────────────
+
+@app.get("/api/messages")
+def get_messages(
+    job_id: Optional[int] = None,
+    type: Optional[str] = None,
+    direction: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+):
+    from scripts.messaging import list_messages
+    return list_messages(
+        Path(_request_db.get() or DB_PATH),
+        job_id=job_id, type=type, direction=direction, limit=limit,
+    )
+
+
+@app.post("/api/messages")
+def post_message(body: MessageCreateBody):
+    from scripts.messaging import create_message
+    return create_message(Path(_request_db.get() or DB_PATH), **body.model_dump())
+
+
+@app.delete("/api/messages/{message_id}")
+def del_message(message_id: int):
+    from scripts.messaging import delete_message
+    try:
+        delete_message(Path(_request_db.get() or DB_PATH), message_id)
+        return {"ok": True}
+    except KeyError:
+        raise HTTPException(404, "message not found")
+
+
+@app.put("/api/messages/{message_id}")
+def put_message(message_id: int, body: MessageUpdateBody):
+    from scripts.messaging import update_message_body
+    try:
+        return update_message_body(Path(_request_db.get() or DB_PATH), message_id, body.body)
+    except KeyError:
+        raise HTTPException(404, "message not found")
+
+
+@app.get("/api/message-templates")
+def get_templates():
+    from scripts.messaging import list_templates
+    return list_templates(Path(_request_db.get() or DB_PATH))
+
+
+@app.post("/api/message-templates")
+def post_template(body: TemplateCreateBody):
+    from scripts.messaging import create_template
+    return create_template(Path(_request_db.get() or DB_PATH), **body.model_dump())
+
+
+@app.put("/api/message-templates/{template_id}")
+def put_template(template_id: int, body: TemplateUpdateBody):
+    from scripts.messaging import update_template
+    try:
+        return update_template(
+            Path(_request_db.get() or DB_PATH),
+            template_id,
+            **body.model_dump(exclude_none=True),
+        )
+    except PermissionError:
+        raise HTTPException(403, "cannot modify built-in templates")
+    except KeyError:
+        raise HTTPException(404, "template not found")
+
+
+@app.delete("/api/message-templates/{template_id}")
+def del_template(template_id: int):
+    from scripts.messaging import delete_template
+    try:
+        delete_template(Path(_request_db.get() or DB_PATH), template_id)
+        return {"ok": True}
+    except PermissionError:
+        raise HTTPException(403, "cannot delete built-in templates")
+    except KeyError:
+        raise HTTPException(404, "template not found")
+
+
+# ── LLM Reply Draft (BSL 1.1) ─────────────────────────────────────────────────
+
+def _get_effective_tier() -> str:
+    """Resolve effective tier: Heimdall in cloud mode, APP_TIER env var in single-tenant."""
+    if _CLOUD_MODE:
+        return _resolve_cloud_tier()
+    from app.wizard.tiers import effective_tier
+    return effective_tier()
+
+
+@app.post("/api/contacts/{contact_id}/draft-reply")
+def draft_reply(contact_id: int):
+    """Generate an LLM draft reply for an inbound job_contacts row. Tier-gated."""
+    from app.wizard.tiers import can_use, has_configured_llm
+    from scripts.messaging import create_message
+    from scripts.llm_reply_draft import generate_draft_reply
+
+    db_path = Path(_request_db.get() or DB_PATH)
+    tier = _get_effective_tier()
+    if not can_use(tier, "llm_reply_draft", has_byok=has_configured_llm()):
+        raise HTTPException(402, detail={"error": "tier_required", "min_tier": "free+byok"})
+
+    con = _get_db()
+    row = con.execute("SELECT * FROM job_contacts WHERE id=?", (contact_id,)).fetchone()
+    con.close()
+    if not row:
+        raise HTTPException(404, "contact not found")
+
+    profile = _imitate_load_profile()
+    user_name = getattr(profile, "name", "") or ""
+    target_role = getattr(profile, "target_role", "") or ""
+
+    cfg_path = db_path.parent / "config" / "llm.yaml"
+    draft_body = generate_draft_reply(
+        subject=row["subject"] or "",
+        from_addr=row["from_addr"] or "",
+        body=row["body"] or "",
+        user_name=user_name,
+        target_role=target_role,
+        config_path=cfg_path if cfg_path.exists() else None,
+    )
+    msg = create_message(
+        db_path,
+        job_id=row["job_id"],
+        job_contact_id=contact_id,
+        type="draft",
+        direction="outbound",
+        subject=f"Re: {row['subject'] or ''}".strip(),
+        body=draft_body,
+        to_addr=row["from_addr"],
+        template_id=None,
+        from_addr=None,
+    )
+    return {"message_id": msg["id"]}
+
+
+@app.post("/api/messages/{message_id}/approve")
+def approve_message_endpoint(message_id: int):
+    """Set approved_at=now(). Returns approved body for copy-to-clipboard."""
+    from scripts.messaging import approve_message
+    try:
+        msg = approve_message(Path(_request_db.get() or DB_PATH), message_id)
+        return {"body": msg["body"], "approved_at": msg["approved_at"]}
+    except KeyError:
+        raise HTTPException(404, "message not found")
