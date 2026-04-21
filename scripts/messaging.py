@@ -268,3 +268,18 @@ def delete_template(db_path: Path, template_id: int) -> None:
         con.commit()
     finally:
         con.close()
+
+
+def update_message_body(db_path: Path, message_id: int, body: str) -> dict:
+    """Update the body text of a draft message before approval. Returns updated row."""
+    con = _connect(db_path)
+    try:
+        row = con.execute("SELECT id FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            raise KeyError(f"message {message_id} not found")
+        con.execute("UPDATE messages SET body=? WHERE id=?", (body, message_id))
+        con.commit()
+        updated = con.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        return dict(updated)
+    finally:
+        con.close()

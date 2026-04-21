@@ -40,21 +40,12 @@
           <button class="btn btn--ghost" @click="openLogModal('in_person')">Log note</button>
           <button class="btn btn--ghost" @click="openTemplateModal('apply')">Use template</button>
           <button
-            v-if="canDraftLlm"
             class="btn btn--primary"
             :disabled="store.loading"
             @click="requestDraft"
           >
             {{ store.loading ? 'Drafting…' : 'Draft reply with LLM' }}
           </button>
-          <a
-            v-else-if="!canDraftLlm"
-            href="#/settings/connections"
-            class="btn-enable-llm"
-            title="Configure an LLM backend to enable AI reply drafting"
-          >
-            Enable LLM drafts →
-          </a>
 
           <!-- Osprey (Phase 2 stub) — aria-disabled, never hidden -->
           <button
@@ -286,17 +277,7 @@ function updateDraftBody(id: number, value: string) {
 
 // ── LLM draft + approval ──────────────────────────────────────────────────
 
-const canDraftLlm = ref(false)
 const draftAnnouncement = ref('')
-
-async function checkLlmAvailable() {
-  await useApiFetch<{ available: boolean }>('/api/vision/health')
-  // Re-use vision health route as a proxy for LLM config — replace with a dedicated
-  // /api/llm/health endpoint if one is added in future.
-  // For now: canDraftLlm is set based on whether user has any configured LLM
-  // (the server will 402 if not — the button is just a hint, not a gate)
-  canDraftLlm.value = true  // Always show; server enforces the real gate
-}
 
 async function requestDraft() {
   // Find the most recent inbound job_contact for this job
@@ -314,18 +295,18 @@ async function requestDraft() {
 }
 
 async function approveDraft(messageId: number) {
-  // Use the locally-edited body if the user changed it
   const editedBody = draftBodyEdits.value[messageId]
+  // Persist edits to DB before approving so history shows final version
   if (editedBody !== undefined) {
-    // Patch body via a NOOP approve — server sets approved_at and returns body
-    // The edited body is in our local state; copy it to clipboard from local state
+    const updated = await store.updateMessageBody(messageId, editedBody)
+    if (!updated) return   // error already set in store
   }
   const body = await store.approveDraft(messageId)
   if (body) {
     const finalBody = editedBody ?? body
     await navigator.clipboard.writeText(finalBody)
     draftAnnouncement.value = 'Approved and copied to clipboard.'
-    setTimeout(() => { draftAnnouncement.value = '' }, 3000 )
+    setTimeout(() => { draftAnnouncement.value = '' }, 3000)
   }
 }
 
@@ -423,7 +404,7 @@ function formatTime(iso: string): string {
 // ── Lifecycle ─────────────────────────────────────────────────────────────
 
 onMounted(async () => {
-  await Promise.all([loadJobs(), store.fetchTemplates(), checkLlmAvailable()])
+  await Promise.all([loadJobs(), store.fetchTemplates()])
 })
 
 onUnmounted(() => {
@@ -488,10 +469,6 @@ onUnmounted(() => {
   display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center;
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border-light);
-}
-.btn-enable-llm {
-  font-size: var(--text-sm); color: var(--app-primary);
-  text-decoration: none; padding: var(--space-2) var(--space-3);
 }
 .btn--osprey {
   opacity: 0.5; cursor: not-allowed;
