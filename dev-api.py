@@ -26,7 +26,7 @@ import yaml
 from bs4 import BeautifulSoup
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi import FastAPI, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -4195,6 +4195,10 @@ class MessageCreateBody(BaseModel):
     logged_at: Optional[str] = None
 
 
+class MessageUpdateBody(BaseModel):
+    body: str
+
+
 class TemplateCreateBody(BaseModel):
     title: str
     category: str = "custom"
@@ -4216,7 +4220,7 @@ def get_messages(
     job_id: Optional[int] = None,
     type: Optional[str] = None,
     direction: Optional[str] = None,
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=1000),
 ):
     from scripts.messaging import list_messages
     return list_messages(
@@ -4237,6 +4241,15 @@ def del_message(message_id: int):
     try:
         delete_message(Path(_request_db.get() or DB_PATH), message_id)
         return {"ok": True}
+    except KeyError:
+        raise HTTPException(404, "message not found")
+
+
+@app.put("/api/messages/{message_id}")
+def put_message(message_id: int, body: MessageUpdateBody):
+    from scripts.messaging import update_message_body
+    try:
+        return update_message_body(Path(_request_db.get() or DB_PATH), message_id, body.body)
     except KeyError:
         raise HTTPException(404, "message not found")
 
@@ -4282,24 +4295,23 @@ def del_template(template_id: int):
 
 # ── LLM Reply Draft (BSL 1.1) ─────────────────────────────────────────────────
 
-def _get_effective_tier(request: Request) -> str:
-    """Resolve effective tier from request header or environment."""
-    header_tier = request.headers.get("X-CF-Tier")
-    if header_tier:
-        return header_tier
+def _get_effective_tier() -> str:
+    """Resolve effective tier: Heimdall in cloud mode, APP_TIER env var in single-tenant."""
+    if _CLOUD_MODE:
+        return _resolve_cloud_tier()
     from app.wizard.tiers import effective_tier
     return effective_tier()
 
 
 @app.post("/api/contacts/{contact_id}/draft-reply")
-def draft_reply(contact_id: int, request: Request):
+def draft_reply(contact_id: int):
     """Generate an LLM draft reply for an inbound job_contacts row. Tier-gated."""
     from app.wizard.tiers import can_use, has_configured_llm
     from scripts.messaging import create_message
     from scripts.llm_reply_draft import generate_draft_reply
 
     db_path = Path(_request_db.get() or DB_PATH)
-    tier = _get_effective_tier(request)
+    tier = _get_effective_tier()
     if not can_use(tier, "llm_reply_draft", has_byok=has_configured_llm()):
         raise HTTPException(402, detail={"error": "tier_required", "min_tier": "free+byok"})
 

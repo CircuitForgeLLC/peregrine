@@ -133,6 +133,16 @@ export const useMessagingStore = defineStore('messaging', () => {
     return data.message_id
   }
 
+  async function updateMessageBody(id: number, body: string) {
+    const { data, error: fetchErr } = await useApiFetch<Message>(
+      `/api/messages/${id}`,
+      { method: 'PUT', body: JSON.stringify({ body }), headers: { 'Content-Type': 'application/json' } }
+    )
+    if (fetchErr || !data) { error.value = 'Failed to save edits.'; return null }
+    messages.value = messages.value.map(m => m.id === id ? { ...m, body: data.body } : m)
+    return data
+  }
+
   async function approveDraft(messageId: number): Promise<string | null> {
     const { data, error: fetchErr } = await useApiFetch<{ body: string; approved_at: string }>(
       `/api/messages/${messageId}/approve`,
@@ -159,6 +169,6 @@ export const useMessagingStore = defineStore('messaging', () => {
     messages, templates, loading, saving, error, draftPending,
     fetchMessages, fetchTemplates, createMessage, deleteMessage,
     createTemplate, updateTemplate, deleteTemplate,
-    requestDraft, approveDraft, clear,
+    requestDraft, approveDraft, updateMessageBody, clear,
   }
 })

@@ -159,12 +159,11 @@ def test_draft_without_llm_returns_402(fresh_db, monkeypatch):
 
     # Ensure has_configured_llm returns False at both import locations
     monkeypatch.setattr("app.wizard.tiers.has_configured_llm", lambda *a, **kw: False)
+    # Force free tier via the tiers module (not via header — header is no longer trusted)
+    monkeypatch.setattr("app.wizard.tiers.effective_tier", lambda: "free")
 
     client = TestClient(dev_api.app)
-    resp = client.post(
-        f"/api/contacts/{contact_id}/draft-reply",
-        headers={"X-CF-Tier": "free"},
-    )
+    resp = client.post(f"/api/contacts/{contact_id}/draft-reply")
     assert resp.status_code == 402
 
 
