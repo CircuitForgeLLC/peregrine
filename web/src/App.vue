@@ -7,10 +7,9 @@
       <!-- Skip to main content link (screen reader / keyboard nav) -->
       <a href="#main-content" class="skip-link">Skip to main content</a>
 
-      <!-- Demo mode banner — sticky top bar, visible on all pages -->
-      <div v-if="config.isDemo" class="demo-banner" role="status" aria-live="polite">
-        👁 Demo mode — changes are not saved and AI features are disabled.
-      </div>
+      <!-- Demo mode banner + welcome modal — rendered when isDemo -->
+      <DemoBanner v-if="config.isDemo" />
+      <WelcomeModal v-if="config.isDemo" />
 
       <RouterView />
 
@@ -32,6 +31,8 @@ import { useHackerMode, useKonamiCode } from './composables/useEasterEgg'
 import { useTheme } from './composables/useTheme'
 import { useToast } from './composables/useToast'
 import AppNav from './components/AppNav.vue'
+import DemoBanner from './components/DemoBanner.vue'
+import WelcomeModal from './components/WelcomeModal.vue'
 import { useAppConfigStore } from './stores/appConfig'
 import { useDigestStore } from './stores/digest'
 
@@ -126,20 +127,6 @@ body {
 .app-main--wizard {
   margin-left: 0;
   padding-bottom: 0;
-}
-
-/* Demo mode banner — sticky top bar */
-.demo-banner {
-  position: sticky;
-  top: 0;
-  z-index: 200;
-  background: var(--color-warning);
-  color: #1a1a1a;  /* forced dark — warning bg is always light enough */
-  text-align: center;
-  font-size: 0.85rem;
-  font-weight: 600;
-  padding: 6px var(--space-4, 16px);
-  letter-spacing: 0.01em;
 }
 
 /* Global toast — bottom-center, above tab bar */

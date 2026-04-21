@@ -1,5 +1,10 @@
 <template>
   <div class="home">
+    <HintChip
+      v-if="config.isDemo"
+      view-key="home"
+      message="Start in Job Review — 12 jobs are waiting for your verdict"
+    />
     <!-- Header -->
     <header class="home__header">
       <div>
@@ -371,6 +376,10 @@ import { RouterLink } from 'vue-router'
 import { useJobsStore } from '../stores/jobs'
 import { useApiFetch } from '../composables/useApi'
 import WorkflowButton from '../components/WorkflowButton.vue'
+import HintChip from '../components/HintChip.vue'
+import { useAppConfigStore } from '../stores/appConfig'
+
+const config = useAppConfigStore()
 
 const store = useJobsStore()
 

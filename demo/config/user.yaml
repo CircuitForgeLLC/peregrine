@@ -1,9 +1,11 @@
 candidate_accessibility_focus: false
 candidate_lgbtq_focus: false
-candidate_voice: Clear, direct, and human. Focuses on impact over jargon.
-career_summary: 'Experienced software engineer with a background in full-stack development,
-  cloud infrastructure, and data pipelines. Passionate about building tools that help
-  people navigate complex systems.
+candidate_voice: Clear, direct, and human. Focuses on impact over jargon. Avoids
+  buzzwords and lets the work speak.
+career_summary: 'Senior UX Designer with 6 years of experience designing for music,
+  education, and media products. Strong background in cross-platform design systems,
+  user research, and 0-to-1 feature development. Passionate about making complex
+  digital experiences feel effortless.
 
   '
 dev_tier_override: null
@@ -16,9 +18,9 @@ inference_profile: remote
 linkedin: ''
 mission_preferences:
   animal_welfare: ''
-  education: ''
+  education: Education technology is where design decisions have long-term impact on how people learn.
   health: ''
-  music: ''
+  music: Love designing for music and audio discovery — it combines craft with genuine emotional resonance.
   social_impact: Want my work to reach people who need it most.
 name: Demo User
 nda_companies: []
