@@ -233,6 +233,22 @@ def rewrite_for_ats(
     from scripts.llm_router import LLMRouter
     router = LLMRouter()
 
+    # Rerank gaps by JD relevance so the most impactful terms are injected first.
+    # Falls back silently to the incoming priority ordering on any error.
+    jd_text = job.get("description", "")
+    if jd_text and prioritized_gaps:
+        try:
+            from circuitforge_core.reranker import rerank as _rerank
+            terms = [g["term"] for g in prioritized_gaps]
+            results = _rerank(jd_text, terms, top_n=len(terms))
+            term_rank = {r.candidate: r.rank for r in results}
+            prioritized_gaps = sorted(
+                prioritized_gaps,
+                key=lambda g: term_rank.get(g["term"], len(prioritized_gaps)),
+            )
+        except Exception:
+            pass  # keep original priority ordering
+
     # Group gaps by target section
     by_section: dict[str, list[str]] = {}
     for gap in prioritized_gaps:

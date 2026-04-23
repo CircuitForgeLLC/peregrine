@@ -12,9 +12,52 @@ Usage:
 """
 from __future__ import annotations
 
+import logging
 import math
 import re
 from datetime import datetime, timezone
+
+_log = logging.getLogger(__name__)
+
+# Max jobs passed to the reranker (avoids excessive inference time on large stacks)
+_RERANK_POOL = 50
+
+
+def _try_rerank(resume_text: str, jobs: list[dict]) -> list[dict]:
+    """Rerank jobs by cross-encoder relevance to resume text.
+
+    Returns jobs sorted best-first by the reranker. Falls back silently to the
+    input order if the reranker package is unavailable or inference fails.
+    """
+    if not jobs:
+        return jobs
+    try:
+        from circuitforge_core.reranker import rerank
+    except ImportError:
+        return jobs
+    try:
+        descriptions = [j.get("description") or j.get("title", "") for j in jobs]
+        results = rerank(resume_text, descriptions, top_n=len(jobs))
+        # Map ranked candidates back to job dicts, handling duplicate descriptions
+        idx_queue: dict[str, list[int]] = {}
+        for i, d in enumerate(descriptions):
+            idx_queue.setdefault(d, []).append(i)
+        reranked: list[dict] = []
+        used: set[int] = set()
+        for r in results:
+            for idx in idx_queue.get(r.candidate, []):
+                if idx not in used:
+                    reranked.append(jobs[idx])
+                    used.add(idx)
+                    break
+        # Safety: append anything the reranker didn't return
+        for i, j in enumerate(jobs):
+            if i not in used:
+                reranked.append(j)
+        return reranked
+    except Exception:
+        _log.warning("Reranker pass failed; using stack_score order.", exc_info=True)
+        return jobs
 
 
 # ── TUNING ─────────────────────────────────────────────────────────────────────
@@ -289,6 +332,7 @@ def rank_jobs(
     user_level: int = 3,
     limit: int = 10,
     min_score: float = 20.0,
+    resume_text: str = "",
 ) -> list[dict]:
     """Score and rank pending jobs; return top-N above min_score.
 
@@ -299,6 +343,10 @@ def rank_jobs(
         user_level:       Seniority level 1–7 (use seniority_from_experience()).
         limit:            Stack size; pass 0 to return all qualifying jobs.
         min_score:        Minimum stack_score to include (0–100).
+        resume_text:      Plain-text resume for cross-encoder reranking pass.
+                          When provided, the top-_RERANK_POOL candidates are
+                          reranked by (resume, description) relevance before
+                          the limit is applied. Graceful no-op when empty.
 
     Returns:
         Sorted list (best first) with 'stack_score' key added to each dict.
@@ -310,4 +358,10 @@ def rank_jobs(
             scored.append({**job, "stack_score": s})
 
     scored.sort(key=lambda j: j["stack_score"], reverse=True)
+
+    if resume_text and scored:
+        pool = scored[:_RERANK_POOL]
+        pool = _try_rerank(resume_text, pool)
+        scored = pool + scored[_RERANK_POOL:]
+
     return scored[:limit] if limit > 0 else scored
