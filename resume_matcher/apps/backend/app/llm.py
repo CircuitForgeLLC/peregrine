@@ -59,6 +59,12 @@ MAX_JSON_CONTENT_SIZE = 1024 * 1024  # 1MB
 # Request-scoped user_id — set once by session_middleware_dep, read inside _allocate_orch_async.
 # ContextVar is safe for concurrent async requests: each request task gets its own copy.
 _request_user_id: ContextVar[str | None] = ContextVar("request_user_id", default=None)
+_request_tier: ContextVar[str | None] = ContextVar("request_tier", default=None)
+# Custom writing model for premium/ultra users — populated from Heimdall license key meta.
+# Set to None for all other tiers; complete() falls back to the shared base model.
+_request_writing_model: ContextVar[str | None] = ContextVar("request_writing_model", default=None)
+
+_PREMIUM_TIERS: frozenset[str] = frozenset({"premium", "ultra"})
 
 
 def set_request_user_id(user_id: str | None) -> None:
@@ -67,6 +73,22 @@ def set_request_user_id(user_id: str | None) -> None:
 
 def get_request_user_id() -> str | None:
     return _request_user_id.get()
+
+
+def set_request_tier(tier: str | None) -> None:
+    _request_tier.set(tier)
+
+
+def get_request_tier() -> str | None:
+    return _request_tier.get()
+
+
+def set_request_writing_model(model: str | None) -> None:
+    _request_writing_model.set(model)
+
+
+def get_request_writing_model() -> str | None:
+    return _request_writing_model.get()
 
 
 class LLMConfig(BaseModel):
@@ -481,10 +503,20 @@ async def complete(
         cf_orch_url = os.environ.get("CF_ORCH_URL", "").strip()
         if cf_orch_url:
             try:
+                # Premium/ultra users get their personal fine-tuned writing model as the
+                # first candidate; the base model is the fallback so cf-orch can
+                # degrade gracefully if the personal model isn't loaded yet.
+                tier = get_request_tier()
+                writing_model = get_request_writing_model()
+                model_candidates: list[str] = (
+                    [writing_model, "Qwen2.5-3B-Instruct"]
+                    if writing_model and tier in _PREMIUM_TIERS
+                    else ["Qwen2.5-3B-Instruct"]
+                )
                 async with _allocate_orch_async(
                     cf_orch_url,
                     "vllm",
-                    model_candidates=["Qwen2.5-3B-Instruct"],
+                    model_candidates=model_candidates,
                     ttl_s=300.0,
                     caller="peregrine-resume-matcher",
                 ) as alloc:
