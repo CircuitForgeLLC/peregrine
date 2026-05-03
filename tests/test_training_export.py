@@ -120,3 +120,22 @@ def test_strip_greeting_returns_original_when_no_body(tmp_path):
     # A letter that is only a salutation with no body should return the original text
     result = _strip_greeting("Dear Hiring Manager,")
     assert result == "Dear Hiring Manager,"
+
+
+def test_user_profile_training_opt_in_defaults_false(tmp_path):
+    from scripts.user_profile import UserProfile
+    yaml_path = tmp_path / "user.yaml"
+    yaml_path.write_text("name: Test\nemail: test@example.com\n")
+    profile = UserProfile(yaml_path)
+    assert profile.training_export_opt_in is False
+
+
+def test_user_profile_training_opt_in_roundtrip(tmp_path):
+    from scripts.user_profile import UserProfile
+    yaml_path = tmp_path / "user.yaml"
+    yaml_path.write_text("name: Test\nemail: test@example.com\n")
+    profile = UserProfile(yaml_path)
+    profile.training_export_opt_in = True
+    profile.save()
+    reloaded = UserProfile(yaml_path)
+    assert reloaded.training_export_opt_in is True
