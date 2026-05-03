@@ -3581,8 +3581,13 @@ def finetune_status():
             db_count = task.get("result_count", 0) or 0
             pairs_count = max(pairs_count, db_count)
         status = task.get("status", "idle") if task else "idle"
+        try:
+            from scripts.user_profile import UserProfile
+            _opted_in = UserProfile(Path(_user_yaml_path())).training_export_opt_in
+        except Exception:
+            _opted_in = False
         # Stub quota for self-hosted; cloud overrides via its own middleware
-        return {"status": status, "pairs_count": pairs_count, "quota_remaining": None}
+        return {"status": status, "pairs_count": pairs_count, "quota_remaining": None, "opted_in": _opted_in}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -3661,6 +3666,117 @@ def finetune_local_status():
         return {"model_ready": model_ready}
     except Exception:
         return {"model_ready": False}
+
+
+# ── Settings: Fine-Tune — Training Export ─────────────────────────────────────
+
+class TrainingOptInBody(BaseModel):
+    enabled: bool
+
+
+def _training_opt_in_required() -> None:
+    """Raise 403 if training_export_opt_in is not enabled in user profile."""
+    try:
+        from scripts.user_profile import UserProfile
+        profile = UserProfile(Path(_user_yaml_path()))
+        if not profile.training_export_opt_in:
+            raise HTTPException(
+                status_code=403,
+                detail="Training export is not enabled. Enable it in Settings → Fine-Tune.",
+            )
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=403,
+            detail="Training export is not enabled. Enable it in Settings → Fine-Tune.",
+        )
+
+
+@app.patch("/api/settings/fine-tune/opt-in")
+def set_training_opt_in(body: TrainingOptInBody):
+    try:
+        from scripts.user_profile import UserProfile
+        profile = UserProfile(Path(_user_yaml_path()))
+        profile.training_export_opt_in = body.enabled
+        profile.save()
+        return {"ok": True, "enabled": profile.training_export_opt_in}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/settings/fine-tune/db-pairs")
+def list_db_pairs():
+    _training_opt_in_required()
+    try:
+        from scripts.db import get_db_pairs
+        db_path = Path(_request_db.get() or DB_PATH)
+        pairs = get_db_pairs(db_path)
+        excluded_count = sum(1 for p in pairs if p["excluded"])
+        return {
+            "pairs": pairs,
+            "total": len(pairs),
+            "excluded_count": excluded_count,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/settings/fine-tune/db-pairs/{job_id}/exclude")
+def exclude_db_pair(job_id: int):
+    _training_opt_in_required()
+    try:
+        from scripts.db import set_training_exclusion
+        set_training_exclusion(Path(_request_db.get() or DB_PATH), job_id, excluded=True)
+        return {"ok": True, "job_id": job_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/settings/fine-tune/db-pairs/{job_id}/include")
+def include_db_pair(job_id: int):
+    _training_opt_in_required()
+    try:
+        from scripts.db import set_training_exclusion
+        set_training_exclusion(Path(_request_db.get() or DB_PATH), job_id, excluded=False)
+        return {"ok": True, "job_id": job_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/settings/fine-tune/export")
+def export_training_jsonl():
+    _training_opt_in_required()
+    import json as _json
+    from fastapi.responses import StreamingResponse
+    from scripts.db import get_training_pairs
+
+    db_path = Path(_request_db.get() or DB_PATH)
+    db_pairs = get_training_pairs(db_path)
+    file_pairs = _load_training_pairs()
+
+    def _generate():
+        for pair in db_pairs:
+            yield _json.dumps(pair, ensure_ascii=False) + "\n"
+        for pair in file_pairs:
+            record = dict(pair)
+            record.setdefault("source", "file")
+            yield _json.dumps(record, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": 'attachment; filename="peregrine_training_pairs.jsonl"'},
+    )
+
+
+# Phase 2 stubs — reserved, not yet implemented
+@app.post("/api/settings/fine-tune/cloud-request")
+def cloud_finetune_request():
+    raise HTTPException(status_code=501, detail="Cloud fine-tune is not yet available.")
+
+
+@app.get("/api/settings/fine-tune/cloud-status")
+def cloud_finetune_status():
+    raise HTTPException(status_code=501, detail="Cloud fine-tune is not yet available.")
 
 
 # ── Settings: License ─────────────────────────────────────────────────────────
