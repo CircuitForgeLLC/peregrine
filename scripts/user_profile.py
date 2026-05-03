@@ -29,6 +29,7 @@ _DEFAULTS = {
     "tier": "free",
     "dev_tier_override": None,
     "wizard_complete": False,
+    "training_export_opt_in": False,
     "wizard_step": 0,
     "dismissed_banners": [],
     "ui_preference": "streamlit",
@@ -77,6 +78,7 @@ class UserProfile:
         self.tier: str = data.get("tier", "free")
         self.dev_tier_override: str | None = data.get("dev_tier_override") or None
         self.wizard_complete: bool = bool(data.get("wizard_complete", False))
+        self.training_export_opt_in: bool = bool(data.get("training_export_opt_in", False))
         self.wizard_step: int = int(data.get("wizard_step", 0))
         self.dismissed_banners: list[str] = list(data.get("dismissed_banners", []))
         raw_pref = data.get("ui_preference", "streamlit")
@@ -104,6 +106,7 @@ class UserProfile:
             "tier": self.tier,
             "dev_tier_override": self.dev_tier_override,
             "wizard_complete": self.wizard_complete,
+            "training_export_opt_in": self.training_export_opt_in,
             "wizard_step": self.wizard_step,
             "dismissed_banners": self.dismissed_banners,
             "ui_preference": self.ui_preference,
