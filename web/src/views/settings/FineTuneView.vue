@@ -3,16 +3,31 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useFineTuneStore } from '../../stores/settings/fineTune'
 import { useAppConfigStore } from '../../stores/appConfig'
+import { showToast } from '../../composables/useToast'
 
 const store = useFineTuneStore()
 const config = useAppConfigStore()
-const { step, inFlightJob, jobStatus, pairsCount, quotaRemaining, pairs, pairsLoading } = storeToRefs(store)
+const { step, inFlightJob, jobStatus, pairsCount, quotaRemaining, pairs, pairsLoading,
+        optedIn, dbPairs, dbPairsLoading, dbExcludedCount } = storeToRefs(store)
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedFiles = ref<File[]>([])
 const uploadResult = ref<{ file_count: number } | null>(null)
 const extractError = ref<string | null>(null)
 const modelReady = ref<boolean | null>(null)
+const toggling = ref(false)
+const toggleSaved = ref(false)
+
+async function handleOptInChange(e: Event) {
+  const enabled = (e.target as HTMLInputElement).checked
+  toggling.value = true
+  toggleSaved.value = false
+  await store.toggleOptIn(enabled)
+  await store.loadDbPairs()
+  toggling.value = false
+  toggleSaved.value = true
+  setTimeout(() => { toggleSaved.value = false }, 2000)
+}
 
 async function handleUpload() {
   if (!selectedFiles.value.length) return
@@ -46,6 +61,7 @@ async function checkLocalModel() {
 onMounted(async () => {
   store.startPolling()
   await store.loadPairs()
+  await store.loadDbPairs()
   if (store.step === 3 && !config.isCloud) await checkLocalModel()
 })
 onUnmounted(() => { store.stopPolling(); store.resetStep() })
@@ -54,6 +70,115 @@ onUnmounted(() => { store.stopPolling(); store.resetStep() })
 <template>
   <div class="fine-tune-view">
     <h2>Fine-Tune Model</h2>
+
+    <!-- Training Export: consent toggle (always visible) -->
+    <section class="form-section training-export-consent">
+      <h3>Training Export</h3>
+      <p class="section-note">
+        When enabled, your applied-job cover letters are available as a local dataset file
+        for fine-tuning a language model to your writing style.
+      </p>
+      <label class="toggle-label" :class="{ 'toggle-saving': toggling }">
+        <input
+          type="checkbox"
+          :checked="optedIn"
+          :disabled="toggling"
+          @change="handleOptInChange"
+          aria-describedby="opt-in-desc"
+        />
+        Include cover letters in training export
+        <span v-if="toggling" class="toggle-status" aria-live="polite">Saving…</span>
+        <span v-else-if="toggleSaved" class="toggle-status" aria-live="polite">Saved</span>
+      </label>
+      <p class="section-note" id="opt-in-desc">
+        <template v-if="!config.isCloud">
+          Your cover letters stay on your device unless you explicitly request cloud fine-tuning.
+        </template>
+        <template v-else>
+          Your cover letters are stored on your CircuitForge account and are not shared with any
+          third party unless you explicitly request cloud fine-tuning.
+        </template>
+        <span v-if="!optedIn" class="opt-out-receipt">
+          Training export is off — cover letters remain local only.
+          You can change this in Settings at any time.
+        </span>
+      </p>
+    </section>
+
+    <!-- From Applied Jobs: curation list (only when opted in) -->
+    <section v-if="optedIn" class="form-section">
+      <h3>From Applied Jobs</h3>
+      <div class="db-pairs-header">
+        <span class="pairs-count">
+          {{
+            dbPairs.filter(p => !p.excluded).length === 1
+              ? '1 pair available'
+              : `${dbPairs.filter(p => !p.excluded).length} pairs available`
+          }}
+          <span
+            v-if="dbExcludedCount > 0"
+            class="excluded-badge"
+            :title="`${dbExcludedCount} pair(s) excluded — use Restore to re-include`"
+          >{{ dbExcludedCount }} excluded</span>
+        </span>
+        <div class="db-pairs-actions">
+          <button
+            class="btn-secondary"
+            :disabled="dbPairs.filter(p => !p.excluded).length === 0"
+            @click="store.downloadExport()"
+          >
+            Download JSONL <span aria-hidden="true">↓</span>
+          </button>
+          <div class="cloud-finetune-wrap">
+            <button
+              class="btn-secondary"
+              :disabled="config.tier !== 'premium' || dbPairs.filter(p => !p.excluded).length === 0"
+              @click="config.tier === 'premium' && showToast('Cloud fine-tuning coming soon')"
+            >
+              Request Cloud Fine-Tune
+            </button>
+            <p v-if="config.tier !== 'premium'" class="tier-gate-note">
+              Available on Premium.
+              <a href="/settings?tab=license" class="upgrade-link">Upgrade your plan →</a>
+            </p>
+          </div>
+        </div>
+      </div>
+      <p class="section-note download-advisory">
+        The downloaded file contains your cover letters in plain text (JSONL format).
+        Store it in a secure location.
+      </p>
+
+      <div aria-live="polite" aria-atomic="false" aria-label="Applied jobs training pairs">
+        <div v-if="dbPairsLoading" class="pairs-loading">Loading…</div>
+        <ul v-else-if="dbPairs.length > 0" class="pairs-items db-pairs-items">
+          <li
+            v-for="pair in dbPairs"
+            :key="pair.job_id"
+            class="pair-item"
+            :class="{ 'pair-excluded': pair.excluded }"
+          >
+            <div class="pair-info">
+              <span class="pair-instruction">{{ pair.title }} · {{ pair.company }}</span>
+              <span class="pair-source">{{ pair.status }}</span>
+            </div>
+            <button
+              v-if="!pair.excluded"
+              class="pair-delete"
+              title="Exclude from training export"
+              @click="store.excludeDbPair(pair.job_id)"
+            >Exclude</button>
+            <button
+              v-else
+              class="pair-restore"
+              title="Restore to training export"
+              @click="store.includeDbPair(pair.job_id)"
+            >Restore</button>
+          </li>
+        </ul>
+        <p v-else class="section-note">No applied jobs with cover letters found.</p>
+      </div>
+    </section>
 
     <!-- Wizard steps indicator -->
     <div class="wizard-steps">
@@ -189,4 +314,21 @@ onUnmounted(() => { store.stopPolling(); store.resetStep() })
 .pair-source { font-size: 0.75rem; color: var(--color-text-muted); }
 .pair-delete { flex-shrink: 0; background: none; border: none; color: var(--color-error); cursor: pointer; font-size: 0.9rem; padding: 2px 4px; border-radius: var(--radius-sm); transition: background 150ms; }
 .pair-delete:hover { background: var(--color-error); color: #fff; }
+.training-export-consent { border: 1px solid var(--color-border-light); border-radius: var(--radius-md); padding: var(--space-4, 1rem); margin-bottom: var(--space-6, 1.5rem); }
+.toggle-label { display: flex; align-items: center; gap: var(--space-2, 0.5rem); font-size: 0.9rem; font-weight: 500; cursor: pointer; flex-wrap: wrap; }
+.toggle-label.toggle-saving { opacity: 0.7; }
+.toggle-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; flex-shrink: 0; }
+.toggle-status { font-size: 0.8rem; color: var(--color-text-muted); margin-left: var(--space-1, 0.25rem); }
+.opt-out-receipt { display: block; margin-top: var(--space-1, 0.25rem); color: var(--color-text-muted); font-size: 0.8rem; }
+.db-pairs-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3, 0.75rem); margin-bottom: var(--space-4, 1rem); }
+.db-pairs-actions { display: flex; align-items: flex-start; gap: var(--space-2, 0.5rem); flex-wrap: wrap; }
+.cloud-finetune-wrap { display: flex; flex-direction: column; gap: var(--space-1, 0.25rem); }
+.tier-gate-note { font-size: 0.8rem; color: var(--color-text-muted); margin: 0; }
+.upgrade-link { color: var(--color-primary); text-decoration: underline; }
+.excluded-badge { margin-left: var(--space-2, 0.5rem); background: var(--color-warning-bg, #fef3c7); color: var(--color-warning-fg, #92400e); font-size: 0.75rem; padding: 1px 6px; border-radius: var(--radius-full, 9999px); }
+.db-pairs-items { max-height: 320px; }
+.pair-excluded { opacity: 0.5; }
+.pair-restore { flex-shrink: 0; background: none; border: 1px solid var(--color-border); color: var(--color-text-muted); cursor: pointer; font-size: 0.8rem; padding: 2px 8px; border-radius: var(--radius-sm); }
+.pair-restore:hover { background: var(--color-surface-alt); }
+.download-advisory { margin-top: var(--space-2, 0.5rem); font-style: italic; }
 </style>
