@@ -139,3 +139,86 @@ def test_user_profile_training_opt_in_roundtrip(tmp_path):
     profile.save()
     reloaded = UserProfile(yaml_path)
     assert reloaded.training_export_opt_in is True
+
+
+# ── API tests ─────────────────────────────────────────────────────────────────
+
+@pytest.fixture()
+def api_client(tmp_path, monkeypatch):
+    """TestClient with a fresh DB and user.yaml for training export endpoints."""
+    import yaml
+    from fastapi.testclient import TestClient
+
+    db = _make_db(tmp_path)
+    yaml_path = tmp_path / "config" / "user.yaml"
+    yaml_path.parent.mkdir(parents=True)
+    yaml_path.write_text(yaml.dump({"name": "Test", "email": "t@t.com"}))
+
+    monkeypatch.setenv("STAGING_DB", str(db))
+    monkeypatch.setattr("dev_api.DB_PATH", str(db))
+    monkeypatch.setattr("dev_api._user_yaml_path", lambda: str(yaml_path))
+
+    from dev_api import app
+    return TestClient(app), db, yaml_path
+
+
+def test_opt_in_toggle(api_client):
+    client, db, yaml_path = api_client
+    resp = client.patch("/api/settings/fine-tune/opt-in", json={"enabled": True})
+    assert resp.status_code == 200
+    assert resp.json()["enabled"] is True
+    import yaml as _yaml
+    data = _yaml.safe_load(yaml_path.read_text())
+    assert data["training_export_opt_in"] is True
+
+
+def test_db_pairs_blocked_without_opt_in(api_client):
+    client, db, yaml_path = api_client
+    resp = client.get("/api/settings/fine-tune/db-pairs")
+    assert resp.status_code == 403
+
+
+def test_db_pairs_returns_jobs_when_opted_in(api_client):
+    client, db, yaml_path = api_client
+    _insert_job(db, title="Engineer", company="Acme")
+    client.patch("/api/settings/fine-tune/opt-in", json={"enabled": True})
+    resp = client.get("/api/settings/fine-tune/db-pairs")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 1
+    assert data["pairs"][0]["title"] == "Engineer"
+
+
+def test_exclude_and_restore(api_client):
+    client, db, yaml_path = api_client
+    job_id = _insert_job(db)
+    client.patch("/api/settings/fine-tune/opt-in", json={"enabled": True})
+    resp = client.patch(f"/api/settings/fine-tune/db-pairs/{job_id}/exclude")
+    assert resp.status_code == 200
+    pairs = client.get("/api/settings/fine-tune/db-pairs").json()["pairs"]
+    assert any(p["job_id"] == job_id and p["excluded"] for p in pairs)
+    client.patch(f"/api/settings/fine-tune/db-pairs/{job_id}/include")
+    pairs = client.get("/api/settings/fine-tune/db-pairs").json()["pairs"]
+    assert any(p["job_id"] == job_id and not p["excluded"] for p in pairs)
+
+
+def test_export_jsonl_blocked_without_opt_in(api_client):
+    client, db, yaml_path = api_client
+    resp = client.get("/api/settings/fine-tune/export")
+    assert resp.status_code == 403
+
+
+def test_export_jsonl_streams_valid_records(api_client):
+    client, db, yaml_path = api_client
+    _insert_job(db, cover_letter="Dear Sir,\n\nGreat role body.", description="Build things.")
+    client.patch("/api/settings/fine-tune/opt-in", json={"enabled": True})
+    resp = client.get("/api/settings/fine-tune/export")
+    assert resp.status_code == 200
+    assert "attachment" in resp.headers.get("content-disposition", "")
+    lines = [l for l in resp.text.strip().splitlines() if l]
+    assert len(lines) >= 1
+    record = json.loads(lines[0])
+    assert "instruction" in record
+    assert "input" in record
+    assert "output" in record
+    assert record["source"] == "db"
