@@ -216,7 +216,7 @@ async function next() {
     experience: wizard.resume.experience,
     ...(wizard.resume.parsedData ?? {}),
   }})
-  if (ok) router.push('/setup/identity')
+  if (ok) router.push('/setup/training')
 }
 </script>
 
