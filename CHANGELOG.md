@@ -9,6 +9,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.2] — 2026-05-02
+
+### Added
+
+- **Cover letter training export** (#111) — opt-in consent gate (`training_export_opt_in`
+  in `user.yaml`, default off) lets users export applied-job cover letters as Alpaca-format
+  JSONL for local fine-tuning. Per-job exclude/restore curation in Settings → Fine-Tune.
+  Streaming JSONL download merges DB pairs with any previously uploaded file pairs.
+  Cloud fine-tune Phase 2 stub (501) reserved for cf-orch integration.
+- **WizardTrainingStep** — new onboarding consent step inserted between Resume and Identity;
+  skippable, opt-in default off, cloud-aware privacy copy.
+- **a11y:** confirmed-state toggle (no optimistic DOM divergence), visible Premium tier gate
+  with upgrade link, `aria-live` region on pairs list, cloud-aware consent copy.
+
+---
+
 ## [0.9.0] — 2026-04-20
 
 ### Added
