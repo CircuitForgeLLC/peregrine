@@ -74,7 +74,7 @@ const form = reactive({
   careerSummary: wizard.identity.careerSummary,
 })
 
-function back() { router.push('/setup/resume') }
+function back() { router.push('/setup/training') }
 
 async function next() {
   validationError.value = ''

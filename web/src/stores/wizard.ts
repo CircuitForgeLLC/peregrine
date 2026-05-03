@@ -44,7 +44,7 @@ export interface WizardInferenceData {
 }
 
 // Total mandatory steps (integrations step 7 is optional/skip-able)
-export const WIZARD_STEPS = 6
+export const WIZARD_STEPS = 7
 export const STEP_LABELS = ['Hardware', 'Tier', 'Resume', 'Identity', 'Inference', 'Search', 'Integrations']
 export const STEP_ROUTES = [
   '/setup/hardware',
