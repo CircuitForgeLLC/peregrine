@@ -170,7 +170,8 @@ _MIGRATIONS = [
     ("optimized_resume",   "TEXT"),   # ATS-rewritten resume text (paid tier)
     ("ats_gap_report",     "TEXT"),   # JSON gap report (free tier)
     ("date_posted",        "TEXT"),   # Original posting date from job board (shadow listing detection)
-    ("hired_feedback",     "TEXT"),   # JSON: optional post-hire "what helped" response
+    ("hired_feedback",           "TEXT"),   # JSON: optional post-hire "what helped" response
+    ("excluded_from_training", "INTEGER DEFAULT 0"),  # opt-out of training export
 ]
 
 
@@ -1139,6 +1140,102 @@ def set_job_resume(db_path: Path = DEFAULT_DB, job_id: int = 0, resume_id: int =
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("UPDATE jobs SET resume_id=? WHERE id=?", (resume_id, job_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+# ── Training export helpers ───────────────────────────────────────────────────
+
+def _strip_greeting(text: str) -> str:
+    """Remove 'Dear X,' greeting line from cover letter text."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        stripped_line = line.strip()
+        if stripped_line.lower().startswith("dear ") and stripped_line.endswith((",", ":")):
+            rest = lines[i + 1:]
+            while rest and not rest[0].strip():
+                rest = rest[1:]
+            result = "\n".join(rest).strip()
+            return result if result else text.strip()
+    return text.strip()
+
+
+def get_db_pairs(db_path: Path) -> list[dict]:
+    """Return curation metadata for ALL qualifying jobs (included and excluded).
+
+    Used by the curation UI. Includes excluded=True rows so users can restore them.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT id, title, company, description, status, "
+            "  excluded_from_training "
+            "FROM jobs "
+            "WHERE status IN ('applied','phone_screen','interviewing','offer','hired') "
+            "  AND cover_letter IS NOT NULL AND cover_letter != '' "
+            "ORDER BY applied_at DESC",
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "job_id":        row["id"],
+            "title":         row["title"] or "",
+            "company":       row["company"] or "",
+            "status":        row["status"],
+            "instruction":   (
+                f"Write a cover letter for the {row['title'] or 'unknown'} "
+                f"position at {row['company'] or 'unknown'}."
+            ),
+            "input_preview": (row["description"] or "")[:200],
+            "excluded":      bool(row["excluded_from_training"]),
+        }
+        for row in rows
+    ]
+
+
+def get_training_pairs(db_path: Path) -> list[dict]:
+    """Return Alpaca-format training pairs for non-excluded qualifying jobs.
+
+    Used by the JSONL export endpoint.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT id, title, company, description, cover_letter "
+            "FROM jobs "
+            "WHERE status IN ('applied','phone_screen','interviewing','offer','hired') "
+            "  AND cover_letter IS NOT NULL AND cover_letter != '' "
+            "  AND excluded_from_training = 0 "
+            "ORDER BY applied_at DESC",
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "instruction": (
+                f"Write a cover letter for the {row['title'] or 'unknown'} "
+                f"position at {row['company'] or 'unknown'}."
+            ),
+            "input":   row["description"] or "",
+            "output":  _strip_greeting(row["cover_letter"]),
+            "source":  "db",
+            "job_id":  row["id"],
+        }
+        for row in rows
+    ]
+
+
+def set_training_exclusion(db_path: Path, job_id: int, excluded: bool) -> None:
+    """Set excluded_from_training flag on a job."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE jobs SET excluded_from_training = ? WHERE id = ?",
+            (1 if excluded else 0, job_id),
+        )
         conn.commit()
     finally:
         conn.close()
