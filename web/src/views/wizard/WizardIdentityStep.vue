@@ -92,7 +92,7 @@ async function next() {
   }
 
   wizard.identity = { ...form }
-  const ok = await wizard.saveStep(4, {
+  const ok = await wizard.saveStep(5, {
     name: form.name,
     email: form.email,
     phone: form.phone,
