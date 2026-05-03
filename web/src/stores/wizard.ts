@@ -43,13 +43,14 @@ export interface WizardInferenceData {
   testMessage: string
 }
 
-// Total mandatory steps (integrations step 7 is optional/skip-able)
-export const WIZARD_STEPS = 7
-export const STEP_LABELS = ['Hardware', 'Tier', 'Resume', 'Identity', 'Inference', 'Search', 'Integrations']
+// Total mandatory steps (integrations step 8 is optional/skip-able)
+export const WIZARD_STEPS = 8
+export const STEP_LABELS = ['Hardware', 'Tier', 'Resume', 'Training', 'Identity', 'Inference', 'Search', 'Integrations']
 export const STEP_ROUTES = [
   '/setup/hardware',
   '/setup/tier',
   '/setup/resume',
+  '/setup/training',
   '/setup/identity',
   '/setup/inference',
   '/setup/search',
@@ -163,7 +164,7 @@ export const useWizardStore = defineStore('wizard', () => {
       }
 
       // Resume at next step after last completed
-      const resumeAt = Math.max(1, Math.min(data.wizard_step + 1, 7))
+      const resumeAt = Math.max(1, Math.min(data.wizard_step + 1, 8))
       currentStep.value = resumeAt
       return routeForStep(resumeAt)
     } finally {

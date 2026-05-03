@@ -143,7 +143,7 @@ async function next() {
   wizard.search.titles = [...form.titles]
   wizard.search.locations = [...form.locations]
 
-  const ok = await wizard.saveStep(6, {
+  const ok = await wizard.saveStep(7, {
     search: {
       titles: form.titles,
       locations: form.locations,

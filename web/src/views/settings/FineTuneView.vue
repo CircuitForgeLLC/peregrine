@@ -60,6 +60,7 @@ async function checkLocalModel() {
 
 onMounted(async () => {
   store.startPolling()
+  await store.loadStatus()
   await store.loadPairs()
   await store.loadDbPairs()
   if (store.step === 3 && !config.isCloud) await checkLocalModel()
