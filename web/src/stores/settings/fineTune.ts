@@ -10,6 +10,16 @@ export interface TrainingPair {
   source_file: string
 }
 
+export interface DbPair {
+  job_id: number
+  title: string
+  company: string
+  status: string
+  instruction: string
+  input_preview: string
+  excluded: boolean
+}
+
 export const useFineTuneStore = defineStore('settings/fineTune', () => {
   const step = ref(1)
   const inFlightJob = ref(false)
@@ -22,6 +32,11 @@ export const useFineTuneStore = defineStore('settings/fineTune', () => {
   const pairsLoading = ref(false)
   let _pollTimer: ReturnType<typeof setInterval> | null = null
 
+  const optedIn = ref(false)
+  const dbPairs = ref<DbPair[]>([])
+  const dbPairsLoading = ref(false)
+  const dbExcludedCount = ref(0)
+
   function resetStep() { step.value = 1 }
 
   async function loadStatus() {
@@ -31,6 +46,7 @@ export const useFineTuneStore = defineStore('settings/fineTune', () => {
     pairsCount.value = data.pairs_count ?? 0
     quotaRemaining.value = data.quota_remaining ?? null
     inFlightJob.value = ['queued', 'running'].includes(data.status)
+    optedIn.value = (data as any).opted_in ?? false
   }
 
   function startPolling() {
@@ -68,6 +84,60 @@ export const useFineTuneStore = defineStore('settings/fineTune', () => {
     }
   }
 
+  async function toggleOptIn(enabled: boolean) {
+    const { data } = await useApiFetch<{ ok: boolean; enabled: boolean }>(
+      '/api/settings/fine-tune/opt-in',
+      { method: 'PATCH', body: JSON.stringify({ enabled }), headers: { 'Content-Type': 'application/json' } },
+    )
+    if (data) optedIn.value = data.enabled
+  }
+
+  async function loadDbPairs() {
+    if (!optedIn.value) { dbPairs.value = []; return }
+    dbPairsLoading.value = true
+    const { data } = await useApiFetch<{ pairs: DbPair[]; total: number; excluded_count: number }>(
+      '/api/settings/fine-tune/db-pairs',
+    )
+    dbPairsLoading.value = false
+    if (data) {
+      dbPairs.value = data.pairs
+      dbExcludedCount.value = data.excluded_count
+    }
+  }
+
+  async function excludeDbPair(jobId: number) {
+    const { data } = await useApiFetch<{ ok: boolean }>(
+      `/api/settings/fine-tune/db-pairs/${jobId}/exclude`,
+      { method: 'PATCH' },
+    )
+    if (data?.ok) {
+      dbPairs.value = dbPairs.value.map(p =>
+        p.job_id === jobId ? { ...p, excluded: true } : p,
+      )
+      dbExcludedCount.value += 1
+    }
+  }
+
+  async function includeDbPair(jobId: number) {
+    const { data } = await useApiFetch<{ ok: boolean }>(
+      `/api/settings/fine-tune/db-pairs/${jobId}/include`,
+      { method: 'PATCH' },
+    )
+    if (data?.ok) {
+      dbPairs.value = dbPairs.value.map(p =>
+        p.job_id === jobId ? { ...p, excluded: false } : p,
+      )
+      dbExcludedCount.value = Math.max(0, dbExcludedCount.value - 1)
+    }
+  }
+
+  function downloadExport() {
+    const a = document.createElement('a')
+    a.href = '/api/settings/fine-tune/export'
+    a.download = 'peregrine_training_pairs.jsonl'
+    a.click()
+  }
+
   return {
     step,
     inFlightJob,
@@ -85,5 +155,14 @@ export const useFineTuneStore = defineStore('settings/fineTune', () => {
     submitJob,
     loadPairs,
     deletePair,
+    optedIn,
+    dbPairs,
+    dbPairsLoading,
+    dbExcludedCount,
+    toggleOptIn,
+    loadDbPairs,
+    excludeDbPair,
+    includeDbPair,
+    downloadExport,
   }
 })

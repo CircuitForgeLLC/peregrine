@@ -85,7 +85,7 @@ function back() { router.push('/setup/search') }
 
 async function finish() {
   // Save integration selections (step 7) then mark wizard complete
-  await wizard.saveStep(7, { integrations: [...checkedIds.value] })
+  await wizard.saveStep(8, { integrations: [...checkedIds.value] })
   const ok = await wizard.complete()
   if (ok) router.replace('/')
 }

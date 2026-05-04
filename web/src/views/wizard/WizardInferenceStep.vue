@@ -127,7 +127,7 @@ async function next() {
   })
   wizard.inference.services = svcMap
 
-  const ok = await wizard.saveStep(5, {
+  const ok = await wizard.saveStep(6, {
     anthropic_key: form.anthropicKey,
     openai_url: form.openaiUrl,
     openai_key: form.openaiKey,
