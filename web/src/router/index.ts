@@ -46,6 +46,7 @@ export const router = createRouter({
         { path: 'hardware',   component: () => import('../views/wizard/WizardHardwareStep.vue') },
         { path: 'tier',       component: () => import('../views/wizard/WizardTierStep.vue') },
         { path: 'resume',     component: () => import('../views/wizard/WizardResumeStep.vue') },
+        { path: 'training',   component: () => import('../views/wizard/WizardTrainingStep.vue') },
         { path: 'identity',   component: () => import('../views/wizard/WizardIdentityStep.vue') },
         { path: 'inference',  component: () => import('../views/wizard/WizardInferenceStep.vue') },
         { path: 'search',     component: () => import('../views/wizard/WizardSearchStep.vue') },
