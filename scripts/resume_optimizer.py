@@ -532,27 +532,37 @@ def apply_review_decisions(
             struct["skills"] = sorted(original_kept | approved_additions)
             break
 
-    # ── Summary: accept proposed or revert to original ──────────────────────
-    if not decisions.get("summary", {}).get("accepted", True):
+    # ── Summary: accept/reject + optional user-edited text ─────────────────
+    summary_dec = decisions.get("summary", {})
+    if not summary_dec.get("accepted", True):
         for sec in sections:
             if sec["section"] == "summary":
                 struct["career_summary"] = sec.get("original", struct.get("career_summary", ""))
                 break
+    else:
+        edited_text = summary_dec.get("edited_text")
+        if edited_text is not None:
+            struct["career_summary"] = edited_text.strip()
 
-    # ── Experience: per-entry accept/reject ─────────────────────────────────
-    exp_decisions: dict[str, bool] = {
-        f"{ed.get('title', '')}|{ed.get('company', '')}": ed.get("accepted", True)
+    # ── Experience: per-entry accept/reject + optional user-edited bullets ──
+    exp_entry_map: dict[str, dict] = {
+        f"{ed.get('title', '')}|{ed.get('company', '')}": ed
         for ed in (decisions.get("experience", {}).get("accepted_entries") or [])
     }
     for sec in sections:
         if sec["section"] == "experience":
             for entry_diff in (sec.get("entries") or []):
                 key = f"{entry_diff['title']}|{entry_diff['company']}"
-                if not exp_decisions.get(key, True):
-                    for exp_entry in (struct.get("experience") or []):
-                        if (exp_entry.get("title") == entry_diff["title"] and
-                                exp_entry.get("company") == entry_diff["company"]):
+                entry_dec = exp_entry_map.get(key, {})
+                accepted = entry_dec.get("accepted", True)
+                edited_bullets = entry_dec.get("edited_bullets")
+                for exp_entry in (struct.get("experience") or []):
+                    if (exp_entry.get("title") == entry_diff["title"] and
+                            exp_entry.get("company") == entry_diff["company"]):
+                        if not accepted:
                             exp_entry["bullets"] = entry_diff["original_bullets"]
+                        elif edited_bullets is not None:
+                            exp_entry["bullets"] = [b for b in edited_bullets if b.strip()]
             break
 
     return struct

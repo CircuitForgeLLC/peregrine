@@ -667,7 +667,8 @@ def approve_resume(job_id: int, body: dict):
         raise HTTPException(400, "preview_struct is required")
 
     from scripts.resume_optimizer import render_resume_text
-    final_text = render_resume_text(struct)
+    override = (body.get("preview_text_override") or "").strip()
+    final_text = override if override else render_resume_text(struct)
 
     # Persist plain text + struct (struct enables YAML export later)
     _finalize(db_path=db_path, job_id=job_id, final_text=final_text)

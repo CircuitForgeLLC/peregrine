@@ -63,7 +63,9 @@
             <SummaryPage
               :section="summarySection!"
               :accepted="summaryAccepted"
+              :edited-proposed="summaryEdited"
               @update:accepted="summaryAccepted = $event"
+              @update:editedProposed="summaryEdited = $event"
             />
           </template>
 
@@ -72,7 +74,9 @@
             <ExperiencePage
               :entry="currentEntry!"
               :accepted="expAccepted[currentPage.entryKey!] ?? true"
+              :edited-bullets="expEdited[currentPage.entryKey!] ?? currentEntry!.proposed_bullets"
               @update:accepted="expAccepted[currentPage.entryKey!] = $event"
+              @update:editedBullets="expEdited[currentPage.entryKey!] = $event"
             />
           </template>
 
@@ -255,9 +259,15 @@ function goTo(idx: number) {
 const approvedSkills = ref<Set<string>>(new Set(skillsSection.value?.added ?? []))
 const skillFramings = ref<Map<string, GapFraming>>(new Map())
 const summaryAccepted = ref(true)
+const summaryEdited = ref<string>(summarySection.value?.proposed ?? '')
 const expAccepted = ref<Record<string, boolean>>(
   Object.fromEntries(
     (expSection.value?.entries ?? []).map(e => [`${e.title}|${e.company}`, true])
+  )
+)
+const expEdited = ref<Record<string, string[]>>(
+  Object.fromEntries(
+    (expSection.value?.entries ?? []).map(e => [`${e.title}|${e.company}`, [...e.proposed_bullets]])
   )
 )
 
@@ -322,15 +332,22 @@ function emitSubmit() {
     decisions.skills = { approved_additions: [...approvedSkills.value] }
   }
   if (summarySection.value) {
-    decisions.summary = { accepted: summaryAccepted.value }
+    decisions.summary = {
+      accepted: summaryAccepted.value,
+      edited_text: summaryEdited.value,
+    }
   }
   if (expSection.value) {
     decisions.experience = {
-      accepted_entries: expSection.value.entries.map(e => ({
-        title: e.title,
-        company: e.company,
-        accepted: expAccepted.value[`${e.title}|${e.company}`] ?? true,
-      })),
+      accepted_entries: expSection.value.entries.map(e => {
+        const key = `${e.title}|${e.company}`
+        return {
+          title: e.title,
+          company: e.company,
+          accepted: expAccepted.value[key] ?? true,
+          edited_bullets: expEdited.value[key] ?? e.proposed_bullets,
+        }
+      }),
     }
   }
 
