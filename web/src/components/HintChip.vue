@@ -32,7 +32,7 @@ function dismiss(): void {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2, 8px);
-  background: var(--color-surface, #0d1829);
+  background: var(--color-surface, #eaeff8);
   border: 1px solid var(--app-primary, #2B6CB0);
   border-radius: var(--radius-md, 8px);
   padding: var(--space-2, 8px) var(--space-3, 12px);
@@ -59,5 +59,5 @@ function dismiss(): void {
   line-height: 1;
 }
 
-.hint-chip__dismiss:hover { color: var(--color-text, #eaeff8); }
+.hint-chip__dismiss:hover { color: var(--color-text, #1a2338); }
 </style>

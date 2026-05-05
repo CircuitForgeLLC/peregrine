@@ -9,6 +9,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.3] — 2026-05-05
+
+### Added
+
+- **Editable resume review** — proposed summary and experience bullets in the review modal
+  are now editable text areas. Edits flow through `apply_review_decisions()` and override
+  the LLM output in the final resume struct. Preview textarea in Apply Workspace is also
+  editable, with manual changes preserved through the approve step via `preview_text_override`.
+
+### Fixed
+
+- **Double bullets in resume optimizer** — `_section_text_for_prompt` now strips existing
+  bullet characters before prefixing with `•`, and `_reparse_experience_bullets` uses a
+  greedy strip regex so `• •` patterns can no longer survive parsing.
+- **Asterisk markup in summary** — added `_clean_summary_markup()` to strip LLM-generated
+  markdown bullet chars (`*`, `-`, etc.) from career summary output; injected no-markdown
+  rule into the LLM prompt's CRITICAL RULES list.
+- **Light theme dark CSS bleed** — `peregrine.css` media dark override now scoped to
+  `:root:not([data-theme])` (auto mode only) instead of `:root:not([data-theme="hacker"])`.
+  Fixes dark navy `--app-primary-light`/`--app-accent-light` bleeding into light themes
+  (light, solarized-light, colorblind) on dark-OS machines.
+
+---
+
 ## [0.9.2] — 2026-05-02
 
 ### Added
