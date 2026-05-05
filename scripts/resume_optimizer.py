@@ -278,7 +278,8 @@ def rewrite_for_ats(
             f"3. Only rephrase existing content — replace vague verbs/nouns with the "
             f"   ATS-preferred equivalents listed above.\n"
             f"4. Keep the same number of bullet points in experience entries.\n"
-            f"5. Return ONLY the rewritten section content, no labels or explanation."
+            f"5. Do NOT use markdown formatting — no **, __, or * for bullets.\n"
+            f"6. Return ONLY the rewritten section content, no labels or explanation."
             f"{voice_note}\n\n"
             f"Original {section} section:\n{original_content}"
         )
@@ -305,7 +306,8 @@ def _section_text_for_prompt(resume: dict[str, Any], section: str) -> str:
         for exp in resume.get("experience", []):
             lines.append(f"{exp['title']} at {exp['company']} ({exp['start_date']}–{exp['end_date']})")
             for b in exp.get("bullets", []):
-                lines.append(f"  • {b}")
+                clean_b = re.sub(r"^[•\-–—*◦▪▸►\s]+", "", b).strip()
+                lines.append(f"  • {clean_b}")
         return "\n".join(lines) if lines else "(empty)"
     return "(unsupported section)"
 
@@ -314,7 +316,7 @@ def _apply_section_rewrite(resume: dict[str, Any], section: str, rewritten: str)
     """Return a new resume dict with the given section replaced by rewritten text."""
     updated = dict(resume)
     if section == "summary":
-        updated["career_summary"] = rewritten
+        updated["career_summary"] = _clean_summary_markup(rewritten)
     elif section == "skills":
         # LLM returns comma-separated or newline-separated skills
         skills = [s.strip() for s in re.split(r"[,\n•·]+", rewritten) if s.strip()]
@@ -324,6 +326,19 @@ def _apply_section_rewrite(resume: dict[str, Any], section: str, rewritten: str)
         # The LLM rewrites the whole section as plain text; we re-parse the bullets.
         updated["experience"] = _reparse_experience_bullets(resume.get("experience", []), rewritten)
     return updated
+
+
+def _clean_summary_markup(text: str) -> str:
+    """Strip markdown/plain-text bullet markers from career summary lines.
+
+    LLMs sometimes format summary content with '* item' or '• item' markdown.
+    This converts those lines to unmarked text so the summary renders cleanly.
+    """
+    lines = []
+    for line in text.splitlines():
+        cleaned = re.sub(r"^[•*\-–—◦▪▸►]\s+", "", line.lstrip())
+        lines.append(cleaned)
+    return "\n".join(lines).strip()
 
 
 def _reparse_experience_bullets(
@@ -355,9 +370,9 @@ def _reparse_experience_bullets(
             chunk = remaining
 
         bullets = [
-            re.sub(r"^[•\-–—*◦▪▸►]\s*", "", line).strip()
+            re.sub(r"^([•\-–—*◦▪▸►]\s*)+", "", line.strip()).strip()
             for line in chunk.splitlines()
-            if re.match(r"^[•\-–—*◦▪▸►]\s*", line.strip())
+            if re.match(r"^\s*[•\-–—*◦▪▸►]", line)
         ]
         new_entry = dict(entry)
         new_entry["bullets"] = bullets if bullets else entry["bullets"]
