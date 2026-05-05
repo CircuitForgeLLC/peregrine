@@ -135,8 +135,8 @@ body {
   bottom: calc(72px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
-  background: var(--color-surface-raised, #2a3650);
-  color: var(--color-text, #eaeff8);
+  background: var(--color-surface-raised, #f5f7fc);
+  color: var(--color-text, #1a2338);
   padding: 10px 20px;
   border-radius: var(--radius-md, 8px);
   font-size: 0.9rem;

@@ -79,7 +79,7 @@ body {
 /* ── Dark mode ─────────────────────────────────────── */
 /* Covers both: OS-level dark preference AND explicit dark theme selection in UI */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="hacker"]) {
+  :root:not([data-theme]) {
     --app-primary:       #68A8D8;   /* Falcon Blue (dark) — 6.54:1 on #16202e ✅ AA */
     --app-primary-hover: #7BBDE6;
     --app-primary-light: #0D1F35;
