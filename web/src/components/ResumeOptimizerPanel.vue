@@ -112,16 +112,15 @@
             <span class="rop__preview-badge">Preview — not yet saved</span>
           </div>
           <textarea
-            :value="previewText"
-            class="rop__textarea rop__textarea--preview"
-            aria-label="Resume preview text"
-            spellcheck="false"
-            readonly
+            v-model="previewText"
+            class="rop__textarea"
+            aria-label="Resume preview — editable before approving"
+            spellcheck="true"
           />
           <p class="rop__preview-hint">
-            Review the assembled resume above. If it looks right, click
-            <strong>Approve &amp; Save</strong> to lock it in. You can also go back and adjust
-            your review decisions.
+            Review and edit the assembled resume above. Click
+            <strong>Approve &amp; Save</strong> to lock it in, or go back to adjust
+            your section-level decisions.
           </p>
           <div class="rop__save-to-library">
             <label class="rop__save-toggle">
@@ -492,7 +491,10 @@ async function approveResume() {
   if (!previewStruct.value) return
   approvingResume.value = true
 
-  const body: Record<string, unknown> = { preview_struct: previewStruct.value }
+  const body: Record<string, unknown> = {
+    preview_struct: previewStruct.value,
+    preview_text_override: previewText.value,
+  }
   if (saveToLibrary.value) {
     body.save_to_library = true
     body.resume_name = savedResumeName.value.trim() || `Optimized for job ${props.jobId}`
@@ -1099,10 +1101,6 @@ onUnmounted(stopPolling)
   border-radius: var(--radius-full, 9999px);
 }
 
-.rop__textarea--preview {
-  background: color-mix(in srgb, var(--app-accent, #6366f1) 3%, var(--app-surface, #fff));
-  cursor: default;
-}
 
 .rop__preview-hint {
   font-size: var(--font-sm, 0.875rem);
