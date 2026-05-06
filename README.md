@@ -1,154 +1,87 @@
-# Peregrine
+<div align="center">
+  <img src="web/public/peregrine.svg" alt="Peregrine" width="120" />
 
-> **Primary development** happens at [git.opensourcesolarpunk.com](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine) — GitHub and Codeberg are push mirrors. Issues and PRs are welcome on either platform.
+  <h1>Peregrine</h1>
 
-[![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](./LICENSE-BSL)
-[![CI](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml/badge.svg)](https://github.com/CircuitForge/peregrine/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-docs.circuitforge.tech-orange)](https://docs.circuitforge.tech/peregrine/)
+  <p><strong>Job search pipeline — by <a href="https://circuitforge.tech">Circuit Forge LLC</a></strong></p>
 
-**Job search pipeline — by [Circuit Forge LLC](https://circuitforge.tech)**
+  <p><em>AI for the tasks the system made hard on purpose.</em></p>
 
-> *"Tools for the jobs that the system made hard on purpose."*
+  [![License: MIT / BSL 1.1](https://img.shields.io/badge/License-MIT%20%2F%20BSL%201.1-blue.svg)](#license)
+  [![CI](https://github.com/CircuitForgeLLC/peregrine/actions/workflows/ci.yml/badge.svg)](https://github.com/CircuitForgeLLC/peregrine/actions/workflows/ci.yml)
+  [![Docs](https://img.shields.io/badge/docs-docs.circuitforge.tech-orange)](https://docs.circuitforge.tech/peregrine/)
 
-**[Try the live demo](https://demo.circuitforge.tech/peregrine)** — no account required, nothing saved.
+  <p>
+    <a href="https://demo.circuitforge.tech/peregrine"><strong>Live Demo</strong></a> —
+    no account required, nothing saved &nbsp;|&nbsp;
+    <a href="https://docs.circuitforge.tech/peregrine/">Docs</a> &nbsp;|&nbsp;
+    <a href="https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/issues">Issues</a>
+  </p>
+
+  <blockquote>
+    <strong>Primary development</strong> happens at
+    <a href="https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine">git.opensourcesolarpunk.com/Circuit-Forge/peregrine</a>.
+    GitHub and Codeberg are push mirrors. Issues and PRs are welcome on any platform.
+  </blockquote>
+</div>
 
 ---
 
-![Job review — swipe right to approve, left to skip](docs/screenshots/02-review-swipe.gif)
-
 <table>
 <tr>
-<td><img src="docs/screenshots/01-dashboard.png" alt="Dashboard with pipeline stats"/></td>
-<td><img src="docs/screenshots/04-interviews.png" alt="Interview kanban with recruiter emails attached"/></td>
+<td><img src="docs/screenshots/01-dashboard.png" alt="Dashboard with pipeline stats and discovery controls"/></td>
+<td><img src="docs/screenshots/02-review-swipe.gif" alt="Job review — swipe right to approve, left to skip"/></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/03-apply.png" alt="Apply workspace with AI cover letter draft"/></td>
-<td><img src="docs/screenshots/02-review.png" alt="Job review card with match score and ghost-post detection"/></td>
+<td><img src="docs/screenshots/03-apply.png" alt="Apply workspace with LLM-drafted cover letter"/></td>
+<td><img src="docs/screenshots/04-interviews.png" alt="Interview kanban with company research and recruiter emails"/></td>
 </tr>
 </table>
 
 ---
 
-Job search is a second job nobody hired you for.
+## Why Peregrine?
 
-ATS filters designed to reject. Job boards that show the same listing eight times. Cover letter number forty-seven for a role that might already be filled. Hours of prep for a phone screen that lasts twelve minutes.
+Job search is a second job nobody hired you for. ATS (applicant tracking system) filters designed to reject. Boards that show the same listing eight times. Cover letter number forty-seven for a role that might already be filled. Hours of prep for a phone screen that lasts twelve minutes.
 
-Peregrine handles the pipeline — discovery, matching, tracking, drafting, and prep — so you can spend your time doing the work you actually want to be doing.
-
-**LLM support is optional.** The full discovery and tracking pipeline works without one. When you do configure a backend, the LLM drafts the parts that are genuinely miserable — cover letters, company research briefs, interview prep sheets — and waits for your approval before anything goes anywhere.
-
-### What Peregrine does not do
-
-Peregrine does **not** submit job applications for you. You still have to go to each employer's site and click apply yourself.
-
-This is intentional. Automated mass-applying is a bad experience for everyone — it's also a trust violation with employers who took the time to post a real role. Peregrine is a preparation and organization tool, not a bot.
-
-What it *does* cover is everything before and after that click: finding the jobs, matching them against your resume, generating cover letters and prep materials, and once you've applied — tracking where you stand, classifying the emails that come back, and surfacing company research when an interview lands on your calendar. The submit button is yours. The rest of the grind is ours.
-
-> **Exception:** [AIHawk](https://github.com/nicolomantini/LinkedIn-Easy-Apply) is a separate, optional tool that handles LinkedIn Easy Apply automation. Peregrine integrates with it for AIHawk-compatible profiles, but it is not part of Peregrine's core pipeline.
+- **Handles the full pipeline.** Discover, filter, match, draft, track — one tool, one database, no duct tape.
+- **LLM is optional and local-first.** Discovery and tracking work with no LLM at all. When you do configure one, it runs on your hardware by default. Cloud inference is a fallback, not the default path.
+- **Ghost-post detection baked in.** Listings that have been open too long or look like sourcing traps get flagged before you spend time on them.
+- **Human approval at every step.** LLM drafts cover letters and research briefs; you approve before anything goes anywhere. Peregrine never submits an application on your behalf.
+- **Privacy · Safety · Accessibility** are architectural constraints, not aspirational copy. No PII (personally identifiable information) logging, no behavioral profiling, no dark patterns.
 
 ---
 
 ## Quick Start
 
-**1. Clone and install dependencies** (Docker, NVIDIA toolkit if needed):
+One-line install:
+
+```bash
+bash <(curl -fsSL https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/raw/branch/main/install.sh)
+```
+
+Or clone and run manually:
 
 ```bash
 git clone https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine
 cd peregrine
 ./manage.sh setup
+./manage.sh start
 ```
 
-**2. Start Peregrine:**
+Open **http://localhost:8502** — the setup wizard walks you through the rest.
+
+> **macOS / Apple Silicon:** install Ollama natively via Homebrew before starting for Metal GPU-accelerated inference. `install.sh` handles this automatically.
+> **Windows:** use WSL2 with Ubuntu.
+
+### Inference profiles
 
 ```bash
-./manage.sh start                          # remote profile (API-only, no GPU)
-./manage.sh start --profile cpu            # local Ollama (CPU, or Metal GPU on Apple Silicon — see below)
-./manage.sh start --profile single-gpu    # Ollama + Vision on GPU 0  (NVIDIA only)
-./manage.sh start --profile dual-gpu      # Ollama + Vision + vLLM (GPU 0 + 1)  (NVIDIA only)
+./manage.sh start                       # remote — no GPU; LLM calls go to Anthropic / OpenAI
+./manage.sh start --profile cpu         # local Ollama on CPU (or Metal via native Ollama on macOS)
+./manage.sh start --profile single-gpu  # Ollama + vision on GPU 0 (NVIDIA only)
+./manage.sh start --profile dual-gpu    # Ollama + vLLM on two NVIDIA GPUs
 ```
-
-Or use `make` directly:
-
-```bash
-make start                        # remote profile
-make start PROFILE=single-gpu
-```
-
-**3.** Open http://localhost:8501 — the setup wizard guides you through the rest.
-
-> **macOS / Apple Silicon:** Docker Desktop must be running. For Metal GPU-accelerated inference, install Ollama natively before starting — `install.sh` will prompt you to do this. See [Apple Silicon GPU](#apple-silicon-gpu) below.
-> **Windows:** Not supported — use WSL2 with Ubuntu.
-
-### Installing to `/opt` or other system directories
-
-If you clone into a root-owned directory (e.g. `sudo git clone ... /opt/peregrine`), two things need fixing:
-
-**1. Git ownership warning** (`fatal: detected dubious ownership`) — `./manage.sh setup` fixes this automatically. If you need git to work *before* running setup:
-
-```bash
-git config --global --add safe.directory /opt/peregrine
-```
-
-**2. Preflight write access** — preflight writes `.env` and `compose.override.yml` into the repo directory. Fix ownership once:
-
-```bash
-sudo chown -R $USER:$USER /opt/peregrine
-```
-
-After that, run everything without `sudo`.
-
-### Podman
-
-Podman is rootless by default — **no `sudo` needed.** `./manage.sh setup` will configure `podman-compose` if it isn't already present.
-
-### Docker
-
-After `./manage.sh setup`, log out and back in for docker group membership to take effect. Until then, prefix commands with `sudo`. After re-login, `sudo` is no longer required.
-
----
-
-## Inference Profiles
-
-| Profile | Services started | Use case |
-|---------|-----------------|----------|
-| `remote` | app + searxng | No GPU; LLM calls go to Anthropic / OpenAI |
-| `cpu` | app + ollama + searxng | No GPU; local models on CPU. On Apple Silicon, use with native Ollama for Metal acceleration — see below. |
-| `single-gpu` | app + ollama + vision + searxng | One **NVIDIA** GPU: cover letters, research, vision |
-| `dual-gpu` | app + ollama + vllm + vision + searxng | Two **NVIDIA** GPUs: GPU 0 = Ollama, GPU 1 = vLLM |
-
-### Apple Silicon GPU
-
-Docker Desktop on macOS runs in a Linux VM — it cannot access the Apple GPU. Metal-accelerated inference requires Ollama to run **natively** on the host.
-
-`install.sh` handles this automatically: it offers to install Ollama via Homebrew, starts it as a background service, and explains what happens next. If Ollama is running on port 11434 when you start Peregrine, preflight detects it, stubs out the Docker Ollama container, and routes inference through the native process — which uses Metal automatically.
-
-To do it manually:
-
-```bash
-brew install ollama
-brew services start ollama          # starts at login, uses Metal GPU
-./manage.sh start --profile cpu     # preflight adopts native Ollama; Docker container is skipped
-```
-
-The `cpu` profile label is a slight misnomer in this context — Ollama will be running on the GPU. `single-gpu` and `dual-gpu` profiles are NVIDIA-specific and not applicable on Mac.
-
----
-
-## First-Run Wizard
-
-On first launch the setup wizard walks through seven steps:
-
-1. **Hardware** — detects NVIDIA GPUs (Linux) or Apple Silicon GPU (macOS) and recommends a profile
-2. **Tier** — choose free, paid, or premium (or use `dev_tier_override` for local testing)
-3. **Identity** — name, email, phone, LinkedIn, career summary
-4. **Resume** — upload a PDF/DOCX for LLM parsing, or use the guided form builder
-5. **Inference** — configure LLM backends and API keys
-6. **Search** — job titles, locations, boards, keywords, blocklist
-7. **Integrations** — optional cloud storage, calendar, and notification services
-
-Wizard state is saved after each step — a crash or browser close resumes where you left off.
-Re-enter the wizard any time via **Settings → Developer → Reset wizard**.
 
 ---
 
@@ -156,58 +89,54 @@ Re-enter the wizard any time via **Settings → Developer → Reset wizard**.
 
 | Feature | Tier |
 |---------|------|
-| Job discovery (JobSpy + custom boards) | Free |
-| Resume keyword matching & gap analysis | Free |
-| Document storage sync (Google Drive, Dropbox, OneDrive, MEGA, Nextcloud) | Free |
+| Job discovery — LinkedIn, Indeed, Glassdoor, Adzuna, The Ladders | Free |
+| Ghost-post detection | Free |
+| Resume keyword matching and gap analysis | Free |
+| Document storage sync (Google Drive, Dropbox, OneDrive, Nextcloud) | Free |
 | Webhook notifications (Discord, Home Assistant) | Free |
-| **Cover letter generation** | Free with LLM¹ |
-| **Company research briefs** | Free with LLM¹ |
-| **Interview prep & practice Q&A** | Free with LLM¹ |
-| **Survey assistant** (culture-fit Q&A, screenshot analysis) | Free with LLM¹ |
-| **Wizard helpers** (career summary, bullet expansion, skill suggestions, job title suggestions, mission notes) | Free with LLM¹ |
+| Vue 3 SPA — full UI with onboarding wizard, job board, apply workspace, interview kanban | Free |
+| **Cover letter generation** | Free with LLM ¹ |
+| **Company research briefs** | Free with LLM ¹ |
+| **Interview prep and practice Q&A** | Free with LLM ¹ |
+| **Survey assistant** (culture-fit Q&A, screenshot analysis) | Free with LLM ¹ |
 | Managed cloud LLM (no API key needed) | Paid |
-| Email sync & auto-classification | Paid |
-| LLM-powered keyword blocklist | Paid |
+| Email sync and auto-classification | Paid |
 | Job tracking integrations (Notion, Airtable, Google Sheets) | Paid |
 | Calendar sync (Google, Apple) | Paid |
 | Slack notifications | Paid |
 | CircuitForge shared cover-letter model | Paid |
-| Vue 3 SPA — full UI with onboarding wizard, job board, apply workspace, sort/filter, research modal, draft cover letter | Free |
-| **Voice guidelines** (custom writing style & tone) | Premium with LLM¹ ² |
-| Cover letter model fine-tuning (your writing, your model) | Premium |
+| **Voice guidelines** (custom writing style and tone) | Premium with LLM ¹ |
+| Cover letter model fine-tuning — your writing, your model | Premium |
 | Multi-user support | Premium |
+| Human-in-the-loop operator (CAPTCHAs, phone calls, wet signatures) | Ultra |
 
-¹ **BYOK (bring your own key/backend) unlock:** configure any LLM backend — a local [Ollama](https://ollama.com) or vLLM instance,
-or your own API key (Anthropic, OpenAI-compatible) — and all features marked **Free with LLM** or **Premium with LLM**
-unlock at no charge. The paid tier earns its price by providing managed cloud inference so you
-don't need a key at all, plus integrations and email sync.
-
-² **Voice guidelines** requires Premium tier without a configured LLM backend. With BYOK, it unlocks at any tier.
+¹ **BYOK (bring your own key) unlock:** configure any LLM backend — a local [Ollama](https://ollama.com) or vLLM instance, or your own API key (Anthropic, OpenAI-compatible) — and all "Free with LLM" and "Premium with LLM" features unlock at no charge.
 
 ---
 
-## Email Sync
+## What Peregrine does not do
 
-Monitors your inbox for job-related emails and automatically updates job stages (interview requests, rejections, survey links, offers).
+Peregrine does **not** submit job applications for you. You still click apply on the employer's site.
 
-Configure in **Settings → Email**. Requires IMAP access and, for Gmail, an App Password.
-
----
-
-## Integrations
-
-Connect external services in **Settings → Integrations**:
-
-- **Job tracking:** Notion, Airtable, Google Sheets
-- **Document storage:** Google Drive, Dropbox, OneDrive, MEGA, Nextcloud
-- **Calendar:** Google Calendar, Apple Calendar (CalDAV)
-- **Notifications:** Slack, Discord (webhook), Home Assistant
+This is intentional. Automated mass-applying is a bad experience for everyone and a trust violation with employers who posted a real role. The submit button is yours. The rest of the grind is ours.
 
 ---
 
-## CLI Reference (`manage.sh`)
+## Stack
 
-`manage.sh` is the single entry point for all common operations — no need to remember Make targets or Docker commands.
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Vue 3 SPA (Vite) |
+| Backend | FastAPI + Python |
+| Database | SQLite (local, per-user) |
+| Job scraping | [JobSpy](https://github.com/Bunsly/JobSpy) + custom board scrapers |
+| LLM inference | Ollama, vLLM, Anthropic, OpenAI-compatible — configurable fallback chain |
+| Vision | moondream2 (survey screenshot analysis) |
+| Container | Docker / Podman |
+
+---
+
+## manage.sh reference
 
 ```
 ./manage.sh setup               Install Docker/Podman + NVIDIA toolkit
@@ -216,31 +145,38 @@ Connect external services in **Settings → Integrations**:
 ./manage.sh restart             Restart all services
 ./manage.sh status              Show running containers
 ./manage.sh logs [service]      Tail logs (default: app)
-./manage.sh update              Pull latest images + rebuild app container
-./manage.sh preflight           Check ports + resources; write .env
+./manage.sh update              Pull latest images and rebuild app container
 ./manage.sh test                Run test suite
-./manage.sh prepare-training    Scan docs for cover letters → training JSONL
-./manage.sh finetune            Run LoRA fine-tune (needs --profile single-gpu+)
+./manage.sh prepare-training    Scan docs for cover letters — outputs training JSONL
+./manage.sh finetune            Run LoRA fine-tune (requires single-gpu profile or higher)
 ./manage.sh open                Open the web UI in your browser
-./manage.sh clean               Remove containers, images, volumes (asks to confirm)
 ```
 
 ---
 
-## Developer Docs
+## Documentation
 
-Full documentation at: https://docs.circuitforge.tech/peregrine
+Full docs at **[docs.circuitforge.tech/peregrine](https://docs.circuitforge.tech/peregrine)**
 
-- [Installation guide](https://docs.circuitforge.tech/peregrine/getting-started/installation/)
-- [Adding a custom job board scraper](https://docs.circuitforge.tech/peregrine/developer-guide/adding-scrapers/)
-- [Adding an integration](https://docs.circuitforge.tech/peregrine/developer-guide/adding-integrations/)
-- [Contributing](https://docs.circuitforge.tech/peregrine/developer-guide/contributing/)
+Bug reports and feature requests: [Forgejo issues](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/issues)
+
+---
+
+## Contributing
+
+Contributions are welcome. The discovery pipeline — scrapers, board integrations, matching logic — is MIT-licensed. Fork it, extend it, send PRs. AI features are BSL 1.1. See the [contributing guide](https://docs.circuitforge.tech/peregrine/developer-guide/contributing/) for conventions.
 
 ---
 
 ## License
 
-Core discovery pipeline: [MIT](LICENSE-MIT)
-LLM features (cover letter generation, company research, interview prep, UI): [BSL 1.1](LICENSE-BSL)
+Peregrine uses a split license:
+
+| Component | License |
+|-----------|---------|
+| Discovery pipeline — scrapers, matching, tracking | [MIT](LICENSE-MIT) |
+| LLM features — cover letter generation, company research, interview prep, survey assistant, fine-tuning | [BSL 1.1](LICENSE-BSL) — free for personal non-commercial self-hosting; commercial use or SaaS re-hosting requires a paid license; converts to MIT after four years |
+
+Fine-tuned model weights are proprietary and per-user — not redistributable.
 
 © 2026 Circuit Forge LLC
