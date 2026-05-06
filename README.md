@@ -30,7 +30,7 @@
 <table>
 <tr>
 <td><img src="docs/screenshots/01-dashboard.png" alt="Dashboard with pipeline stats and discovery controls"/></td>
-<td><img src="docs/screenshots/02-review-swipe.gif" alt="Job review — swipe right to approve, left to skip"/></td>
+<td><img src="docs/screenshots/02-review.png" alt="Job review — approve, skip, or reject with keyboard shortcuts"/></td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/03-apply.png" alt="Apply workspace with LLM-drafted cover letter"/></td>
