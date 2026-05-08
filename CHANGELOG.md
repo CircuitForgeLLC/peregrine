@@ -9,6 +9,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.5] — 2026-05-08
+
+### Fixed
+
+- **Theme: dark/explicit themes show correct page background** — `index.html` inline style
+  set `html, body { background: #eaeff8 }` hardcoded. `body` paints on top of `html`, so
+  even when `html { background: var(--color-surface) }` correctly resolved to `#16202e` in
+  dark mode, the body's hardcoded light background covered it — producing dark cards on a
+  light page. Fixed by: (1) removing body background from the inline style; (2) adding a
+  tiny blocking `<script>` that reads `cf-theme` / `cf-hacker-mode` from localStorage and
+  sets `data-theme` on `<html>` before first paint; (3) adding
+  `html[data-theme="dark"|"solarized-dark"|"hacker"]` rules so FOUT prevention fires the
+  right background immediately on load.
+
+---
+
 ## [0.9.4] — 2026-05-08
 
 ### Added

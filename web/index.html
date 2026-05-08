@@ -5,11 +5,18 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Peregrine — Job Search Assistant</title>
-    <!-- Inline background prevents blank flash before CSS bundle loads -->
-    <!-- Matches --color-surface light / dark from theme.css -->
+    <!-- Apply stored theme before first paint — prevents FOUT flash on dark/hacker themes.
+         Mirrors the logic in useTheme.initTheme(). Must run before the <style> below. -->
+    <script>try{if(localStorage.getItem('cf-hacker-mode')==='true'){document.documentElement.dataset.theme='hacker';}else{var t=localStorage.getItem('cf-theme');if(t&&t!=='auto')document.documentElement.dataset.theme=t;}}catch(e){}</script>
+    <!-- FOUT prevention: background only on html (body is transparent).
+         Covers auto mode (media query) and all explicit theme choices. -->
     <style>
-      html, body { margin: 0; background: #eaeff8; min-height: 100vh; }
-      @media (prefers-color-scheme: dark) { html, body { background: #16202e; } }
+      html, body { margin: 0; min-height: 100vh; }
+      html { background: #eaeff8; }
+      @media (prefers-color-scheme: dark) { html:not([data-theme]) { background: #16202e; } }
+      html[data-theme="dark"]          { background: #16202e; }
+      html[data-theme="solarized-dark"] { background: #002b36; }
+      html[data-theme="hacker"]        { background: #0a0c0a; }
     </style>
     <!-- Plausible analytics: cookie-free, GDPR-compliant, self-hosted.
          Skips localhost/127.0.0.1. Reports to hostname + circuitforge.tech rollup. -->
