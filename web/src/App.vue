@@ -71,6 +71,10 @@ html {
 }
 
 body {
+  /* Gotcha #14: do NOT set background on body. body paints on top of html —
+     a hardcoded body background will cover html's CSS-variable-driven color
+     even when html { background: var(--color-surface) } resolves correctly.
+     FOUT prevention lives in index.html on html only, not body. */
   min-height: 100dvh;   /* dynamic viewport — mobile chrome-aware. Gotcha #13. */
   overflow-x: hidden;
 }

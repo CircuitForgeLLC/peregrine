@@ -8,7 +8,9 @@
     <!-- Apply stored theme before first paint — prevents FOUT flash on dark/hacker themes.
          Mirrors the logic in useTheme.initTheme(). Must run before the <style> below. -->
     <script>try{if(localStorage.getItem('cf-hacker-mode')==='true'){document.documentElement.dataset.theme='hacker';}else{var t=localStorage.getItem('cf-theme');if(t&&t!=='auto')document.documentElement.dataset.theme=t;}}catch(e){}</script>
-    <!-- FOUT prevention: background only on html (body is transparent).
+    <!-- FOUT prevention: background only on html (body is transparent). Gotcha #14.
+         body paints on top of html — a hardcoded body background covers html's CSS-
+         variable-driven color even when it resolves correctly. Keep background off body.
          Covers auto mode (media query) and all explicit theme choices. -->
     <style>
       html, body { margin: 0; min-height: 100vh; }
