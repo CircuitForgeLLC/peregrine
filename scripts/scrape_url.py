@@ -57,7 +57,7 @@ _TIMEOUT = 12
 
 
 def _detect_board(url: str) -> str:
-    """Return 'linkedin', 'indeed', 'glassdoor', or 'generic'."""
+    """Return 'linkedin', 'indeed', 'glassdoor', 'jobgether', 'oracle_hcm', or 'generic'."""
     url_lower = url.lower()
     if "linkedin.com" in url_lower:
         return "linkedin"
@@ -67,6 +67,8 @@ def _detect_board(url: str) -> str:
         return "glassdoor"
     if "jobgether.com" in url_lower:
         return "jobgether"
+    if "oraclecloud.com" in url_lower and "hcmui" in url_lower:
+        return "oracle_hcm"
     return "generic"
 
 
@@ -201,6 +203,70 @@ def _scrape_jobgether(url: str) -> dict:
         return {"company": company, "source": "jobgether"} if company else {}
 
 
+def _scrape_oracle_hcm(url: str) -> dict:
+    """Scrape an Oracle HCM CandidateExperience job page via Playwright.
+
+    Oracle HCM portals are React SPAs that require JS execution. The prospect
+    token in the URL path grants public access — no auth needed.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("[scrape_url] Oracle HCM: Playwright not installed, falling back to generic")
+        return _scrape_generic(url)
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                ctx = browser.new_context(user_agent=_HEADERS["User-Agent"])
+                page = ctx.new_page()
+                page.goto(url, timeout=30_000)
+                page.wait_for_load_state("networkidle", timeout=20_000)
+
+                result = page.evaluate("""() => {
+                    const sel = (s) => document.querySelector(s)?.textContent?.trim() || '';
+                    const selInner = (s) => document.querySelector(s)?.innerText?.trim() || '';
+
+                    // Title: try known HCM selectors then fall back to first h1
+                    const title = sel('[class*="requisition-title"]')
+                        || sel('[class*="JobTitle"]')
+                        || sel('.job-title')
+                        || sel('h1');
+
+                    // Company: page header logo alt text, meta, or site-name span
+                    const companyMeta = document.querySelector('meta[property="og:site_name"]')
+                        ?.getAttribute('content') || '';
+                    const company = sel('[class*="company-name"]')
+                        || sel('[class*="siteName"]')
+                        || sel('[class*="site-name"]')
+                        || companyMeta;
+
+                    // Location: job detail list items
+                    const location = sel('[class*="job-location"]')
+                        || sel('[data-testid*="location"]')
+                        || sel('[class*="location"]');
+
+                    // Description: main content div
+                    const description = selInner('[class*="job-description"]')
+                        || selInner('[class*="requisition-description"]')
+                        || selInner('[class*="JobDescription"]')
+                        || selInner('main article')
+                        || selInner('main');
+
+                    return { title, company, location, description };
+                }""")
+            finally:
+                browser.close()
+
+        result["source"] = "oracle_hcm"
+        return {k: v for k, v in result.items() if v}
+
+    except Exception as exc:
+        print(f"[scrape_url] Oracle HCM Playwright error for {url}: {exc}")
+        return {}
+
+
 def _parse_json_ld_or_og(html: str) -> dict:
     """Extract job fields from JSON-LD structured data, then og: meta tags."""
     soup = BeautifulSoup(html, "html.parser")
@@ -278,6 +344,8 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict:
             fields = _scrape_glassdoor(url)
         elif board == "jobgether":
             fields = _scrape_jobgether(url)
+        elif board == "oracle_hcm":
+            fields = _scrape_oracle_hcm(url)
         else:
             fields = _scrape_generic(url)
     except requests.RequestException as exc:

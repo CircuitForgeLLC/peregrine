@@ -682,7 +682,7 @@ function formatRejectionDate(job: PipelineJob): string {
   padding: 1px 8px; font-size: 0.75em; font-weight: 700; margin-left: var(--space-1);
   color: var(--color-text-muted);
 }
-.pre-list-signal-count { margin-left: auto; font-size: 0.75em; font-weight: 700; color: #e67e22; }
+.pre-list-signal-count { margin-left: auto; font-size: 0.75em; font-weight: 700; color: var(--app-accent); }
 
 /* Collapsible pre-list body */
 .pre-list-body {
@@ -713,15 +713,15 @@ function formatRejectionDate(job: PipelineJob): string {
   border-top: 1px solid transparent;
   display: flex; flex-direction: column; gap: 4px;
 }
-.pre-signal-banner[data-color="amber"] { background: rgba(245,158,11,0.08); border-top-color: rgba(245,158,11,0.4); }
-.pre-signal-banner[data-color="green"] { background: rgba(39,174,96,0.08);  border-top-color: rgba(39,174,96,0.4);  }
-.pre-signal-banner[data-color="red"]   { background: rgba(192,57,43,0.08);  border-top-color: rgba(192,57,43,0.4);  }
+.pre-signal-banner[data-color="amber"] { background: color-mix(in srgb, var(--color-warning) 8%, var(--color-surface)); border-top-color: color-mix(in srgb, var(--color-warning) 40%, transparent); }
+.pre-signal-banner[data-color="green"] { background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface)); border-top-color: color-mix(in srgb, var(--color-success) 40%, transparent); }
+.pre-signal-banner[data-color="red"]   { background: color-mix(in srgb, var(--color-error)   8%, var(--color-surface)); border-top-color: color-mix(in srgb, var(--color-error)   40%, transparent); }
 
 .signal-label   { font-size: 0.82em; }
 .signal-subject { font-size: 0.78em; color: var(--color-text-muted); }
 .signal-actions { display: flex; gap: 6px; align-items: center; }
 .btn-signal-move {
-  background: var(--color-primary); color: #fff;
+  background: var(--color-primary); color: var(--color-text-inverse);
   border: none; border-radius: 4px; padding: 2px 8px; font-size: 0.78em; cursor: pointer;
 }
 .btn-signal-dismiss {

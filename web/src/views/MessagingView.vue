@@ -34,35 +34,8 @@
       </div>
 
       <template v-else>
-        <!-- Action bar -->
-        <div class="action-bar" role="toolbar" aria-label="Message actions">
-          <button class="btn btn--ghost" @click="openLogModal('call_note')">Log call</button>
-          <button class="btn btn--ghost" @click="openLogModal('in_person')">Log note</button>
-          <button class="btn btn--ghost" @click="openTemplateModal('apply')">Use template</button>
-          <button
-            class="btn btn--primary"
-            :disabled="store.loading"
-            @click="requestDraft"
-          >
-            {{ store.loading ? 'Drafting…' : 'Draft reply with LLM' }}
-          </button>
-
-          <!-- Osprey (Phase 2 stub) — aria-disabled, never hidden -->
-          <button
-            class="btn btn--osprey"
-            aria-disabled="true"
-            :title="ospreyTitle"
-            @mouseenter="handleOspreyHover"
-            @focus="handleOspreyHover"
-          >
-            📞 Call via Osprey
-          </button>
-        </div>
-
         <!-- Draft pending announcement (screen reader) -->
-        <div aria-live="polite" aria-atomic="true" class="sr-only">
-          {{ draftAnnouncement }}
-        </div>
+        <div aria-live="polite" aria-atomic="true" class="sr-only">{{ draftAnnouncement }}</div>
 
         <!-- Error banner -->
         <p v-if="store.error" class="thread-error" role="alert">{{ store.error }}</p>
@@ -76,9 +49,15 @@
             v-for="item in timeline"
             :key="item._key"
             class="timeline__item"
-            :class="[`timeline__item--${item.type}`, item.approved_at === null && item.type === 'draft' ? 'timeline__item--draft-pending' : '']"
+            :class="[
+              `timeline__item--${item.type}`,
+              item.approved_at === null && item.type === 'draft' ? 'timeline__item--draft-pending' : '',
+              item.type !== 'draft' ? 'timeline__item--expandable' : '',
+              expandedKeys.has(item._key) ? 'timeline__item--open' : '',
+            ]"
             role="listitem"
             :aria-label="`${typeLabel(item.type)}, ${item.direction || ''}, ${item.logged_at}`"
+            @click="item.type !== 'draft' && toggleExpand(item)"
           >
             <span class="timeline__icon" aria-hidden="true">{{ typeIcon(item.type) }}</span>
             <div class="timeline__content">
@@ -89,19 +68,29 @@
                 <span
                   v-if="item.type === 'draft' && item.approved_at === null"
                   class="timeline__badge timeline__badge--pending"
-                >
-                  Pending approval
-                </span>
+                >Pending approval</span>
                 <span
                   v-if="item.type === 'draft' && item.approved_at !== null"
                   class="timeline__badge timeline__badge--approved"
-                >
-                  Approved
+                >Approved</span>
+                <span v-if="item.type !== 'draft'" class="timeline__expand-hint" aria-hidden="true">
+                  {{ expandedKeys.has(item._key) ? '▲' : '▼' }}
                 </span>
               </div>
               <p v-if="item.subject" class="timeline__subject">{{ item.subject }}</p>
 
-              <!-- Draft body is editable before approval -->
+              <!-- Expandable body for non-draft items -->
+              <template v-if="item.type !== 'draft' && expandedKeys.has(item._key)">
+                <div class="timeline__body-wrap" @click.stop>
+                  <div v-if="bodyCache[item.id] === null" class="timeline__body-loading">
+                    Loading…
+                  </div>
+                  <pre v-else-if="bodyCache[item.id]" class="timeline__body">{{ bodyCache[item.id] }}</pre>
+                  <p v-else class="timeline__body-empty">No body content.</p>
+                </div>
+              </template>
+
+              <!-- Draft: editable textarea + actions -->
               <template v-if="item.type === 'draft' && item.approved_at === null">
                 <textarea
                   :ref="el => setDraftRef(item.id, el)"
@@ -119,18 +108,12 @@
                     v-if="item.to_addr"
                     :href="`mailto:${item.to_addr}?subject=${encodeURIComponent(item.subject ?? '')}&body=${encodeURIComponent(item.body ?? '')}`"
                     class="btn btn--ghost btn--sm"
-                    target="_blank"
-                    rel="noopener"
-                  >
-                    Open in email client
-                  </a>
+                    target="_blank" rel="noopener"
+                  >Open in email client</a>
                   <button class="btn btn--ghost btn--sm btn--danger" @click="confirmDelete(item.id)">
                     Discard
                   </button>
                 </div>
-              </template>
-              <template v-else>
-                <p class="timeline__body">{{ item.body }}</p>
               </template>
             </div>
           </li>
@@ -138,6 +121,37 @@
             No messages logged yet for this job.
           </li>
         </ul>
+
+        <!-- Compose bar (sticky footer) -->
+        <div class="compose-bar" role="toolbar" aria-label="Compose actions">
+          <div v-if="composing" class="compose-bar__actions">
+            <button class="btn btn--ghost btn--sm" @click="triggerAction(() => openLogModal('call_note'))">Log call</button>
+            <button class="btn btn--ghost btn--sm" @click="triggerAction(() => openLogModal('in_person'))">Log note</button>
+            <button class="btn btn--ghost btn--sm" @click="triggerAction(() => openTemplateModal('apply'))">Use template</button>
+            <button
+              class="btn btn--primary btn--sm"
+              :disabled="store.loading"
+              @click="triggerAction(requestDraft)"
+            >
+              <span v-if="store.loading" class="btn__spinner" aria-hidden="true"></span>
+              {{ store.loading ? 'Drafting…' : 'Draft reply with LLM' }}
+            </button>
+            <button
+              class="btn btn--osprey btn--sm"
+              aria-disabled="true"
+              :title="ospreyTitle"
+              @mouseenter="handleOspreyHover"
+              @focus="handleOspreyHover"
+            >📞 Call via Osprey</button>
+          </div>
+          <button
+            class="btn compose-bar__toggle"
+            :class="composing ? 'btn--ghost' : 'btn--primary'"
+            @click="composing = !composing"
+            :aria-expanded="composing"
+            aria-controls="compose-actions"
+          >{{ composing ? '✕ Close' : '＋ New' }}</button>
+        </div>
       </template>
     </main>
 
@@ -230,8 +244,8 @@ const jobContacts = ref<JobContact[]>([])
 
 watch(selectedJobId, async (id) => {
   if (id === null) { jobContacts.value = []; return }
-  const { data } = await useApiFetch<JobContact[]>(`/api/contacts?job_id=${id}`)
-  jobContacts.value = data ?? []
+  const { data } = await useApiFetch<{ total: number; contacts: JobContact[] }>(`/api/contacts?job_id=${id}`)
+  jobContacts.value = data?.contacts ?? []
 })
 
 const timeline = computed<TimelineItem[]>(() => {
@@ -261,6 +275,31 @@ const timeline = computed<TimelineItem[]>(() => {
     (a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
   )
 })
+
+// ── Body expansion ────────────────────────────────────────────────────────
+const expandedKeys = ref(new Set<string>())
+const bodyCache = ref<Record<number, string | null>>({})  // null = still loading
+
+async function toggleExpand(item: TimelineItem) {
+  const key = item._key
+  const next = new Set(expandedKeys.value)
+  if (next.has(key)) { next.delete(key); expandedKeys.value = next; return }
+  next.add(key)
+  expandedKeys.value = next
+  if (key.startsWith('jc-') && !(item.id in bodyCache.value)) {
+    bodyCache.value = { ...bodyCache.value, [item.id]: null }
+    const { data } = await useApiFetch<{ body: string | null }>(`/api/contacts/${item.id}`)
+    const raw = data?.body ?? ''
+    const text = raw.trimStart().startsWith('<')
+      ? (new DOMParser().parseFromString(raw, 'text/html').body.textContent ?? '').trim()
+      : raw.trim()
+    bodyCache.value = { ...bodyCache.value, [item.id]: text }
+  }
+}
+
+// ── Compose bar ────────────────────────────────────────────────────────────
+const composing = ref(false)
+function triggerAction(fn: () => void) { composing.value = false; fn() }
 
 // ── Draft body edits (local, before approve) ──────────────────────────────
 
@@ -415,8 +454,15 @@ onUnmounted(() => {
 <style scoped>
 .messaging-layout {
   display: flex;
-  height: 100%;
+  height: 100dvh;
   min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+  .messaging-layout {
+    height: calc(100dvh - 56px - env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* ── Left panel ─────────────────────── */
@@ -465,11 +511,6 @@ onUnmounted(() => {
   flex: 1; display: flex; align-items: center; justify-content: center;
   color: var(--color-text-muted);
 }
-.action-bar {
-  display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border-light);
-}
 .btn--osprey {
   opacity: 0.5; cursor: not-allowed;
   background: none; border: 1px dashed var(--color-border);
@@ -477,6 +518,21 @@ onUnmounted(() => {
   color: var(--color-text-muted); font-size: var(--text-sm);
   padding: var(--space-2) var(--space-3); min-height: 36px;
 }
+
+/* Compose bar */
+.compose-bar {
+  flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+}
+.compose-bar__actions {
+  display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center;
+  width: 100%; justify-content: flex-start;
+}
+.compose-bar__toggle { align-self: flex-end; min-width: 90px; justify-content: center; }
 .thread-error {
   margin: var(--space-2) var(--space-4);
   color: var(--app-accent); font-size: var(--text-sm);
@@ -507,10 +563,27 @@ onUnmounted(() => {
   font-size: var(--text-xs); font-weight: 700;
   padding: 1px 6px; border-radius: var(--radius-full);
 }
-.timeline__badge--pending { background: #fef3c7; color: #d97706; }
-.timeline__badge--approved { background: #d1fae5; color: #065f46; }
+.timeline__badge--pending { background: var(--color-accent-light); color: var(--color-accent); }
+.timeline__badge--approved { background: var(--color-primary-light); color: var(--color-primary); }
 .timeline__subject { font-size: var(--text-sm); font-weight: 500; margin: 0; }
-.timeline__body { font-size: var(--text-sm); white-space: pre-wrap; margin: 0; color: var(--color-text); }
+.timeline__expand-hint {
+  font-size: var(--text-xs); color: var(--color-text-muted); margin-left: auto;
+  transition: transform 150ms ease;
+}
+.timeline__item--expandable { cursor: pointer; }
+.timeline__item--expandable:hover { border-color: var(--app-primary); }
+.timeline__body-wrap {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--color-border-light);
+  padding-top: var(--space-2);
+}
+.timeline__body {
+  font-size: var(--text-sm); white-space: pre-wrap; margin: 0;
+  color: var(--color-text); max-height: 280px; overflow-y: auto;
+  font-family: var(--font-body);
+}
+.timeline__body-loading { font-size: var(--text-xs); color: var(--color-text-muted); }
+.timeline__body-empty { font-size: var(--text-xs); color: var(--color-text-muted); margin: 0; }
 .timeline__draft-body {
   width: 100%; font-size: var(--text-sm); font-family: var(--font-body);
   padding: var(--space-2); border: 1px solid var(--color-border);
@@ -522,20 +595,45 @@ onUnmounted(() => {
 .timeline__empty { color: var(--color-text-muted); font-size: var(--text-sm); padding: var(--space-2); }
 
 /* Buttons */
-.btn { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 500; cursor: pointer; min-height: 36px; }
+.btn {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease, transform 80ms ease;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; }
 .btn--sm { padding: var(--space-1) var(--space-3); min-height: 30px; font-size: var(--text-xs); }
 .btn--primary { background: var(--app-primary); color: var(--color-surface); border: none; }
-.btn--primary:hover:not(:disabled) { opacity: 0.9; }
+.btn--primary:hover:not(:disabled) { opacity: 0.88; }
 .btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn--ghost { background: none; border: 1px solid var(--color-border); color: var(--color-text); }
-.btn--ghost:hover { background: var(--color-surface-alt); }
-.btn--danger { background: var(--app-accent); color: white; border: none; }
-.btn--danger:hover { opacity: 0.9; }
+.btn--ghost:hover:not(:disabled) { background: var(--color-surface-alt); border-color: var(--app-primary); color: var(--app-primary); }
+.btn--danger { background: var(--app-accent); color: var(--app-accent-text); border: none; }
+.btn--danger:hover:not(:disabled) { opacity: 0.88; }
+
+/* Spinner inside buttons */
+.btn__spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: btn-spin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
 
 /* Modals (delete confirm) */
 .modal-backdrop {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.5);
+  background: var(--color-overlay);
   display: flex; align-items: center; justify-content: center;
   z-index: 200;
 }

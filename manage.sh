@@ -15,6 +15,11 @@ cd "$SCRIPT_DIR"
 
 PROFILE="${PROFILE:-remote}"
 
+# ── Compose engine detection ──────────────────────────────────────────────────
+COMPOSE="$(command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
+    && echo "docker compose" \
+    || (command -v podman >/dev/null 2>&1 && echo "podman compose" || echo "podman-compose"))"
+
 # ── Usage ────────────────────────────────────────────────────────────────────
 usage() {
     echo ""
@@ -28,9 +33,10 @@ usage() {
     echo -e "    ${GREEN}start${NC}               Start Peregrine (preflight → up)"
     echo -e "    ${GREEN}stop${NC}                Stop all services"
     echo -e "    ${GREEN}restart${NC}             Restart all services"
+    echo -e "    ${GREEN}build [service]${NC}     Rebuild image(s) without restarting (default: api web)"
     echo -e "    ${GREEN}status${NC}              Show running containers"
-    echo -e "    ${GREEN}logs [service]${NC}      Tail logs (default: app)"
-    echo -e "    ${GREEN}update${NC}              Pull latest images + rebuild app"
+    echo -e "    ${GREEN}logs [service]${NC}      Tail logs (default: api)"
+    echo -e "    ${GREEN}update${NC}              Pull latest images + rebuild"
     echo -e "    ${GREEN}preflight${NC}           Check ports + resources; write .env"
     echo -e "    ${GREEN}models${NC}              Check ollama models in config; pull any missing"
     echo -e "    ${GREEN}test${NC}                Run test suite"
@@ -40,6 +46,12 @@ usage() {
     echo -e "    ${GREEN}finetune${NC}            Run LoRA fine-tune (needs GPU profile)"
     echo -e "    ${GREEN}clean${NC}               Remove containers, images, volumes (DESTRUCTIVE)"
     echo -e "    ${GREEN}open${NC}                Open the web UI in your browser"
+    echo ""
+    echo -e "  Cloud / demo commands:"
+    echo -e "    ${GREEN}cloud-start${NC}         Start the cloud stack (peregrine-cloud)"
+    echo -e "    ${GREEN}cloud-restart${NC}       Rebuild + restart the cloud stack"
+    echo -e "    ${GREEN}demo-start${NC}          Start the demo stack (peregrine-demo)"
+    echo -e "    ${GREEN}demo-restart${NC}        Rebuild + restart the demo stack"
     echo ""
     echo "  Profiles (set via --profile or PROFILE env var):"
     echo "    remote       API-only, no local inference (default)"
@@ -70,7 +82,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-SERVICE="${1:-app}"   # used by `logs` command
+SERVICE="${1:-api}"   # used by `logs` command
 
 # ── Dependency guard ──────────────────────────────────────────────────────────
 # Commands that delegate to make; others (status, logs, update, open, setup) run fine without it.
@@ -101,7 +113,7 @@ case "$CMD" in
     start)
         info "Starting Peregrine (PROFILE=${PROFILE})..."
         make start PROFILE="$PROFILE"
-        PORT="$(grep -m1 '^STREAMLIT_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8501)"
+        PORT="$(grep -m1 '^VUE_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8506)"
         success "Peregrine is up → http://localhost:${PORT}"
         ;;
 
@@ -114,33 +126,30 @@ case "$CMD" in
     restart)
         info "Restarting (PROFILE=${PROFILE})..."
         make restart PROFILE="$PROFILE"
-        PORT="$(grep -m1 '^STREAMLIT_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8501)"
+        PORT="$(grep -m1 '^VUE_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8506)"
         success "Peregrine restarted → http://localhost:${PORT}"
         ;;
 
     status)
-        # Auto-detect compose engine same way Makefile does
-        COMPOSE="$(command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
-            && echo "docker compose" \
-            || (command -v podman >/dev/null 2>&1 && echo "podman compose" || echo "podman-compose"))"
         $COMPOSE ps
         ;;
 
     logs)
-        COMPOSE="$(command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
-            && echo "docker compose" \
-            || (command -v podman >/dev/null 2>&1 && echo "podman compose" || echo "podman-compose"))"
         info "Tailing logs for: ${SERVICE}"
         $COMPOSE logs -f "$SERVICE"
         ;;
 
+    build)
+        BUILD_SVC="$([[ "${SERVICE}" == "api" ]] && echo "api web" || echo "${SERVICE}")"
+        info "Building ${BUILD_SVC}..."
+        $COMPOSE build $BUILD_SVC
+        success "Build complete. Run './manage.sh restart' to apply."
+        ;;
+
     update)
-        info "Pulling latest images and rebuilding app..."
-        COMPOSE="$(command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
-            && echo "docker compose" \
-            || (command -v podman >/dev/null 2>&1 && echo "podman compose" || echo "podman-compose"))"
+        info "Pulling latest images and rebuilding..."
         $COMPOSE pull searxng ollama 2>/dev/null || true
-        $COMPOSE build app web
+        $COMPOSE build api web
         success "Update complete. Run './manage.sh restart' to apply."
         ;;
 
@@ -167,7 +176,7 @@ case "$CMD" in
         ;;
 
     open)
-        PORT="$(grep -m1 '^STREAMLIT_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8501)"
+        PORT="$(grep -m1 '^VUE_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 8506)"
         URL="http://localhost:${PORT}"
         info "Opening ${URL}"
         if command -v xdg-open &>/dev/null; then
@@ -195,6 +204,32 @@ case "$CMD" in
             --json-report \
             --json-report-file="${RESULTS_DIR}/report.json" \
             -v "${@:3}"
+        ;;
+
+    cloud-start)
+        info "Starting cloud stack (peregrine-cloud)..."
+        $COMPOSE -f compose.cloud.yml --project-name peregrine-cloud up -d
+        success "Cloud stack up → http://localhost:8508"
+        ;;
+
+    cloud-restart)
+        info "Rebuilding + restarting cloud stack (peregrine-cloud)..."
+        $COMPOSE -f compose.cloud.yml --project-name peregrine-cloud build api web
+        $COMPOSE -f compose.cloud.yml --project-name peregrine-cloud up -d
+        success "Cloud stack restarted → http://localhost:8508"
+        ;;
+
+    demo-start)
+        info "Starting demo stack (peregrine-demo)..."
+        $COMPOSE -f compose.demo.yml --project-name peregrine-demo up -d
+        success "Demo stack up → http://localhost:8504"
+        ;;
+
+    demo-restart)
+        info "Rebuilding + restarting demo stack (peregrine-demo)..."
+        $COMPOSE -f compose.demo.yml --project-name peregrine-demo build api web
+        $COMPOSE -f compose.demo.yml --project-name peregrine-demo up -d
+        success "Demo stack restarted → http://localhost:8504"
         ;;
 
     help|--help|-h)

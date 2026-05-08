@@ -392,6 +392,7 @@ def _has_todo_keyword(subject: str) -> bool:
 
 
 _LINKEDIN_ALERT_SENDER = "jobalerts-noreply@linkedin.com"
+_INDEED_ALERT_SENDER  = "jobalerts@indeed.com"
 
 # Social-proof / nav lines to skip when parsing alert blocks
 _ALERT_SKIP_PHRASES = {
@@ -444,6 +445,75 @@ def parse_linkedin_alert(body: str) -> list[dict]:
             "location": content[2] if len(content) > 2 else "",
             "url": url,
         })
+    return jobs
+
+
+def parse_indeed_alert(body: str) -> list[dict]:
+    """
+    Parse the HTML body of an Indeed Job Alert email.
+
+    Returns a list of dicts: {title, company, location, salary, url}.
+    URL is canonicalised to https://www.indeed.com/viewjob?jk=<id>
+    (tracking parameters stripped).
+    """
+    try:
+        from bs4 import BeautifulSoup as _BS
+    except ImportError:
+        return []
+
+    jobs: list[dict] = []
+    soup = _BS(body, "html.parser")
+
+    # Each job card is an <a> wrapping a job title — Indeed uses several layouts
+    # across their email templates.  We try two strategies:
+    #
+    # Strategy A (2023+ layout): <td> blocks containing an <a> with /viewjob?jk=
+    # Strategy B (older layout): <tr class="job"> blocks
+    #
+    # Both extract the canonical jk= key from the href.
+
+    seen_jks: set[str] = set()
+
+    for anchor in soup.find_all("a", href=True):
+        href: str = anchor["href"]
+        jk_m = re.search(r"[?&]jk=([a-z0-9]+)", href, re.IGNORECASE)
+        if not jk_m:
+            continue
+        jk = jk_m.group(1)
+        if jk in seen_jks:
+            continue
+        seen_jks.add(jk)
+
+        title = anchor.get_text(separator=" ", strip=True)
+        if not title or len(title) < 3:
+            continue
+
+        # Walk up to find the container cell/row and extract company + location
+        container = anchor.find_parent(["td", "tr", "div"])
+        company = location = salary = ""
+        if container:
+            text_lines = [
+                t.strip() for t in container.get_text(separator="\n").splitlines()
+                if t.strip() and t.strip().lower() != title.lower()
+            ]
+            if text_lines:
+                company = text_lines[0]
+            if len(text_lines) > 1:
+                location = text_lines[1]
+            # salary line often contains "$" or "/yr"
+            for line in text_lines[2:]:
+                if "$" in line or "/yr" in line.lower() or "/hour" in line.lower():
+                    salary = line
+                    break
+
+        jobs.append({
+            "title":    title,
+            "company":  company,
+            "location": location,
+            "salary":   salary,
+            "url":      f"https://www.indeed.com/viewjob?jk={jk}",
+        })
+
     return jobs
 
 
@@ -558,20 +628,29 @@ def _scan_unmatched_leads(conn: imaplib.IMAP4, cfg: dict,
         if mid in known_message_ids:
             continue
 
-        # ── LinkedIn Job Alert digest — parse each card individually ──────
-        if _LINKEDIN_ALERT_SENDER in parsed["from_addr"].lower():
-            cards = parse_linkedin_alert(parsed["body"])
-            for card in cards:
+        # ── Job alert digests — parse each card deterministically ───────
+        from_lower = parsed["from_addr"].lower()
+        alert_cards: list[dict] = []
+        alert_source = ""
+        if _LINKEDIN_ALERT_SENDER in from_lower:
+            alert_cards = parse_linkedin_alert(parsed["body"])
+            alert_source = "linkedin"
+        elif _INDEED_ALERT_SENDER in from_lower:
+            alert_cards = parse_indeed_alert(parsed["body"])
+            alert_source = "indeed"
+
+        if alert_cards:
+            for card in alert_cards:
                 if card["url"] in existing_urls:
                     continue
                 job_id = insert_job(db_path, {
-                    "title": card["title"],
-                    "company": card["company"],
-                    "url": card["url"],
-                    "source": "linkedin",
-                    "location": card["location"],
-                    "is_remote": 0,
-                    "salary": "",
+                    "title":      card["title"],
+                    "company":    card["company"],
+                    "url":        card["url"],
+                    "source":     alert_source,
+                    "location":   card.get("location", ""),
+                    "is_remote":  0,
+                    "salary":     card.get("salary", ""),
                     "description": "",
                     "date_found": datetime.now().isoformat()[:10],
                 })
@@ -580,7 +659,7 @@ def _scan_unmatched_leads(conn: imaplib.IMAP4, cfg: dict,
                     submit_task(db_path, "scrape_url", job_id)
                     existing_urls.add(card["url"])
                     new_leads += 1
-                    print(f"[imap] LinkedIn alert → {card['company']} — {card['title']}")
+                    print(f"[imap] {alert_source} alert → {card['company']} — {card['title']}")
             known_message_ids.add(mid)
             continue  # skip normal LLM extraction path
 

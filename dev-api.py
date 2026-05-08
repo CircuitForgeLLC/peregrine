@@ -114,6 +114,38 @@ app.include_router(_feedback_router, prefix="/api/feedback")
 
 _log = logging.getLogger("peregrine.session")
 
+# ── Structured auth logging ───────────────────────────────────────────────────
+# Writes one JSON line per request to /devl/peregrine-logs/auth.log when in
+# cloud mode. Rotates at 10 MB, keeps 5 files. Also logs to stdout in dev.
+_AUTH_LOG_DIR = Path(os.environ.get("PEREGRINE_LOG_DIR", "/devl/peregrine-logs"))
+
+class _JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if hasattr(record, "auth_event"):
+            payload.update(record.auth_event)
+        return json.dumps(payload)
+
+def _setup_auth_logging() -> None:
+    from logging.handlers import RotatingFileHandler
+    _AUTH_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(
+        _AUTH_LOG_DIR / "auth.log", maxBytes=10 * 1024 * 1024, backupCount=5
+    )
+    handler.setFormatter(_JsonFormatter())
+    handler.setLevel(logging.INFO)
+    _log.addHandler(handler)
+    _log.setLevel(logging.DEBUG)
+
+_setup_auth_logging()
+
+_seen_users: set[str] = set()  # track first-access events within this process lifetime
+
 
 def _demo_guard() -> None:
     """Raise 403 if running in demo mode. Call at the top of any write endpoint."""
@@ -158,6 +190,16 @@ def _resolve_cf_user_id(cookie_str: str) -> str | None:
     return None
 
 
+def _auth_log(event: str, **kwargs) -> None:
+    """Emit a structured INFO log line to the auth logger."""
+    record = logging.LogRecord(
+        name="peregrine.session", level=logging.INFO,
+        pathname="", lineno=0, msg=event, args=(), exc_info=None,
+    )
+    record.auth_event = {"event": event, **kwargs}
+    _log.handle(record)
+
+
 @app.middleware("http")
 async def cloud_session_middleware(request: Request, call_next):
     """In cloud mode, resolve per-user staging.db from the X-CF-Session header."""
@@ -165,16 +207,36 @@ async def cloud_session_middleware(request: Request, call_next):
         cookie_header = request.headers.get("X-CF-Session", "")
         user_id = _resolve_cf_user_id(cookie_header)
         if user_id:
+            first_access = user_id not in _seen_users
+            if first_access:
+                _seen_users.add(user_id)
             user_db = str(_CLOUD_DATA_ROOT / user_id / "peregrine" / "staging.db")
             if user_db not in _migrated_db_paths:
                 from scripts.db_migrate import migrate_db
                 migrate_db(Path(user_db))
                 _migrated_db_paths.add(user_db)
+            _auth_log(
+                "session_resolved",
+                user_id=user_id,
+                method=request.method,
+                path=request.url.path,
+                first_access=first_access,
+            )
             token = _request_db.set(user_db)
             try:
                 return await call_next(request)
             finally:
                 _request_db.reset(token)
+        else:
+            # Only log failures on non-trivial paths (skip health checks / static assets)
+            if request.url.path.startswith("/api/"):
+                _auth_log(
+                    "session_failed",
+                    method=request.method,
+                    path=request.url.path,
+                    reason="no_user_id",
+                    has_cookie=bool(cookie_header),
+                )
     return await call_next(request)
 
 
@@ -1677,6 +1739,16 @@ def list_contacts(job_id: Optional[int] = None, direction: Optional[str] = None,
     return {"total": total, "contacts": [dict(r) for r in rows]}
 
 
+@app.get("/api/contacts/{contact_id}")
+def get_contact(contact_id: int):
+    db = _get_db()
+    row = db.execute("SELECT * FROM job_contacts WHERE id = ?", (contact_id,)).fetchone()
+    db.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return dict(row)
+
+
 # ── References ─────────────────────────────────────────────────────────────────
 
 class ReferencePayload(BaseModel):
@@ -2112,6 +2184,7 @@ def bulk_purge_jobs(body: BulkPurgeBody):
 
 class AddJobsBody(BaseModel):
     urls: List[str]
+    skip_review: bool = True
 
 
 @app.post("/api/jobs/add", status_code=202)
@@ -2123,6 +2196,7 @@ def add_jobs_by_url(body: AddJobsBody):
         from scripts.task_runner import submit_task
         db_path = _db_path()
         existing = get_existing_urls(db_path)
+        status = "approved" if body.skip_review else "pending"
         queued = 0
         for raw_url in body.urls:
             url = canonicalize_url(raw_url.strip())
@@ -2132,6 +2206,7 @@ def add_jobs_by_url(body: AddJobsBody):
                 "title": "Importing...", "company": "", "url": url,
                 "source": "manual", "location": "", "description": "",
                 "date_found": _dt.now().isoformat()[:10],
+                "status": status,
             })
             if job_id:
                 submit_task(db_path, "scrape_url", job_id)
