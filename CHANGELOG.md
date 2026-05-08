@@ -9,6 +9,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.4] — 2026-05-08
+
+### Added
+
+- **Messages view — expandable email timeline** — click any email item to lazy-load
+  and read the full body inline (HTML stripped to plain text via `DOMParser`).
+  Bodies are fetched on-demand via the new `GET /api/contacts/{id}` endpoint to avoid
+  loading 50KB+ email bodies on every page view.
+- **Messages view — compose bar** — action buttons (Log call, Log note, Use template,
+  Draft reply with LLM, Call via Osprey) moved from the always-visible header into a
+  sticky bottom compose bar triggered by a ＋ New toggle. Reduces visual clutter when
+  just reading the thread.
+- **Home view — "Skip review" checkbox** — when adding jobs by URL, a checkbox (default
+  on) sends them directly to the Apply queue, bypassing Job Review.
+- **ContactsView — sync status** — shows last completed sync time and a spinner when
+  an email sync is running.
+- **imap_sync: Indeed alert parser** — `parse_indeed_alert()` extracts job title,
+  company, location, salary, and canonical URL from Indeed Job Alert digest emails.
+- **scrape_url: Oracle HCM support** — Playwright-based scraper for Oracle HCM
+  CandidateExperience portals (React SPAs requiring JS execution).
+- **manage.sh** — compose engine auto-detection (docker compose / podman compose /
+  podman-compose), `build` command, and cloud/demo stack shortcuts.
+- **theme.css** — `--color-overlay` token for modal/dialog backdrops.
+
+### Fixed
+
+- **Messages view layout** — changed `height: 100%` to `height: 100dvh` with a mobile
+  override for the 56px tab bar. `height: 100%` was resolving to "shrink-wrap" because
+  `.app-main` has no explicit height; compose bar is now correctly pinned to the bottom.
+- **Accessibility: danger button contrast** — `btn--danger` used `color: white` on
+  `--app-accent` (Talon Orange), yielding 2.8:1 contrast (fails WCAG AA 4.5:1 for
+  normal text). Fixed to `color: var(--app-accent-text)` (dark navy, 5.5:1).
+- **Accessibility: warning badge contrast** — `tab-badge` in Job Review used `color: white`
+  on `--color-warning` (amber). Same fix applied.
+- **Theme: Interviews signal banners** — hardcoded `rgba(245,158,11,…)` / `rgba(39,174,…)`
+  / `rgba(192,57,…)` replaced with `color-mix()` against `--color-warning/success/error`.
+- **Theme: Interviews signal count** — `color: #e67e22` hardcode replaced with
+  `var(--app-accent)`.
+- **Theme: References academic tag chip** — `color: #7c3aed` hardcode replaced with
+  `var(--status-synced)`; background uses `color-mix()` with the same token.
+- **Theme: Interviews signal-move button** — `color: #fff` on `--color-primary` fails
+  in dark mode (light green bg); fixed to `var(--color-text-inverse)`.
+- **Modal backdrops** — `rgba(0,0,0,0.5)` replaced with `var(--color-overlay)` for
+  theme consistency.
+
+---
+
 ## [0.9.3] — 2026-05-05
 
 ### Added

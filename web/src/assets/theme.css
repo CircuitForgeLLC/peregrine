@@ -63,6 +63,9 @@
   --shadow-md: 0 4px 12px rgba(26, 35, 56, 0.1),  0 2px 4px rgba(26, 35, 56, 0.06);
   --shadow-lg: 0 10px 30px rgba(26, 35, 56, 0.12), 0 4px 8px rgba(26, 35, 56, 0.06);
 
+  /* Overlay — modal/dialog scrim */
+  --color-overlay: rgba(0, 0, 0, 0.5);
+
   /* Transitions */
   --transition: 200ms ease;
   --transition-slow: 400ms ease;

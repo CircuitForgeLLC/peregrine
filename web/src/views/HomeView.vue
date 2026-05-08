@@ -159,6 +159,10 @@
               rows="4"
               aria-label="Job URLs to add"
             />
+            <label class="add-jobs__skip-review">
+              <input type="checkbox" v-model="skipReview" />
+              Skip review — add directly to Apply queue
+            </label>
             <button
               class="action-btn action-btn--primary"
               :disabled="!urlInput.trim()"
@@ -437,15 +441,16 @@ const runEnrich       = () => runTask('enrich', '/api/tasks/enrich')
 
 // ── Add jobs ───────────────────────────────────────────────────────────────
 
-const addTab   = ref<'url' | 'csv'>('url')
-const urlInput = ref('')
+const addTab    = ref<'url' | 'csv'>('url')
+const urlInput  = ref('')
+const skipReview = ref(true)
 
 async function addByUrl() {
   const urls = urlInput.value.split('\n').map(u => u.trim()).filter(Boolean)
   await useApiFetch('/api/jobs/add', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ urls }),
+    body: JSON.stringify({ urls, skip_review: skipReview.value }),
   })
   urlInput.value = ''
   store.refresh()
@@ -790,6 +795,16 @@ onUnmounted(() => {
 }
 
 .add-jobs__textarea:focus { outline: 2px solid var(--app-primary); outline-offset: 1px; }
+
+.add-jobs__skip-review {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
 
 /* ── Danger Zone ──────────────────────────────────────── */
 

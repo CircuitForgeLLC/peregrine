@@ -496,7 +496,7 @@ onUnmounted(() => {
 
 .tab-badge {
   background: var(--color-warning);
-  color: white;
+  color: var(--app-accent-text);
   font-size: 0.65rem;
   font-weight: 700;
   border-radius: 999px;

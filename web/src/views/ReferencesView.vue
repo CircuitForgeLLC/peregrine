@@ -442,7 +442,7 @@ onMounted(fetchRefs)
 .tag-chip--technical  { background: var(--app-primary-light);     color: var(--app-primary); }
 .tag-chip--managerial { background: rgba(39, 174, 96, 0.12);      color: var(--color-success); }
 .tag-chip--character  { background: rgba(212, 137, 26, 0.12);     color: var(--score-mid); }
-.tag-chip--academic   { background: rgba(103, 58, 183, 0.12);     color: #7c3aed; }
+.tag-chip--academic   { background: color-mix(in srgb, var(--status-synced) 12%, var(--color-surface)); color: var(--status-synced); }
 
 .ref-card__actions {
   display: flex;

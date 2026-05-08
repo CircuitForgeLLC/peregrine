@@ -203,6 +203,73 @@ def test_parse_linkedin_alert_empty_body():
     assert parse_linkedin_alert("No jobs here.") == []
 
 
+# ── Indeed alert parser ───────────────────────────────────────────────────────
+
+_INDEED_ALERT_HTML = """
+<html><body>
+<table>
+  <tr>
+    <td>
+      <a href="https://www.indeed.com/viewjob?jk=abc123def456&utm_source=jobseeker_email">
+        Senior Python Engineer
+      </a>
+      <br/>Acme Corp<br/>San Francisco, CA<br/>$130,000 - $160,000 a year
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <a href="https://www.indeed.com/viewjob?jk=999zzzqqq111&trk=email_alert">
+        Staff Backend Engineer
+      </a>
+      <br/>Widgets Inc<br/>Remote
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <a href="https://www.indeed.com/rc/clk?jk=abc123def456&pos=0">Duplicate link</a>
+    </td>
+  </tr>
+</table>
+</body></html>
+"""
+
+def test_parse_indeed_alert_extracts_jobs():
+    from scripts.imap_sync import parse_indeed_alert
+    jobs = parse_indeed_alert(_INDEED_ALERT_HTML)
+    assert len(jobs) == 2
+    assert jobs[0]["title"] == "Senior Python Engineer"
+    assert jobs[0]["url"] == "https://www.indeed.com/viewjob?jk=abc123def456"
+    assert jobs[1]["title"] == "Staff Backend Engineer"
+    assert jobs[1]["url"] == "https://www.indeed.com/viewjob?jk=999zzzqqq111"
+
+
+def test_parse_indeed_alert_strips_tracking_params():
+    from scripts.imap_sync import parse_indeed_alert
+    jobs = parse_indeed_alert(_INDEED_ALERT_HTML)
+    for job in jobs:
+        assert "utm_source" not in job["url"]
+        assert "trk=" not in job["url"]
+
+
+def test_parse_indeed_alert_deduplicates_jk():
+    from scripts.imap_sync import parse_indeed_alert
+    jobs = parse_indeed_alert(_INDEED_ALERT_HTML)
+    urls = [j["url"] for j in jobs]
+    assert len(urls) == len(set(urls))
+
+
+def test_parse_indeed_alert_empty_body():
+    from scripts.imap_sync import parse_indeed_alert
+    assert parse_indeed_alert("") == []
+    assert parse_indeed_alert("<html><body>No jobs here</body></html>") == []
+
+
+def test_parse_indeed_alert_extracts_salary():
+    from scripts.imap_sync import parse_indeed_alert
+    jobs = parse_indeed_alert(_INDEED_ALERT_HTML)
+    assert "$130,000" in jobs[0]["salary"]
+
+
 # ── _scan_unmatched_leads integration ─────────────────────────────────────────
 
 _ALERT_BODY = """\

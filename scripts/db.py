@@ -234,10 +234,11 @@ def insert_job(db_path: Path = DEFAULT_DB, job: dict = None) -> Optional[int]:
         return None
     conn = sqlite3.connect(db_path)
     try:
+        status = job.get("status", "pending")
         cursor = conn.execute(
             """INSERT INTO jobs
-               (title, company, url, source, location, is_remote, salary, description, date_found, date_posted)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (title, company, url, source, location, is_remote, salary, description, date_found, date_posted, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 job.get("title", ""),
                 job.get("company", ""),
@@ -249,6 +250,7 @@ def insert_job(db_path: Path = DEFAULT_DB, job: dict = None) -> Optional[int]:
                 job.get("description", ""),
                 job.get("date_found", ""),
                 job.get("date_posted", "") or "",
+                status,
             ),
         )
         conn.commit()

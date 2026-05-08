@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useApiFetch } from '../composables/useApi'
 import HintChip from '../components/HintChip.vue'
 import { useAppConfigStore } from '../stores/appConfig'
@@ -19,13 +19,15 @@ interface Contact {
   job_company:  string | null
 }
 
-const contacts   = ref<Contact[]>([])
-const total      = ref(0)
-const loading    = ref(false)
-const error      = ref<string | null>(null)
-const search     = ref('')
-const direction  = ref<'all' | 'inbound' | 'outbound'>('all')
+const contacts    = ref<Contact[]>([])
+const total       = ref(0)
+const loading     = ref(false)
+const error       = ref<string | null>(null)
+const search      = ref('')
+const direction   = ref<'all' | 'inbound' | 'outbound'>('all')
 const searchInput = ref('')
+const syncing     = ref(false)
+const syncStatus  = ref<{ status: string; last_completed_at: string | null } | null>(null)
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 async function fetchContacts() {
@@ -76,9 +78,45 @@ const signalLabel: Record<string, string> = {
   rejected:            '✖ Rejected',
   positive_response:   '✅ Positive',
   survey_received:     '📋 Survey',
+  event_rescheduled:   '🔄 Rescheduled',
+  neutral:             '— Neutral',
 }
 
-onMounted(fetchContacts)
+async function fetchSyncStatus() {
+  const { data } = await useApiFetch<{ status: string; last_completed_at: string | null }>(
+    '/api/email/sync/status'
+  )
+  if (data) syncStatus.value = data
+}
+
+async function triggerSync() {
+  syncing.value = true
+  await useApiFetch('/api/tasks/email-sync', { method: 'POST' })
+  // Poll until the task finishes or we give up after 60 s
+  const deadline = Date.now() + 60_000
+  const poll = setInterval(async () => {
+    await fetchSyncStatus()
+    if (syncStatus.value?.status === 'completed' || Date.now() > deadline) {
+      clearInterval(poll)
+      syncing.value = false
+      fetchContacts()
+    }
+  }, 2000)
+}
+
+function formatSyncTime(iso: string | null): string {
+  if (!iso) return 'never'
+  const d = new Date(iso)
+  const diff = Date.now() - d.getTime()
+  if (diff < 60_000)  return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+onMounted(async () => {
+  await Promise.all([fetchContacts(), fetchSyncStatus()])
+})
 </script>
 
 <template>
@@ -91,6 +129,20 @@ onMounted(fetchContacts)
     <header class="contacts-header">
       <h1 class="contacts-title">Contacts</h1>
       <span class="contacts-count" v-if="total > 0">{{ total }} total</span>
+      <div class="contacts-sync">
+        <span v-if="syncStatus" class="sync-last">
+          Last sync: {{ formatSyncTime(syncStatus.last_completed_at) }}
+        </span>
+        <button
+          class="btn-sync"
+          :disabled="syncing"
+          @click="triggerSync"
+          :aria-label="syncing ? 'Email sync running' : 'Sync email now'"
+        >
+          <span :class="['sync-icon', { 'sync-icon--spinning': syncing }]">↻</span>
+          {{ syncing ? 'Syncing…' : 'Sync email' }}
+        </button>
+      </div>
     </header>
 
     <div class="contacts-toolbar">
@@ -115,8 +167,16 @@ onMounted(fetchContacts)
 
     <div v-if="loading" class="contacts-empty">Loading…</div>
     <div v-else-if="error" class="contacts-empty contacts-empty--error">{{ error }}</div>
+    <div v-else-if="contacts.length === 0 && !search" class="contacts-empty contacts-empty--setup">
+      <p>No contacts yet.</p>
+      <p class="contacts-empty-hint">
+        Connect your inbox in
+        <a href="/settings?tab=connections" class="setup-link">Settings → Connections</a>
+        then hit <strong>Sync email</strong> to import recruiter emails automatically.
+      </p>
+    </div>
     <div v-else-if="contacts.length === 0" class="contacts-empty">
-      No contacts found{{ search ? ' for that search' : '' }}.
+      No contacts found for that search.
     </div>
 
     <div v-else class="contacts-table-wrap">
@@ -338,5 +398,70 @@ onMounted(fetchContacts)
 
 .text-muted {
   color: var(--color-text-muted);
+}
+
+.contacts-sync {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.sync-last {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.btn-sync {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-sync:hover:not(:disabled) {
+  border-color: var(--app-primary);
+  color: var(--app-primary);
+}
+
+.btn-sync:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sync-icon {
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-block;
+}
+
+.sync-icon--spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.contacts-empty--setup {
+  padding: var(--space-10) var(--space-4);
+}
+
+.contacts-empty-hint {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.setup-link {
+  color: var(--app-primary);
+  text-decoration: underline;
 }
 </style>
