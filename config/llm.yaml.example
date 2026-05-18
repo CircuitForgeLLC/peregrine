@@ -46,11 +46,61 @@ backends:
     type: vision_service
     supports_images: true
 
-  # ── cf-orch trunk services ─────────────────────────────────────────────────
-  # These backends allocate via cf-orch rather than connecting to a static URL.
-  # cf-orch starts the service on-demand and returns its URL; the router then
-  # calls it directly using the openai_compat path.
-  # Set CF_ORCH_URL (env) or url below; leave enabled: false if cf-orch is
+  # ── cf-orch task-routed backends (preferred for GPU inference) ────────────
+  # Use these when GPU_SERVER_URL is configured. The coordinator resolves
+  # product+task → model_id → node via assignments.yaml; no model IDs needed here.
+  # Set enabled: true once GPU_SERVER_URL is configured.
+  cf_cover_letter:
+    type: openai_compat
+    enabled: false
+    base_url: http://localhost:8008/v1   # fallback when cf-orch is unavailable
+    model: __auto__
+    api_key: any
+    supports_images: false
+    cf_orch:
+      product: peregrine
+      task: cover_letter
+      ttl_s: 3600
+
+  cf_ats_rewrite:
+    type: openai_compat
+    enabled: false
+    base_url: http://localhost:8008/v1
+    model: __auto__
+    api_key: any
+    supports_images: false
+    cf_orch:
+      product: peregrine
+      task: ats_rewrite
+      ttl_s: 3600
+
+  cf_job_research:
+    type: openai_compat
+    enabled: false
+    base_url: http://localhost:8008/v1
+    model: __auto__
+    api_key: any
+    supports_images: false
+    cf_orch:
+      product: peregrine
+      task: job_research
+      ttl_s: 3600
+
+  cf_interview_prep:
+    type: openai_compat
+    enabled: false
+    base_url: http://localhost:8008/v1
+    model: __auto__
+    api_key: any
+    supports_images: false
+    cf_orch:
+      product: peregrine
+      task: interview_prep
+      ttl_s: 3600
+
+  # ── cf-orch trunk services (service-based, legacy) ─────────────────────────
+  # Generic service allocation — use the task-routed backends above when possible.
+  # Set GPU_SERVER_URL (env) or url below; leave enabled: false if cf-orch is
   # not deployed in your environment.
   cf_text:
     type: openai_compat

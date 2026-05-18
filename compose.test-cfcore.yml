@@ -29,7 +29,8 @@ services:
       - STAGING_DB=/devl/job-seeker/staging.db
       - PYTHONUNBUFFERED=1
       - STREAMLIT_SERVER_BASE_URL_PATH=
-      - CF_ORCH_URL=http://host.docker.internal:7700
+      - GPU_SERVER_URL=${GPU_SERVER_URL:-http://host.docker.internal:7700}
+      - CF_ORCH_URL=${CF_ORCH_URL:-${GPU_SERVER_URL:-http://host.docker.internal:7700}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: "no"
