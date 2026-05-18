@@ -48,6 +48,21 @@ _CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data
 _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
 IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
+# Resolve GPU inference server URL.
+# Priority: GPU_SERVER_URL → CF_ORCH_URL (backward compat) → cloud default when licensed.
+# Result is written back to CF_ORCH_URL so all downstream callers need no changes.
+_GPU_SERVER_URL: str | None = (
+    os.environ.get("GPU_SERVER_URL")
+    or os.environ.get("CF_ORCH_URL")
+    or (
+        "https://orch.circuitforge.tech"
+        if os.environ.get("CF_LICENSE_KEY")
+        else None
+    )
+)
+if _GPU_SERVER_URL:
+    os.environ["CF_ORCH_URL"] = _GPU_SERVER_URL
+
 # Per-request DB path — set by cloud_session_middleware; falls back to DB_PATH
 _request_db: ContextVar[str | None] = ContextVar("_request_db", default=None)
 
@@ -636,6 +651,51 @@ def resume_optimizer_task_status(job_id: int):
     return {"status": row["status"], "stage": row["stage"], "message": row["error"]}
 
 
+def _capture_review_corrections(
+    db_path: Path,
+    job_id: int,
+    draft: dict,
+    decisions: dict,
+) -> None:
+    """Persist (proposed, accepted) pairs when the user edits LLM output in the review UI.
+
+    Only saves corrections where accepted=True AND the user actually modified the
+    proposed text (proposed != accepted).  Rejections carry no training signal.
+    """
+    from scripts.db import save_resume_correction as _save_correction
+
+    sections = {s["section"]: s for s in (draft.get("sections") or [])}
+
+    # ── Summary correction ────────────────────────────────────────────────────
+    summary_dec = decisions.get("summary", {})
+    if summary_dec.get("accepted", True):
+        edited_text = summary_dec.get("edited_text")
+        proposed_summary = sections.get("summary", {}).get("proposed", "")
+        if edited_text is not None and edited_text.strip() != proposed_summary.strip():
+            _save_correction(db_path, job_id, "summary", proposed_summary, edited_text.strip())
+
+    # ── Experience bullet corrections ─────────────────────────────────────────
+    exp_sec = sections.get("experience", {})
+    entry_diffs = {
+        f"{e['title']}|{e['company']}": e
+        for e in (exp_sec.get("entries") or [])
+    }
+    for entry_dec in (decisions.get("experience", {}).get("accepted_entries") or []):
+        if not entry_dec.get("accepted", True):
+            continue
+        edited_bullets = entry_dec.get("edited_bullets")
+        if edited_bullets is None:
+            continue
+        key = f"{entry_dec.get('title', '')}|{entry_dec.get('company', '')}"
+        diff = entry_diffs.get(key)
+        if diff is None:
+            continue
+        proposed_bullets = diff.get("proposed_bullets") or []
+        cleaned = [b for b in edited_bullets if b.strip()]
+        if cleaned != proposed_bullets:
+            _save_correction(db_path, job_id, f"experience:{key}", proposed_bullets, cleaned)
+
+
 @app.get("/api/jobs/{job_id}/resume_optimizer/review")
 def get_resume_review(job_id: int):
     """Return the pending review draft for this job (populated when task is awaiting_review)."""
@@ -692,6 +752,10 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
     # Step 1: apply section-level decisions
     struct = apply_review_decisions(draft, body.decisions)
 
+    # Step 1b: capture (proposed, accepted) correction pairs for Avocet fine-tuning.
+    # Only fires when accepted=True and the user actually edited the LLM output.
+    _capture_review_corrections(db_path, job_id, draft, body.decisions)
+
     # Step 2: inject gap framing for rejected skills (adjacent / learning)
     framings = [f.model_dump() for f in body.gap_framings if f.mode in ("adjacent", "learning")]
     if framings:
@@ -711,6 +775,19 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
 
     preview_text = render_resume_text(struct)
     return {"preview_text": preview_text, "preview_struct": struct}
+
+
+@app.get("/api/resume_optimizer/corrections")
+def list_resume_corrections(job_id: int | None = None, limit: int = 200):
+    """Return resume review correction pairs for Avocet import.
+
+    Each record is a (proposed, accepted) pair from the review UI where the
+    user edited the LLM output before accepting.  These are SFT (supervised
+    fine-tuning) candidates that flow through Avocet for human review.
+    """
+    from scripts.db import get_resume_corrections as _get_corrections
+    db_path = Path(_request_db.get() or DB_PATH)
+    return {"corrections": _get_corrections(db_path, limit=limit, job_id=job_id)}
 
 
 @app.post("/api/jobs/{job_id}/resume_optimizer/approve")
