@@ -151,7 +151,7 @@ async function reclassifySignal(sig: StageSignal, newLabel: StageSignal['stage_s
 }
 
 const scoreClass = computed(() => {
-  const s = (props.job.match_score ?? 0) * 100
+  const s = props.job.match_score ?? 0
   if (s >= 85) return 'score--high'
   if (s >= 65) return 'score--mid'
   return 'score--low'
@@ -159,7 +159,7 @@ const scoreClass = computed(() => {
 
 const scoreLabel = computed(() =>
   props.job.match_score != null
-    ? `${Math.round(props.job.match_score * 100)}%`
+    ? `${Math.round(props.job.match_score)}%`
     : '—'
 )
 
@@ -588,7 +588,7 @@ async function saveFeedback() {
   background: var(--color-hover);
 }
 .btn-chip-active {
-  background: var(--color-primary-muted, #e8f0ff);
+  background: var(--app-primary-light);
   color: var(--color-primary); border-color: var(--color-primary);
   font-weight: 600;
 }

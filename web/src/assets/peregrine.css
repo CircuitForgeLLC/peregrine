@@ -58,6 +58,9 @@ body {
   --score-low:      var(--color-error);     /* < 30% */
   --score-none:     var(--color-text-muted);
 
+  /* ── Hover overlay ── */
+  --color-hover: rgba(0, 0, 0, 0.06);  /* subtle darkening on light surfaces */
+
   /* ── Motion tokens ── */
   --swipe-exit:         300ms;
   --swipe-spring:       400ms cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -91,6 +94,8 @@ body {
 
     --score-mid-high:   #5ba3d9;  /* lighter blue for dark bg */
 
+    --color-hover: rgba(255, 255, 255, 0.07);  /* subtle lightening on dark surfaces */
+
     --status-synced:    #9b8fea;
     --status-survey:    #b08fea;
     --status-phone:     #4ec9be;
@@ -111,6 +116,8 @@ body {
   --app-accent-text:   #1a2338;
 
   --score-mid-high:   #5ba3d9;
+
+  --color-hover: rgba(255, 255, 255, 0.07);
 
   --status-synced:    #9b8fea;
   --status-survey:    #b08fea;

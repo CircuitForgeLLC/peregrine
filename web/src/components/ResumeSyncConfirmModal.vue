@@ -131,7 +131,7 @@ defineEmits<{
   background: var(--color-error, #dc2626);
   color: #fff; border: none;
   border-radius: var(--radius-md); cursor: pointer;
-  font-size: var(--font-sm); font-weight: 600;
+  font-size: var(--text-sm); font-weight: 600;
 }
 .btn-danger:hover { filter: brightness(1.1); }
 .btn-secondary {
@@ -140,7 +140,7 @@ defineEmits<{
   color: var(--color-text);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md); cursor: pointer;
-  font-size: var(--font-sm);
+  font-size: var(--text-sm);
 }
 .btn-secondary:hover { background: var(--color-surface-alt); }
 </style>

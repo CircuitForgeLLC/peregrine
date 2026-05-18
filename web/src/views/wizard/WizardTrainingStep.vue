@@ -65,7 +65,7 @@ function back() { router.push('/setup/resume') }
 <style scoped>
 .wizard-step { display: flex; flex-direction: column; gap: var(--space-5, 1.25rem); }
 .step-title { font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: var(--space-2, 0.5rem); }
-.optional-badge { font-family: var(--font-sans); font-size: 0.75rem; font-weight: 500; background: var(--color-surface-alt); color: var(--color-text-muted); padding: 2px 8px; border-radius: var(--radius-full, 9999px); }
+.optional-badge { font-family: var(--font-body); font-size: 0.75rem; font-weight: 500; background: var(--color-surface-alt); color: var(--color-text-muted); padding: 2px 8px; border-radius: var(--radius-full, 9999px); }
 .step-body { font-size: 0.9rem; color: var(--color-text); line-height: 1.6; }
 .step-body-note { font-size: 0.85rem; color: var(--color-text-muted); line-height: 1.5; margin-top: calc(-1 * var(--space-3, 0.75rem)); }
 .opt-in-label { display: flex; align-items: flex-start; gap: var(--space-2, 0.5rem); font-size: 0.9rem; cursor: pointer; }
