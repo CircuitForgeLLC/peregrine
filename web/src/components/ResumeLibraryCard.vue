@@ -106,7 +106,7 @@ onMounted(load)
 }
 
 .rlc__title {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   font-weight: 600;
   margin: 0;
   display: flex;
@@ -128,7 +128,7 @@ onMounted(load)
 
 .rlc__name {
   font-weight: 500;
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
 }
 
 .rlc__meta {
@@ -143,7 +143,7 @@ onMounted(load)
 }
 
 .rlc__empty {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--color-text-muted, #64748b);
 }
 
@@ -153,7 +153,7 @@ onMounted(load)
 }
 
 .rlc__loading {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--color-text-muted, #64748b);
 }
 
@@ -183,7 +183,7 @@ onMounted(load)
   padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
   cursor: pointer;
   border-radius: var(--radius-sm, 0.25rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
 }
 
 .rlc__picker-item:hover,

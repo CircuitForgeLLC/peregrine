@@ -46,11 +46,11 @@ const emit = defineEmits<{
 <style scoped>
 .rp-confirm { display: flex; flex-direction: column; gap: var(--space-4, 1rem); }
 .rp__heading { font-size: var(--font-lg, 1.125rem); font-weight: 600; margin: 0; color: var(--color-text, #1a2338); }
-.rp__hint { font-size: var(--font-sm, 0.875rem); color: var(--color-text-muted, #4a5c7a); margin: 0; }
+.rp__hint { font-size: var(--text-sm); color: var(--color-text-muted, #4a5c7a); margin: 0; }
 .rp-confirm__list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2, 0.5rem); }
-.rp-confirm__item { display: flex; align-items: center; gap: var(--space-3, 0.75rem); padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); background: var(--color-surface-alt, #dde4f0); border-radius: var(--radius-sm, 0.25rem); font-size: var(--font-sm, 0.875rem); }
+.rp-confirm__item { display: flex; align-items: center; gap: var(--space-3, 0.75rem); padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); background: var(--color-surface-alt, #dde4f0); border-radius: var(--radius-sm, 0.25rem); font-size: var(--text-sm); }
 .rp-confirm__status { margin-left: auto; font-size: var(--font-xs, 0.75rem); color: var(--color-text-muted, #4a5c7a); text-transform: capitalize; }
-.rp__error { color: var(--color-error, #c0392b); font-size: var(--font-sm, 0.875rem); margin: 0; }
+.rp__error { color: var(--color-error, #c0392b); font-size: var(--text-sm); margin: 0; }
 .rp-confirm__actions { display: flex; gap: var(--space-3, 0.75rem); flex-wrap: wrap; }
 .tab__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--tab-color, #94a3b8); }
 .tab__dot--unvisited   { --tab-color: var(--color-text-muted, #94a3b8); }
@@ -64,7 +64,7 @@ const emit = defineEmits<{
   padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
   background: var(--color-accent, #c4732a); color: #fff;
   border: none; border-radius: var(--radius-md, 0.5rem);
-  font-size: var(--font-sm, 0.875rem); font-weight: 600; cursor: pointer;
+  font-size: var(--text-sm); font-weight: 600; cursor: pointer;
 }
 .btn-generate:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-secondary {
@@ -72,6 +72,6 @@ const emit = defineEmits<{
   padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
   background: var(--color-surface-alt, #dde4f0); color: var(--color-text, #1a2338);
   border: 1px solid var(--color-border, #a8b8d0); border-radius: var(--radius-md, 0.5rem);
-  font-size: var(--font-sm, 0.875rem); font-weight: 600; cursor: pointer;
+  font-size: var(--text-sm); font-weight: 600; cursor: pointer;
 }
 </style>

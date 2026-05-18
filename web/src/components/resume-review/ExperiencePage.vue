@@ -67,18 +67,18 @@ function updateBullet(idx: number, value: string) {
 <style scoped>
 .rp-exp { display: flex; flex-direction: column; gap: var(--space-4, 1rem); }
 .rp__heading { font-size: var(--font-lg, 1.125rem); font-weight: 600; margin: 0; color: var(--color-text, #1a2338); }
-.rp__company { font-size: var(--font-sm, 0.875rem); color: var(--color-text-muted, #4a5c7a); margin: 0; }
+.rp__company { font-size: var(--text-sm); color: var(--color-text-muted, #4a5c7a); margin: 0; }
 .rp__diff-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4, 1rem); }
 @media (max-width: 600px) { .rp__diff-pair { grid-template-columns: 1fr; } }
 .rp__diff-col { display: flex; flex-direction: column; gap: var(--space-2, 0.5rem); }
 .rp__diff-col--editable { gap: var(--space-2, 0.5rem); }
 .rp__diff-label { font-size: var(--font-xs, 0.75rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted, #4a5c7a); }
-.rp__bullet-list { margin: 0; padding-left: var(--space-4, 1rem); font-size: var(--font-sm, 0.875rem); line-height: 1.6; background: var(--color-surface-alt, #dde4f0); border-radius: var(--radius-sm, 0.25rem); padding: var(--space-3, 0.75rem) var(--space-3, 0.75rem) var(--space-3, 0.75rem) var(--space-6, 1.5rem); }
+.rp__bullet-list { margin: 0; padding-left: var(--space-4, 1rem); font-size: var(--text-sm); line-height: 1.6; background: var(--color-surface-alt, #dde4f0); border-radius: var(--radius-sm, 0.25rem); padding: var(--space-3, 0.75rem) var(--space-3, 0.75rem) var(--space-3, 0.75rem) var(--space-6, 1.5rem); }
 .rp__bullet-edit-list { display: flex; flex-direction: column; gap: var(--space-2, 0.5rem); }
 .rp__bullet-edit-row { display: flex; align-items: flex-start; gap: var(--space-1, 0.25rem); }
 .rp__bullet-textarea {
   flex: 1;
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   line-height: 1.5;
   padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
   background: var(--color-surface, #eaeff8);
@@ -91,5 +91,5 @@ function updateBullet(idx: number, value: string) {
   font-family: inherit;
 }
 .rp__bullet-textarea:focus { outline: 2px solid var(--color-accent, #c4732a); outline-offset: 2px; }
-.rp__accept-toggle { display: inline-flex; align-items: center; gap: var(--space-2, 0.5rem); cursor: pointer; font-size: var(--font-sm, 0.875rem); }
+.rp__accept-toggle { display: inline-flex; align-items: center; gap: var(--space-2, 0.5rem); cursor: pointer; font-size: var(--text-sm); }
 </style>

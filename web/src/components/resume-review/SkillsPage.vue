@@ -58,7 +58,7 @@ const emit = defineEmits<{
 <style scoped>
 .rp-skills { display: flex; flex-direction: column; gap: var(--space-4, 1rem); }
 .rp__heading { font-size: var(--font-lg, 1.125rem); font-weight: 600; margin: 0; color: var(--color-text, #1a2338); }
-.rp__hint { font-size: var(--font-sm, 0.875rem); color: var(--color-text-muted, #4a5c7a); margin: 0; }
+.rp__hint { font-size: var(--text-sm); color: var(--color-text-muted, #4a5c7a); margin: 0; }
 .rp__skill-list { display: flex; flex-direction: column; gap: var(--space-3, 0.75rem); }
 .rp__skill-group { display: flex; flex-direction: column; gap: var(--space-2, 0.5rem); }
 .rp__skill-chip {
@@ -66,13 +66,13 @@ const emit = defineEmits<{
   padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
   border: 1px solid var(--color-border, #a8b8d0);
   border-radius: var(--radius-md, 0.5rem);
-  cursor: pointer; font-size: var(--font-sm, 0.875rem);
+  cursor: pointer; font-size: var(--text-sm);
   background: var(--color-surface-raised, #f5f7fc);
   transition: background var(--transition, 200ms ease);
 }
 .rp__skill-chip--approved { background: var(--color-primary-light, #e8f2e7); border-color: var(--color-primary, #2d5a27); }
 .rp__framing { padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); display: flex; flex-direction: column; gap: var(--space-2, 0.5rem); background: var(--color-surface-alt, #dde4f0); border-radius: var(--radius-sm, 0.25rem); }
 .rp__framing-label { font-size: var(--font-xs, 0.75rem); font-weight: 600; color: var(--color-text-muted, #4a5c7a); }
-.rp__framing-context { border: 1px solid var(--color-border, #a8b8d0); border-radius: var(--radius-sm, 0.25rem); padding: var(--space-2, 0.5rem); font-size: var(--font-sm, 0.875rem); resize: vertical; }
-.rp__removed { font-size: var(--font-sm, 0.875rem); color: var(--color-text-muted, #4a5c7a); font-style: italic; }
+.rp__framing-context { border: 1px solid var(--color-border, #a8b8d0); border-radius: var(--radius-sm, 0.25rem); padding: var(--space-2, 0.5rem); font-size: var(--text-sm); resize: vertical; }
+.rp__removed { font-size: var(--text-sm); color: var(--color-text-muted, #4a5c7a); font-style: italic; }
 </style>

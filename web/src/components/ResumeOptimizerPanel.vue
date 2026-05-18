@@ -578,7 +578,7 @@ onUnmounted(stopPolling)
 }
 
 .rop__tier-note {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-text-muted, #64748b);
   background: var(--app-surface-alt, #f8fafc);
   border: 1px solid var(--app-border, #e2e8f0);
@@ -603,13 +603,13 @@ onUnmounted(stopPolling)
 
 .rop__hint,
 .rop__empty {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-text-muted, #64748b);
   margin: 0;
 }
 
 .rop__error {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-danger, #dc2626);
   margin: 0;
 }
@@ -618,7 +618,7 @@ onUnmounted(stopPolling)
   display: flex;
   align-items: center;
   gap: var(--space-2, 0.5rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-text-muted, #64748b);
 }
 
@@ -643,7 +643,7 @@ onUnmounted(stopPolling)
   border-radius: var(--radius-sm, 0.25rem);
   border-left: 3px solid transparent;
   background: var(--app-surface-alt, #f8fafc);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   cursor: pointer;
   user-select: none;
 }
@@ -706,7 +706,7 @@ onUnmounted(stopPolling)
 }
 
 .rop__wordcount {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-text-muted, #64748b);
 }
 
@@ -727,7 +727,7 @@ onUnmounted(stopPolling)
   background: color-mix(in srgb, var(--app-danger, #dc2626) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--app-danger, #dc2626) 30%, transparent);
   border-radius: var(--radius-md, 0.5rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-danger, #dc2626);
 }
 
@@ -736,7 +736,7 @@ onUnmounted(stopPolling)
   min-height: 20rem;
   padding: var(--space-3, 0.75rem);
   font-family: var(--font-mono, monospace);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   line-height: 1.6;
   border: 1px solid var(--app-border, #e2e8f0);
   border-radius: var(--radius-md, 0.5rem);
@@ -762,7 +762,7 @@ onUnmounted(stopPolling)
   color: #fff;
   border: none;
   border-radius: var(--radius-md, 0.5rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s;
@@ -781,7 +781,7 @@ onUnmounted(stopPolling)
   color: var(--app-text, #1e293b);
   border: 1px solid var(--app-border, #e2e8f0);
   border-radius: var(--radius-md, 0.5rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s;
@@ -799,7 +799,7 @@ onUnmounted(stopPolling)
 }
 
 .rop__review-intro {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-text-muted, #64748b);
   margin: 0;
   padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
@@ -819,7 +819,7 @@ onUnmounted(stopPolling)
 }
 
 .rop__review-section-title {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -852,7 +852,7 @@ onUnmounted(stopPolling)
   gap: var(--space-1, 0.25rem);
   padding: 0.3em 0.75em;
   border-radius: var(--radius-full, 9999px);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   border: 1.5px solid var(--app-border, #e2e8f0);
   background: var(--app-surface, #fff);
   cursor: pointer;
@@ -887,7 +887,7 @@ onUnmounted(stopPolling)
   gap: var(--space-1, 0.25rem);
   padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
   border-radius: var(--radius-sm, 0.25rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
 }
 
 .rop__diff-col--original {
@@ -936,7 +936,7 @@ onUnmounted(stopPolling)
 }
 
 .rop__exp-company {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-text-muted, #64748b);
 }
 
@@ -945,7 +945,7 @@ onUnmounted(stopPolling)
   display: inline-flex;
   align-items: center;
   gap: var(--space-1, 0.25rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   cursor: pointer;
   color: var(--app-text, #1e293b);
 }
@@ -975,7 +975,7 @@ onUnmounted(stopPolling)
   background: none;
   border: none;
   color: var(--app-accent, #6366f1);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   cursor: pointer;
   padding: 0;
 }
@@ -994,7 +994,7 @@ onUnmounted(stopPolling)
   background: var(--app-surface-alt, #f8fafc);
   border: 1px solid var(--app-border, #e2e8f0);
   border-radius: var(--radius-sm, 0.25rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
 }
 
 .rop__history-date {
@@ -1060,7 +1060,7 @@ onUnmounted(stopPolling)
   display: inline-flex;
   align-items: center;
   gap: var(--space-1, 0.25rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   cursor: pointer;
   color: var(--app-text, #1e293b);
 }
@@ -1068,7 +1068,7 @@ onUnmounted(stopPolling)
 .rop__framing-context {
   width: 100%;
   padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   font-family: inherit;
   line-height: 1.5;
   border: 1px solid var(--app-border, #e2e8f0);
@@ -1103,7 +1103,7 @@ onUnmounted(stopPolling)
 
 
 .rop__preview-hint {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-text-muted, #64748b);
   margin: 0;
 }
@@ -1132,7 +1132,7 @@ onUnmounted(stopPolling)
   color: var(--app-text-muted, #64748b);
   border: 1px solid var(--app-border, #e2e8f0);
   border-radius: var(--radius-md, 0.5rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -1163,7 +1163,7 @@ onUnmounted(stopPolling)
   display: inline-flex;
   align-items: center;
   gap: var(--space-2, 0.5rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   color: var(--app-text, #1e293b);
   cursor: pointer;
   user-select: none;
@@ -1171,7 +1171,7 @@ onUnmounted(stopPolling)
 
 .rop__resume-name-input {
   padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   font-family: inherit;
   border: 1px solid var(--app-border, #e2e8f0);
   border-radius: var(--radius-sm, 0.25rem);

@@ -767,7 +767,7 @@ function formatRejectionDate(job: PipelineJob): string {
   background: var(--color-hover);
 }
 .btn-chip-active {
-  background: var(--color-primary-muted, #e8f0ff);
+  background: var(--app-primary-light);
   color: var(--color-primary); border-color: var(--color-primary);
   font-weight: 600;
 }

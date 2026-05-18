@@ -51,9 +51,9 @@ const emit = defineEmits<{
 .rp__diff-col { display: flex; flex-direction: column; gap: var(--space-2, 0.5rem); }
 .rp__diff-col--editable { gap: var(--space-2, 0.5rem); }
 .rp__diff-label { font-size: var(--font-xs, 0.75rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted, #4a5c7a); }
-.rp__diff-text { font-size: var(--font-sm, 0.875rem); line-height: 1.6; padding: var(--space-3, 0.75rem); background: var(--color-surface-alt, #dde4f0); border-radius: var(--radius-sm, 0.25rem); margin: 0; }
+.rp__diff-text { font-size: var(--text-sm); line-height: 1.6; padding: var(--space-3, 0.75rem); background: var(--color-surface-alt, #dde4f0); border-radius: var(--radius-sm, 0.25rem); margin: 0; }
 .rp__edit-textarea {
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   line-height: 1.6;
   padding: var(--space-3, 0.75rem);
   background: var(--color-surface, #eaeff8);
@@ -67,5 +67,5 @@ const emit = defineEmits<{
   font-family: inherit;
 }
 .rp__edit-textarea:focus { outline: 2px solid var(--color-accent, #c4732a); outline-offset: 2px; }
-.rp__accept-toggle { display: inline-flex; align-items: center; gap: var(--space-2, 0.5rem); cursor: pointer; font-size: var(--font-sm, 0.875rem); }
+.rp__accept-toggle { display: inline-flex; align-items: center; gap: var(--space-2, 0.5rem); cursor: pointer; font-size: var(--text-sm); }
 </style>

@@ -332,7 +332,7 @@ onBeforeRouteLeave(() => {
 
 .rv__item-star { color: var(--color-warning, #f59e0b); font-size: 1rem; flex-shrink: 0; margin-top: 2px; }
 .rv__item-info { display: flex; flex-direction: column; gap: 2px; }
-.rv__item-name { font-weight: 500; font-size: var(--font-sm, 0.875rem); }
+.rv__item-name { font-weight: 500; font-size: var(--text-sm); }
 .rv__item-meta { font-size: var(--font-xs, 0.75rem); color: var(--color-text-muted, #64748b); }
 .rv__item-source { font-size: var(--font-xs, 0.75rem); color: var(--color-accent, #6366f1); }
 
@@ -340,7 +340,7 @@ onBeforeRouteLeave(() => {
 .rv__preview-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3, 0.75rem); }
 .rv__preview-meta { display: flex; align-items: center; gap: var(--space-2, 0.5rem); flex-wrap: wrap; }
 .rv__preview-name { font-size: var(--font-lg, 1.125rem); font-weight: 600; margin: 0; }
-.rv__preview-words { font-size: var(--font-sm, 0.875rem); color: var(--color-text-muted, #64748b); }
+.rv__preview-words { font-size: var(--text-sm); color: var(--color-text-muted, #64748b); }
 .rv__default-badge {
   font-size: var(--font-xs, 0.75rem); font-weight: 600;
   background: var(--color-success, #16a34a); color: #fff;
@@ -352,7 +352,7 @@ onBeforeRouteLeave(() => {
   border: 1px solid var(--color-error, #dc2626);
   border-radius: var(--radius-md, 0.5rem);
   padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
-  cursor: pointer; font-size: var(--font-sm, 0.875rem);
+  cursor: pointer; font-size: var(--text-sm);
 }
 .rv__delete-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -364,13 +364,13 @@ onBeforeRouteLeave(() => {
 .rv__textarea {
   flex: 1; min-height: 400px; padding: var(--space-3, 0.75rem);
   border: 1px solid var(--color-border, #e2e8f0); border-radius: var(--radius-md, 0.5rem);
-  font-family: monospace; font-size: var(--font-sm, 0.875rem); resize: vertical;
+  font-family: monospace; font-size: var(--text-sm); resize: vertical;
   background: var(--color-surface-alt, #f8fafc);
   color: var(--color-text);
 }
 .rv__textarea:not([readonly]) { background: var(--color-surface); }
 .rv__edit-actions { display: flex; gap: var(--space-2, 0.5rem); }
-.rv__error { color: var(--color-error, #dc2626); font-size: var(--font-sm, 0.875rem); }
+.rv__error { color: var(--color-error, #dc2626); font-size: var(--text-sm); }
 
 .rv__download-menu { position: relative; }
 .rv__download-dropdown {
@@ -382,11 +382,11 @@ onBeforeRouteLeave(() => {
 .rv__download-dropdown button {
   width: 100%; text-align: left; background: none; border: none;
   padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
-  cursor: pointer; font-size: var(--font-sm, 0.875rem); border-radius: var(--radius-sm, 0.25rem);
+  cursor: pointer; font-size: var(--text-sm); border-radius: var(--radius-sm, 0.25rem);
 }
 .rv__download-dropdown button:hover { background: var(--color-surface-alt, #f8fafc); }
 
-.rv__loading, .rv__empty { color: var(--color-text-muted, #64748b); font-size: var(--font-sm, 0.875rem); }
+.rv__loading, .rv__empty { color: var(--color-text-muted, #64748b); font-size: var(--text-sm); }
 
 /* Button styles — defined locally since no global button sheet exists yet */
 .btn-secondary {
@@ -396,7 +396,7 @@ onBeforeRouteLeave(() => {
   border-radius: var(--radius-md, 0.5rem);
   color: var(--color-text-muted);
   cursor: pointer;
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 .btn-secondary:hover:not(:disabled) {
@@ -412,7 +412,7 @@ onBeforeRouteLeave(() => {
   border: none;
   border-radius: var(--radius-md, 0.5rem);
   cursor: pointer;
-  font-size: var(--font-sm, 0.875rem);
+  font-size: var(--text-sm);
   font-weight: 600;
   white-space: nowrap;
   display: inline-flex;
