@@ -11,7 +11,7 @@ Thank you for your interest in contributing to Peregrine. This guide covers the 
 ## Fork and Clone
 
 ```bash
-git clone https://git.circuitforge.io/circuitforge/peregrine
+git clone https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine
 cd peregrine
 ```
 

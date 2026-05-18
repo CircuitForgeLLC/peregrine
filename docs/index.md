@@ -12,7 +12,7 @@ Peregrine automates the full job search lifecycle: discovery, matching, cover le
 
 ```bash
 # 1. Clone and install dependencies
-git clone https://git.circuitforge.io/circuitforge/peregrine
+git clone https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine
 cd peregrine
 bash install.sh
 
@@ -31,19 +31,22 @@ The first-run wizard guides you through hardware detection, tier selection, iden
 
 ## Feature Overview
 
-| Feature | Free | Paid | Premium |
-|---------|------|------|---------|
+| Feature | Free | Paid† | Premium |
+|---------|------|-------|---------|
 | Job discovery (JobSpy + custom boards) | Yes | Yes | Yes |
 | Resume keyword matching | Yes | Yes | Yes |
-| Cover letter generation | - | Yes | Yes |
-| Company research briefs | - | Yes | Yes |
-| Interview prep & practice Q&A | - | Yes | Yes |
+| Cover letter generation | BYOK‡ | Yes | Yes |
+| Company research briefs | BYOK‡ | Yes | Yes |
+| Interview prep & practice Q&A | BYOK‡ | Yes | Yes |
 | Email sync & auto-classification | - | Yes | Yes |
-| Survey assistant (culture-fit Q&A) | - | Yes | Yes |
+| Survey assistant (culture-fit Q&A) | BYOK‡ | Yes | Yes |
 | Integration connectors (Notion, Airtable, etc.) | Partial | Yes | Yes |
 | Calendar sync (Google, Apple) | - | Yes | Yes |
 | Cover letter model fine-tuning | - | - | Yes |
 | Multi-user support | - | - | Yes |
+
+† **Paid** gives access to CircuitForge's hosted inference — no API key required.  
+‡ **BYOK** — configure any LLM backend in `config/llm.yaml` (local Ollama/vLLM or an API key) and these features unlock at no charge, regardless of tier.
 
 See [Tier System](reference/tier-system.md) for the full feature gate table.
 
@@ -60,8 +63,8 @@ See [Tier System](reference/tier-system.md) for the full feature gate table.
 
 ## License
 
-Core discovery pipeline: [MIT](https://git.circuitforge.io/circuitforge/peregrine/src/branch/main/LICENSE-MIT)
+Core discovery pipeline: [MIT](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/src/branch/main/LICENSE-MIT)
 
-AI features (cover letter generation, company research, interview prep, UI): [BSL 1.1](https://git.circuitforge.io/circuitforge/peregrine/src/branch/main/LICENSE-BSL)
+AI features (cover letter generation, company research, interview prep, UI): [BSL 1.1](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/src/branch/main/LICENSE-BSL)
 
 © 2026 Circuit Forge LLC
