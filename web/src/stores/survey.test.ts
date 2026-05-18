@@ -54,14 +54,20 @@ describe('useSurveyStore', () => {
   })
 
   it('analyze stores result including mode and rawInput', async () => {
+    vi.useFakeTimers()
     const mockApiFetch = vi.mocked(useApiFetch)
+    // POST → task accepted
+    mockApiFetch.mockResolvedValueOnce({ data: { task_id: 7, is_new: true }, error: null })
+    // Poll → completed with result
     mockApiFetch.mockResolvedValueOnce({
-      data: { output: '1. B — reason', source: 'text_paste' },
+      data: { status: 'completed', stage: null, message: null,
+              result: { output: '1. B — reason', source: 'text_paste' } },
       error: null,
     })
 
     const store = useSurveyStore()
     await store.analyze(1, { text: 'Q1: test', mode: 'quick' })
+    await vi.advanceTimersByTimeAsync(3000)
 
     expect(store.analysis).not.toBeNull()
     expect(store.analysis!.output).toBe('1. B — reason')
@@ -69,6 +75,7 @@ describe('useSurveyStore', () => {
     expect(store.analysis!.mode).toBe('quick')
     expect(store.analysis!.rawInput).toBe('Q1: test')
     expect(store.loading).toBe(false)
+    vi.useRealTimers()
   })
 
   it('analyze sets error on failure', async () => {
