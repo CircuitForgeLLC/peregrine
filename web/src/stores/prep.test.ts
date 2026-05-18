@@ -27,6 +27,7 @@ describe('usePrepStore', () => {
         tech_brief: null, funding_brief: null, red_flags: null, accessibility_brief: null,
         generated_at: '2026-03-20T12:00:00' }, error: null })  // research
       .mockResolvedValueOnce({ data: [], error: null })          // contacts
+      .mockResolvedValueOnce({ data: [], error: null })          // qa
       .mockResolvedValueOnce({ data: { status: 'none', stage: null, message: null }, error: null }) // task
       .mockResolvedValueOnce({ data: { id: 1, title: 'Engineer', company: 'Acme', url: null,
         description: 'Build things.', cover_letter: null, match_score: 80,
@@ -50,6 +51,7 @@ describe('usePrepStore', () => {
         tech_brief: null, funding_brief: null, red_flags: null, accessibility_brief: null,
         generated_at: null }, error: null })
       .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })          // qa
       .mockResolvedValueOnce({ data: { status: 'none', stage: null, message: null }, error: null })
       .mockResolvedValueOnce({ data: { id: 1, title: 'Old Job', company: 'OldCo', url: null,
         description: null, cover_letter: null, match_score: null, keyword_gaps: null }, error: null })
@@ -62,6 +64,7 @@ describe('usePrepStore', () => {
     mockApiFetch
       .mockResolvedValueOnce({ data: null, error: { kind: 'http', status: 404, detail: '' } })  // 404 → null
       .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })          // qa
       .mockResolvedValueOnce({ data: { status: 'none', stage: null, message: null }, error: null })
       .mockResolvedValueOnce({ data: { id: 2, title: 'New Job', company: 'NewCo', url: null,
         description: null, cover_letter: null, match_score: null, keyword_gaps: null }, error: null })
@@ -102,6 +105,7 @@ describe('usePrepStore', () => {
         tech_brief: null, funding_brief: null, red_flags: null, accessibility_brief: null,
         generated_at: null }, error: null })
       .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })          // qa
       .mockResolvedValueOnce({ data: { status: 'none', stage: null, message: null }, error: null })
       .mockResolvedValueOnce({ data: { id: 1, title: 'Eng', company: 'Acme', url: null,
         description: null, cover_letter: null, match_score: null, keyword_gaps: null }, error: null })
@@ -112,11 +116,12 @@ describe('usePrepStore', () => {
     // Mock first poll → completed
     mockApiFetch
       .mockResolvedValueOnce({ data: { status: 'completed', stage: null, message: null }, error: null })
-      // re-fetch on completed: research, contacts, task, fullJob
+      // re-fetch on completed: research, contacts, qa, task, fullJob
       .mockResolvedValueOnce({ data: { company_brief: 'Updated!', ceo_brief: null, talking_points: null,
         tech_brief: null, funding_brief: null, red_flags: null, accessibility_brief: null,
         generated_at: '2026-03-20T13:00:00' }, error: null })
       .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })          // qa
       .mockResolvedValueOnce({ data: { status: 'completed', stage: null, message: null }, error: null })
       .mockResolvedValueOnce({ data: { id: 1, title: 'Eng', company: 'Acme', url: null,
         description: 'Now with content', cover_letter: null, match_score: null, keyword_gaps: null }, error: null })
@@ -134,6 +139,7 @@ describe('usePrepStore', () => {
         tech_brief: null, funding_brief: null, red_flags: null, accessibility_brief: null,
         generated_at: null }, error: null })
       .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })          // qa
       .mockResolvedValueOnce({ data: { status: 'none', stage: null, message: null }, error: null })
       .mockResolvedValueOnce({ data: { id: 1, title: 'Eng', company: 'Acme', url: null,
         description: null, cover_letter: null, match_score: null, keyword_gaps: null }, error: null })
@@ -162,6 +168,7 @@ describe('usePrepStore', () => {
         tech_brief: null, funding_brief: null, red_flags: null, accessibility_brief: null,
         generated_at: '2026-03-20T12:00:00' }, error: null })  // research OK
       .mockResolvedValueOnce({ data: null, error: { kind: 'http', status: 500, detail: 'DB error' } }) // contacts fail
+      .mockResolvedValueOnce({ data: [], error: null })          // qa
       .mockResolvedValueOnce({ data: { status: 'none', stage: null, message: null }, error: null })    // task OK
       .mockResolvedValueOnce({ data: { id: 1, title: 'Engineer', company: 'Acme', url: null,
         description: 'Build things.', cover_letter: null, match_score: 80,
