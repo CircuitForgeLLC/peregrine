@@ -5,7 +5,6 @@ push updates the existing event rather than creating a duplicate.
 """
 from __future__ import annotations
 
-import uuid
 import yaml
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

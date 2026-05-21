@@ -31,7 +31,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.classifier_adapters import (
     LABELS,
-    LABEL_DESCRIPTIONS,
     ClassifierAdapter,
     GLiClassAdapter,
     RerankerAdapter,
