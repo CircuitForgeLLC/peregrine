@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.wizard.tiers import can_use, tier_label, TIERS, FEATURES, BYOK_UNLOCKABLE
+from app.wizard.tiers import can_use, tier_label, TIERS, BYOK_UNLOCKABLE
 
 
 def test_tiers_list():
