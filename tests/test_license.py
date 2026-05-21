@@ -1,7 +1,6 @@
 import json
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 import jwt as pyjwt

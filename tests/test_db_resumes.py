@@ -1,7 +1,5 @@
 """Tests for resume library db helpers."""
 import sqlite3
-import tempfile
-from pathlib import Path
 
 import pytest
 

@@ -1,5 +1,4 @@
 """Tests for imap_sync helpers (no live IMAP connection required)."""
-import pytest
 from unittest.mock import patch, MagicMock
 
 
@@ -510,7 +509,7 @@ def test_search_folder_special_gmail_name():
 def test_get_existing_message_ids_excludes_null(tmp_path):
     """NULL message_id rows are excluded from the returned set."""
     import sqlite3
-    from scripts.db import init_db, insert_job, add_contact
+    from scripts.db import init_db, insert_job
     from scripts.imap_sync import _get_existing_message_ids
 
     db_path = tmp_path / "test.db"
@@ -980,7 +979,6 @@ def test_scan_todo_label_stage_signal_set_for_non_neutral(tmp_path):
 
 def test_scan_todo_label_body_fallback_matches(tmp_path):
     """Company name only in body[:300] still triggers a match (body fallback)."""
-    from scripts.db import get_contacts
     from scripts.imap_sync import _scan_todo_label
 
     db_path = tmp_path / "test.db"
@@ -1110,7 +1108,6 @@ def test_parse_message_large_body_not_truncated():
 def test_parse_message_binary_attachment_no_crash():
     """Email with binary attachment returns a valid dict without crashing."""
     from scripts.imap_sync import _parse_message
-    import email as _email
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     from email.mime.application import MIMEApplication

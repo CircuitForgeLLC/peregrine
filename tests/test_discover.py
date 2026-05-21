@@ -1,8 +1,6 @@
 # tests/test_discover.py
-import pytest
 from unittest.mock import patch, MagicMock
 import pandas as pd
-from pathlib import Path
 
 SAMPLE_JOB = {
     "title": "Customer Success Manager",

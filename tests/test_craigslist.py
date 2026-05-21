@@ -4,7 +4,6 @@ from email.utils import format_datetime
 from unittest.mock import patch, MagicMock
 import xml.etree.ElementTree as ET
 
-import pytest
 import requests
 
 

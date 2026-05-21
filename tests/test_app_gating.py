@@ -1,4 +1,3 @@
-from pathlib import Path
 import yaml
 from scripts.user_profile import UserProfile
 
