@@ -352,8 +352,8 @@ with tab_fetch:
 
     if not accounts:
         st.warning(
-            f"No accounts configured. Copy `config/label_tool.yaml.example` → "
-            f"`config/label_tool.yaml` and add your IMAP accounts.",
+            "No accounts configured. Copy `config/label_tool.yaml.example` → "
+            "`config/label_tool.yaml` and add your IMAP accounts.",
             icon="⚠️",
         )
     else:
@@ -625,7 +625,7 @@ with tab_stats:
         st.markdown(f"**{len(labeled)} labeled emails total**")
 
         # Show known labels first, then any custom labels
-        all_display_labels = list(LABELS) + [l for l in counts if l not in LABELS]
+        all_display_labels = list(LABELS) + [lbl for lbl in counts if lbl not in LABELS]
         max_count = max(counts.values()) if counts else 1
         for lbl in all_display_labels:
             if lbl not in counts:

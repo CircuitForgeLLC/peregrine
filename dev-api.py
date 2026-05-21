@@ -14,7 +14,6 @@ import sqlite3
 import ssl as ssl_mod
 import subprocess
 import sys
-import threading
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,7 +38,7 @@ if str(PEREGRINE_ROOT) not in sys.path:
 
 from circuitforge_core.api import make_feedback_router as _make_feedback_router  # noqa: E402
 from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
-from scripts.credential_store import get_credential, set_credential, delete_credential  # noqa: E402
+from scripts.credential_store import get_credential, set_credential  # noqa: E402
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 
@@ -738,7 +737,6 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
       3. render_resume_text()     — renders to plain text for the preview panel
       Returns: {preview_text, preview_struct} — struct preserved for the approve step.
     """
-    import json as _json
     from scripts.db import get_resume_draft as _get_draft
     from scripts.resume_optimizer import (
         apply_review_decisions, frame_skill_gaps, render_resume_text,
@@ -759,7 +757,6 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
     # Step 2: inject gap framing for rejected skills (adjacent / learning)
     framings = [f.model_dump() for f in body.gap_framings if f.mode in ("adjacent", "learning")]
     if framings:
-        db_path_obj = Path(_request_db.get() or DB_PATH)
         job_row = _get_db().execute(
             "SELECT title, company FROM jobs WHERE id=?", (job_id,)
         ).fetchone()
@@ -829,7 +826,6 @@ def approve_resume(job_id: int, body: dict):
     saved_resume_id: int | None = None
     if body.get("save_to_library"):
         from scripts.db import create_resume as _create_r
-        import json as _json2
         resume_name = (body.get("resume_name") or "").strip() or f"Optimized for job {job_id}"
         saved = _create_r(
             db_path,
@@ -926,7 +922,7 @@ def create_resume_endpoint(body: dict):
 
 @app.post("/api/resumes/import")
 async def import_resume_endpoint(file: UploadFile, name: str = ""):
-    import os, tempfile, json as _json
+    import json as _json
     from scripts.db import create_resume as _create
     db_path = Path(_request_db.get() or DB_PATH)
     content = await file.read()
@@ -1128,6 +1124,35 @@ def set_job_resume_endpoint(job_id: int, body: dict):
 # context. Avocet then routes these prompts through different local models to
 # compare generation quality against the real Peregrine pipeline.
 
+_SYNTHETIC_JOB = {
+    "id": 0,
+    "title": "Senior Software Engineer",
+    "company": "Acme Corp",
+    "description": (
+        "We are looking for a Senior Software Engineer to join our platform team. "
+        "You will design and build scalable backend services in Python and Go, "
+        "contribute to our event-driven architecture using Kafka and Redis, and "
+        "mentor junior engineers. We value clear communication, strong code review "
+        "practices, and an ownership mindset.\n\n"
+        "Requirements:\n"
+        "- 5+ years of backend engineering experience\n"
+        "- Proficiency in Python or Go; experience with both is a plus\n"
+        "- Solid understanding of distributed systems and API design (REST/gRPC)\n"
+        "- Experience with containerization (Docker/Kubernetes)\n"
+        "- Comfort working in a remote-first, async team environment\n\n"
+        "Nice to have:\n"
+        "- Experience with Kafka or other message-queue systems\n"
+        "- Open-source contributions\n"
+        "- Familiarity with observability tooling (Prometheus, Grafana)\n"
+    ),
+    "status": "applied",
+    "cover_letter": "",
+    "raw_output": "",
+    "company_brief": "",
+    "ats_gap_report": "",
+    "talking_points": "",
+}
+
 def _imitate_load_profile():
     """Load UserProfile from config/user.yaml, or None if missing."""
     try:
@@ -1156,6 +1181,9 @@ def _imitate_cover_letter(db, profile, limit: int) -> dict:
         corpus = load_corpus()
     except Exception:
         corpus = []
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
 
     samples = []
     for r in rows:
@@ -1212,6 +1240,9 @@ def _imitate_company_research(db, profile, limit: int) -> dict:
             resume_ctx = "\n\n".join(parts)[:2000]
     except Exception:
         pass
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
 
     samples = []
     for r in rows:
@@ -1270,6 +1301,10 @@ def _imitate_interview_prep(db, profile, limit: int) -> dict:
     ).fetchall()
 
     name = profile.name if profile else "the candidate"
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
+
     samples = []
     for r in rows:
         system_prompt = (
@@ -1323,6 +1358,9 @@ def _imitate_ats_resume(db, profile, limit: int) -> dict:
     except Exception:
         pass
     resume_block = f"\n## Current Resume\n{resume_text}" if resume_text else ""
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
 
     samples = []
     for r in rows:
@@ -1462,14 +1500,8 @@ def calendar_push(job_id: int):
 # ── Survey endpoints ─────────────────────────────────────────────────────────
 
 # Module-level imports so tests can patch dev_api.LLMRouter etc.
-from scripts.llm_router import LLMRouter
-from scripts.db import insert_survey_response, get_survey_responses
+from scripts.db import insert_survey_response, get_survey_responses  # noqa: E402
 
-from scripts.survey_assistant import (
-    SURVEY_SYSTEM as _SURVEY_SYSTEM,
-    build_text_prompt as _build_text_prompt,
-    build_image_prompt as _build_image_prompt,
-)
 
 
 @app.get("/api/vision/health")
@@ -2690,7 +2722,7 @@ def config_user():
 
 # ── Settings: My Profile endpoints ───────────────────────────────────────────
 
-from scripts.user_profile import load_user_profile, save_user_profile
+from scripts.user_profile import load_user_profile, save_user_profile  # noqa: E402
 
 
 def _user_yaml_path() -> str:
@@ -4352,7 +4384,8 @@ def _fetch_cforch_nodes() -> list[dict]:
     if not url:
         return []
     try:
-        import urllib.request, json as _json
+        import urllib.request
+        import json as _json
         req = urllib.request.Request(f"{url}/api/nodes", headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = _json.loads(resp.read())
