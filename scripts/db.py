@@ -121,6 +121,17 @@ CREATE TABLE IF NOT EXISTS survey_responses (
 );
 """
 
+CREATE_RESUME_CORRECTIONS = """
+CREATE TABLE IF NOT EXISTS resume_optimizer_corrections (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id        INTEGER NOT NULL REFERENCES jobs(id),
+    section       TEXT    NOT NULL,
+    proposed_json TEXT    NOT NULL,
+    accepted_json TEXT    NOT NULL,
+    created_at    TEXT    DEFAULT (datetime('now'))
+);
+"""
+
 CREATE_DIGEST_QUEUE = """
 CREATE TABLE IF NOT EXISTS digest_queue (
     id             INTEGER PRIMARY KEY,
@@ -205,9 +216,10 @@ def _migrate_db(db_path: Path) -> None:
         conn.execute("ALTER TABLE background_tasks ADD COLUMN params TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
-    # Ensure references tables exist (CREATE IF NOT EXISTS is idempotent)
+    # Ensure tables that can't be added via ALTER TABLE exist (all idempotent).
     conn.execute(CREATE_REFERENCES)
     conn.execute(CREATE_JOB_REFERENCES)
+    conn.execute(CREATE_RESUME_CORRECTIONS)
     conn.commit()
     conn.close()
 
@@ -223,6 +235,7 @@ def init_db(db_path: Path = DEFAULT_DB) -> None:
     conn.execute(CREATE_DIGEST_QUEUE)
     conn.execute(CREATE_REFERENCES)
     conn.execute(CREATE_JOB_REFERENCES)
+    conn.execute(CREATE_RESUME_CORRECTIONS)
     conn.commit()
     conn.close()
     _migrate_db(db_path)
@@ -1241,3 +1254,76 @@ def set_training_exclusion(db_path: Path, job_id: int, excluded: bool) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+# ── Resume optimizer corrections ──────────────────────────────────────────────
+
+def save_resume_correction(
+    db_path: Path,
+    job_id: int,
+    section: str,
+    proposed: object,
+    accepted: object,
+) -> None:
+    """Persist a (proposed, accepted) correction pair from the resume review UI.
+
+    Called when a user edits an LLM-proposed value and accepts it. The pair
+    becomes a supervised fine-tuning (SFT) candidate routed through Avocet.
+
+    Args:
+        section: 'summary' or 'experience:<title>|<company>'
+        proposed: Original LLM output (string for summary, list for bullets).
+        accepted: User-edited value (same type as proposed).
+    """
+    import json as _json
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """INSERT INTO resume_optimizer_corrections
+               (job_id, section, proposed_json, accepted_json)
+               VALUES (?, ?, ?, ?)""",
+            (job_id, section, _json.dumps(proposed), _json.dumps(accepted)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_resume_corrections(
+    db_path: Path,
+    limit: int = 200,
+    job_id: int | None = None,
+) -> list[dict]:
+    """Return pending resume corrections for Avocet export.
+
+    Args:
+        limit: Maximum rows to return.
+        job_id: If set, filter to corrections for a specific job.
+    """
+    import json as _json
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if job_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM resume_optimizer_corrections WHERE job_id=? ORDER BY created_at DESC LIMIT ?",
+                (job_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM resume_optimizer_corrections ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "id": r["id"],
+            "job_id": r["job_id"],
+            "section": r["section"],
+            "proposed": _json.loads(r["proposed_json"]),
+            "accepted": _json.loads(r["accepted_json"]),
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
