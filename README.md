@@ -180,4 +180,8 @@ Peregrine uses a split license:
 
 Fine-tuned model weights are proprietary and per-user — not redistributable.
 
+---
+
+Humans own design, architecture, code review, testing, and verification. LLMs are part of our development workflow. [Our positions on LLM use →](https://circuitforge.tech/positions)
+
 © 2026 Circuit Forge LLC
