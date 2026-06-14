@@ -2694,6 +2694,9 @@ def get_app_config():
         except Exception:
             wizard_complete = False
 
+    from app.wizard.tiers import has_configured_llm
+    byok_unlocked = has_configured_llm()
+
     return {
         "isCloud": os.environ.get("CLOUD_MODE", "").lower() in ("1", "true"),
         "isDemo": os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes"),
@@ -2702,6 +2705,7 @@ def get_app_config():
         "contractedClient": os.environ.get("CONTRACTED_CLIENT", "").lower() in ("1", "true"),
         "inferenceProfile": profile if profile in valid_profiles else "cpu",
         "wizardComplete": wizard_complete,
+        "byokUnlocked": byok_unlocked,
     }
 
 
@@ -4509,6 +4513,107 @@ def wizard_complete():
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── AI Interview Wizard (BSL 1.1) ─────────────────────────────────────────────
+
+_AI_WIZARD_SYSTEM_PROMPT = """You are a friendly, patient assistant helping someone set up their job search profile. Your goal is to gather the following information through natural conversation:
+
+- name (string): their full name
+- email (string): their preferred contact email
+- career_summary (string): 1-2 sentence background summary
+- candidate_voice (string): their preferred writing voice/tone for cover letters
+- mission_preferences (list of strings): industries or causes they care about
+- candidate_accessibility_focus (bool): whether to include accessibility culture in company research
+- candidate_lgbtq_focus (bool): whether to include LGBTQIA+ inclusion signals in company research
+- linkedin (string, optional): their LinkedIn URL
+
+Rules:
+1. Ask one or two questions at a time — never overwhelm
+2. Always remind them they can skip any question
+3. For candidate_voice, offer these options if they struggle: "professional and direct", "warm and conversational", "concise and clear", "enthusiastic and personable"
+4. For candidate_accessibility_focus and candidate_lgbtq_focus, use plain language: "Would you like me to look into whether companies actively support employees with disabilities or neurodivergent needs?" and "Would you like me to check whether companies have strong LGBTQIA+ inclusion policies?"
+5. When you have gathered enough information or the user says they are done, set complete to true
+
+You must ALWAYS respond with valid JSON in this exact format:
+{"reply": "your conversational message here", "extracted_fields": {"name": "...", ...}, "complete": false}
+
+Only include fields in extracted_fields that you are confident about from the conversation. Do not include fields the user hasn't mentioned. Infer complete=true when all required fields (name, email, career_summary) are gathered or when user explicitly says done."""
+
+
+class WizardInterviewRequest(BaseModel):
+    history: list[dict]  # [{"role": "user"|"assistant", "content": "..."}]
+    profile_so_far: dict = {}
+
+
+class WizardFinalizeRequest(BaseModel):
+    profile: dict
+
+
+_WIZARD_ALLOWED_FIELDS: frozenset[str] = frozenset({
+    "name",
+    "email",
+    "career_summary",
+    "candidate_voice",
+    "mission_preferences",
+    "candidate_accessibility_focus",
+    "candidate_lgbtq_focus",
+    "linkedin",
+})
+
+
+@app.post("/api/wizard/ai/interview")
+def wizard_ai_interview(request: WizardInterviewRequest):
+    """Conduct one turn of the AI-guided profile interview. Tier-gated (BYOK-unlockable)."""
+    from app.wizard.tiers import can_use, has_configured_llm
+
+    tier = _get_effective_tier()
+    if not can_use(tier, "llm_ai_wizard", has_byok=has_configured_llm()):
+        raise HTTPException(402, detail={"error": "tier_required"})
+
+    # Build conversation prompt from history
+    conversation_lines = []
+    for msg in request.history:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "user":
+            conversation_lines.append(f"User: {content}")
+        else:
+            conversation_lines.append(f"Assistant: {content}")
+
+    prompt = "\n".join(conversation_lines) if conversation_lines else "User: (starting conversation)"
+
+    try:
+        from scripts.llm_router import LLMRouter
+        response_text = LLMRouter().complete(prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
+    except Exception as exc:
+        raise HTTPException(500, detail={"error": "llm_error", "message": str(exc)})
+
+    try:
+        parsed = json.loads(response_text)
+        return {
+            "reply": parsed.get("reply", ""),
+            "extracted_fields": parsed.get("extracted_fields", {}),
+            "complete": bool(parsed.get("complete", False)),
+        }
+    except (json.JSONDecodeError, AttributeError):
+        return {"reply": response_text, "extracted_fields": {}, "complete": False}
+
+
+@app.post("/api/wizard/ai/finalize")
+def wizard_ai_finalize(request: WizardFinalizeRequest):
+    """Merge AI-collected wizard fields into user.yaml. Only allowed fields are written."""
+    yaml_path = _user_yaml_path()
+    current = load_user_profile(yaml_path)
+
+    merged_keys = []
+    for key, value in request.profile.items():
+        if key in _WIZARD_ALLOWED_FIELDS:
+            current[key] = value
+            merged_keys.append(key)
+
+    save_user_profile(yaml_path, current)
+    return {"saved": True, "fields": merged_keys}
 
 
 # ── Messaging models ──────────────────────────────────────────────────────────
