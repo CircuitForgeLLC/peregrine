@@ -73,7 +73,7 @@ if not LETTERS_JSONL.exists():
     sys.exit(f"ERROR: Dataset not found at {LETTERS_JSONL}\n"
              "Run: make prepare-training  (or: python scripts/prepare_training_data.py)")
 
-records = [json.loads(l) for l in LETTERS_JSONL.read_text().splitlines() if l.strip()]
+records = [json.loads(line) for line in LETTERS_JSONL.read_text().splitlines() if line.strip()]
 print(f"Loaded {len(records)} training examples.")
 
 # Convert to chat format expected by SFTTrainer
@@ -323,6 +323,6 @@ if gguf_path and gguf_path.exists():
 else:
     print(f"\n{'='*60}")
     print("  Adapter saved (no GGUF produced).")
-    print(f"  Re-run without --no-gguf to generate a GGUF for Ollama registration.")
+    print("  Re-run without --no-gguf to generate a GGUF for Ollama registration.")
     print(f"  Adapter path: {adapter_path}")
     print(f"{'='*60}\n")

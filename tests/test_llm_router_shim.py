@@ -1,7 +1,7 @@
 """Tests for Peregrine's LLMRouter shim — priority fallback logic."""
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -54,7 +54,6 @@ def test_uses_local_yaml_when_present():
 
 def test_falls_through_to_env_when_no_yamls():
     """When no yaml files exist, super().__init__ is called with no args (env-var path)."""
-    import scripts.llm_router as shim_mod
     from circuitforge_core.llm import LLMRouter as _CoreLLMRouter
 
     captured = {}

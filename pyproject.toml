@@ -1,0 +1,32 @@
+[tool.ruff]
+# app/ is the deprecated Streamlit UI (replaced by Vue+FastAPI).
+# No new work goes there; exclude from linting rather than accumulate suppressions.
+exclude = ["app/"]
+
+[tool.ruff.lint.per-file-ignores]
+# dev-api.py / dev_api.py (symlink): E702 semicolons in compact Pydantic model
+# definitions — intentional style for dense data models with many simple fields.
+"dev-api.py" = ["E702"]
+"dev_api.py" = ["E702"]
+
+# finetune_local.py: E402 ML libs (torch, datasets, trl) are imported after
+# runtime CUDA / Unsloth availability checks — conditional import pattern.
+"scripts/finetune_local.py" = ["E402", "E741"]
+
+# scripts/: E402 mid-file imports used for lazy loading or post-env-setup imports.
+"scripts/task_runner.py" = ["E402"]
+"scripts/migrate.py" = ["E741"]
+
+# scrapers/: third-party script; minimal changes policy.
+"scrapers/companyScraper.py" = ["E722"]
+
+# tools/: deprecated label tool copy (canonical in avocet); suppress style warnings.
+"tools/label_tool.py" = ["E741"]
+
+# tests/: F841 unused variables are the standard mock-patch capture pattern
+# (e.g., `original_fn = obj.method` before monkeypatching).
+# E741 ambiguous `l` names and E402 conditional imports are common in test fixtures.
+# E702 compact `con.commit(); con.close()` is a common SQLite test helper idiom.
+"tests/**" = ["F841", "E741", "E402", "E702"]
+"tests/test_wizard_steps.py" = ["F841", "E741", "E402", "E702"]
+"scripts/test_email_classify.py" = ["E402", "F841"]

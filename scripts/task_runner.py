@@ -341,7 +341,6 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 prioritize_gaps,
                 rewrite_for_ats,
                 hallucination_check,
-                render_resume_text,
             )
             from scripts.user_profile import load_user_profile
 

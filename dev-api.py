@@ -8,13 +8,13 @@ import imaplib
 import json
 import logging
 import os
+import ipaddress
 import re
 import socket
 import sqlite3
 import ssl as ssl_mod
 import subprocess
 import sys
-import threading
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +26,7 @@ import yaml
 from bs4 import BeautifulSoup
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -39,13 +39,38 @@ if str(PEREGRINE_ROOT) not in sys.path:
 
 from circuitforge_core.api import make_feedback_router as _make_feedback_router  # noqa: E402
 from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
-from scripts.credential_store import get_credential, set_credential, delete_credential  # noqa: E402
+from circuitforge_core.sync import SyncConfig, make_sync_router  # noqa: E402
+from scripts.credential_store import get_credential, set_credential  # noqa: E402
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 
 _CLOUD_MODE       = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
 _CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
 _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
+
+# Allowlist for cloud user_id values — UUID format only (prevents path traversal)
+_VALID_USER_ID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+# RFC-1918 + loopback + link-local blocks blocked from IMAP SSRF
+_PRIVATE_NETS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _is_ssrf_host(host: str) -> bool:
+    """Return True if host resolves to a private/loopback address (SSRF guard)."""
+    try:
+        addr = ipaddress.ip_address(socket.gethostbyname(host))
+        return any(addr in net for net in _PRIVATE_NETS)
+    except Exception:
+        return True  # fail closed on resolution errors
 IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 # Resolve GPU inference server URL.
@@ -126,6 +151,43 @@ _feedback_router = _make_feedback_router(
     ),
 )
 app.include_router(_feedback_router, prefix="/api/feedback")
+
+# ── Cross-device sync (cf-core sync module, Paid+ only) ──────────────────────
+
+class _SyncUser:
+    """Minimal user object expected by the cf-core sync router."""
+    def __init__(self, user_id: str) -> None:
+        self.user_id = user_id
+
+def _get_sync_session() -> _SyncUser:
+    """FastAPI dependency: resolves user_id from the per-request DB ContextVar.
+    Returns a fixed 'local' user in single-tenant mode so the prefs/delete
+    endpoints still work for self-hosted users.
+    """
+    db_path = _request_db.get()
+    if db_path:
+        try:
+            user_id = Path(db_path).parts[-3]
+        except IndexError:
+            raise HTTPException(status_code=401, detail="Invalid session")
+    else:
+        user_id = "local"
+    return _SyncUser(user_id)
+
+def _require_paid_sync() -> _SyncUser:
+    """FastAPI dependency: raises 403 unless the resolved tier is paid or premium."""
+    tier = _resolve_cloud_tier()
+    if tier not in ("paid", "premium"):
+        raise HTTPException(status_code=403, detail="Cross-device sync requires a Paid or Premium subscription.")
+    return _get_sync_session()
+
+_sync_router = make_sync_router(
+    product="peregrine",
+    get_session=_get_sync_session,
+    require_paid=_require_paid_sync,
+    config=SyncConfig.from_env("peregrine"),
+)
+app.include_router(_sync_router, prefix="/sync", tags=["sync"])
 
 _log = logging.getLogger("peregrine.session")
 
@@ -221,6 +283,10 @@ async def cloud_session_middleware(request: Request, call_next):
     if _CLOUD_MODE and _DIRECTUS_SECRET:
         cookie_header = request.headers.get("X-CF-Session", "")
         user_id = _resolve_cf_user_id(cookie_header)
+        if user_id:
+            if not _VALID_USER_ID_RE.match(user_id):
+                _log.warning("cloud_session_middleware: rejected non-UUID user_id: %s", user_id[:40])
+                user_id = None
         if user_id:
             first_access = user_id not in _seen_users
             if first_access:
@@ -738,7 +804,6 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
       3. render_resume_text()     — renders to plain text for the preview panel
       Returns: {preview_text, preview_struct} — struct preserved for the approve step.
     """
-    import json as _json
     from scripts.db import get_resume_draft as _get_draft
     from scripts.resume_optimizer import (
         apply_review_decisions, frame_skill_gaps, render_resume_text,
@@ -759,7 +824,6 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
     # Step 2: inject gap framing for rejected skills (adjacent / learning)
     framings = [f.model_dump() for f in body.gap_framings if f.mode in ("adjacent", "learning")]
     if framings:
-        db_path_obj = Path(_request_db.get() or DB_PATH)
         job_row = _get_db().execute(
             "SELECT title, company FROM jobs WHERE id=?", (job_id,)
         ).fetchone()
@@ -829,7 +893,6 @@ def approve_resume(job_id: int, body: dict):
     saved_resume_id: int | None = None
     if body.get("save_to_library"):
         from scripts.db import create_resume as _create_r
-        import json as _json2
         resume_name = (body.get("resume_name") or "").strip() or f"Optimized for job {job_id}"
         saved = _create_r(
             db_path,
@@ -926,7 +989,7 @@ def create_resume_endpoint(body: dict):
 
 @app.post("/api/resumes/import")
 async def import_resume_endpoint(file: UploadFile, name: str = ""):
-    import os, tempfile, json as _json
+    import json as _json
     from scripts.db import create_resume as _create
     db_path = Path(_request_db.get() or DB_PATH)
     content = await file.read()
@@ -1128,6 +1191,35 @@ def set_job_resume_endpoint(job_id: int, body: dict):
 # context. Avocet then routes these prompts through different local models to
 # compare generation quality against the real Peregrine pipeline.
 
+_SYNTHETIC_JOB = {
+    "id": 0,
+    "title": "Senior Software Engineer",
+    "company": "Acme Corp",
+    "description": (
+        "We are looking for a Senior Software Engineer to join our platform team. "
+        "You will design and build scalable backend services in Python and Go, "
+        "contribute to our event-driven architecture using Kafka and Redis, and "
+        "mentor junior engineers. We value clear communication, strong code review "
+        "practices, and an ownership mindset.\n\n"
+        "Requirements:\n"
+        "- 5+ years of backend engineering experience\n"
+        "- Proficiency in Python or Go; experience with both is a plus\n"
+        "- Solid understanding of distributed systems and API design (REST/gRPC)\n"
+        "- Experience with containerization (Docker/Kubernetes)\n"
+        "- Comfort working in a remote-first, async team environment\n\n"
+        "Nice to have:\n"
+        "- Experience with Kafka or other message-queue systems\n"
+        "- Open-source contributions\n"
+        "- Familiarity with observability tooling (Prometheus, Grafana)\n"
+    ),
+    "status": "applied",
+    "cover_letter": "",
+    "raw_output": "",
+    "company_brief": "",
+    "ats_gap_report": "",
+    "talking_points": "",
+}
+
 def _imitate_load_profile():
     """Load UserProfile from config/user.yaml, or None if missing."""
     try:
@@ -1156,6 +1248,9 @@ def _imitate_cover_letter(db, profile, limit: int) -> dict:
         corpus = load_corpus()
     except Exception:
         corpus = []
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
 
     samples = []
     for r in rows:
@@ -1212,6 +1307,9 @@ def _imitate_company_research(db, profile, limit: int) -> dict:
             resume_ctx = "\n\n".join(parts)[:2000]
     except Exception:
         pass
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
 
     samples = []
     for r in rows:
@@ -1270,6 +1368,10 @@ def _imitate_interview_prep(db, profile, limit: int) -> dict:
     ).fetchall()
 
     name = profile.name if profile else "the candidate"
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
+
     samples = []
     for r in rows:
         system_prompt = (
@@ -1323,6 +1425,9 @@ def _imitate_ats_resume(db, profile, limit: int) -> dict:
     except Exception:
         pass
     resume_block = f"\n## Current Resume\n{resume_text}" if resume_text else ""
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
 
     samples = []
     for r in rows:
@@ -1462,14 +1567,8 @@ def calendar_push(job_id: int):
 # ── Survey endpoints ─────────────────────────────────────────────────────────
 
 # Module-level imports so tests can patch dev_api.LLMRouter etc.
-from scripts.llm_router import LLMRouter
-from scripts.db import insert_survey_response, get_survey_responses
+from scripts.db import insert_survey_response, get_survey_responses  # noqa: E402
 
-from scripts.survey_assistant import (
-    SURVEY_SYSTEM as _SURVEY_SYSTEM,
-    build_text_prompt as _build_text_prompt,
-    build_image_prompt as _build_image_prompt,
-)
 
 
 @app.get("/api/vision/health")
@@ -2690,7 +2789,7 @@ def config_user():
 
 # ── Settings: My Profile endpoints ───────────────────────────────────────────
 
-from scripts.user_profile import load_user_profile, save_user_profile
+from scripts.user_profile import load_user_profile, save_user_profile  # noqa: E402
 
 
 def _user_yaml_path() -> str:
@@ -3564,6 +3663,8 @@ def test_email(payload: dict):
         username = payload.get("username", "")
         if not all([host, username, password]):
             return {"ok": False, "error": "Missing host, username, or password"}
+        if _is_ssrf_host(host):
+            return {"ok": False, "error": "IMAP host must be a public address"}
         if use_ssl:
             ctx = ssl_mod.create_default_context()
             conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
@@ -4352,7 +4453,8 @@ def _fetch_cforch_nodes() -> list[dict]:
     if not url:
         return []
     try:
-        import urllib.request, json as _json
+        import urllib.request
+        import json as _json
         req = urllib.request.Request(f"{url}/api/nodes", headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = _json.loads(resp.read())

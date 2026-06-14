@@ -1,7 +1,4 @@
-import pytest
-import os
-from unittest.mock import patch, MagicMock
-from pathlib import Path
+from unittest.mock import patch
 
 
 def test_resolve_session_is_noop_in_local_mode(monkeypatch):

@@ -1,6 +1,4 @@
 # tests/test_cover_letter.py
-import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 
@@ -90,7 +88,7 @@ def test_find_similar_letters_returns_top_k():
 
 def test_load_corpus_returns_list():
     """load_corpus returns a list (empty if LETTERS_DIR absent) without crashing."""
-    from scripts.generate_cover_letter import load_corpus, LETTERS_DIR
+    from scripts.generate_cover_letter import load_corpus
 
     corpus = load_corpus()
     assert isinstance(corpus, list)

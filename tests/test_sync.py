@@ -1,7 +1,5 @@
 # tests/test_sync.py
-import pytest
 from unittest.mock import patch, MagicMock
-from pathlib import Path
 
 
 SAMPLE_FM = {

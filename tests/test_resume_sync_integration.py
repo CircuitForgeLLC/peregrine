@@ -1,7 +1,5 @@
 """Integration tests for resume library<->profile sync endpoints."""
 import json
-import os
-from pathlib import Path
 
 import pytest
 import yaml
