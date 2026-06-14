@@ -91,6 +91,7 @@ mkdocs-material>=9.5
 # ── Vue SPA API backend ──────────────────────────────────────────────────
 fastapi>=0.100.0
 uvicorn[standard]>=0.20.0
+slowapi>=0.1.9
 PyJWT>=2.8.0
 cryptography>=40.0.0
 python-multipart>=0.0.6
