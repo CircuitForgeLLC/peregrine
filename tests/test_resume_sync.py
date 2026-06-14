@@ -1,6 +1,4 @@
 """Unit tests for scripts.resume_sync — format transform between library and profile."""
-import json
-import pytest
 from scripts.resume_sync import (
     library_to_profile_content,
     profile_to_library,

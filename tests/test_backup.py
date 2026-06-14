@@ -1,12 +1,10 @@
 """Tests for scripts/backup.py — create, list, restore, and multi-instance support."""
 from __future__ import annotations
 
-import json
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from scripts.backup import (
     _decrypt_db_to_bytes,

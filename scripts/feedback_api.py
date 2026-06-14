@@ -163,7 +163,8 @@ def _ensure_labels(
 
 def create_forgejo_issue(title: str, body: str, labels: list[str]) -> dict:
     """Create a Forgejo issue. Returns {"number": int, "url": str}."""
-    token = os.environ.get("FORGEJO_API_TOKEN", "")
+    # Use the bot token when set; fall back to the main API token for dev/self-hosted.
+    token = os.environ.get("FORGEJO_BOT_TOKEN") or os.environ.get("FORGEJO_API_TOKEN", "")
     repo = os.environ.get("FORGEJO_REPO", "pyr0ball/peregrine")
     base = os.environ.get("FORGEJO_API_URL", "https://git.opensourcesolarpunk.com/api/v1")
     headers = {"Authorization": f"token {token}", "Content-Type": "application/json"}
@@ -183,7 +184,7 @@ def upload_attachment(
     issue_number: int, image_bytes: bytes, filename: str = "screenshot.png"
 ) -> str:
     """Upload a screenshot to an existing Forgejo issue. Returns attachment URL."""
-    token = os.environ.get("FORGEJO_API_TOKEN", "")
+    token = os.environ.get("FORGEJO_BOT_TOKEN") or os.environ.get("FORGEJO_API_TOKEN", "")
     repo = os.environ.get("FORGEJO_REPO", "pyr0ball/peregrine")
     base = os.environ.get("FORGEJO_API_URL", "https://git.opensourcesolarpunk.com/api/v1")
     headers = {"Authorization": f"token {token}"}

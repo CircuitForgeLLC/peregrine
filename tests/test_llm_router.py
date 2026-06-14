@@ -110,7 +110,7 @@ def test_complete_without_images_skips_vision_service(tmp_path):
     """When images=None, vision_service backend is skipped."""
     import yaml
     from scripts.llm_router import LLMRouter
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
     cfg = {
         "fallback_order": ["vision_service"],

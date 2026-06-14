@@ -1,8 +1,7 @@
 # tests/test_resume_optimizer.py
 """Tests for scripts/resume_optimizer.py"""
 import json
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────

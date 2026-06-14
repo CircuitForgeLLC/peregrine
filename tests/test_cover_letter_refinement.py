@@ -95,7 +95,6 @@ class TestTaskRunnerCoverLetterParams:
              patch("sqlite3.connect") as mock_conn, \
              patch("scripts.task_runner.generate_cover_letter_fn", mock_generate, create=True):
 
-            import sqlite3
             mock_row = MagicMock()
             mock_row.__iter__ = lambda s: iter(job.items())
             mock_row.keys = lambda: job.keys()

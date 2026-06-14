@@ -1,7 +1,7 @@
 # tests/test_user_profile.py
 import pytest
 from pathlib import Path
-import tempfile, yaml
+import yaml
 from scripts.user_profile import UserProfile
 
 @pytest.fixture

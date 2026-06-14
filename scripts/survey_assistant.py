@@ -7,7 +7,6 @@ FastAPI application. Callable directly or via the survey_analyze background task
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Optional

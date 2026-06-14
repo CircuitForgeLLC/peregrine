@@ -1,7 +1,5 @@
-import threading
 import time
 import pytest
-from pathlib import Path
 from unittest.mock import patch
 import sqlite3
 
@@ -178,7 +176,6 @@ def test_submit_task_actually_completes(tmp_path):
 def test_run_task_enrich_craigslist_success(tmp_path):
     """enrich_craigslist task calls enrich_craigslist_fields and marks completed."""
     from scripts.db import init_db, insert_job, insert_task, get_task_for_job
-    from unittest.mock import MagicMock
     db = tmp_path / "test.db"
     init_db(db)
     job_id = insert_job(db, {
@@ -200,7 +197,7 @@ def test_run_task_enrich_craigslist_success(tmp_path):
 
 def test_scrape_url_submits_enrich_craigslist_for_craigslist_job(tmp_path):
     """After scrape_url completes for a craigslist job with empty company, enrich_craigslist is queued."""
-    from scripts.db import init_db, insert_job, insert_task, get_task_for_job
+    from scripts.db import init_db, insert_job, insert_task
     db = tmp_path / "test.db"
     init_db(db)
     job_id = insert_job(db, {
@@ -285,7 +282,7 @@ def test_wizard_generate_null_params_fails(tmp_path):
 
 def test_wizard_generate_stores_result_as_json(tmp_path):
     """wizard_generate stores result JSON in error field on success."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
     db = tmp_path / "t.db"
     from scripts.db import init_db, insert_task
     init_db(db)
@@ -311,7 +308,7 @@ def test_wizard_generate_stores_result_as_json(tmp_path):
 
 def test_wizard_generate_feedback_appended_to_prompt(tmp_path):
     """feedback and previous_result fields in input_data are appended to the prompt."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
     db = tmp_path / "t.db"
     from scripts.db import init_db, insert_task
     init_db(db)

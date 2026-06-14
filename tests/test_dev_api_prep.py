@@ -1,5 +1,4 @@
 """Tests for interview prep endpoints: research GET/generate/task, contacts GET."""
-import json
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
@@ -17,7 +16,6 @@ def client():
 
 def test_get_research_found(client):
     """Returns research row (minus raw_output) when present."""
-    import sqlite3
     mock_row = {
         "job_id": 1,
         "company_brief": "Acme Corp makes anvils.",

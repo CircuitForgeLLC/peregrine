@@ -72,7 +72,6 @@ def test_fields_returns_list_of_dicts():
 def test_save_and_load_config(tmp_path):
     """save_config writes yaml; load_config reads it back."""
     from scripts.integrations.base import IntegrationBase
-    import yaml
 
     class TestIntegration(IntegrationBase):
         name = "savetest"

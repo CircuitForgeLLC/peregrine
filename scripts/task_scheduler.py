@@ -15,14 +15,13 @@ Public API (unchanged — callers do not need to change):
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from pathlib import Path
 from typing import Callable, Optional
 
 from circuitforge_core.tasks.scheduler import (
-    TaskSpec,                        # re-export unchanged
     LocalScheduler as _CoreTaskScheduler,
+    TaskSpec,  # noqa: F401 — re-exported as part of public API; tests import from here
 )
 
 logger = logging.getLogger(__name__)
