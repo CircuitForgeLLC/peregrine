@@ -41,6 +41,7 @@ FEATURES: dict[str, str] = {
     "llm_voice_guidelines":         "premium",
     "llm_job_titles":               "paid",
     "llm_mission_notes":            "paid",
+    "llm_ai_wizard":                "paid",
 
     # Orchestration — stays gated (background data pipeline, not just an LLM call)
     "llm_keywords_blocklist":       "paid",
@@ -79,6 +80,7 @@ BYOK_UNLOCKABLE: frozenset[str] = frozenset({
     "llm_voice_guidelines",
     "llm_job_titles",
     "llm_mission_notes",
+    "llm_ai_wizard",
     "company_research",
     "interview_prep",
     "survey_assistant",
