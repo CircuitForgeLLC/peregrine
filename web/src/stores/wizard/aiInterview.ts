@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useApiFetch } from '../../composables/useApi'
 
-const LS_KEY = 'peregrine:wizard-draft'
+const LS_KEY     = 'peregrine:wizard-draft'
+const SKIP_SIGNAL = 'skip'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -40,6 +41,7 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     if (loading.value) return
     if (userText !== '') {
       messages.value = [...messages.value, { role: 'user', content: userText }]
+      _persist()
     }
     loading.value = true
     error.value   = null
@@ -78,6 +80,14 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     return true
   }
 
+  function skip() {
+    return send(SKIP_SIGNAL)
+  }
+
+  function keepChatting() {
+    complete.value = false
+  }
+
   function startOver() {
     messages.value = []
     fields.value   = {}
@@ -86,5 +96,5 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     localStorage.removeItem(LS_KEY)
   }
 
-  return { messages, fields, complete, loading, saving, error, restore, send, finalize, startOver }
+  return { messages, fields, complete, loading, saving, error, restore, send, skip, finalize, keepChatting, startOver }
 })

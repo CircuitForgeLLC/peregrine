@@ -146,7 +146,7 @@ onMounted(async () => {
           <button
             class="btn-ghost"
             :disabled="store.loading || store.saving"
-            @click="store.complete = false"
+            @click="store.keepChatting()"
           >
             Keep chatting
           </button>
@@ -185,8 +185,8 @@ onMounted(async () => {
             </button>
             <button
               class="btn-ghost ai-skip-btn"
-              :disabled="store.loading || store.saving"
-              @click="store.send('skip')"
+              :disabled="store.loading || store.saving || store.complete"
+              @click="store.skip()"
             >
               Skip
             </button>
@@ -196,7 +196,7 @@ onMounted(async () => {
         <p v-if="store.error" class="ai-error" role="alert">{{ store.error }}</p>
 
         <div v-if="store.messages.length > 0" class="ai-startover-row">
-          <button class="btn-startover" @click="store.startOver">Start over</button>
+          <button class="btn-startover" @click="store.startOver()">Start over</button>
         </div>
       </div>
     </div>
