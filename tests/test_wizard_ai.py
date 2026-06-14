@@ -199,6 +199,33 @@ class TestWizardAIInterviewLLM:
         assert "I am Alex" in prompt
         assert "alex@test.com" in prompt
 
+    def test_profile_so_far_injected_into_prompt(self, client):
+        """profile_so_far fields must appear in the prompt sent to the LLM."""
+        llm_reply = json.dumps({"reply": "Got it!", "extracted_fields": {}, "complete": False})
+        captured_calls = []
+        with patch("dev_api._get_effective_tier", return_value="paid"):
+            with patch("app.wizard.tiers.has_configured_llm", return_value=True):
+                with patch("scripts.llm_router.LLMRouter") as mock_cls:
+                    mock_cls.return_value.complete.side_effect = (
+                        lambda prompt, system=None: (captured_calls.append(prompt) or llm_reply)
+                    )
+                    client.post(
+                        "/api/wizard/ai/interview",
+                        json={
+                            "history": [
+                                {"role": "user", "content": "I am Alex"},
+                            ],
+                            "profile_so_far": {
+                                "name": "Alex Rivera",
+                                "email": "alex@example.com",
+                            },
+                        },
+                    )
+        assert len(captured_calls) == 1
+        prompt = captured_calls[0]
+        assert "Alex Rivera" in prompt
+        assert "alex@example.com" in prompt
+
     def test_llm_error_returns_500(self, client):
         """If LLM raises, the endpoint returns 500."""
         with patch("dev_api._get_effective_tier", return_value="paid"):
