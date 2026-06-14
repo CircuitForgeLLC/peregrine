@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../composables/useApi'
 
-export type Tier = 'free' | 'paid' | 'premium' | 'ultra'
+export type Tier = 'free' | 'paid' | 'premium'
 export type InferenceProfile = 'remote' | 'cpu' | 'single-gpu' | 'dual-gpu'
 
 export const useAppConfigStore = defineStore('appConfig', () => {

@@ -157,6 +157,44 @@ describe('useAiInterviewStore', () => {
     expect(store.error).toBe('Failed to save profile. Please try again.')
   })
 
+  // ── skip() ─────────────────────────────────────────────────────────────────
+
+  it('skip() sends the skip signal to the backend', async () => {
+    mockFetch.mockResolvedValue({
+      data: { reply: 'No problem, moving on.', extracted_fields: {}, complete: false },
+      error: null,
+    })
+
+    const store = useAiInterviewStore()
+    await store.skip()
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/wizard/ai/interview',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as { body: string }).body)
+    expect(body.history[0]).toEqual({ role: 'user', content: 'skip' })
+  })
+
+  // ── keepChatting() ─────────────────────────────────────────────────────────
+
+  it('keepChatting() clears the complete flag without resetting messages', async () => {
+    mockFetch.mockResolvedValue({
+      data: { reply: 'All done!', extracted_fields: { name: 'Alice' }, complete: true },
+      error: null,
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('done')
+    expect(store.complete).toBe(true)
+
+    store.keepChatting()
+
+    expect(store.complete).toBe(false)
+    expect(store.messages.length).toBeGreaterThan(0)
+    expect(store.fields).toEqual({ name: 'Alice' })
+  })
+
   // ── startOver() ────────────────────────────────────────────────────────────
 
   it('startOver() resets all state and clears localStorage', async () => {
