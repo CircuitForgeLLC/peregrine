@@ -80,7 +80,7 @@ _RL_COVER_LETTER = os.environ.get("LLM_RATE_COVER_LETTER", "20/hour")
 _RL_RESEARCH     = os.environ.get("LLM_RATE_RESEARCH", "10/hour")
 _RL_QA_SUGGEST   = os.environ.get("LLM_RATE_QA_SUGGEST", "60/hour")
 _RL_SURVEY       = os.environ.get("LLM_RATE_SURVEY", "30/hour")
-_RL_WIZARD       = os.environ.get("LLM_RATE_WIZARD", "60/hour")  # TODO(#122): wire to wizard/ai/interview after feat/77 merges
+_RL_WIZARD       = os.environ.get("LLM_RATE_WIZARD", "60/hour")
 
 # Resolve GPU inference server URL.
 # Priority: GPU_SERVER_URL → CF_ORCH_URL (backward compat) → cloud default when licensed.
@@ -4654,7 +4654,8 @@ _WIZARD_ALLOWED_FIELDS: frozenset[str] = frozenset({
 
 
 @app.post("/api/wizard/ai/interview")
-def wizard_ai_interview(request: WizardInterviewRequest):
+@limiter.limit(_RL_WIZARD)
+def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
     """Conduct one turn of the AI-guided profile interview. Tier-gated (BYOK-unlockable)."""
     from app.wizard.tiers import can_use, has_configured_llm
 
@@ -4664,7 +4665,7 @@ def wizard_ai_interview(request: WizardInterviewRequest):
 
     # Build conversation prompt from history
     conversation_lines = []
-    for msg in request.history:
+    for msg in body.history:
         role = msg.role
         content = msg.content.replace("\n", " ").replace("\r", "")
         if role == "user":
@@ -4675,10 +4676,10 @@ def wizard_ai_interview(request: WizardInterviewRequest):
     history_block = "\n".join(conversation_lines) if conversation_lines else "User: (starting conversation)"
 
     # Build profile summary to give LLM context about what's already known
-    if request.profile_so_far:
+    if body.profile_so_far:
         gathered = ", ".join(
             f"{k}={repr(v)}"
-            for k, v in request.profile_so_far.items()
+            for k, v in body.profile_so_far.items()
             if v not in (None, "", [], {})
         )
         profile_context = f"\n\n[Already gathered: {gathered}]" if gathered else ""
