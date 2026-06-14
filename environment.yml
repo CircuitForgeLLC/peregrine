@@ -63,6 +63,9 @@ dependencies:
     # ── Auth / licensing ──────────────────────────────────────────────────────
     - PyJWT>=2.8
 
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    - slowapi>=0.1.9           # per-user rate limiting on LLM endpoints
+
     # ── Utilities ─────────────────────────────────────────────────────────────
     - sqlalchemy
     - tqdm
