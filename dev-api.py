@@ -4581,7 +4581,20 @@ def wizard_ai_interview(request: WizardInterviewRequest):
         else:
             conversation_lines.append(f"Assistant: {content}")
 
-    prompt = "\n".join(conversation_lines) if conversation_lines else "User: (starting conversation)"
+    history_block = "\n".join(conversation_lines) if conversation_lines else "User: (starting conversation)"
+
+    # Build profile summary to give LLM context about what's already known
+    if request.profile_so_far:
+        gathered = ", ".join(
+            f"{k}={repr(v)}"
+            for k, v in request.profile_so_far.items()
+            if v not in (None, "", [], {})
+        )
+        profile_context = f"\n\n[Already gathered: {gathered}]" if gathered else ""
+    else:
+        profile_context = ""
+
+    prompt = history_block + profile_context
 
     try:
         from scripts.llm_router import LLMRouter
