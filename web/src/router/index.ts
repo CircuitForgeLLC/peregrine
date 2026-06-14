@@ -37,6 +37,8 @@ export const router = createRouter({
         { path: 'developer',   component: () => import('../views/settings/DeveloperView.vue') },
       ],
     },
+    // AI profile wizard — standalone full-page chat
+    { path: '/wizard/ai-profile', component: () => import('../views/wizard/WizardAIView.vue') },
     // Onboarding wizard — full-page layout, no AppNav
     {
       path: '/setup',

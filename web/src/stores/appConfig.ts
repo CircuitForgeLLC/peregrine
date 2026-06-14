@@ -13,6 +13,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
   const inferenceProfile = ref<InferenceProfile>('cpu')
   const isDemo = ref(false)
   const wizardComplete = ref(true)  // optimistic default — guard corrects on load
+  const byokUnlocked = ref(false)
   const loaded = ref(false)
   const devTierOverride = ref(localStorage.getItem('dev_tier_override') ?? '')
 
@@ -20,7 +21,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
     const { data } = await useApiFetch<{
       isCloud: boolean; isDemo: boolean; isDevMode: boolean; tier: Tier
       contractedClient: boolean; inferenceProfile: InferenceProfile
-      wizardComplete: boolean
+      wizardComplete: boolean; byokUnlocked: boolean
     }>('/api/config/app')
     if (!data) return
     isCloud.value = data.isCloud
@@ -30,6 +31,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
     contractedClient.value = data.contractedClient
     inferenceProfile.value = data.inferenceProfile
     wizardComplete.value = data.wizardComplete ?? true
+    byokUnlocked.value = data.byokUnlocked ?? false
     loaded.value = true
   }
 
@@ -43,5 +45,5 @@ export const useAppConfigStore = defineStore('appConfig', () => {
     }
   }
 
-  return { isCloud, isDemo, isDevMode, wizardComplete, tier, contractedClient, inferenceProfile, loaded, load, devTierOverride, setDevTierOverride }
+  return { isCloud, isDemo, isDevMode, wizardComplete, byokUnlocked, tier, contractedClient, inferenceProfile, loaded, load, devTierOverride, setDevTierOverride }
 })
