@@ -37,6 +37,8 @@ export const router = createRouter({
         { path: 'developer',   component: () => import('../views/settings/DeveloperView.vue') },
       ],
     },
+    // AI profile wizard — post-setup settings entry point (correctly blocked by wizard gate during onboarding)
+    { path: '/wizard/ai-profile', component: () => import('../views/wizard/WizardAIView.vue') },
     // Onboarding wizard — full-page layout, no AppNav
     {
       path: '/setup',
