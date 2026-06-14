@@ -41,6 +41,8 @@ from circuitforge_core.api import make_feedback_router as _make_feedback_router 
 from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
 from circuitforge_core.sync import SyncConfig, make_sync_router  # noqa: E402
 from scripts.credential_store import get_credential, set_credential  # noqa: E402
+from scripts.rate_limit import limiter, rate_limit_exceeded_handler  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 
@@ -72,6 +74,13 @@ def _is_ssrf_host(host: str) -> bool:
     except Exception:
         return True  # fail closed on resolution errors
 IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
+
+# ── Rate limiting (LLM generation endpoints) ──────────────────────────────────
+_RL_COVER_LETTER = os.environ.get("LLM_RATE_COVER_LETTER", "20/hour")
+_RL_RESEARCH     = os.environ.get("LLM_RATE_RESEARCH", "10/hour")
+_RL_QA_SUGGEST   = os.environ.get("LLM_RATE_QA_SUGGEST", "60/hour")
+_RL_SURVEY       = os.environ.get("LLM_RATE_SURVEY", "30/hour")
+_RL_WIZARD       = os.environ.get("LLM_RATE_WIZARD", "60/hour")  # TODO(#122): wire to wizard/ai/interview after feat/77 merges
 
 # Resolve GPU inference server URL.
 # Priority: GPU_SERVER_URL → CF_ORCH_URL (backward compat) → cloud default when licensed.
@@ -135,6 +144,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Peregrine Dev API", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -579,7 +590,8 @@ def save_cover_letter(job_id: int, body: CoverLetterBody):
 # ── POST /api/jobs/:id/cover_letter/generate ─────────────────────────────────
 
 @app.post("/api/jobs/{job_id}/cover_letter/generate")
-def generate_cover_letter(job_id: int):
+@limiter.limit(_RL_COVER_LETTER)
+def generate_cover_letter(job_id: int, request: Request):
     _demo_guard()
     try:
         from scripts.task_runner import submit_task
@@ -632,7 +644,9 @@ def get_research_brief(job_id: int):
 
 
 @app.post("/api/jobs/{job_id}/research/generate")
-def generate_research(job_id: int):
+@limiter.limit(_RL_RESEARCH)
+def generate_research(job_id: int, request: Request):
+    _demo_guard()
     try:
         from scripts.task_runner import submit_task
         task_id, is_new = submit_task(db_path=Path(_request_db.get() or DB_PATH), task_type="company_research", job_id=job_id)
@@ -1587,7 +1601,8 @@ class SurveyAnalyzeBody(BaseModel):
 
 
 @app.post("/api/jobs/{job_id}/survey/analyze")
-def survey_analyze(job_id: int, body: SurveyAnalyzeBody):
+@limiter.limit(_RL_SURVEY)
+def survey_analyze(job_id: int, body: SurveyAnalyzeBody, request: Request):
     if body.mode not in ("quick", "detailed"):
         raise HTTPException(400, f"Invalid mode: {body.mode!r}")
     import json as _json
@@ -1802,8 +1817,10 @@ def save_qa(job_id: int, payload: QAPayload):
 
 
 @app.post("/api/jobs/{job_id}/qa/suggest")
-def suggest_qa_answer(job_id: int, payload: QASuggestPayload):
+@limiter.limit(_RL_QA_SUGGEST)
+def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
     """Synchronously generate an LLM answer for an application Q&A question."""
+    _demo_guard()
     db = _get_db()
     job_row = db.execute(
         "SELECT title, company, description FROM jobs WHERE id = ?", (job_id,)
@@ -1834,7 +1851,7 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload):
                 parts.append(f"Summary: {resume_data['career_summary'][:400]}")
             resume_context = "\n".join(parts)
     except Exception:
-        pass
+        _log.warning("suggest_qa_answer: failed to load resume context", exc_info=True)
 
     prompt = (
         f"You are helping a job applicant answer an application question.\n\n"

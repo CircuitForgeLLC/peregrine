@@ -63,6 +63,9 @@ dependencies:
     # ── Auth / licensing ──────────────────────────────────────────────────────
     - PyJWT>=2.13.0           # 2.11 has sig bypass CVEs (PYSEC-2026-120/175-179); used for cloud session routing
 
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    - slowapi>=0.1.9           # per-user rate limiting on LLM endpoints
+
     # ── Utilities ─────────────────────────────────────────────────────────────
     - sqlalchemy
     - tqdm
