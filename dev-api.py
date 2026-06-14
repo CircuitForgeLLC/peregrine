@@ -8,6 +8,7 @@ import imaplib
 import json
 import logging
 import os
+import ipaddress
 import re
 import socket
 import sqlite3
@@ -25,7 +26,7 @@ import yaml
 from bs4 import BeautifulSoup
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -38,6 +39,7 @@ if str(PEREGRINE_ROOT) not in sys.path:
 
 from circuitforge_core.api import make_feedback_router as _make_feedback_router  # noqa: E402
 from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
+from circuitforge_core.sync import SyncConfig, make_sync_router  # noqa: E402
 from scripts.credential_store import get_credential, set_credential  # noqa: E402
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
@@ -45,6 +47,30 @@ DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 _CLOUD_MODE       = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
 _CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
 _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
+
+# Allowlist for cloud user_id values — UUID format only (prevents path traversal)
+_VALID_USER_ID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+# RFC-1918 + loopback + link-local blocks blocked from IMAP SSRF
+_PRIVATE_NETS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _is_ssrf_host(host: str) -> bool:
+    """Return True if host resolves to a private/loopback address (SSRF guard)."""
+    try:
+        addr = ipaddress.ip_address(socket.gethostbyname(host))
+        return any(addr in net for net in _PRIVATE_NETS)
+    except Exception:
+        return True  # fail closed on resolution errors
 IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 # Resolve GPU inference server URL.
@@ -125,6 +151,43 @@ _feedback_router = _make_feedback_router(
     ),
 )
 app.include_router(_feedback_router, prefix="/api/feedback")
+
+# ── Cross-device sync (cf-core sync module, Paid+ only) ──────────────────────
+
+class _SyncUser:
+    """Minimal user object expected by the cf-core sync router."""
+    def __init__(self, user_id: str) -> None:
+        self.user_id = user_id
+
+def _get_sync_session() -> _SyncUser:
+    """FastAPI dependency: resolves user_id from the per-request DB ContextVar.
+    Returns a fixed 'local' user in single-tenant mode so the prefs/delete
+    endpoints still work for self-hosted users.
+    """
+    db_path = _request_db.get()
+    if db_path:
+        try:
+            user_id = Path(db_path).parts[-3]
+        except IndexError:
+            raise HTTPException(status_code=401, detail="Invalid session")
+    else:
+        user_id = "local"
+    return _SyncUser(user_id)
+
+def _require_paid_sync() -> _SyncUser:
+    """FastAPI dependency: raises 403 unless the resolved tier is paid or premium."""
+    tier = _resolve_cloud_tier()
+    if tier not in ("paid", "premium"):
+        raise HTTPException(status_code=403, detail="Cross-device sync requires a Paid or Premium subscription.")
+    return _get_sync_session()
+
+_sync_router = make_sync_router(
+    product="peregrine",
+    get_session=_get_sync_session,
+    require_paid=_require_paid_sync,
+    config=SyncConfig.from_env("peregrine"),
+)
+app.include_router(_sync_router, prefix="/sync", tags=["sync"])
 
 _log = logging.getLogger("peregrine.session")
 
@@ -220,6 +283,10 @@ async def cloud_session_middleware(request: Request, call_next):
     if _CLOUD_MODE and _DIRECTUS_SECRET:
         cookie_header = request.headers.get("X-CF-Session", "")
         user_id = _resolve_cf_user_id(cookie_header)
+        if user_id:
+            if not _VALID_USER_ID_RE.match(user_id):
+                _log.warning("cloud_session_middleware: rejected non-UUID user_id: %s", user_id[:40])
+                user_id = None
         if user_id:
             first_access = user_id not in _seen_users
             if first_access:
@@ -3596,6 +3663,8 @@ def test_email(payload: dict):
         username = payload.get("username", "")
         if not all([host, username, password]):
             return {"ok": False, "error": "Missing host, username, or password"}
+        if _is_ssrf_host(host):
+            return {"ok": False, "error": "IMAP host must be a public address"}
         if use_ssl:
             ctx = ssl_mod.create_default_context()
             conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
