@@ -23,6 +23,8 @@ services:
       - GPU_SERVER_URL=${GPU_SERVER_URL:-${CF_ORCH_URL:-http://host.docker.internal:7700}}
       - CF_ORCH_URL=${CF_ORCH_URL:-${GPU_SERVER_URL:-http://host.docker.internal:7700}}
       - CF_APP_NAME=peregrine
+      - MNEMO_HOST=${MNEMO_HOST:-mnemo}
+      - MNEMO_PORT=${MNEMO_PORT:-8080}
       - PYTHONUNBUFFERED=1
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -116,6 +118,28 @@ services:
     profiles: [single-gpu, dual-gpu-ollama, dual-gpu-vllm, dual-gpu-mixed]
     restart: unless-stopped
 
+  mnemo:
+    image: ghcr.io/zaydmulani09/mnemo:latest
+    ports:
+      - "${MNEMO_PORT:-8080}:8080"
+    volumes:
+      - mnemo-data:/data
+    environment:
+      - MNEMO_DB_PATH=/data/mnemo.db
+      - MNEMO_LLM_PROVIDER=${MNEMO_LLM_PROVIDER:-ollama}
+      - MNEMO_LLM_BASE_URL=${MNEMO_LLM_BASE_URL:-http://ollama:11434/v1}
+      - MNEMO_LLM_API_KEY=${MNEMO_LLM_API_KEY:-ollama}
+      - MNEMO_LLM_MODEL=${MNEMO_LLM_MODEL:-llama3.2:3b}
+    depends_on:
+      - ollama
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    profiles: [memory]
+    restart: unless-stopped
+
   finetune:
     build:
       context: .
@@ -131,3 +155,6 @@ services:
       - OLLAMA_MODELS_OLLAMA_PATH=/root/.ollama
     profiles: [finetune]
     restart: "no"
+
+volumes:
+  mnemo-data:
