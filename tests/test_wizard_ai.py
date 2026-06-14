@@ -226,8 +226,8 @@ class TestWizardAIInterviewLLM:
         assert "Alex Rivera" in prompt
         assert "alex@example.com" in prompt
 
-    def test_llm_error_returns_500(self, client):
-        """If LLM raises, the endpoint returns 500."""
+    def test_llm_error_returns_503(self, client):
+        """If LLM raises, the endpoint returns 503."""
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("app.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
@@ -236,7 +236,7 @@ class TestWizardAIInterviewLLM:
                         "/api/wizard/ai/interview",
                         json={"history": [{"role": "user", "content": "hi"}]},
                     )
-        assert r.status_code == 500
+        assert r.status_code == 503
 
 
 # ── POST /api/wizard/ai/finalize ──────────────────────────────────────────────

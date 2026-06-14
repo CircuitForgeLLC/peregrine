@@ -4541,8 +4541,13 @@ You must ALWAYS respond with valid JSON in this exact format:
 Only include fields in extracted_fields that you are confident about from the conversation. Do not include fields the user hasn't mentioned. Infer complete=true when all required fields (name, email, career_summary) are gathered or when user explicitly says done."""
 
 
+class HistoryMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
 class WizardInterviewRequest(BaseModel):
-    history: list[dict]  # [{"role": "user"|"assistant", "content": "..."}]
+    history: list[HistoryMessage] = []
     profile_so_far: dict = {}
 
 
@@ -4574,8 +4579,8 @@ def wizard_ai_interview(request: WizardInterviewRequest):
     # Build conversation prompt from history
     conversation_lines = []
     for msg in request.history:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
+        role = msg.role
+        content = msg.content.replace("\n", " ").replace("\r", "")
         if role == "user":
             conversation_lines.append(f"User: {content}")
         else:
@@ -4600,7 +4605,7 @@ def wizard_ai_interview(request: WizardInterviewRequest):
         from scripts.llm_router import LLMRouter
         response_text = LLMRouter().complete(prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
     except Exception as exc:
-        raise HTTPException(500, detail={"error": "llm_error", "message": str(exc)})
+        raise HTTPException(503, detail={"error": "llm_error", "message": str(exc)})
 
     try:
         parsed = json.loads(response_text)
@@ -4617,15 +4622,14 @@ def wizard_ai_interview(request: WizardInterviewRequest):
 def wizard_ai_finalize(request: WizardFinalizeRequest):
     """Merge AI-collected wizard fields into user.yaml. Only allowed fields are written."""
     yaml_path = _user_yaml_path()
-    current = load_user_profile(yaml_path)
-
-    merged_keys = []
-    for key, value in request.profile.items():
-        if key in _WIZARD_ALLOWED_FIELDS:
-            current[key] = value
-            merged_keys.append(key)
-
-    save_user_profile(yaml_path, current)
+    try:
+        current = load_user_profile(yaml_path)
+        updates = {k: v for k, v in request.profile.items() if k in _WIZARD_ALLOWED_FIELDS}
+        merged = {**current, **updates}
+        save_user_profile(yaml_path, merged)
+    except Exception as exc:
+        raise HTTPException(500, detail={"error": "write_error", "message": str(exc)})
+    merged_keys = list(updates.keys())
     return {"saved": True, "fields": merged_keys}
 
 
