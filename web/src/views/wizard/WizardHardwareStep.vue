@@ -13,13 +13,12 @@
         {{ wizard.hardware.gpus.join(', ') }}
       </div>
       <div v-else class="step__info">
-        No local NVIDIA GPUs detected. "Remote", "CPU", or "cf-orch" mode recommended.
+        No local NVIDIA GPUs detected. CPU or cf-orch mode recommended.
       </div>
 
       <div class="step__field">
         <label class="step__label" for="hw-profile">Inference profile</label>
         <select id="hw-profile" v-model="selectedProfile" class="step__select">
-          <option value="remote">Remote — use cloud API keys</option>
           <option value="cpu">CPU — local Ollama, no GPU</option>
           <option value="single-gpu">Single GPU — local Ollama + one GPU</option>
           <option value="dual-gpu">Dual GPU — local Ollama + two GPUs</option>
@@ -27,6 +26,7 @@
             cf-orch — CircuitForge GPU cluster
             {{ orchAvailable ? `(${orchGpus.length} GPU(s) available)` : '(configure endpoint below)' }}
           </option>
+          <option value="remote">Remote — use cloud API keys</option>
         </select>
       </div>
 
@@ -74,7 +74,7 @@
         v-else-if="selectedProfile !== 'remote' && !wizard.hardware.gpus.length"
         class="step__warning"
       >
-        ⚠️ No local GPUs detected — a GPU profile may not work. Choose CPU, Remote,
+        ⚠️ No local GPUs detected — a GPU profile may not work. Choose CPU
         or cf-orch if you have access to the cluster.
       </div>
     </template>
