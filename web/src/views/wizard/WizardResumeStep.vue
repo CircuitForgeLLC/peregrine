@@ -2,7 +2,7 @@
   <div class="step">
     <h2 class="step__heading">Step 3 — Your Resume</h2>
     <p class="step__caption">
-      Upload a resume to auto-populate your profile, or build it manually.
+      Upload a resume to auto-populate your profile, build it manually, or let an AI guide you.
     </p>
 
     <!-- Tabs -->
@@ -13,14 +13,31 @@
         class="resume-tab"
         :class="{ 'resume-tab--active': tab === 'upload' }"
         @click="tab = 'upload'"
-      >Upload File</button>
+      >
+        <span class="resume-tab__icon" aria-hidden="true">📄</span>
+        <span class="resume-tab__label">Upload File</span>
+      </button>
       <button
         role="tab"
         :aria-selected="tab === 'manual'"
         class="resume-tab"
         :class="{ 'resume-tab--active': tab === 'manual' }"
         @click="tab = 'manual'"
-      >Build Manually</button>
+      >
+        <span class="resume-tab__icon" aria-hidden="true">✏️</span>
+        <span class="resume-tab__label">Build Manually</span>
+      </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'ai'"
+        class="resume-tab resume-tab--ai"
+        :class="{ 'resume-tab--active': tab === 'ai' }"
+        @click="tab = 'ai'"
+      >
+        <span class="resume-tab__icon" aria-hidden="true">{{ hasAiAccess ? '✨' : '🔒' }}</span>
+        <span class="resume-tab__label">AI Assistant</span>
+        <span v-if="!hasAiAccess" class="resume-tab__badge">Paid</span>
+      </button>
     </div>
 
     <!-- Upload tab -->
@@ -106,6 +123,34 @@
       </button>
     </div>
 
+    <!-- AI assistant tab -->
+    <div v-if="tab === 'ai'" class="resume-ai">
+      <div v-if="!hasAiAccess" class="ai-gate">
+        <p class="ai-gate__icon" aria-hidden="true">🔒</p>
+        <p class="ai-gate__heading">AI Assistant requires a Paid plan</p>
+        <p class="ai-gate__body">
+          Upgrade to Paid, or bring your own LLM key in
+          <strong>Settings → LLM Backends</strong> to unlock the AI profile assistant for free.
+        </p>
+        <p class="ai-gate__body">
+          In the meantime, use <button class="ai-gate__link" @click="tab = 'upload'">Upload File</button>
+          or <button class="ai-gate__link" @click="tab = 'manual'">Build Manually</button>.
+        </p>
+      </div>
+      <div v-else class="ai-embed">
+        <p class="ai-embed__intro">
+          The AI assistant will ask you a few questions to build your profile.
+          Your answers are saved locally — nothing is sent anywhere without your approval.
+        </p>
+        <a href="/wizard/ai-profile" class="btn-primary ai-embed__cta">
+          Open AI Assistant →
+        </a>
+        <p class="ai-embed__note">
+          Opens in a focused view. Come back here to continue the wizard once you're done.
+        </p>
+      </div>
+    </div>
+
     <div v-if="validationError" class="step__warning" style="margin-top: var(--space-4)">
       {{ validationError }}
     </div>
@@ -120,17 +165,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWizardStore } from '../../stores/wizard'
 import type { WorkExperience } from '../../stores/wizard'
 import { useApiFetch } from '../../composables/useApi'
+import { useAppConfigStore } from '../../stores/appConfig'
 import './wizard.css'
 
 const wizard = useWizardStore()
 const router = useRouter()
+const config = useAppConfigStore()
 
-const tab = ref<'upload' | 'manual'>(
+const hasAiAccess = computed(() => config.tier !== 'free' || config.byokUnlocked)
+
+const tab = ref<'upload' | 'manual' | 'ai'>(
   wizard.resume.experience.length > 0 ? 'manual' : 'upload',
 )
 const dragging = ref(false)
@@ -223,28 +272,67 @@ async function next() {
 <style scoped>
 .resume-tabs {
   display: flex;
-  gap: 0;
-  border-bottom: 2px solid var(--color-border-light);
+  gap: var(--space-2);
+  border-bottom: 2px solid var(--color-border);
   margin-bottom: var(--space-6);
 }
 
 .resume-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-5);
-  background: none;
-  border: none;
+  background: var(--color-surface-alt);
+  border: 1.5px solid var(--color-border);
   border-bottom: 2px solid transparent;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   margin-bottom: -2px;
   cursor: pointer;
   font-family: var(--font-body);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   color: var(--color-text-muted);
-  transition: color var(--transition), border-color var(--transition);
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+
+.resume-tab:hover:not(.resume-tab--active) {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  border-color: var(--color-border);
 }
 
 .resume-tab--active {
+  background: var(--color-surface);
   color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
+  border-color: var(--color-border);
+  border-bottom-color: var(--color-surface);
   font-weight: 600;
+}
+
+.resume-tab--ai.resume-tab--active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-surface);
+}
+
+.resume-tab__icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.resume-tab__label {
+  /* explicit — keeps tab text from being an accessibility mystery */
+}
+
+.resume-tab__badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px var(--space-2);
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: var(--radius-full);
+  margin-left: var(--space-1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .upload-zone {
@@ -309,5 +397,87 @@ async function next() {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-4);
+}
+
+/* ── AI tab panels ──────────────────────────────────── */
+.resume-ai {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.ai-gate {
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--color-surface-alt);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.ai-gate__icon {
+  font-size: 2rem;
+  margin: 0;
+}
+
+.ai-gate__heading {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.ai-gate__body {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  line-height: 1.55;
+  margin: 0;
+  max-width: 380px;
+}
+
+.ai-gate__link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-body);
+  font-size: inherit;
+  color: var(--color-primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ai-embed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-radius: var(--radius-lg);
+}
+
+.ai-embed__intro {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.ai-embed__cta {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ai-embed__note {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin: 0;
 }
 </style>

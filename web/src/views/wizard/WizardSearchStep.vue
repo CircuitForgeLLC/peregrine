@@ -1,6 +1,6 @@
 <template>
   <div class="step">
-    <h2 class="step__heading">Step 6 — Search Preferences</h2>
+    <h2 class="step__heading">Step 7 — Search Preferences</h2>
     <p class="step__caption">
       Tell Peregrine what roles and markets to watch. You can add more profiles
       in Settings → Search later.
