@@ -4280,7 +4280,7 @@ def export_classifier():
 # State is persisted to user.yaml on every step so the wizard can resume
 # after a browser refresh or crash (mirrors the Streamlit wizard behaviour).
 
-_WIZARD_PROFILES = ("remote", "cpu", "single-gpu", "dual-gpu", "cf-orch")
+_WIZARD_PROFILES = ("cpu", "single-gpu", "dual-gpu", "cf-orch", "remote")
 _WIZARD_TIERS = ("free", "paid", "premium")
 
 
@@ -4326,7 +4326,7 @@ def _suggest_profile(gpus: list[str]) -> str:
         return "dual-gpu"
     if len(gpus) == 1:
         return "single-gpu"
-    return "remote"
+    return "cpu"
 
 
 @app.get("/api/wizard/status")
