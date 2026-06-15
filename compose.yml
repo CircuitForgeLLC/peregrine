@@ -3,9 +3,10 @@
 services:
 
   api:
+    image: ghcr.io/circuitforgellc/peregrine:latest
     build:
-      context: ..
-      dockerfile: peregrine/Dockerfile.cfcore
+      context: .
+      dockerfile: Dockerfile
     command: >
       bash -c "uvicorn dev_api:app --host 0.0.0.0 --port 8601"
     volumes:
@@ -31,6 +32,7 @@ services:
     restart: unless-stopped
 
   web:
+    image: ghcr.io/circuitforgellc/peregrine-web:latest
     build:
       context: .
       dockerfile: docker/web/Dockerfile
