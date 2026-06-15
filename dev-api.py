@@ -116,12 +116,35 @@ def _load_demo_seed(db_path: str, seed_file: str) -> None:
         con.close()
 
 
+def _load_data_env() -> None:
+    """Load API keys written by the wizard into the running process.
+
+    The wizard saves keys to <data_dir>/.env (next to staging.db).  The main
+    _load_env() call targets the image-baked /app/.env, which is a different
+    path.  This helper bridges the gap by force-overriding env vars that are
+    unset or empty (compose injects empty strings for optional vars).
+    """
+    data_env = Path(DB_PATH).parent / ".env"
+    if not data_env.exists():
+        return
+    for line in data_env.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if value and not os.environ.get(key):
+            os.environ[key] = value
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load .env, run migrations, and (in demo mode) seed the demo DB."""
     # Load .env before any runtime env reads — safe because lifespan doesn't run
     # when dev_api is imported by tests (only when uvicorn actually starts).
     _load_env(PEREGRINE_ROOT / ".env")
+    # Also load wizard-saved keys from the data directory (overrides empty compose vars).
+    _load_data_env()
     from scripts.db_migrate import migrate_db
     migrate_db(Path(DB_PATH))
 
@@ -1166,8 +1189,16 @@ def apply_resume_to_profile(resume_id: int):
     with open(resume_path, "w", encoding="utf-8") as f:
         yaml.dump(current_profile, f, allow_unicode=True, default_flow_style=False)
 
-    from scripts.db import update_resume_synced_at as _mark_synced
+    from scripts.db import update_resume_synced_at as _mark_synced, set_default_resume as _set_default
     _mark_synced(db_path, resume_id)
+
+    # Establish this entry as the default so future Profile saves sync back to it
+    _set_default(db_path, resume_id)
+    _user_yaml = db_path.parent / "config" / "user.yaml"
+    if _user_yaml.exists():
+        _prof = yaml.safe_load(_user_yaml.read_text(encoding="utf-8")) or {}
+        _prof["default_resume_id"] = resume_id
+        _user_yaml.write_text(yaml.dump(_prof, default_flow_style=False, allow_unicode=True))
 
     return {
         "ok":             True,
@@ -3250,7 +3281,23 @@ async def upload_resume(file: UploadFile):
         resume_path.parent.mkdir(parents=True, exist_ok=True)
         with open(resume_path, "w") as f:
             yaml.dump(result, f, allow_unicode=True, default_flow_style=False)
+
+        # Also add to resume library and mark as default
+        import json as _json
+        from scripts.db import create_resume as _create_r, set_default_resume as _set_default
+        db_path = Path(_request_db.get() or DB_PATH)
+        resume_name = Path(file.filename).stem or "Uploaded Resume"
+        library_entry = _create_r(
+            db_path,
+            name=resume_name,
+            text=raw_text,
+            source="upload",
+            struct_json=_json.dumps(result),
+        )
+        _set_default(db_path, library_entry["id"])
+
         result["exists"] = True
+        result["library_id"] = library_entry["id"]
         return {"ok": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -3312,6 +3359,10 @@ def get_search_prefs():
                 {"name": b, "enabled": True, "supported": b in valid}
                 for b in boards
             ]
+
+        # Normalize title key — wizard saved "titles", settings canonical is "job_titles"
+        if "titles" in profile and "job_titles" not in profile:
+            profile["job_titles"] = profile.pop("titles")
 
         return profile
     except Exception as e:
@@ -3815,6 +3866,26 @@ def get_deploy_config():
 def save_deploy_config(payload: dict):
     # Deployment config changes require restart; just acknowledge
     return {"ok": True, "note": "Restart required to apply changes"}
+
+
+class OrchUrlPayload(BaseModel):
+    orch_url: str = ""
+
+
+@app.get("/api/settings/system/orch-url")
+def get_orch_url():
+    """Return the saved Orchard coordinator URL."""
+    cfg = _load_wizard_yaml()
+    return {"orch_url": cfg.get("cf_orch_url", "")}
+
+
+@app.post("/api/settings/system/orch-url")
+def save_orch_url(payload: OrchUrlPayload):
+    """Persist the Orchard coordinator URL to user.yaml."""
+    cfg = _load_wizard_yaml()
+    cfg["cf_orch_url"] = payload.orch_url.strip()
+    _save_wizard_yaml(cfg)
+    return {"ok": True}
 
 
 # ── Settings: Fine-Tune ───────────────────────────────────────────────────────
@@ -4350,6 +4421,7 @@ def wizard_status():
             "linkedin": cfg.get("linkedin", ""),
             "career_summary": cfg.get("career_summary", ""),
             "services": cfg.get("services", {}),
+            "cf_orch_url": cfg.get("cf_orch_url", ""),
         },
     }
 
@@ -4371,8 +4443,8 @@ def wizard_save_step(payload: WizardStepPayload):
     step = payload.step
     data = payload.data
 
-    if step < 1 or step > 7:
-        raise HTTPException(status_code=400, detail="step must be 1–7")
+    if step < 1 or step > 8:
+        raise HTTPException(status_code=400, detail="step must be 1–8")
 
     updates: dict = {"wizard_step": step}
 
@@ -4398,13 +4470,16 @@ def wizard_save_step(payload: WizardStepPayload):
             with open(resume_path, "w") as f:
                 yaml.dump(resume, f, allow_unicode=True, default_flow_style=False)
 
-    elif step == 4:
+    elif step in (4, 5):
+        # Step 4 (legacy) or step 5 (current) — identity fields.
+        # Step 4 was the original numbering before the training step was inserted
+        # between resume and identity; both are accepted for backward compat.
         for field in ("name", "email", "phone", "linkedin", "career_summary"):
             if field in data:
                 updates[field] = data[field]
 
-    elif step == 5:
-        # Write API keys to .env (never store in user.yaml)
+    elif step == 6:
+        # Step 6 — inference: API keys + optional Orchard coordinator URL.
         env_path = Path(_wizard_yaml_path()).parent.parent / ".env"
         env_lines = env_path.read_text().splitlines() if env_path.exists() else []
 
@@ -4422,18 +4497,24 @@ def wizard_save_step(payload: WizardStepPayload):
             env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_URL", data["openai_url"])
         if data.get("openai_key"):
             env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_KEY", data["openai_key"])
-        if any(data.get(k) for k in ("anthropic_key", "openai_url", "openai_key")):
+        if data.get("orch_url"):
+            env_lines = _set_env_key(env_lines, "GPU_SERVER_URL", data["orch_url"])
+            updates["cf_orch_url"] = data["orch_url"]
+        if any(data.get(k) for k in ("anthropic_key", "openai_url", "openai_key", "orch_url")):
             env_path.parent.mkdir(parents=True, exist_ok=True)
             env_path.write_text("\n".join(env_lines) + "\n")
 
         if "services" in data:
             updates["services"] = data["services"]
 
-    elif step == 6:
-        # Persist search preferences to search_profiles.yaml in canonical format:
-        #   profiles: [{name, titles, locations, boards, ...}]
-        titles = data.get("titles", [])
-        locations = data.get("locations", [])
+    elif step == 7:
+        # Step 7 — search preferences.
+        # Wizard sends { search: { titles, locations, remote_only } }; fall back to
+        # top-level keys for direct API callers that omit the "search" wrapper.
+        search = data.get("search", {})
+        titles = search.get("titles", data.get("titles", data.get("job_titles", [])))
+        locations = search.get("locations", data.get("locations", []))
+        remote_only = search.get("remote_only", data.get("remote_only", False))
         search_path = _search_prefs_path()
         existing_search: dict = {}
         if search_path.exists():
@@ -4450,14 +4531,15 @@ def wizard_save_step(payload: WizardStepPayload):
         if default_profile is None:
             default_profile = {"name": "default"}
             profiles_list.append(default_profile)
-        default_profile["titles"] = titles
+        default_profile["job_titles"] = titles
         default_profile["locations"] = locations
+        default_profile["remote_only"] = remote_only
         existing_search["profiles"] = profiles_list
         search_path.parent.mkdir(parents=True, exist_ok=True)
         with open(search_path, "w") as f:
             yaml.dump(existing_search, f, allow_unicode=True, default_flow_style=False)
 
-    # Step 7 (integrations) has no extra side effects here — connections are
+    # Step 8 (integrations) has no extra side effects here — connections are
     # handled by the existing /api/settings/system/integrations/{id}/connect.
 
     try:
@@ -4484,6 +4566,39 @@ def _fetch_cforch_nodes() -> list[dict]:
         return []
 
 
+def _probe_ollama() -> bool:
+    """Return True if Ollama is reachable from inside the container."""
+    candidates = [
+        "http://host.docker.internal:11434/api/tags",
+        "http://ollama:11434/api/tags",
+    ]
+    for url in candidates:
+        try:
+            r = requests.get(url, timeout=2)
+            if r.status_code == 200:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _probe_searxng() -> bool:
+    """Return True if SearXNG is reachable from inside the container."""
+    candidates = [
+        "http://searxng:8080/",
+        "http://host.docker.internal:8888/",
+        "http://host.docker.internal:8080/",
+    ]
+    for url in candidates:
+        try:
+            r = requests.get(url, timeout=2)
+            if r.status_code < 500:
+                return True
+        except Exception:
+            pass
+    return False
+
+
 @app.get("/api/wizard/hardware")
 def wizard_hardware():
     """Detect local GPUs, suggest an inference profile, and report cf-orch nodes."""
@@ -4502,13 +4617,28 @@ def wizard_hardware():
                 "vram_free_mb": gpu["vram_free_mb"],
             })
 
+    ollama_running = _probe_ollama()
+    searxng_running = _probe_searxng()
+
+    # If no GPU but Ollama is already running, default to cpu rather than remote
+    if suggested == "cpu" and not gpus and not ollama_running:
+        suggested = "remote"
+
     return {
         "gpus": gpus,
         "suggested_profile": suggested,
         "profiles": list(_WIZARD_PROFILES),
         "cf_orch_available": len(orch_nodes) > 0,
         "cf_orch_gpus": orch_summary,
+        "ollama_running": ollama_running,
+        "searxng_running": searxng_running,
     }
+
+
+def _container_safe_url(url: str) -> str:
+    """Replace localhost/127.0.0.1 with host.docker.internal so tests reach the host."""
+    import re as _re
+    return _re.sub(r"(https?://)(?:localhost|127\.0\.0\.1)\b", r"\1host.docker.internal", url)
 
 
 class WizardInferenceTestPayload(BaseModel):
@@ -4516,21 +4646,42 @@ class WizardInferenceTestPayload(BaseModel):
     anthropic_key: str = ""
     openai_url: str = ""
     openai_key: str = ""
+    orch_url: str = ""
     ollama_host: str = "localhost"
     ollama_port: int = 11434
 
 
 @app.post("/api/wizard/inference/test")
 def wizard_test_inference(payload: WizardInferenceTestPayload):
-    """Test LLM or Ollama connectivity.
+    """Test LLM, Ollama, or Orchard coordinator connectivity.
 
-    Always returns {ok, message} — a connection failure is reported as a
-    soft warning (message), not an HTTP error, so the wizard can let the
-    user continue past a temporarily-down Ollama instance.
+    Always returns {ok, message} — a connection failure is a soft warning so
+    the wizard lets the user continue past a temporarily-unreachable service.
     """
-    if payload.profile == "remote":
+    if payload.profile == "cf-orch":
+        orch_url = _container_safe_url(payload.orch_url.rstrip("/")) if payload.orch_url else ""
+        if not orch_url:
+            return {"ok": False, "message": "Enter the Orchard coordinator URL first."}
         try:
-            # Temporarily inject key if provided (don't persist yet)
+            resp = requests.get(f"{orch_url}/api/nodes", timeout=5,
+                                headers={"Accept": "application/json"})
+            if resp.status_code == 200:
+                nodes = resp.json().get("nodes", [])
+                n = len(nodes)
+                return {"ok": True, "message": f"Orchard reachable — {n} node(s) online."}
+            return {"ok": False, "message": f"Orchard returned HTTP {resp.status_code}."}
+        except Exception as exc:
+            return {
+                "ok": False,
+                "message": (
+                    f"Cannot reach Orchard at {payload.orch_url} — "
+                    "check the URL and that the coordinator is running. "
+                    f"({exc})"
+                ),
+            }
+
+    elif payload.profile == "remote":
+        try:
             env_override = {}
             if payload.anthropic_key:
                 env_override["ANTHROPIC_API_KEY"] = payload.anthropic_key
@@ -4554,15 +4705,16 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
                         os.environ[k] = v
         except Exception as exc:
             return {"ok": False, "message": f"LLM test failed: {exc}"}
+
     else:
-        # Local profile — ping Ollama
-        ollama_url = f"http://{payload.ollama_host}:{payload.ollama_port}"
+        # Local profiles (cpu, single-gpu, dual-gpu) — ping Ollama
+        host = payload.ollama_host or "localhost"
+        ollama_url = _container_safe_url(f"http://{host}:{payload.ollama_port}")
         try:
             resp = requests.get(f"{ollama_url}/api/tags", timeout=5)
             ok = resp.status_code == 200
             message = "Ollama is running." if ok else f"Ollama returned HTTP {resp.status_code}."
         except Exception:
-            # Soft-fail: user can skip and configure later
             return {
                 "ok": False,
                 "message": (

@@ -55,7 +55,20 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     })
     loading.value = false
     if (err || !data) {
-      error.value = 'Could not reach the assistant. Please try again.'
+      if (err?.kind === 'http' && err.status === 402) {
+        error.value = 'AI profile assistant requires a Paid plan or a BYOK API key.'
+      } else if (err?.kind === 'http' && err.status === 503) {
+        try {
+          const body = JSON.parse(err.detail) as { detail?: { error?: string } }
+          error.value = body.detail?.error === 'llm_error'
+            ? 'No LLM backend configured — add an API key in Settings → System first.'
+            : 'Could not reach the assistant. Please try again.'
+        } catch {
+          error.value = 'Could not reach the assistant. Please try again.'
+        }
+      } else {
+        error.value = 'Could not reach the assistant. Please try again.'
+      }
       return
     }
     messages.value = [...messages.value, { role: 'assistant', content: data.reply }]

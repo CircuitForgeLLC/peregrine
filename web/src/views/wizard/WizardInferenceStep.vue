@@ -1,6 +1,6 @@
 <template>
   <div class="step">
-    <h2 class="step__heading">Step 5 — Inference & API Keys</h2>
+    <h2 class="step__heading">Step 6 — Inference & API Keys</h2>
     <p class="step__caption">
       Configure how Peregrine generates AI content. You can adjust this any time
       in Settings → System.
@@ -36,7 +36,35 @@
       </div>
     </template>
 
-    <!-- Local mode -->
+    <!-- Orchard mode -->
+    <template v-else-if="isCfOrch">
+      <div class="step__info">
+        Orchard mode: Peregrine routes AI generation through the CircuitForge GPU cluster.
+      </div>
+
+      <div class="step__field">
+        <label class="step__label" for="inf-orch-url">Orchard coordinator URL</label>
+        <input id="inf-orch-url" v-model="form.orchUrl" type="url"
+               class="step__input" placeholder="https://orch.circuitforge.tech" />
+      </div>
+
+      <div v-if="isPaid" class="step__check-row">
+        <label class="step__checkbox-label">
+          <input
+            type="checkbox"
+            class="step__checkbox"
+            :checked="form.orchUrl === MANAGED_ORCH_URL"
+            @change="onUseManagedOrchard"
+          />
+          <span>Use CircuitForge managed Orchard</span>
+        </label>
+        <span class="step__check-hint">
+          Auto-fills your Paid+ cluster endpoint ({{ MANAGED_ORCH_URL }})
+        </span>
+      </div>
+    </template>
+
+    <!-- Local mode (CPU / single-gpu / dual-gpu) -->
     <template v-else>
       <div class="step__info">
         Local mode ({{ wizard.hardware.selectedProfile }}): Peregrine uses
@@ -81,12 +109,19 @@
 import { reactive, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWizardStore } from '../../stores/wizard'
+import { useAppConfigStore } from '../../stores/appConfig'
 import './wizard.css'
 
 const wizard = useWizardStore()
+const config = useAppConfigStore()
 const router = useRouter()
 
+const MANAGED_ORCH_URL = 'https://orch.circuitforge.tech'
+
 const isRemote = computed(() => wizard.hardware.selectedProfile === 'remote')
+const isCfOrch = computed(() => wizard.hardware.selectedProfile === 'cf-orch')
+const isPaid = computed(() => config.tier !== 'free')
+
 const showAdvanced = ref(false)
 const testing = ref(false)
 const testResult = ref<{ ok: boolean; message: string } | null>(null)
@@ -95,12 +130,29 @@ const form = reactive({
   anthropicKey: wizard.inference.anthropicKey,
   openaiUrl: wizard.inference.openaiUrl,
   openaiKey: wizard.inference.openaiKey,
+  orchUrl: wizard.inference.orchUrl,
 })
 
+const savedSvcs = wizard.inference.services as Record<string, string | number>
 const services = reactive([
-  { key: 'ollama', label: 'Ollama', host: 'ollama', port: 11434 },
-  { key: 'searxng', label: 'SearXNG', host: 'searxng', port: 8080 },
+  {
+    key: 'ollama',
+    label: 'Ollama',
+    host: (savedSvcs['ollama_host'] as string) || wizard.inference.ollamaHost || 'localhost',
+    port: (savedSvcs['ollama_port'] as number) || wizard.inference.ollamaPort || 11434,
+  },
+  {
+    key: 'searxng',
+    label: 'SearXNG',
+    host: (savedSvcs['searxng_host'] as string) || 'searxng',
+    port: (savedSvcs['searxng_port'] as number) || 8080,
+  },
 ])
+
+function onUseManagedOrchard(e: Event) {
+  const checked = (e.target as HTMLInputElement).checked
+  form.orchUrl = checked ? MANAGED_ORCH_URL : ''
+}
 
 async function runTest() {
   testing.value = true
@@ -108,6 +160,12 @@ async function runTest() {
   wizard.inference.anthropicKey = form.anthropicKey
   wizard.inference.openaiUrl = form.openaiUrl
   wizard.inference.openaiKey = form.openaiKey
+  wizard.inference.orchUrl = form.orchUrl
+  const ollamaSvc = services.find(s => s.key === 'ollama')
+  if (ollamaSvc) {
+    wizard.inference.ollamaHost = ollamaSvc.host
+    wizard.inference.ollamaPort = ollamaSvc.port
+  }
   testResult.value = await wizard.testInference()
   testing.value = false
 }
@@ -115,10 +173,10 @@ async function runTest() {
 function back() { router.push('/setup/identity') }
 
 async function next() {
-  // Sync form back to store
   wizard.inference.anthropicKey = form.anthropicKey
   wizard.inference.openaiUrl = form.openaiUrl
   wizard.inference.openaiKey = form.openaiKey
+  wizard.inference.orchUrl = form.orchUrl
 
   const svcMap: Record<string, string | number> = {}
   services.forEach(s => {
@@ -131,6 +189,7 @@ async function next() {
     anthropic_key: form.anthropicKey,
     openai_url: form.openaiUrl,
     openai_key: form.openaiKey,
+    orch_url: form.orchUrl,
     services: svcMap,
   })
   if (ok) router.push('/setup/search')
@@ -165,5 +224,34 @@ async function next() {
 
 .svc-port {
   text-align: right;
+}
+
+.step__check-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.step__checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.step__checkbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.step__check-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  padding-left: calc(1rem + var(--space-2));
 }
 </style>

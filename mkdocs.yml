@@ -52,6 +52,7 @@ nav:
     - First-Run Wizard: getting-started/first-run-wizard.md
     - Docker Profiles: getting-started/docker-profiles.md
   - User Guide:
+    - Daily Workflow: user-guide/daily-workflow.md
     - Job Discovery: user-guide/job-discovery.md
     - Job Review: user-guide/job-review.md
     - Apply Workspace: user-guide/apply-workspace.md
