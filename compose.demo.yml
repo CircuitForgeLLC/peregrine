@@ -16,6 +16,7 @@
 services:
 
   api:
+    image: ghcr.io/circuitforgellc/peregrine:latest
     build: .
     command: >
       bash -c "uvicorn dev_api:app --host 0.0.0.0 --port 8601"
@@ -42,6 +43,8 @@ services:
     # No host port — nginx proxies /api/ → api:8601 internally
 
   web:
+    # Built with VITE_BASE_PATH=/peregrine/ — not the same as the published
+    # peregrine-web:latest image (which uses base path /). Always build locally.
     build:
       context: .
       dockerfile: docker/web/Dockerfile
