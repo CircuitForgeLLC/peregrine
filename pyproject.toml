@@ -6,8 +6,9 @@ exclude = ["app/"]
 [tool.ruff.lint.per-file-ignores]
 # dev-api.py / dev_api.py (symlink): E702 semicolons in compact Pydantic model
 # definitions — intentional style for dense data models with many simple fields.
-"dev-api.py" = ["E702"]
-"dev_api.py" = ["E702"]
+# E402: mid-file module-level imports are intentional in dev-api.py for test patchability.
+"dev-api.py" = ["E702", "E402"]
+"dev_api.py" = ["E702", "E402"]
 
 # finetune_local.py: E402 ML libs (torch, datasets, trl) are imported after
 # runtime CUDA / Unsloth availability checks — conditional import pattern.
