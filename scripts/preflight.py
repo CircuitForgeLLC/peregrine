@@ -348,14 +348,14 @@ def write_compose_override(ports: dict[str, dict]) -> None:
     for name, info in to_disable.items():
         lines += [
             f"  {name}:  # adopted — host service on :{info['resolved']}",
-            f"    entrypoint: [\"/bin/sh\", \"-c\", \"sleep infinity\"]",
-            f"    ports: []",
-            f"    healthcheck:",
-            f"      test: [\"CMD\", \"true\"]",
-            f"      interval: 1s",
-            f"      timeout: 1s",
-            f"      start_period: 0s",
-            f"      retries: 1",
+            "    entrypoint: [\"/bin/sh\", \"-c\", \"sleep infinity\"]",
+            "    ports: []",
+            "    healthcheck:",
+            "      test: [\"CMD\", \"true\"]",
+            "      interval: 1s",
+            "      timeout: 1s",
+            "      start_period: 0s",
+            "      retries: 1",
         ]
 
     OVERRIDE_YML.write_text("\n".join(lines) + "\n")

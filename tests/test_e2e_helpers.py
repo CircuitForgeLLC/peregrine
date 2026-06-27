@@ -1,5 +1,4 @@
 """Unit tests for E2E harness models and helper utilities."""
-import fnmatch
 import pytest
 from unittest.mock import patch, MagicMock
 import time

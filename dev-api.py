@@ -14,7 +14,6 @@ import sqlite3
 import ssl as ssl_mod
 import subprocess
 import sys
-import threading
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,7 +38,7 @@ if str(PEREGRINE_ROOT) not in sys.path:
 
 from circuitforge_core.api import make_feedback_router as _make_feedback_router  # noqa: E402
 from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
-from scripts.credential_store import get_credential, set_credential, delete_credential  # noqa: E402
+from scripts.credential_store import get_credential, set_credential  # noqa: E402
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 
@@ -738,7 +737,6 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
       3. render_resume_text()     — renders to plain text for the preview panel
       Returns: {preview_text, preview_struct} — struct preserved for the approve step.
     """
-    import json as _json
     from scripts.db import get_resume_draft as _get_draft
     from scripts.resume_optimizer import (
         apply_review_decisions, frame_skill_gaps, render_resume_text,
@@ -759,7 +757,6 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
     # Step 2: inject gap framing for rejected skills (adjacent / learning)
     framings = [f.model_dump() for f in body.gap_framings if f.mode in ("adjacent", "learning")]
     if framings:
-        db_path_obj = Path(_request_db.get() or DB_PATH)
         job_row = _get_db().execute(
             "SELECT title, company FROM jobs WHERE id=?", (job_id,)
         ).fetchone()
@@ -829,7 +826,6 @@ def approve_resume(job_id: int, body: dict):
     saved_resume_id: int | None = None
     if body.get("save_to_library"):
         from scripts.db import create_resume as _create_r
-        import json as _json2
         resume_name = (body.get("resume_name") or "").strip() or f"Optimized for job {job_id}"
         saved = _create_r(
             db_path,
@@ -926,7 +922,7 @@ def create_resume_endpoint(body: dict):
 
 @app.post("/api/resumes/import")
 async def import_resume_endpoint(file: UploadFile, name: str = ""):
-    import os, tempfile, json as _json
+    import json as _json
     from scripts.db import create_resume as _create
     db_path = Path(_request_db.get() or DB_PATH)
     content = await file.read()
@@ -1462,14 +1458,8 @@ def calendar_push(job_id: int):
 # ── Survey endpoints ─────────────────────────────────────────────────────────
 
 # Module-level imports so tests can patch dev_api.LLMRouter etc.
-from scripts.llm_router import LLMRouter
 from scripts.db import insert_survey_response, get_survey_responses
 
-from scripts.survey_assistant import (
-    SURVEY_SYSTEM as _SURVEY_SYSTEM,
-    build_text_prompt as _build_text_prompt,
-    build_image_prompt as _build_image_prompt,
-)
 
 
 @app.get("/api/vision/health")
@@ -4352,7 +4342,8 @@ def _fetch_cforch_nodes() -> list[dict]:
     if not url:
         return []
     try:
-        import urllib.request, json as _json
+        import urllib.request
+        import json as _json
         req = urllib.request.Request(f"{url}/api/nodes", headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = _json.loads(resp.read())

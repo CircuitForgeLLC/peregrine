@@ -12,7 +12,7 @@ import pytest
 from dotenv import load_dotenv
 from playwright.sync_api import Page, BrowserContext
 
-from tests.e2e.models import ErrorRecord, ModeConfig, diff_errors
+from tests.e2e.models import ErrorRecord, ModeConfig
 from tests.e2e.modes.demo import DEMO
 from tests.e2e.modes.cloud import CLOUD
 from tests.e2e.modes.local import LOCAL

@@ -3,7 +3,6 @@
 import sqlite3
 import threading
 from collections import deque
-from pathlib import Path
 
 import pytest
 
@@ -192,7 +191,6 @@ def test_max_queue_depth_logs_warning(tmp_db, caplog):
     """Queue depth overflow logs a WARNING."""
     import logging
     from scripts.db import insert_task
-    from scripts.task_scheduler import TaskSpec
 
     s = TaskScheduler(tmp_db, _noop_run_task)
     s._max_queue_depth = 0  # immediately at limit

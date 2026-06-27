@@ -1,7 +1,6 @@
 """Tests for scripts/db_migrate.py — numbered SQL migration runner."""
 
 import sqlite3
-import textwrap
 from pathlib import Path
 
 import pytest
