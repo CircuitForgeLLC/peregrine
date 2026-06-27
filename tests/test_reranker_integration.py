@@ -4,7 +4,6 @@
 Set CF_RERANKER_MOCK=1 to avoid loading real model weights during tests.
 """
 import os
-import pytest
 from unittest.mock import patch
 
 os.environ["CF_RERANKER_MOCK"] = "1"

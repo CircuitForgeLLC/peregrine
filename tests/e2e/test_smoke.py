@@ -7,8 +7,7 @@ Run: pytest tests/e2e/test_smoke.py --mode=demo
 from __future__ import annotations
 import pytest
 
-from tests.e2e.conftest import wait_for_streamlit, get_page_errors, get_console_errors, screenshot_on_fail
-from tests.e2e.models import ModeConfig
+from tests.e2e.conftest import wait_for_streamlit, screenshot_on_fail
 from tests.e2e.pages.home_page import HomePage
 from tests.e2e.pages.job_review_page import JobReviewPage
 from tests.e2e.pages.apply_page import ApplyPage

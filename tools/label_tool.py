@@ -352,8 +352,8 @@ with tab_fetch:
 
     if not accounts:
         st.warning(
-            f"No accounts configured. Copy `config/label_tool.yaml.example` → "
-            f"`config/label_tool.yaml` and add your IMAP accounts.",
+            "No accounts configured. Copy `config/label_tool.yaml.example` → "
+            "`config/label_tool.yaml` and add your IMAP accounts.",
             icon="⚠️",
         )
     else:

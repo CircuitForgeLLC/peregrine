@@ -1,9 +1,6 @@
 """Tests for /api/resumes/* endpoints."""
-import json
 import io
 import sqlite3
-import tempfile
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient

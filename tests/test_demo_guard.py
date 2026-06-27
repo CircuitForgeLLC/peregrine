@@ -1,6 +1,5 @@
 """IS_DEMO write-block guard tests."""
 import importlib
-import os
 import sqlite3
 
 import pytest

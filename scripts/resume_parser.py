@@ -9,11 +9,9 @@ Falls back to empty dict on unrecoverable errors — caller shows the form build
 from __future__ import annotations
 
 import io
-import json
 import logging
 import re
 import zipfile
-from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pdfplumber
