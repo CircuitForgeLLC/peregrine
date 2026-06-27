@@ -1,6 +1,4 @@
-import pytest
-import os
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 
 def test_no_op_in_local_mode(monkeypatch):

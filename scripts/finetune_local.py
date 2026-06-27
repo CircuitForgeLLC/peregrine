@@ -323,6 +323,6 @@ if gguf_path and gguf_path.exists():
 else:
     print(f"\n{'='*60}")
     print("  Adapter saved (no GGUF produced).")
-    print(f"  Re-run without --no-gguf to generate a GGUF for Ollama registration.")
+    print("  Re-run without --no-gguf to generate a GGUF for Ollama registration.")
     print(f"  Adapter path: {adapter_path}")
     print(f"{'='*60}\n")

@@ -1,6 +1,4 @@
 """Integration tests for messaging endpoints."""
-import os
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient

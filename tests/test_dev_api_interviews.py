@@ -1,7 +1,5 @@
 """Tests for new dev-api.py endpoints: stage signals, email sync, signal dismiss."""
 import sqlite3
-import tempfile
-import os
 import pytest
 from fastapi.testclient import TestClient
 
