@@ -1,8 +1,6 @@
 import json
 import pytest
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 import jwt as pyjwt

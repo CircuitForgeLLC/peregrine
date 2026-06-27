@@ -1,7 +1,4 @@
-import pytest
 import sqlite3
-from pathlib import Path
-from unittest.mock import patch
 
 
 def test_init_db_creates_jobs_table(tmp_path):

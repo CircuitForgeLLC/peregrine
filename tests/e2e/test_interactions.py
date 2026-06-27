@@ -9,9 +9,9 @@ from __future__ import annotations
 import pytest
 
 from tests.e2e.conftest import (
-    wait_for_streamlit, get_page_errors, screenshot_on_fail,
+    wait_for_streamlit, screenshot_on_fail,
 )
-from tests.e2e.models import ModeConfig, diff_errors
+from tests.e2e.models import diff_errors
 from tests.e2e.pages.home_page import HomePage
 from tests.e2e.pages.job_review_page import JobReviewPage
 from tests.e2e.pages.apply_page import ApplyPage

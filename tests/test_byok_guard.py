@@ -1,5 +1,4 @@
 """Tests for BYOK cloud backend detection."""
-import pytest
 from scripts.byok_guard import is_cloud_backend, cloud_backends
 
 

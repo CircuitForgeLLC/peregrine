@@ -186,7 +186,7 @@ def build_prompt(
             )
         parts.append(f"{recruiter_note}\n")
 
-    parts.append(f"Now write a new cover letter for:")
+    parts.append("Now write a new cover letter for:")
     parts.append(f"  Role: {title}")
     parts.append(f"  Company: {company}")
     if description:
