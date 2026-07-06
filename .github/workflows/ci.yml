@@ -22,6 +22,9 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      - name: Install circuitforge-core
+        run: pip install git+https://git.opensourcesolarpunk.com/Circuit-Forge/circuitforge-core.git@main
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
