@@ -35,6 +35,10 @@ jobs:
         run: ruff check .
 
       - name: Test
+        env:
+          STAGING_DB: /tmp/peregrine-ci.db
+          CLOUD_DATA_ROOT: /tmp/peregrine-ci-cloud
+          PEREGRINE_LOG_DIR: /tmp/peregrine-ci-logs
         run: pytest tests/ -v --tb=short
 
   frontend:
