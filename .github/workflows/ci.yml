@@ -29,7 +29,7 @@ jobs:
         run: pip install git+https://git.opensourcesolarpunk.com/Circuit-Forge/circuitforge-core.git@main
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt ruff pytest
 
       - name: Lint
         run: ruff check .
