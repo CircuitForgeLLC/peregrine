@@ -13,6 +13,12 @@ paths = [
     'app/feedback\.py',
     'app/pages/2_Settings\.py',
     'app/pages/7_Survey\.py',
+    'app/Home\.py',                               # key= params on purge/danger-zone buttons
+    # Vue component files: localStorage keys are widget identifiers, not secrets
+    'web/src/components/WelcomeModal\.vue',       # LS_KEY = 'peregrine_demo_visited'
+    'web/src/components/__tests__/WelcomeModal\.test\.ts',  # same LS_KEY in test
+    'web/src/views/MessagingView\.vue',           # OSPREY_HOVER_KEY localStorage counter
+    'web/src/views/ReferencesView\.vue',          # placeholder="+1 555 000 0000" in form
     # SearXNG default config: change-me-in-production is a well-known public placeholder
     'docker/searxng/settings\.yml',
 ]
@@ -29,4 +35,5 @@ regexes = [
     # Phone number false positives: 555 area code variants not caught by base allowlist
     '555\) \d{3}-\d{4}',
     '555-\d{3}-\d{4}',
+    '\+1 555 \d{3} \d{4}',                       # +1 555 NNN NNNN spaced format
 ]
