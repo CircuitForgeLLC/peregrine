@@ -1,5 +1,5 @@
 site_name: Peregrine
-site_description: AI-powered job search pipeline
+site_description: Job search pipeline — tailor your resume to clear ATS filters, discover jobs, draft cover letters, and track applications.
 site_author: Circuit Forge LLC
 site_url: https://docs.circuitforge.tech/peregrine
 repo_url: https://git.opensourcesolarpunk.com/pyr0ball/peregrine
@@ -31,6 +31,7 @@ theme:
 
 markdown_extensions:
   - admonition
+  - attr_list
   - pymdownx.details
   - pymdownx.superfences:
       custom_fences:
@@ -71,6 +72,7 @@ nav:
     - Tier System: reference/tier-system.md
     - LLM Router: reference/llm-router.md
     - Config Files: reference/config-files.md
+  - All CF Docs: https://docs.circuitforge.tech
 
 extra_javascript:
   - plausible.js
