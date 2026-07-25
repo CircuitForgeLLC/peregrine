@@ -625,7 +625,7 @@ with tab_stats:
         st.markdown(f"**{len(labeled)} labeled emails total**")
 
         # Show known labels first, then any custom labels
-        all_display_labels = list(LABELS) + [l for l in counts if l not in LABELS]
+        all_display_labels = list(LABELS) + [lbl for lbl in counts if lbl not in LABELS]
         max_count = max(counts.values()) if counts else 1
         for lbl in all_display_labels:
             if lbl not in counts:

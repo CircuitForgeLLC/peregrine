@@ -70,7 +70,7 @@ cd peregrine
 ./manage.sh start
 ```
 
-Open **http://localhost:8502** — the setup wizard walks you through the rest.
+Open **http://localhost:8506** — the setup wizard walks you through the rest.
 
 > **macOS / Apple Silicon:** install Ollama natively via Homebrew before starting for Metal GPU-accelerated inference. `install.sh` handles this automatically.
 > **Windows:** use WSL2 with Ubuntu.
@@ -78,10 +78,11 @@ Open **http://localhost:8502** — the setup wizard walks you through the rest.
 ### Inference profiles
 
 ```bash
-./manage.sh start                       # remote — no GPU; LLM calls go to Anthropic / OpenAI
-./manage.sh start --profile cpu         # local Ollama on CPU (or Metal via native Ollama on macOS)
+./manage.sh start                       # cpu — local Ollama on CPU (recommended default)
 ./manage.sh start --profile single-gpu  # Ollama + vision on GPU 0 (NVIDIA only)
 ./manage.sh start --profile dual-gpu    # Ollama + vLLM on two NVIDIA GPUs
+./manage.sh start --profile cf-orch     # no local LLM — route to CircuitForge GPU cluster
+./manage.sh start --profile remote      # no local LLM — use cloud API keys
 ```
 
 ---
@@ -109,7 +110,7 @@ Open **http://localhost:8502** — the setup wizard walks you through the rest.
 | **Voice guidelines** (custom writing style and tone) | Premium with LLM ¹ |
 | Cover letter model fine-tuning — your writing, your model | Premium |
 | Multi-user support | Premium |
-| Human-in-the-loop operator (CAPTCHAs, phone calls, wet signatures) | Ultra |
+| Human-in-the-loop operator (CAPTCHAs, phone calls, wet signatures) | Premium |
 
 ¹ **BYOK (bring your own key) unlock:** configure any LLM backend — a local [Ollama](https://ollama.com) or vLLM instance, or your own API key (Anthropic, OpenAI-compatible) — and all "Free with LLM" and "Premium with LLM" features unlock at no charge.
 
@@ -179,5 +180,9 @@ Peregrine uses a split license:
 | LLM features — cover letter generation, company research, interview prep, survey assistant, fine-tuning | [BSL 1.1](LICENSE-BSL) — free for personal non-commercial self-hosting; commercial use or SaaS re-hosting requires a paid license; converts to MIT after four years |
 
 Fine-tuned model weights are proprietary and per-user — not redistributable.
+
+---
+
+Humans own design, architecture, code review, testing, and verification. LLMs are part of our development workflow. [Our positions on LLM use →](https://circuitforge.tech/positions)
 
 © 2026 Circuit Forge LLC

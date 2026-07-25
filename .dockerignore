@@ -3,17 +3,20 @@ __pycache__
 *.pyc
 *.pyo
 staging.db
+# gitignored secrets — belt-and-suspenders with the RUN rm -f in Dockerfile
 config/user.yaml
+config/plain_text_resume.yaml
 config/notion.yaml
 config/email.yaml
 config/tokens.yaml
 config/craigslist.yaml
+config/adzuna.yaml
+.env
 .streamlit.pid
 .streamlit.log
 aihawk/
 docs/
 tests/
-.env
 data/
 log/
 unsloth_compiled_cache/

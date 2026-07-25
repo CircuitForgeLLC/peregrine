@@ -9,6 +9,7 @@
     <header class="review__header">
       <div class="review__title-row">
         <h1 class="review__title">Review Jobs</h1>
+        <a href="https://docs.circuitforge.tech/peregrine/user-guide/job-review/" target="_blank" rel="noopener" class="review__docs-link" aria-label="Job Review documentation">? Docs</a>
         <button class="help-btn" :aria-expanded="showHelp" @click="showHelp = !showHelp">
           <span aria-hidden="true">?</span>
           <span class="sr-only">Keyboard shortcuts</span>
@@ -429,6 +430,17 @@ onUnmounted(() => {
   flex: 1;
 }
 
+.review__docs-link {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.review__docs-link:hover { color: var(--color-primary); border-color: var(--color-primary); }
 .help-btn {
   width: 32px;
   height: 32px;

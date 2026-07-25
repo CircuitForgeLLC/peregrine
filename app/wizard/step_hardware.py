@@ -1,6 +1,6 @@
 """Step 1 — Hardware detection and inference profile selection."""
 
-PROFILES = ["remote", "cpu", "single-gpu", "dual-gpu"]
+PROFILES = ["cpu", "single-gpu", "dual-gpu", "cf-orch", "remote"]
 
 
 def validate(data: dict) -> list[str]:

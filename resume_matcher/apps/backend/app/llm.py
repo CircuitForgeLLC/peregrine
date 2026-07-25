@@ -152,6 +152,62 @@ async def _allocate_orch_async(
                 logging.debug("cf-orch release failed (non-fatal): %s", exc)
 
 
+@asynccontextmanager
+async def _allocate_by_task(
+    coordinator_url: str,
+    product: str,
+    task: str,
+    ttl_s: float,
+    caller: str,
+):
+    """Allocate via the task-model assignment layer (POST /api/inference/task).
+
+    Resolves product+task → model_id → service+node automatically.
+    Falls back gracefully: if the coordinator returns 404 (no assignment),
+    raises RuntimeError so the caller can fall back to model_candidates routing.
+    """
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        payload: dict[str, Any] = {
+            "product": product,
+            "task": task,
+            "payload": {"ttl_s": ttl_s, "caller": caller},
+        }
+        uid = get_request_user_id()
+        if uid:
+            payload["payload"]["user_id"] = uid
+        resp = await client.post(
+            f"{coordinator_url.rstrip('/')}/api/inference/task",
+            json=payload,
+        )
+        if resp.status_code == 404:
+            raise RuntimeError(
+                f"No task assignment for product={product!r} task={task!r}; "
+                "falling back to model_candidates routing"
+            )
+        if not resp.is_success:
+            raise RuntimeError(
+                f"cf-orch task allocation failed for {product}/{task}: "
+                f"HTTP {resp.status_code} — {resp.text[:200]}"
+            )
+        data = resp.json()
+        service = data.get("service_type", "vllm")
+        alloc = _OrchAllocation(
+            allocation_id=data["allocation_id"],
+            url=data["url"],
+            service=service,
+        )
+        try:
+            yield alloc
+        finally:
+            try:
+                await client.delete(
+                    f"{coordinator_url.rstrip('/')}/api/services/{service}/allocations/{alloc.allocation_id}",
+                    timeout=10.0,
+                )
+            except Exception as exc:
+                logging.debug("cf-orch task release failed (non-fatal): %s", exc)
+
+
 def _normalize_api_base(provider: str, api_base: str | None) -> str | None:
     """Normalize api_base for LiteLLM provider-specific expectations.
 
@@ -497,11 +553,41 @@ async def complete(
     config: LLMConfig | None = None,
     max_tokens: int = 4096,
     temperature: float = 0.7,
+    task_name: str | None = None,
 ) -> str:
-    """Make a completion request to the LLM."""
+    """Make a completion request to the LLM.
+
+    When task_name is provided and CF_ORCH_URL is set, routing is resolved via
+    the task-model assignment layer (POST /api/inference/task) instead of using
+    hardcoded model_candidates.  Falls back to model_candidates routing if the
+    assignment is missing, then to the default config if cf-orch is unavailable.
+    """
     if config is None:
         cf_orch_url = os.environ.get("CF_ORCH_URL", "").strip()
         if cf_orch_url:
+            # Task-routing path: preferred when a task name is known.
+            if task_name:
+                try:
+                    async with _allocate_by_task(
+                        cf_orch_url,
+                        product="peregrine",
+                        task=task_name,
+                        ttl_s=300.0,
+                        caller="peregrine-resume-matcher",
+                    ) as alloc:
+                        orch_config = LLMConfig(
+                            provider="openai",
+                            model="__auto__",
+                            api_key="any",
+                            api_base=alloc.url.rstrip("/") + "/v1",
+                        )
+                        return await complete(prompt, system_prompt, orch_config, max_tokens, temperature)
+                except RuntimeError as exc:
+                    logging.warning(
+                        "cf-orch task routing failed for %r, falling back to model_candidates: %s",
+                        task_name, exc,
+                    )
+            # Model-candidates path: legacy routing or task fallback.
             try:
                 # Premium/ultra users get their personal fine-tuned writing model as the
                 # first candidate; the base model is the fallback so cf-orch can

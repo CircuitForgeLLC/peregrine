@@ -136,6 +136,29 @@
       <p v-if="store.deployError" class="error-msg">{{ store.deployError }}</p>
     </section>
 
+    <!-- Orchard coordinator -->
+    <section class="form-section">
+      <h3>Orchard Coordinator</h3>
+      <p class="section-note">
+        The Orchard is CircuitForge's distributed GPU cluster. Requires a Paid license or higher.
+        Leave blank to disable Orchard routing.
+      </p>
+      <div class="field-row">
+        <label>Coordinator URL</label>
+        <input
+          v-model="orchUrl"
+          type="url"
+          placeholder="https://orch.circuitforge.tech"
+          class="field-input-wide"
+        />
+        <button @click="saveOrchUrl" :disabled="orchSaving" class="btn-save-inline">
+          {{ orchSaving ? 'Saving…' : 'Save' }}
+        </button>
+      </div>
+      <p v-if="orchError" class="error">{{ orchError }}</p>
+      <p v-if="orchSaved" class="success">Saved.</p>
+    </section>
+
     <!-- BYOK Modal -->
     <Teleport to="body">
       <div v-if="store.byokPending.length > 0" class="modal-overlay" @click.self="store.cancelByok()">
@@ -250,12 +273,39 @@ async function saveCoverLetterModel() {
   setTimeout(() => { clmSaved.value = false }, 3000)
 }
 
+// ── Orchard coordinator URL ───────────────────────────────────────────────────
+const orchUrl    = ref('')
+const orchSaving = ref(false)
+const orchError  = ref<string | null>(null)
+const orchSaved  = ref(false)
+
+async function loadOrchUrl() {
+  const { data } = await useApiFetch<{ orch_url: string }>('/api/settings/system/orch-url')
+  if (data) orchUrl.value = data.orch_url ?? ''
+}
+
+async function saveOrchUrl() {
+  orchSaving.value = true
+  orchError.value  = null
+  orchSaved.value  = false
+  const { error } = await useApiFetch('/api/settings/system/orch-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orch_url: orchUrl.value }),
+  })
+  orchSaving.value = false
+  if (error) { orchError.value = 'Failed to save.'; return }
+  orchSaved.value = true
+  setTimeout(() => { orchSaved.value = false }, 3000)
+}
+
 onMounted(async () => {
   await store.loadLlm()
   const tasks = [
     store.loadServices(),
     store.loadFilePaths(),
     store.loadDeployConfig(),
+    loadOrchUrl(),
   ]
   if (config.isCloud && tierOrder.indexOf(tier.value) >= tierOrder.indexOf('paid')) {
     tasks.push(loadCoverLetterModel())
@@ -328,6 +378,7 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .field-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
 .field-row label { font-size: 0.82rem; color: var(--color-text-muted); }
 .field-row input { background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); padding: 7px 10px; font-size: 0.88rem; }
+.field-input-wide { width: 100%; max-width: 400px; }
 .field-hint { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 3px; }
 .btn-secondary { padding: 9px 18px; background: transparent; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text-muted); cursor: pointer; font-size: 0.88rem; }
 .btn-danger {

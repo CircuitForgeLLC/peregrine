@@ -1,6 +1,6 @@
 <template>
   <div class="step">
-    <h2 class="step__heading">Step 7 — Integrations</h2>
+    <h2 class="step__heading">Step 8 — Integrations</h2>
     <p class="step__caption">
       Optional. Connect external tools to supercharge your workflow.
       You can configure these any time in Settings → System.
@@ -54,6 +54,7 @@ const wizard = useWizardStore()
 const config = useAppConfigStore()
 const router = useRouter()
 
+
 const isPaid = computed(() =>
   wizard.tier === 'paid' || wizard.tier === 'premium',
 )
@@ -87,7 +88,12 @@ async function finish() {
   // Save integration selections (step 7) then mark wizard complete
   await wizard.saveStep(8, { integrations: [...checkedIds.value] })
   const ok = await wizard.complete()
-  if (ok) router.replace('/')
+  if (ok) {
+    // Update store before navigating so the router guard sees wizard as complete
+    // without waiting for a full config.load() round-trip.
+    config.wizardComplete = true
+    router.replace('/')
+  }
 }
 </script>
 

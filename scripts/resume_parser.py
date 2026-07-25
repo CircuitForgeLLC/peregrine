@@ -19,6 +19,14 @@ from docx import Document
 
 log = logging.getLogger(__name__)
 
+# Browser print artifact patterns — lines injected when a PDF is printed from a browser
+# (print header "MM/DD/YY, H:MM AM/PM <title>" and print footer "file:///... N/N")
+_BROWSER_ARTIFACT_RE = re.compile(
+    r"^file:///"                                                      # file:// URL footer
+    r"|^\d{1,2}/\d{1,2}/\d{2,4},\s+\d{1,2}:\d{2}\s+[AP]M\b",       # MM/DD/YY, H:MM AM/PM header
+    re.I,
+)
+
 # ── Section header detection ──────────────────────────────────────────────────
 
 _SECTION_NAMES = {
@@ -27,6 +35,8 @@ _SECTION_NAMES = {
     "education":  re.compile(r"^(education|academic|qualifications|degrees?|educational background|academic background)\s*:?\s*$", re.I),
     "skills":     re.compile(r"^(skills?|technical skills?|core competencies|competencies|expertise|areas? of expertise|key skills?|proficiencies|tools? & technologies)\s*:?\s*$", re.I),
     "achievements": re.compile(r"^(achievements?|accomplishments?|awards?|honors?|certifications?|publications?|volunteer)\s*:?\s*$", re.I),
+    "projects":     re.compile(r"^(projects?|independent development|independent projects?|side projects?|personal projects?|open.?source|portfolio)\s*:?\s*$", re.I),
+    "references": re.compile(r"^references?\s*:?\s*$", re.I),
 }
 
 # Degrees — used to detect education lines
@@ -163,6 +173,8 @@ def _split_sections(text: str) -> dict[str, list[str]]:
         stripped = line.strip()
         if not stripped:
             continue
+        if _BROWSER_ARTIFACT_RE.match(stripped):
+            continue
         matched = False
         for section, pattern in _SECTION_NAMES.items():
             # Match if the line IS a section header (short + matches pattern)
@@ -232,10 +244,14 @@ def _parse_experience(lines: list[str]) -> list[dict]:
       (A) Title | Company          (B) Title | Company | Dates
           Dates                        • bullet
           • bullet
+      (C) Title\tDates             (tab-separated, common in DOCX exports)
+          Company | Location
+          • bullet
     """
     entries: list[dict] = []
     current: dict | None = None
     prev_line = ""
+    seen_bullets = False  # True once we've appended the first bullet to current
 
     for line in lines:
         date_match = _DATE_RANGE_RE.search(line)
@@ -243,12 +259,13 @@ def _parse_experience(lines: list[str]) -> list[dict]:
             if current:
                 entries.append(current)
             # Title/company extraction — three layouts:
-            #  (A) Title on prev_line, "Company | Location | Dates" on date line
+            #  (A) Title on prev_line (not a bullet), "Company | Location | Dates" on date line
             #  (B) "Title | Company" on prev_line, dates on date line (same_line empty)
             #  (C) "Title | Company | Dates" all on one line
             same_line = _DATE_RANGE_RE.sub("", line)
             # Remove residual punctuation-only fragments like "()" left after date removal
             same_line = re.sub(r"[()[\]{}\s]+$", "", same_line).strip(" –—|-•")
+            # Only use prev_line as title if it isn't bullet text (cleared after bullets)
             if prev_line and same_line.strip():
                 # Layout A: title = prev_line, company = first segment of same_line
                 title   = prev_line.strip()
@@ -268,8 +285,19 @@ def _parse_experience(lines: list[str]) -> list[dict]:
                 "bullets":    [],
             }
             prev_line = ""
+            seen_bullets = False
         elif current is not None:
             is_bullet = bool(re.match(r"^[•\-–—*◦▪▸►]\s*", line))
+
+            # Layout C: company/location on the line immediately after the date line,
+            # before any bullets. Short non-date line = company, not a next-job header.
+            if (not is_bullet and not seen_bullets and not current["company"]
+                    and not _DATE_RE.search(line) and len(line.strip()) < 80):
+                co_part = re.split(r"\s{2,}|[|,]\s*", line.strip(), maxsplit=1)[0]
+                current["company"] = co_part.strip()
+                prev_line = ""
+                continue
+
             looks_like_header = (
                 not is_bullet
                 and " | " in line
@@ -282,7 +310,10 @@ def _parse_experience(lines: list[str]) -> list[dict]:
                 clean = re.sub(r"^[•\-–—*◦▪▸►]\s*", "", line).strip()
                 if clean:
                     current["bullets"].append(clean)
-                prev_line = line
+                    seen_bullets = True
+                # Clear prev_line after non-header content so the next date match
+                # doesn't mistake a bullet as a job title (Layout A false-positive).
+                prev_line = ""
         else:
             prev_line = line
 
@@ -294,39 +325,77 @@ def _parse_experience(lines: list[str]) -> list[dict]:
 
 # ── Education ─────────────────────────────────────────────────────────────────
 
+_INSTITUTION_RE = re.compile(r"\b(university|college|institute|school|academy)\b", re.I)
+
+
 def _parse_education(lines: list[str]) -> list[dict]:
+    """Parse education entries.
+
+    Primary path: degree keyword detected (B.S., Master, etc.)
+    Fallback path: year range detected without a degree keyword — handles resumes
+    with courses, programmes, or non-degree study (e.g. "San Jose State University  2005-2006").
+    """
     entries: list[dict] = []
     current: dict | None = None
     prev_line = ""
 
     for line in lines:
-        if _DEGREE_RE.search(line):
+        has_degree = bool(_DEGREE_RE.search(line))
+        date_range = _DATE_RANGE_RE.search(line)
+        has_year   = bool(re.search(r"\b(19|20)\d{2}\b", line))
+
+        if has_degree or (has_year and date_range):
             if current:
                 entries.append(current)
-            current = {
-                "institution":      "",
-                "degree":           "",
-                "field":            "",
-                "graduation_year":  "",
-            }
+            current = {"institution": "", "degree": "", "field": "", "graduation_year": ""}
+
             year_m = re.search(r"\b(19|20)\d{2}\b", line)
             if year_m:
                 current["graduation_year"] = year_m.group(0)
-            degree_m = _DEGREE_RE.search(line)
-            if degree_m:
-                current["degree"] = degree_m.group(0).upper()
-            remainder = _DEGREE_RE.sub("", _DATE_RE.sub("", line))
-            remainder = re.sub(r"\b(19|20)\d{2}\b", "", remainder)
-            current["field"] = remainder.strip(" ,–—|•.")
-            # Layout A: institution was on the line before the degree line
-            if prev_line and not _DEGREE_RE.search(prev_line):
-                current["institution"] = prev_line.strip(" ,–—|•")
-        elif current is not None and not current["institution"]:
-            # Layout B: institution follows the degree line
-            clean = line.strip(" ,–—|•")
+
+            if has_degree:
+                degree_m = _DEGREE_RE.search(line)
+                if degree_m:
+                    current["degree"] = degree_m.group(0).upper()
+                remainder = _DEGREE_RE.sub("", _DATE_RE.sub("", line))
+                remainder = re.sub(r"\b(19|20)\d{2}\b", "", remainder)
+                current["field"] = remainder.strip(" ,–—|•.")
+                if prev_line and not _DEGREE_RE.search(prev_line) and not _DATE_RE.search(prev_line):
+                    current["institution"] = prev_line.strip(" ,–—|•")
+            else:
+                # Fallback: year-range line without a degree keyword.
+                # Two layouts:
+                #   (A) PDF: "Graphic Design, 2005–2006" with institution on prev_line
+                #   (B) DOCX: "San Jose State University\t2005-2006" — institution on same line
+                same = _DATE_RANGE_RE.sub("", line)
+                same = re.sub(r"\b(19|20)\d{2}\b", "", same).strip(" ,–—|•\t")
+                prev_clean = prev_line.strip(" ,–—|•") if prev_line else ""
+
+                if same and _INSTITUTION_RE.search(prev_clean):
+                    # Layout A: institution on prev_line (e.g. "San Jose State University")
+                    current["institution"] = prev_clean
+                    current["field"] = same
+                elif same:
+                    # Layout B: institution embedded on same line as year
+                    current["institution"] = same
+                elif prev_clean:
+                    current["institution"] = prev_clean
+
+            prev_line = ""  # consumed; prevent leaking into the next entry
+
+        elif current is not None:
+            clean = line.strip(" ,–—|•\t")
             if clean:
-                current["institution"] = clean
-        prev_line = line.strip()
+                if not current["institution"]:
+                    current["institution"] = clean
+                elif not current["field"]:
+                    current["field"] = clean
+                    prev_line = ""  # field consumed — don't seed the next entry
+                    continue
+            prev_line = line.strip()
+
+        else:
+            prev_line = line.strip()
 
     if current:
         entries.append(current)
@@ -336,13 +405,39 @@ def _parse_education(lines: list[str]) -> list[dict]:
 
 # ── Skills ────────────────────────────────────────────────────────────────────
 
+def _split_skill_tokens(line: str) -> list[str]:
+    """Split a skills line on delimiters, but not on commas inside parentheses.
+
+    Splits on |, •, ·, tab first (always separators), then on comma only when
+    paren depth is zero — so "CRM Ticketing (Jira, Salesforce)" stays intact.
+    """
+    tokens: list[str] = []
+    for part in re.split(r"[|•·\t]+", line):
+        depth, buf = 0, ""
+        for ch in part:
+            if ch == "(":
+                depth += 1
+                buf += ch
+            elif ch == ")":
+                depth -= 1
+                buf += ch
+            elif ch == "," and depth == 0:
+                tokens.append(buf)
+                buf = ""
+            else:
+                buf += ch
+        tokens.append(buf)
+    return tokens
+
+
 def _parse_skills(lines: list[str]) -> list[str]:
     skills: list[str] = []
     for line in lines:
-        # Split on common delimiters
-        for item in re.split(r"[,|•·/]+", line):
-            clean = item.strip(" -–—*◦▪▸►()")
-            if 1 < len(clean) <= 50:
+        for item in _split_skill_tokens(line):
+            # Strip only bullet/dash markers and whitespace, NOT parentheses —
+            # many skills contain parens, e.g. "C++ (Arduino / Embedded)"
+            clean = item.strip(" -–—*◦▪▸►")
+            if 1 < len(clean) <= 60:
                 skills.append(clean)
     return skills
 

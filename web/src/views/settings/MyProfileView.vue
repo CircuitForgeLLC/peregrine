@@ -5,6 +5,26 @@
       <p class="subtitle">Your identity and preferences used for cover letters, research, and interview prep.</p>
     </header>
 
+    <!-- ── AI wizard entry point ──────────────────────────── -->
+    <div class="wizard-cta" :class="hasWizardAccess ? 'wizard-cta--unlocked' : 'wizard-cta--locked'">
+      <div class="wizard-cta__body">
+        <span class="wizard-cta__icon" aria-hidden="true">✦</span>
+        <div>
+          <p class="wizard-cta__heading">Set up your profile with AI</p>
+          <p class="wizard-cta__desc">
+            <template v-if="hasWizardAccess">Answer a few questions and the assistant fills in your profile automatically.</template>
+            <template v-else>Upgrade to Paid, or bring your own LLM key, to use the AI profile assistant.</template>
+          </p>
+        </div>
+      </div>
+      <RouterLink v-if="hasWizardAccess" to="/wizard/ai-profile" class="btn-wizard">
+        Start AI setup
+      </RouterLink>
+      <RouterLink v-else to="/settings/license" class="btn-wizard btn-wizard--upgrade">
+        Upgrade
+      </RouterLink>
+    </div>
+
     <div v-if="store.loading" class="loading-state">Loading profile…</div>
 
     <template v-else>
@@ -204,7 +224,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useProfileStore } from '../../stores/settings/profile'
 import { useAppConfigStore } from '../../stores/appConfig'
@@ -213,6 +234,8 @@ import { useApiFetch } from '../../composables/useApi'
 const store = useProfileStore()
 const { loadError } = storeToRefs(store)
 const config = useAppConfigStore()
+
+const hasWizardAccess = computed(() => config.tier !== 'free' || config.byokUnlocked)
 
 const newNdaCompany = ref('')
 const generatingSummary = ref(false)
@@ -290,7 +313,106 @@ async function generateVoice() {
 }
 
 .page-header {
+  margin-bottom: var(--space-4);
+}
+
+/* ── AI wizard callout ─────────────────────────────── */
+.wizard-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
   margin-bottom: var(--space-6);
+  border: 1px solid var(--color-border-light);
+}
+
+.wizard-cta--unlocked {
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.wizard-cta--locked {
+  background: var(--color-surface-raised);
+}
+
+.wizard-cta__body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex: 1;
+}
+
+.wizard-cta__icon {
+  font-size: 1.25rem;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.wizard-cta--locked .wizard-cta__icon {
+  color: var(--color-text-muted);
+}
+
+.wizard-cta__heading {
+  margin: 0 0 var(--space-1);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.wizard-cta__desc {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.btn-wizard {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-5);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  min-height: 40px;
+  transition: background var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-wizard:hover {
+  background: var(--color-primary-hover);
+}
+
+.btn-wizard--upgrade {
+  background: none;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.btn-wizard--upgrade:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+@media (max-width: 600px) {
+  .wizard-cta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .btn-wizard {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .page-header h2 {

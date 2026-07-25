@@ -5,11 +5,12 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def client():
-    import sys
-    sys.path.insert(0, "/Library/Development/CircuitForge/peregrine/.worktrees/feature-vue-spa")
-    from dev_api import app
-    return TestClient(app)
+def client(monkeypatch):
+    import importlib
+    monkeypatch.delenv("DEMO_MODE", raising=False)
+    import dev_api
+    importlib.reload(dev_api)
+    return TestClient(dev_api.app)
 
 
 # ── /api/jobs/{id}/research ─────────────────────────────────────────────────

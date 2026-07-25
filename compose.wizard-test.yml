@@ -1,0 +1,62 @@
+# compose.wizard-test.yml — Fresh first-run instance for testing wizard/onboarding flows
+#
+# Spins up on port 8507 with ephemeral storage so every `docker compose restart`
+# gives a completely clean slate. Perfect for exercising the onboarding wizard,
+# AI interview, and first-run UX without touching the real data.
+#
+# Usage:
+#   docker compose -f compose.wizard-test.yml --project-name peregrine-wizard up -d
+#   docker compose -f compose.wizard-test.yml --project-name peregrine-wizard restart api
+#   docker compose -f compose.wizard-test.yml --project-name peregrine-wizard down
+
+services:
+
+  api:
+    image: ghcr.io/circuitforgellc/peregrine:latest   # same image as main compose
+    command: >
+      bash -c "uvicorn dev_api:app --host 0.0.0.0 --port 8601"
+    volumes:
+      - ./config/wizard-test:/app/config   # LLM config only — no user.yaml triggers wizard
+    tmpfs:
+      - /app/data                           # ephemeral DB; wipes on restart → clean first-run every time
+    environment:
+      - STAGING_DB=/app/data/staging.db
+      - DOCS_DIR=/tmp/wizard-test-docs
+      - PYTHONUNBUFFERED=1
+      - CF_ORCH_URL=http://host.docker.internal:7700
+      - CF_APP_NAME=peregrine
+      - GPU_SERVER_URL=http://host.docker.internal:7700
+      - HEIMDALL_URL=http://host.docker.internal:8000    # license check — skip for local testing
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      searxng:
+        condition: service_healthy
+    restart: unless-stopped
+    # No host port — nginx in web proxies /api/ → api:8601
+
+  web:
+    image: ghcr.io/circuitforgellc/peregrine-web:latest   # same image as main compose
+    ports:
+      - "8507:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    volumes:
+      - ./docker/searxng:/etc/searxng:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped

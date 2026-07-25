@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../composables/useApi'
 
-export type WizardProfile = 'remote' | 'cpu' | 'single-gpu' | 'dual-gpu'
+export type WizardProfile = 'remote' | 'cpu' | 'single-gpu' | 'dual-gpu' | 'cf-orch'
 export type WizardTier = 'free' | 'paid' | 'premium'
 
 export interface WorkExperience {
@@ -36,6 +36,7 @@ export interface WizardInferenceData {
   anthropicKey: string
   openaiUrl: string
   openaiKey: string
+  orchUrl: string
   ollamaHost: string
   ollamaPort: number
   services: Record<string, string | number>
@@ -90,7 +91,8 @@ export const useWizardStore = defineStore('wizard', () => {
     anthropicKey: '',
     openaiUrl: '',
     openaiKey: '',
-    ollamaHost: 'localhost',
+    orchUrl: '',
+    ollamaHost: '',
     ollamaPort: 11434,
     services: {},
     confirmed: false,
@@ -127,6 +129,7 @@ export const useWizardStore = defineStore('wizard', () => {
         wizard_step: number
         saved_data: {
           inference_profile?: string
+          cf_orch_url?: string
           tier?: string
           name?: string
           email?: string
@@ -143,6 +146,8 @@ export const useWizardStore = defineStore('wizard', () => {
 
       if (saved.inference_profile)
         hardware.value.selectedProfile = saved.inference_profile as WizardProfile
+      if (saved.cf_orch_url)
+        inference.value.orchUrl = saved.cf_orch_url as string
       if (saved.tier)
         tier.value = saved.tier as WizardTier
       if (saved.name) identity.value.name = saved.name
@@ -222,6 +227,7 @@ export const useWizardStore = defineStore('wizard', () => {
       anthropic_key: inference.value.anthropicKey,
       openai_url: inference.value.openaiUrl,
       openai_key: inference.value.openaiKey,
+      orch_url: inference.value.orchUrl,
       ollama_host: inference.value.ollamaHost,
       ollama_port: inference.value.ollamaPort,
     }
