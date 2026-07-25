@@ -4677,12 +4677,19 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
     the wizard lets the user continue past a temporarily-unreachable service.
     """
     if payload.profile == "cf-orch":
-        orch_url = _container_safe_url(payload.orch_url.rstrip("/")) if payload.orch_url else ""
-        if not orch_url:
+        if not payload.orch_url:
             return {"ok": False, "message": "Enter the Orchard coordinator URL first."}
+        # Cloud (multi-tenant) mode: block requests to internal/private addresses —
+        # self-hosted mode intentionally allows LAN/localhost Orchard nodes.
+        if _CLOUD_MODE:
+            orch_host = urlparse(payload.orch_url).hostname
+            if not orch_host or _is_ssrf_host(orch_host):
+                return {"ok": False, "message": "Orchard URL must be a public, non-internal address."}
+        orch_url = _container_safe_url(payload.orch_url.rstrip("/"))
         try:
             resp = requests.get(f"{orch_url}/api/nodes", timeout=5,
-                                headers={"Accept": "application/json"})
+                                headers={"Accept": "application/json"},
+                                allow_redirects=False)
             if resp.status_code == 200:
                 nodes = resp.json().get("nodes", [])
                 n = len(nodes)
@@ -4727,9 +4734,13 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
     else:
         # Local profiles (cpu, single-gpu, dual-gpu) — ping Ollama
         host = payload.ollama_host or "localhost"
+        # Cloud (multi-tenant) mode: block requests to internal/private addresses —
+        # self-hosted mode intentionally allows LAN/localhost Ollama instances.
+        if _CLOUD_MODE and _is_ssrf_host(host):
+            return {"ok": False, "message": "Ollama host must be a public, non-internal address."}
         ollama_url = _container_safe_url(f"http://{host}:{payload.ollama_port}")
         try:
-            resp = requests.get(f"{ollama_url}/api/tags", timeout=5)
+            resp = requests.get(f"{ollama_url}/api/tags", timeout=5, allow_redirects=False)
             ok = resp.status_code == 200
             message = "Ollama is running." if ok else f"Ollama returned HTTP {resp.status_code}."
         except Exception:
