@@ -3137,10 +3137,11 @@ def _tokens_path() -> Path:
     return _config_dir() / "tokens.yaml"
 
 def _normalize_experience(raw: list) -> list:
-    """Normalize AIHawk-style experience entries to the Vue WorkEntry schema.
+    """Normalize AIHawk-style and resume_parser.py entries to the Vue WorkEntry schema.
 
-    AIHawk stores:  key_responsibilities (numbered dicts), employment_period, skills_acquired
-    Vue WorkEntry:  responsibilities (str), period (str), skills (list)
+    AIHawk stores:        key_responsibilities (numbered dicts), employment_period, skills_acquired
+    resume_parser.py:      start_date, end_date, bullets (list of strings)
+    Vue WorkEntry:         responsibilities (str), period (str), skills (list)
     If already in Vue format (has 'period' key or 'responsibilities' key), pass through unchanged.
     """
     out = []
@@ -3156,6 +3157,23 @@ def _normalize_experience(raw: list) -> list:
                 "location":         e.get("location", ""),
                 "industry":         e.get("industry", ""),
                 "responsibilities": e.get("responsibilities", ""),
+                "skills":           e.get("skills") or [],
+            })
+            continue
+        # scripts/resume_parser.py format
+        if "start_date" in e or "bullets" in e:
+            start = e.get("start_date", "")
+            end = e.get("end_date", "")
+            period = f"{start} - {end}" if start or end else ""
+            bullets = e.get("bullets", [])
+            resp_text = "\n".join(str(b) for b in bullets) if isinstance(bullets, list) else str(bullets)
+            out.append({
+                "title":            e.get("title", ""),
+                "company":          e.get("company", ""),
+                "period":           period,
+                "location":         e.get("location", ""),
+                "industry":         e.get("industry", ""),
+                "responsibilities": resp_text,
                 "skills":           e.get("skills") or [],
             })
             continue
