@@ -231,23 +231,23 @@ class TestWizardStep:
                                 json={"step": 5, "data": {"services": {"ollama_host": "localhost"}}})
         assert r.status_code == 200
 
-    def test_step6_writes_search_profiles(self, client, tmp_path):
+    def test_step7_writes_search_profiles(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         search_path = tmp_path / "config" / "search_profiles.yaml"
         _write_user_yaml(yaml_path, {})
         with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
             with patch("dev_api._search_prefs_path", return_value=search_path):
                 r = client.post("/api/wizard/step",
-                                json={"step": 6, "data": {
+                                json={"step": 7, "data": {
                                     "titles": ["Software Engineer", "Backend Developer"],
                                     "locations": ["Remote", "Austin, TX"],
                                 }})
         assert r.status_code == 200
         assert search_path.exists()
         prefs = yaml.safe_load(search_path.read_text())
-        # Step 6 writes canonical {profiles: [{name, titles, locations, ...}]} format
+        # Step 7 writes canonical {profiles: [{name, job_titles, locations, ...}]} format
         default = next(p for p in prefs["profiles"] if p["name"] == "default")
-        assert default["titles"] == ["Software Engineer", "Backend Developer"]
+        assert default["job_titles"] == ["Software Engineer", "Backend Developer"]
         assert "Remote" in default["locations"]
 
     def test_step7_only_advances_counter(self, client, tmp_path):

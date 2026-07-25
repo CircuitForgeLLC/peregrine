@@ -51,8 +51,14 @@ def test_status_disabled_in_demo_mode(monkeypatch):
     assert resp.json() == {"enabled": False}
 
 
-def test_status_disabled_in_cloud_mode(monkeypatch):
-    """Status is disabled when CLOUD_MODE=1 (peregrine-specific rule).
+def test_status_enabled_in_cloud_mode_with_token(monkeypatch):
+    """Status is enabled in CLOUD_MODE as long as a token is present (peregrine#118).
+
+    Feedback used to be unconditionally disabled in cloud mode as a placeholder
+    until bot-token routing (FORGEJO_BOT_TOKEN) existed. That routing is now
+    wired (circuitforge_core.api.feedback prioritizes FORGEJO_BOT_TOKEN over
+    FORGEJO_API_TOKEN), so cloud mode no longer needs its own disable path —
+    only the public, unauthenticated DEMO_MODE does.
 
     _CLOUD_MODE is evaluated at import time, so we patch the module-level
     bool rather than the env var (the module is already cached in sys.modules).
@@ -64,7 +70,7 @@ def test_status_disabled_in_cloud_mode(monkeypatch):
     c = TestClient(_dev_api_mod.app)
     resp = c.get("/api/feedback/status")
     assert resp.status_code == 200
-    assert resp.json() == {"enabled": False}
+    assert resp.json() == {"enabled": True}
 
 
 # ---------------------------------------------------------------------------

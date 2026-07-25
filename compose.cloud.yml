@@ -37,6 +37,7 @@ services:
       - HEIMDALL_ADMIN_TOKEN=${HEIMDALL_ADMIN_TOKEN}
       - PYTHONUNBUFFERED=1
       - FORGEJO_API_TOKEN=${FORGEJO_API_TOKEN:-}
+      - FORGEJO_BOT_TOKEN=${FORGEJO_BOT_TOKEN:-}
       - GPU_SERVER_URL=${GPU_SERVER_URL:-http://host.docker.internal:7700}
       - CF_ORCH_URL=${CF_ORCH_URL:-${GPU_SERVER_URL:-http://host.docker.internal:7700}}
       - CF_APP_NAME=peregrine

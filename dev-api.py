@@ -180,9 +180,7 @@ app.add_middleware(
 _feedback_router = _make_feedback_router(
     repo="Circuit-Forge/peregrine",
     product="peregrine",
-    demo_mode_fn=lambda: (
-        _CLOUD_MODE or os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
-    ),
+    demo_mode_fn=lambda: os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes"),
 )
 app.include_router(_feedback_router, prefix="/api/feedback")
 
@@ -4455,8 +4453,8 @@ def wizard_save_step(payload: WizardStepPayload):
 
     Side effects by step number:
     - Step 3 (Resume): writes config/plain_text_resume.yaml
-    - Step 5 (Inference): writes API keys into .env
-    - Step 6 (Search): writes config/search_profiles.yaml
+    - Step 6 (Inference): writes API keys / Orchard URL into .env
+    - Step 7 (Search): writes config/search_profiles.yaml
     """
     step = payload.step
     data = payload.data
