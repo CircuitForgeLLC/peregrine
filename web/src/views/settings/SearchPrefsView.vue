@@ -1,6 +1,9 @@
 <template>
   <div class="search-prefs">
-    <h2>Search Preferences</h2>
+    <div class="page-header">
+      <h2>Search Preferences</h2>
+      <a :href="docsUrl" target="_blank" rel="noopener" class="help-link" aria-label="Search Preferences documentation">? Help</a>
+    </div>
     <p v-if="store.loadError" class="error-banner">{{ store.loadError }}</p>
 
     <!-- Remote Preference -->
@@ -154,8 +157,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useSearchStore } from '../../stores/settings/search'
+import { useDocsUrl } from '../../composables/useDocsUrl'
 
 const store = useSearchStore()
+const docsUrl = useDocsUrl('user-guide/settings/#search-prefs')
 
 const remoteOptions = [
   { value: 'remote' as const, label: 'Remote only' },
@@ -186,6 +191,10 @@ onMounted(() => store.load())
 
 <style scoped>
 .search-prefs { max-width: 720px; margin: 0 auto; padding: var(--space-4); }
+.page-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-6); }
+.page-header h2 { margin-bottom: 0; }
+.help-link { font-size: 0.75rem; color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: var(--radius-full); padding: 2px 8px; text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+.help-link:hover { color: var(--color-primary); border-color: var(--color-primary); }
 h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: var(--space-6); }
 h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .form-section { margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--color-border); }

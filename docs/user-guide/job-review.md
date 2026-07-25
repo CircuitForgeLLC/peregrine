@@ -1,6 +1,7 @@
 # Job Review
 
-![Peregrine job review triage](../screenshots/02-review.png)
+![Peregrine job review triage](../screenshots/02-review.png){ .only-light }
+![Peregrine job review triage](../screenshots/02-review-dark.png){ .only-dark }
 
 The Job Review page is where you approve or reject newly discovered jobs before they enter the application pipeline.
 

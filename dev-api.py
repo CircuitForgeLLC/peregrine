@@ -8,6 +8,7 @@ import imaplib
 import json
 import logging
 import os
+import ipaddress
 import re
 import socket
 import sqlite3
@@ -25,7 +26,7 @@ import yaml
 from bs4 import BeautifulSoup
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -38,14 +39,48 @@ if str(PEREGRINE_ROOT) not in sys.path:
 
 from circuitforge_core.api import make_feedback_router as _make_feedback_router  # noqa: E402
 from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
+from circuitforge_core.sync import SyncConfig, make_sync_router  # noqa: E402
 from scripts.credential_store import get_credential, set_credential  # noqa: E402
+from scripts.rate_limit import limiter, rate_limit_exceeded_handler  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 
 _CLOUD_MODE       = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
 _CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
 _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
+
+# Allowlist for cloud user_id values — UUID format only (prevents path traversal)
+_VALID_USER_ID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+# RFC-1918 + loopback + link-local blocks blocked from IMAP SSRF
+_PRIVATE_NETS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _is_ssrf_host(host: str) -> bool:
+    """Return True if host resolves to a private/loopback address (SSRF guard)."""
+    try:
+        addr = ipaddress.ip_address(socket.gethostbyname(host))
+        return any(addr in net for net in _PRIVATE_NETS)
+    except Exception:
+        return True  # fail closed on resolution errors
 IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
+
+# ── Rate limiting (LLM generation endpoints) ──────────────────────────────────
+_RL_COVER_LETTER = os.environ.get("LLM_RATE_COVER_LETTER", "20/hour")
+_RL_RESEARCH     = os.environ.get("LLM_RATE_RESEARCH", "10/hour")
+_RL_QA_SUGGEST   = os.environ.get("LLM_RATE_QA_SUGGEST", "60/hour")
+_RL_SURVEY       = os.environ.get("LLM_RATE_SURVEY", "30/hour")
+_RL_WIZARD       = os.environ.get("LLM_RATE_WIZARD", "60/hour")
 
 # Resolve GPU inference server URL.
 # Priority: GPU_SERVER_URL → CF_ORCH_URL (backward compat) → cloud default when licensed.
@@ -81,12 +116,35 @@ def _load_demo_seed(db_path: str, seed_file: str) -> None:
         con.close()
 
 
+def _load_data_env() -> None:
+    """Load API keys written by the wizard into the running process.
+
+    The wizard saves keys to <data_dir>/.env (next to staging.db).  The main
+    _load_env() call targets the image-baked /app/.env, which is a different
+    path.  This helper bridges the gap by force-overriding env vars that are
+    unset or empty (compose injects empty strings for optional vars).
+    """
+    data_env = Path(DB_PATH).parent / ".env"
+    if not data_env.exists():
+        return
+    for line in data_env.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if value and not os.environ.get(key):
+            os.environ[key] = value
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load .env, run migrations, and (in demo mode) seed the demo DB."""
     # Load .env before any runtime env reads — safe because lifespan doesn't run
     # when dev_api is imported by tests (only when uvicorn actually starts).
     _load_env(PEREGRINE_ROOT / ".env")
+    # Also load wizard-saved keys from the data directory (overrides empty compose vars).
+    _load_data_env()
     from scripts.db_migrate import migrate_db
     migrate_db(Path(DB_PATH))
 
@@ -109,6 +167,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Peregrine Dev API", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -125,6 +185,43 @@ _feedback_router = _make_feedback_router(
     ),
 )
 app.include_router(_feedback_router, prefix="/api/feedback")
+
+# ── Cross-device sync (cf-core sync module, Paid+ only) ──────────────────────
+
+class _SyncUser:
+    """Minimal user object expected by the cf-core sync router."""
+    def __init__(self, user_id: str) -> None:
+        self.user_id = user_id
+
+def _get_sync_session() -> _SyncUser:
+    """FastAPI dependency: resolves user_id from the per-request DB ContextVar.
+    Returns a fixed 'local' user in single-tenant mode so the prefs/delete
+    endpoints still work for self-hosted users.
+    """
+    db_path = _request_db.get()
+    if db_path:
+        try:
+            user_id = Path(db_path).parts[-3]
+        except IndexError:
+            raise HTTPException(status_code=401, detail="Invalid session")
+    else:
+        user_id = "local"
+    return _SyncUser(user_id)
+
+def _require_paid_sync() -> _SyncUser:
+    """FastAPI dependency: raises 403 unless the resolved tier is paid or premium."""
+    tier = _resolve_cloud_tier()
+    if tier not in ("paid", "premium"):
+        raise HTTPException(status_code=403, detail="Cross-device sync requires a Paid or Premium subscription.")
+    return _get_sync_session()
+
+_sync_router = make_sync_router(
+    product="peregrine",
+    get_session=_get_sync_session,
+    require_paid=_require_paid_sync,
+    config=SyncConfig.from_env("peregrine"),
+)
+app.include_router(_sync_router, prefix="/sync", tags=["sync"])
 
 _log = logging.getLogger("peregrine.session")
 
@@ -220,6 +317,10 @@ async def cloud_session_middleware(request: Request, call_next):
     if _CLOUD_MODE and _DIRECTUS_SECRET:
         cookie_header = request.headers.get("X-CF-Session", "")
         user_id = _resolve_cf_user_id(cookie_header)
+        if user_id:
+            if not _VALID_USER_ID_RE.match(user_id):
+                _log.warning("cloud_session_middleware: rejected non-UUID user_id: %s", user_id[:40])
+                user_id = None
         if user_id:
             first_access = user_id not in _seen_users
             if first_access:
@@ -512,7 +613,8 @@ def save_cover_letter(job_id: int, body: CoverLetterBody):
 # ── POST /api/jobs/:id/cover_letter/generate ─────────────────────────────────
 
 @app.post("/api/jobs/{job_id}/cover_letter/generate")
-def generate_cover_letter(job_id: int):
+@limiter.limit(_RL_COVER_LETTER)
+def generate_cover_letter(job_id: int, request: Request):
     _demo_guard()
     try:
         from scripts.task_runner import submit_task
@@ -565,7 +667,9 @@ def get_research_brief(job_id: int):
 
 
 @app.post("/api/jobs/{job_id}/research/generate")
-def generate_research(job_id: int):
+@limiter.limit(_RL_RESEARCH)
+def generate_research(job_id: int, request: Request):
+    _demo_guard()
     try:
         from scripts.task_runner import submit_task
         task_id, is_new = submit_task(db_path=Path(_request_db.get() or DB_PATH), task_type="company_research", job_id=job_id)
@@ -1085,8 +1189,16 @@ def apply_resume_to_profile(resume_id: int):
     with open(resume_path, "w", encoding="utf-8") as f:
         yaml.dump(current_profile, f, allow_unicode=True, default_flow_style=False)
 
-    from scripts.db import update_resume_synced_at as _mark_synced
+    from scripts.db import update_resume_synced_at as _mark_synced, set_default_resume as _set_default
     _mark_synced(db_path, resume_id)
+
+    # Establish this entry as the default so future Profile saves sync back to it
+    _set_default(db_path, resume_id)
+    _user_yaml = db_path.parent / "config" / "user.yaml"
+    if _user_yaml.exists():
+        _prof = yaml.safe_load(_user_yaml.read_text(encoding="utf-8")) or {}
+        _prof["default_resume_id"] = resume_id
+        _user_yaml.write_text(yaml.dump(_prof, default_flow_style=False, allow_unicode=True))
 
     return {
         "ok":             True,
@@ -1124,6 +1236,35 @@ def set_job_resume_endpoint(job_id: int, body: dict):
 # context. Avocet then routes these prompts through different local models to
 # compare generation quality against the real Peregrine pipeline.
 
+_SYNTHETIC_JOB = {
+    "id": 0,
+    "title": "Senior Software Engineer",
+    "company": "Acme Corp",
+    "description": (
+        "We are looking for a Senior Software Engineer to join our platform team. "
+        "You will design and build scalable backend services in Python and Go, "
+        "contribute to our event-driven architecture using Kafka and Redis, and "
+        "mentor junior engineers. We value clear communication, strong code review "
+        "practices, and an ownership mindset.\n\n"
+        "Requirements:\n"
+        "- 5+ years of backend engineering experience\n"
+        "- Proficiency in Python or Go; experience with both is a plus\n"
+        "- Solid understanding of distributed systems and API design (REST/gRPC)\n"
+        "- Experience with containerization (Docker/Kubernetes)\n"
+        "- Comfort working in a remote-first, async team environment\n\n"
+        "Nice to have:\n"
+        "- Experience with Kafka or other message-queue systems\n"
+        "- Open-source contributions\n"
+        "- Familiarity with observability tooling (Prometheus, Grafana)\n"
+    ),
+    "status": "applied",
+    "cover_letter": "",
+    "raw_output": "",
+    "company_brief": "",
+    "ats_gap_report": "",
+    "talking_points": "",
+}
+
 def _imitate_load_profile():
     """Load UserProfile from config/user.yaml, or None if missing."""
     try:
@@ -1152,6 +1293,9 @@ def _imitate_cover_letter(db, profile, limit: int) -> dict:
         corpus = load_corpus()
     except Exception:
         corpus = []
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
 
     samples = []
     for r in rows:
@@ -1208,6 +1352,9 @@ def _imitate_company_research(db, profile, limit: int) -> dict:
             resume_ctx = "\n\n".join(parts)[:2000]
     except Exception:
         pass
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
 
     samples = []
     for r in rows:
@@ -1266,6 +1413,10 @@ def _imitate_interview_prep(db, profile, limit: int) -> dict:
     ).fetchall()
 
     name = profile.name if profile else "the candidate"
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
+
     samples = []
     for r in rows:
         system_prompt = (
@@ -1319,6 +1470,9 @@ def _imitate_ats_resume(db, profile, limit: int) -> dict:
     except Exception:
         pass
     resume_block = f"\n## Current Resume\n{resume_text}" if resume_text else ""
+
+    if not rows:
+        rows = [_SYNTHETIC_JOB]
 
     samples = []
     for r in rows:
@@ -1458,7 +1612,7 @@ def calendar_push(job_id: int):
 # ── Survey endpoints ─────────────────────────────────────────────────────────
 
 # Module-level imports so tests can patch dev_api.LLMRouter etc.
-from scripts.db import insert_survey_response, get_survey_responses
+from scripts.db import insert_survey_response, get_survey_responses  # noqa: E402
 
 
 
@@ -1478,7 +1632,8 @@ class SurveyAnalyzeBody(BaseModel):
 
 
 @app.post("/api/jobs/{job_id}/survey/analyze")
-def survey_analyze(job_id: int, body: SurveyAnalyzeBody):
+@limiter.limit(_RL_SURVEY)
+def survey_analyze(job_id: int, body: SurveyAnalyzeBody, request: Request):
     if body.mode not in ("quick", "detailed"):
         raise HTTPException(400, f"Invalid mode: {body.mode!r}")
     import json as _json
@@ -1693,8 +1848,10 @@ def save_qa(job_id: int, payload: QAPayload):
 
 
 @app.post("/api/jobs/{job_id}/qa/suggest")
-def suggest_qa_answer(job_id: int, payload: QASuggestPayload):
+@limiter.limit(_RL_QA_SUGGEST)
+def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
     """Synchronously generate an LLM answer for an application Q&A question."""
+    _demo_guard()
     db = _get_db()
     job_row = db.execute(
         "SELECT title, company, description FROM jobs WHERE id = ?", (job_id,)
@@ -1725,7 +1882,7 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload):
                 parts.append(f"Summary: {resume_data['career_summary'][:400]}")
             resume_context = "\n".join(parts)
     except Exception:
-        pass
+        _log.warning("suggest_qa_answer: failed to load resume context", exc_info=True)
 
     prompt = (
         f"You are helping a job applicant answer an application question.\n\n"
@@ -2652,6 +2809,9 @@ def get_app_config():
         except Exception:
             wizard_complete = False
 
+    from app.wizard.tiers import has_configured_llm
+    byok_unlocked = has_configured_llm()
+
     return {
         "isCloud": os.environ.get("CLOUD_MODE", "").lower() in ("1", "true"),
         "isDemo": os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes"),
@@ -2660,6 +2820,7 @@ def get_app_config():
         "contractedClient": os.environ.get("CONTRACTED_CLIENT", "").lower() in ("1", "true"),
         "inferenceProfile": profile if profile in valid_profiles else "cpu",
         "wizardComplete": wizard_complete,
+        "byokUnlocked": byok_unlocked,
     }
 
 
@@ -2680,7 +2841,7 @@ def config_user():
 
 # ── Settings: My Profile endpoints ───────────────────────────────────────────
 
-from scripts.user_profile import load_user_profile, save_user_profile
+from scripts.user_profile import load_user_profile, save_user_profile  # noqa: E402
 
 
 def _user_yaml_path() -> str:
@@ -2976,10 +3137,11 @@ def _tokens_path() -> Path:
     return _config_dir() / "tokens.yaml"
 
 def _normalize_experience(raw: list) -> list:
-    """Normalize AIHawk-style experience entries to the Vue WorkEntry schema.
+    """Normalize AIHawk-style and resume_parser.py entries to the Vue WorkEntry schema.
 
-    AIHawk stores:  key_responsibilities (numbered dicts), employment_period, skills_acquired
-    Vue WorkEntry:  responsibilities (str), period (str), skills (list)
+    AIHawk stores:        key_responsibilities (numbered dicts), employment_period, skills_acquired
+    resume_parser.py:      start_date, end_date, bullets (list of strings)
+    Vue WorkEntry:         responsibilities (str), period (str), skills (list)
     If already in Vue format (has 'period' key or 'responsibilities' key), pass through unchanged.
     """
     out = []
@@ -2995,6 +3157,23 @@ def _normalize_experience(raw: list) -> list:
                 "location":         e.get("location", ""),
                 "industry":         e.get("industry", ""),
                 "responsibilities": e.get("responsibilities", ""),
+                "skills":           e.get("skills") or [],
+            })
+            continue
+        # scripts/resume_parser.py format
+        if "start_date" in e or "bullets" in e:
+            start = e.get("start_date", "")
+            end = e.get("end_date", "")
+            period = f"{start} - {end}" if start or end else ""
+            bullets = e.get("bullets", [])
+            resp_text = "\n".join(str(b) for b in bullets) if isinstance(bullets, list) else str(bullets)
+            out.append({
+                "title":            e.get("title", ""),
+                "company":          e.get("company", ""),
+                "period":           period,
+                "location":         e.get("location", ""),
+                "industry":         e.get("industry", ""),
+                "responsibilities": resp_text,
                 "skills":           e.get("skills") or [],
             })
             continue
@@ -3120,7 +3299,23 @@ async def upload_resume(file: UploadFile):
         resume_path.parent.mkdir(parents=True, exist_ok=True)
         with open(resume_path, "w") as f:
             yaml.dump(result, f, allow_unicode=True, default_flow_style=False)
+
+        # Also add to resume library and mark as default
+        import json as _json
+        from scripts.db import create_resume as _create_r, set_default_resume as _set_default
+        db_path = Path(_request_db.get() or DB_PATH)
+        resume_name = Path(file.filename).stem or "Uploaded Resume"
+        library_entry = _create_r(
+            db_path,
+            name=resume_name,
+            text=raw_text,
+            source="upload",
+            struct_json=_json.dumps(result),
+        )
+        _set_default(db_path, library_entry["id"])
+
         result["exists"] = True
+        result["library_id"] = library_entry["id"]
         return {"ok": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -3182,6 +3377,10 @@ def get_search_prefs():
                 {"name": b, "enabled": True, "supported": b in valid}
                 for b in boards
             ]
+
+        # Normalize title key — wizard saved "titles", settings canonical is "job_titles"
+        if "titles" in profile and "job_titles" not in profile:
+            profile["job_titles"] = profile.pop("titles")
 
         return profile
     except Exception as e:
@@ -3554,6 +3753,8 @@ def test_email(payload: dict):
         username = payload.get("username", "")
         if not all([host, username, password]):
             return {"ok": False, "error": "Missing host, username, or password"}
+        if _is_ssrf_host(host):
+            return {"ok": False, "error": "IMAP host must be a public address"}
         if use_ssl:
             ctx = ssl_mod.create_default_context()
             conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
@@ -3683,6 +3884,26 @@ def get_deploy_config():
 def save_deploy_config(payload: dict):
     # Deployment config changes require restart; just acknowledge
     return {"ok": True, "note": "Restart required to apply changes"}
+
+
+class OrchUrlPayload(BaseModel):
+    orch_url: str = ""
+
+
+@app.get("/api/settings/system/orch-url")
+def get_orch_url():
+    """Return the saved Orchard coordinator URL."""
+    cfg = _load_wizard_yaml()
+    return {"orch_url": cfg.get("cf_orch_url", "")}
+
+
+@app.post("/api/settings/system/orch-url")
+def save_orch_url(payload: OrchUrlPayload):
+    """Persist the Orchard coordinator URL to user.yaml."""
+    cfg = _load_wizard_yaml()
+    cfg["cf_orch_url"] = payload.orch_url.strip()
+    _save_wizard_yaml(cfg)
+    return {"ok": True}
 
 
 # ── Settings: Fine-Tune ───────────────────────────────────────────────────────
@@ -4148,7 +4369,7 @@ def export_classifier():
 # State is persisted to user.yaml on every step so the wizard can resume
 # after a browser refresh or crash (mirrors the Streamlit wizard behaviour).
 
-_WIZARD_PROFILES = ("remote", "cpu", "single-gpu", "dual-gpu", "cf-orch")
+_WIZARD_PROFILES = ("cpu", "single-gpu", "dual-gpu", "cf-orch", "remote")
 _WIZARD_TIERS = ("free", "paid", "premium")
 
 
@@ -4194,7 +4415,7 @@ def _suggest_profile(gpus: list[str]) -> str:
         return "dual-gpu"
     if len(gpus) == 1:
         return "single-gpu"
-    return "remote"
+    return "cpu"
 
 
 @app.get("/api/wizard/status")
@@ -4218,6 +4439,7 @@ def wizard_status():
             "linkedin": cfg.get("linkedin", ""),
             "career_summary": cfg.get("career_summary", ""),
             "services": cfg.get("services", {}),
+            "cf_orch_url": cfg.get("cf_orch_url", ""),
         },
     }
 
@@ -4239,8 +4461,8 @@ def wizard_save_step(payload: WizardStepPayload):
     step = payload.step
     data = payload.data
 
-    if step < 1 or step > 7:
-        raise HTTPException(status_code=400, detail="step must be 1–7")
+    if step < 1 or step > 8:
+        raise HTTPException(status_code=400, detail="step must be 1–8")
 
     updates: dict = {"wizard_step": step}
 
@@ -4266,13 +4488,16 @@ def wizard_save_step(payload: WizardStepPayload):
             with open(resume_path, "w") as f:
                 yaml.dump(resume, f, allow_unicode=True, default_flow_style=False)
 
-    elif step == 4:
+    elif step in (4, 5):
+        # Step 4 (legacy) or step 5 (current) — identity fields.
+        # Step 4 was the original numbering before the training step was inserted
+        # between resume and identity; both are accepted for backward compat.
         for field in ("name", "email", "phone", "linkedin", "career_summary"):
             if field in data:
                 updates[field] = data[field]
 
-    elif step == 5:
-        # Write API keys to .env (never store in user.yaml)
+    elif step == 6:
+        # Step 6 — inference: API keys + optional Orchard coordinator URL.
         env_path = Path(_wizard_yaml_path()).parent.parent / ".env"
         env_lines = env_path.read_text().splitlines() if env_path.exists() else []
 
@@ -4290,18 +4515,24 @@ def wizard_save_step(payload: WizardStepPayload):
             env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_URL", data["openai_url"])
         if data.get("openai_key"):
             env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_KEY", data["openai_key"])
-        if any(data.get(k) for k in ("anthropic_key", "openai_url", "openai_key")):
+        if data.get("orch_url"):
+            env_lines = _set_env_key(env_lines, "GPU_SERVER_URL", data["orch_url"])
+            updates["cf_orch_url"] = data["orch_url"]
+        if any(data.get(k) for k in ("anthropic_key", "openai_url", "openai_key", "orch_url")):
             env_path.parent.mkdir(parents=True, exist_ok=True)
             env_path.write_text("\n".join(env_lines) + "\n")
 
         if "services" in data:
             updates["services"] = data["services"]
 
-    elif step == 6:
-        # Persist search preferences to search_profiles.yaml in canonical format:
-        #   profiles: [{name, titles, locations, boards, ...}]
-        titles = data.get("titles", [])
-        locations = data.get("locations", [])
+    elif step == 7:
+        # Step 7 — search preferences.
+        # Wizard sends { search: { titles, locations, remote_only } }; fall back to
+        # top-level keys for direct API callers that omit the "search" wrapper.
+        search = data.get("search", {})
+        titles = search.get("titles", data.get("titles", data.get("job_titles", [])))
+        locations = search.get("locations", data.get("locations", []))
+        remote_only = search.get("remote_only", data.get("remote_only", False))
         search_path = _search_prefs_path()
         existing_search: dict = {}
         if search_path.exists():
@@ -4318,14 +4549,15 @@ def wizard_save_step(payload: WizardStepPayload):
         if default_profile is None:
             default_profile = {"name": "default"}
             profiles_list.append(default_profile)
-        default_profile["titles"] = titles
+        default_profile["job_titles"] = titles
         default_profile["locations"] = locations
+        default_profile["remote_only"] = remote_only
         existing_search["profiles"] = profiles_list
         search_path.parent.mkdir(parents=True, exist_ok=True)
         with open(search_path, "w") as f:
             yaml.dump(existing_search, f, allow_unicode=True, default_flow_style=False)
 
-    # Step 7 (integrations) has no extra side effects here — connections are
+    # Step 8 (integrations) has no extra side effects here — connections are
     # handled by the existing /api/settings/system/integrations/{id}/connect.
 
     try:
@@ -4352,6 +4584,39 @@ def _fetch_cforch_nodes() -> list[dict]:
         return []
 
 
+def _probe_ollama() -> bool:
+    """Return True if Ollama is reachable from inside the container."""
+    candidates = [
+        "http://host.docker.internal:11434/api/tags",
+        "http://ollama:11434/api/tags",
+    ]
+    for url in candidates:
+        try:
+            r = requests.get(url, timeout=2)
+            if r.status_code == 200:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _probe_searxng() -> bool:
+    """Return True if SearXNG is reachable from inside the container."""
+    candidates = [
+        "http://searxng:8080/",
+        "http://host.docker.internal:8888/",
+        "http://host.docker.internal:8080/",
+    ]
+    for url in candidates:
+        try:
+            r = requests.get(url, timeout=2)
+            if r.status_code < 500:
+                return True
+        except Exception:
+            pass
+    return False
+
+
 @app.get("/api/wizard/hardware")
 def wizard_hardware():
     """Detect local GPUs, suggest an inference profile, and report cf-orch nodes."""
@@ -4370,13 +4635,28 @@ def wizard_hardware():
                 "vram_free_mb": gpu["vram_free_mb"],
             })
 
+    ollama_running = _probe_ollama()
+    searxng_running = _probe_searxng()
+
+    # If no GPU but Ollama is already running, default to cpu rather than remote
+    if suggested == "cpu" and not gpus and not ollama_running:
+        suggested = "remote"
+
     return {
         "gpus": gpus,
         "suggested_profile": suggested,
         "profiles": list(_WIZARD_PROFILES),
         "cf_orch_available": len(orch_nodes) > 0,
         "cf_orch_gpus": orch_summary,
+        "ollama_running": ollama_running,
+        "searxng_running": searxng_running,
     }
+
+
+def _container_safe_url(url: str) -> str:
+    """Replace localhost/127.0.0.1 with host.docker.internal so tests reach the host."""
+    import re as _re
+    return _re.sub(r"(https?://)(?:localhost|127\.0\.0\.1)\b", r"\1host.docker.internal", url)
 
 
 class WizardInferenceTestPayload(BaseModel):
@@ -4384,21 +4664,49 @@ class WizardInferenceTestPayload(BaseModel):
     anthropic_key: str = ""
     openai_url: str = ""
     openai_key: str = ""
+    orch_url: str = ""
     ollama_host: str = "localhost"
     ollama_port: int = 11434
 
 
 @app.post("/api/wizard/inference/test")
 def wizard_test_inference(payload: WizardInferenceTestPayload):
-    """Test LLM or Ollama connectivity.
+    """Test LLM, Ollama, or Orchard coordinator connectivity.
 
-    Always returns {ok, message} — a connection failure is reported as a
-    soft warning (message), not an HTTP error, so the wizard can let the
-    user continue past a temporarily-down Ollama instance.
+    Always returns {ok, message} — a connection failure is a soft warning so
+    the wizard lets the user continue past a temporarily-unreachable service.
     """
-    if payload.profile == "remote":
+    if payload.profile == "cf-orch":
+        if not payload.orch_url:
+            return {"ok": False, "message": "Enter the Orchard coordinator URL first."}
+        # Cloud (multi-tenant) mode: block requests to internal/private addresses —
+        # self-hosted mode intentionally allows LAN/localhost Orchard nodes.
+        if _CLOUD_MODE:
+            orch_host = urlparse(payload.orch_url).hostname
+            if not orch_host or _is_ssrf_host(orch_host):
+                return {"ok": False, "message": "Orchard URL must be a public, non-internal address."}
+        orch_url = _container_safe_url(payload.orch_url.rstrip("/"))
         try:
-            # Temporarily inject key if provided (don't persist yet)
+            resp = requests.get(f"{orch_url}/api/nodes", timeout=5,
+                                headers={"Accept": "application/json"},
+                                allow_redirects=False)
+            if resp.status_code == 200:
+                nodes = resp.json().get("nodes", [])
+                n = len(nodes)
+                return {"ok": True, "message": f"Orchard reachable — {n} node(s) online."}
+            return {"ok": False, "message": f"Orchard returned HTTP {resp.status_code}."}
+        except Exception as exc:
+            return {
+                "ok": False,
+                "message": (
+                    f"Cannot reach Orchard at {payload.orch_url} — "
+                    "check the URL and that the coordinator is running. "
+                    f"({exc})"
+                ),
+            }
+
+    elif payload.profile == "remote":
+        try:
             env_override = {}
             if payload.anthropic_key:
                 env_override["ANTHROPIC_API_KEY"] = payload.anthropic_key
@@ -4422,15 +4730,20 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
                         os.environ[k] = v
         except Exception as exc:
             return {"ok": False, "message": f"LLM test failed: {exc}"}
+
     else:
-        # Local profile — ping Ollama
-        ollama_url = f"http://{payload.ollama_host}:{payload.ollama_port}"
+        # Local profiles (cpu, single-gpu, dual-gpu) — ping Ollama
+        host = payload.ollama_host or "localhost"
+        # Cloud (multi-tenant) mode: block requests to internal/private addresses —
+        # self-hosted mode intentionally allows LAN/localhost Ollama instances.
+        if _CLOUD_MODE and _is_ssrf_host(host):
+            return {"ok": False, "message": "Ollama host must be a public, non-internal address."}
+        ollama_url = _container_safe_url(f"http://{host}:{payload.ollama_port}")
         try:
-            resp = requests.get(f"{ollama_url}/api/tags", timeout=5)
+            resp = requests.get(f"{ollama_url}/api/tags", timeout=5, allow_redirects=False)
             ok = resp.status_code == 200
             message = "Ollama is running." if ok else f"Ollama returned HTTP {resp.status_code}."
         except Exception:
-            # Soft-fail: user can skip and configure later
             return {
                 "ok": False,
                 "message": (
@@ -4467,6 +4780,125 @@ def wizard_complete():
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── AI Interview Wizard (BSL 1.1) ─────────────────────────────────────────────
+
+_AI_WIZARD_SYSTEM_PROMPT = """You are a friendly, patient assistant helping someone set up their job search profile. Your goal is to gather the following information through natural conversation:
+
+- name (string): their full name
+- email (string): their preferred contact email
+- career_summary (string): 1-2 sentence background summary
+- candidate_voice (string): their preferred writing voice/tone for cover letters
+- mission_preferences (list of strings): industries or causes they care about
+- candidate_accessibility_focus (bool): whether to include accessibility culture in company research
+- candidate_lgbtq_focus (bool): whether to include LGBTQIA+ inclusion signals in company research
+- linkedin (string, optional): their LinkedIn URL
+
+Rules:
+1. Ask one or two questions at a time — never overwhelm
+2. Always remind them they can skip any question
+3. For candidate_voice, offer these options if they struggle: "professional and direct", "warm and conversational", "concise and clear", "enthusiastic and personable"
+4. For candidate_accessibility_focus and candidate_lgbtq_focus, use plain language: "Would you like me to look into whether companies actively support employees with disabilities or neurodivergent needs?" and "Would you like me to check whether companies have strong LGBTQIA+ inclusion policies?"
+5. When you have gathered enough information or the user says they are done, set complete to true
+
+You must ALWAYS respond with valid JSON in this exact format:
+{"reply": "your conversational message here", "extracted_fields": {"name": "...", ...}, "complete": false}
+
+Only include fields in extracted_fields that you are confident about from the conversation. Do not include fields the user hasn't mentioned. Infer complete=true when all required fields (name, email, career_summary) are gathered or when user explicitly says done."""
+
+
+class HistoryMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class WizardInterviewRequest(BaseModel):
+    history: list[HistoryMessage] = []
+    profile_so_far: dict = {}
+
+
+class WizardFinalizeRequest(BaseModel):
+    profile: dict
+
+
+_WIZARD_ALLOWED_FIELDS: frozenset[str] = frozenset({
+    "name",
+    "email",
+    "career_summary",
+    "candidate_voice",
+    "mission_preferences",
+    "candidate_accessibility_focus",
+    "candidate_lgbtq_focus",
+    "linkedin",
+})
+
+
+@app.post("/api/wizard/ai/interview")
+@limiter.limit(_RL_WIZARD)
+def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
+    """Conduct one turn of the AI-guided profile interview. Tier-gated (BYOK-unlockable)."""
+    from app.wizard.tiers import can_use, has_configured_llm
+
+    tier = _get_effective_tier()
+    if not can_use(tier, "llm_ai_wizard", has_byok=has_configured_llm()):
+        raise HTTPException(402, detail={"error": "tier_required"})
+
+    # Build conversation prompt from history
+    conversation_lines = []
+    for msg in body.history:
+        role = msg.role
+        content = msg.content.replace("\n", " ").replace("\r", "")
+        if role == "user":
+            conversation_lines.append(f"User: {content}")
+        else:
+            conversation_lines.append(f"Assistant: {content}")
+
+    history_block = "\n".join(conversation_lines) if conversation_lines else "User: (starting conversation)"
+
+    # Build profile summary to give LLM context about what's already known
+    if body.profile_so_far:
+        gathered = ", ".join(
+            f"{k}={repr(v)}"
+            for k, v in body.profile_so_far.items()
+            if v not in (None, "", [], {})
+        )
+        profile_context = f"\n\n[Already gathered: {gathered}]" if gathered else ""
+    else:
+        profile_context = ""
+
+    prompt = history_block + profile_context
+
+    try:
+        from scripts.llm_router import LLMRouter
+        response_text = LLMRouter().complete(prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
+    except Exception as exc:
+        raise HTTPException(503, detail={"error": "llm_error", "message": str(exc)})
+
+    try:
+        parsed = json.loads(response_text)
+        return {
+            "reply": parsed.get("reply", ""),
+            "extracted_fields": parsed.get("extracted_fields", {}),
+            "complete": bool(parsed.get("complete", False)),
+        }
+    except (json.JSONDecodeError, AttributeError):
+        return {"reply": response_text, "extracted_fields": {}, "complete": False}
+
+
+@app.post("/api/wizard/ai/finalize")
+def wizard_ai_finalize(request: WizardFinalizeRequest):
+    """Merge AI-collected wizard fields into user.yaml. Only allowed fields are written."""
+    yaml_path = _user_yaml_path()
+    try:
+        current = load_user_profile(yaml_path)
+        updates = {k: v for k, v in request.profile.items() if k in _WIZARD_ALLOWED_FIELDS}
+        merged = {**current, **updates}
+        save_user_profile(yaml_path, merged)
+    except Exception as exc:
+        raise HTTPException(500, detail={"error": "write_error", "message": str(exc)})
+    merged_keys = list(updates.keys())
+    return {"saved": True, "fields": merged_keys}
 
 
 # ── Messaging models ──────────────────────────────────────────────────────────

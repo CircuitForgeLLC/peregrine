@@ -1,11 +1,14 @@
 backends:
   cf_text:
     api_key: any
-    base_url: http://host.docker.internal:8006/v1
+    base_url: http://host.docker.internal:8008/v1
     enabled: true
     model: cf-text
     supports_images: false
     type: openai_compat
+    cf_orch:
+      service: cf-text
+      ttl_s: 300
   anthropic:
     api_key_env: ANTHROPIC_API_KEY
     enabled: false
@@ -33,13 +36,19 @@ backends:
     model: llama3.2:3b
     supports_images: false
     type: openai_compat
+    cf_orch:
+      service: ollama
+      ttl_s: 300
   ollama_research:
     api_key: ollama
-    base_url: http://ollama_research:11434/v1
+    base_url: http://host.docker.internal:11435/v1
     enabled: true
     model: llama3.1:8b
     supports_images: false
     type: openai_compat
+    cf_orch:
+      service: ollama
+      ttl_s: 300
   vision_service:
     base_url: http://vision:8002
     enabled: true
@@ -64,6 +73,11 @@ backends:
     model: __auto__
     supports_images: false
     type: openai_compat
+    cf_orch:
+      service: vllm
+      model_candidates:
+      - Qwen2.5-3B-Instruct
+      ttl_s: 300
 fallback_order:
 - cf_text
 - ollama
@@ -72,10 +86,10 @@ fallback_order:
 - github_copilot
 - anthropic
 research_fallback_order:
-- claude_code
+- cf_text
 - vllm_research
 - ollama_research
-- cf_text
+- claude_code
 - github_copilot
 - anthropic
 vision_fallback_order:

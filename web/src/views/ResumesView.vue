@@ -2,6 +2,7 @@
   <div class="rv">
     <div class="rv__header">
       <h1 class="rv__title">Resume Library</h1>
+      <a href="https://docs.circuitforge.tech/peregrine/user-guide/daily-workflow/#managing-your-resume" target="_blank" rel="noopener" class="rv__help-link" aria-label="Resume Library documentation">? Help</a>
       <label class="btn-generate rv__import-btn">
         <span aria-hidden="true">📥</span> Import
         <input type="file" accept=".txt,.pdf,.docx,.odt,.yaml,.yml"
@@ -314,7 +315,10 @@ onBeforeRouteLeave(() => {
 <style scoped>
 .rv { display: flex; flex-direction: column; gap: var(--space-4, 1rem); padding: var(--space-5, 1.25rem); height: 100%; }
 
-.rv__header { display: flex; align-items: center; justify-content: space-between; }
+.rv__header { display: flex; align-items: center; gap: var(--space-3); }
+.rv__header .btn-generate { margin-left: auto; }
+.rv__help-link { font-size: 0.75rem; color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: var(--radius-full); padding: 2px 8px; text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+.rv__help-link:hover { color: var(--color-primary); border-color: var(--color-primary); }
 .rv__title { font-size: var(--font-xl, 1.25rem); font-weight: 700; margin: 0; }
 .rv__file-input { display: none; }
 .rv__import-btn { cursor: pointer; }

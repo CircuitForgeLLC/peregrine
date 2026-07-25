@@ -1,4 +1,14 @@
 backends:
+  cf_text:
+    api_key: any
+    base_url: http://host.docker.internal:8008/v1
+    enabled: true
+    model: cf-text
+    supports_images: false
+    type: openai_compat
+    cf_orch:
+      service: cf-text
+      ttl_s: 300
   anthropic:
     api_key_env: ANTHROPIC_API_KEY
     enabled: false
@@ -26,6 +36,9 @@ backends:
     model: llama3.1:8b  # generic — no personal fine-tunes in cloud
     supports_images: false
     type: openai_compat
+    cf_orch:
+      service: ollama
+      ttl_s: 300
   ollama_research:
     api_key: ollama
     base_url: http://host.docker.internal:11434/v1
@@ -33,6 +46,9 @@ backends:
     model: llama3.1:8b
     supports_images: false
     type: openai_compat
+    cf_orch:
+      service: ollama
+      ttl_s: 300
   vision_service:
     base_url: http://host.docker.internal:8002
     enabled: true
@@ -63,9 +79,11 @@ backends:
         - Qwen2.5-3B-Instruct
       ttl_s: 300
 fallback_order:
+- cf_text
 - vllm
 - ollama
 research_fallback_order:
+- cf_text
 - vllm_research
 - ollama_research
 vision_fallback_order:

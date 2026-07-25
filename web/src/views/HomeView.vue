@@ -12,7 +12,10 @@
           {{ greeting }}
           <span v-if="isMidnight" aria-label="Late night session">🌙</span>
         </h1>
-        <p class="home__subtitle">Discover → Review → Apply</p>
+        <p class="home__subtitle">
+          Discover → Review → Apply
+          <a href="https://docs.circuitforge.tech/peregrine/user-guide/daily-workflow/" target="_blank" rel="noopener" class="home__docs-link" aria-label="Daily Workflow documentation">Daily Workflow guide ↗</a>
+        </p>
       </div>
     </header>
 
@@ -600,7 +603,22 @@ onUnmounted(() => {
   font-size: var(--text-sm);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
 }
+.home__docs-link {
+  font-size: 0.7rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 1px 7px;
+}
+.home__docs-link:hover { color: var(--color-primary); border-color: var(--color-primary); }
 
 .home__metrics {
   display: grid;

@@ -1,6 +1,6 @@
 <template>
   <div class="step">
-    <h2 class="step__heading">Step 4 — Your Identity</h2>
+    <h2 class="step__heading">Step 5 — Your Identity</h2>
     <p class="step__caption">
       Used in cover letters, research briefs, and interview prep. You can update
       this any time in Settings → My Profile.

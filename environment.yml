@@ -23,8 +23,8 @@ dependencies:
     - undetected-chromedriver
     - webdriver-manager
     - beautifulsoup4
-    - requests
-    - curl_cffi           # Chrome TLS fingerprint — bypasses Cloudflare on The Ladders
+    - requests>=2.33.0        # CVE-2026-25645
+    - curl_cffi>=0.15.0       # CVE-2026-33752
     - fake-useragent      # company scraper rotation
 
     # ── LLM / AI backends ─────────────────────────────────────────────────────
@@ -55,13 +55,16 @@ dependencies:
     - google-auth>=2.0
 
     # ── Document handling ─────────────────────────────────────────────────────
-    - pypdf
+    - pypdf>=6.12.0           # 12 CVEs in 6.7.x (CVE-2026-27628 through CVE-2026-48156)
     - pdfminer-six
     - pyyaml>=6.0
-    - python-dotenv
+    - python-dotenv>=1.2.2    # CVE-2026-28684
 
     # ── Auth / licensing ──────────────────────────────────────────────────────
-    - PyJWT>=2.8
+    - PyJWT>=2.13.0           # 2.11 has sig bypass CVEs (PYSEC-2026-120/175-179); used for cloud session routing
+
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    - slowapi>=0.1.9           # per-user rate limiting on LLM endpoints
 
     # ── Utilities ─────────────────────────────────────────────────────────────
     - sqlalchemy
@@ -70,6 +73,18 @@ dependencies:
     - rich
     - tenacity
     - httpx
+
+    # ── Security pins (transitive deps with known CVEs) ───────────────────────
+    - starlette>=1.0.1        # PYSEC-2026-161 (FastAPI foundation)
+    - python-multipart>=0.0.27  # CVE-2026-40347/42561 file upload parsing
+    - aiohttp>=3.14.0         # 12 CVEs (CVE-2026-34513 through CVE-2026-34993)
+    - tornado>=6.5.5          # CVE-2026-35536
+    - cryptography>=46.0.7    # PYSEC-2026-35/36
+    - langsmith>=0.8.0        # CVE-2026-41182/45134
+    - gitpython>=3.1.50       # CVE-2026-42215/42284/44244
+    - lxml>=6.1.0             # PYSEC-2026-87 (XXE)
+    - idna>=3.15              # CVE-2026-45409
+    - markdownify>=0.14.1     # CVE-2025-46656
 
     # ── Testing ───────────────────────────────────────────────────────────────
     - pytest>=9.0

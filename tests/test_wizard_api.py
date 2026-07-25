@@ -331,6 +331,55 @@ class TestWizardInferenceTest:
         assert body["ok"] is False
         assert "failed" in body["message"].lower()
 
+    def test_local_profile_allows_localhost_when_self_hosted(self, client):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        with patch("dev_api._CLOUD_MODE", False):
+            with patch("dev_api.requests.get", return_value=mock_resp) as mock_get:
+                r = client.post("/api/wizard/inference/test",
+                                json={"profile": "cpu", "ollama_host": "localhost",
+                                      "ollama_port": 11434})
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+        assert mock_get.call_args.kwargs["allow_redirects"] is False
+
+    def test_local_profile_blocks_private_host_in_cloud_mode(self, client):
+        with patch("dev_api._CLOUD_MODE", True):
+            with patch("dev_api.requests.get") as mock_get:
+                r = client.post("/api/wizard/inference/test",
+                                json={"profile": "cpu", "ollama_host": "169.254.169.254",
+                                      "ollama_port": 11434})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is False
+        assert "public" in body["message"].lower()
+        mock_get.assert_not_called()
+
+    def test_cf_orch_blocks_private_host_in_cloud_mode(self, client):
+        with patch("dev_api._CLOUD_MODE", True):
+            with patch("dev_api.requests.get") as mock_get:
+                r = client.post("/api/wizard/inference/test",
+                                json={"profile": "cf-orch",
+                                      "orch_url": "http://169.254.169.254:8000"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is False
+        assert "public" in body["message"].lower()
+        mock_get.assert_not_called()
+
+    def test_cf_orch_allows_lan_host_when_self_hosted(self, client):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"nodes": []}
+        with patch("dev_api._CLOUD_MODE", False):
+            with patch("dev_api.requests.get", return_value=mock_resp) as mock_get:
+                r = client.post("/api/wizard/inference/test",
+                                json={"profile": "cf-orch",
+                                      "orch_url": "http://10.1.10.5:8000"})
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+        assert mock_get.call_args.kwargs["allow_redirects"] is False
+
 
 # ── POST /api/wizard/complete ─────────────────────────────────────────────────
 

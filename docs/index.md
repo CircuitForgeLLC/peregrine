@@ -1,10 +1,11 @@
 # Peregrine
 
-**AI-powered job search pipeline — by [Circuit Forge LLC](https://circuitforge.io)**
+**LLM-powered job search pipeline — by [Circuit Forge LLC](https://circuitforge.tech)**
 
 Peregrine automates the full job search lifecycle: discovery, matching, cover letter generation, application tracking, and interview preparation. It is privacy-first and local-first — your data never leaves your machine unless you configure an external integration.
 
-![Peregrine dashboard](screenshots/01-dashboard.png)
+![Peregrine dashboard](screenshots/01-dashboard.png){ .only-light }
+![Peregrine dashboard](screenshots/01-dashboard-dark.png){ .only-dark }
 
 ---
 
