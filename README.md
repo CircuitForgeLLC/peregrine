@@ -10,7 +10,7 @@
   [![License: MIT / BSL 1.1](https://img.shields.io/badge/License-MIT%20%2F%20BSL%201.1-blue.svg)](#license)
   [![CI](https://github.com/CircuitForgeLLC/peregrine/actions/workflows/ci.yml/badge.svg)](https://github.com/CircuitForgeLLC/peregrine/actions/workflows/ci.yml)
   [![Docs](https://img.shields.io/badge/docs-docs.circuitforge.tech-orange)](https://docs.circuitforge.tech/peregrine/)
-  [![Version](https://img.shields.io/badge/version-0.9.0-green)](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/releases)
+  [![Version](https://img.shields.io/badge/version-0.9.8-green)](https://git.circuitforge.tech/Circuit-Forge/peregrine/releases)
 
   <p>
     <a href="https://demo.circuitforge.tech/peregrine"><strong>Live Demo</strong></a> —
