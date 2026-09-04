@@ -25,7 +25,7 @@ def test_can_use_uses_effective_tier(tmp_path):
     p = tmp_path / "user.yaml"
     p.write_text("name: T\nemail: t@t.com\ncareer_summary: x\ntier: free\ndev_tier_override: premium\n")
     from scripts.user_profile import UserProfile
-    from app.wizard.tiers import can_use
+    from scripts.wizard.tiers import can_use
     u = UserProfile(p)
     assert can_use(u.effective_tier, "model_fine_tuning") is True
     assert can_use(u.tier, "model_fine_tuning") is False
