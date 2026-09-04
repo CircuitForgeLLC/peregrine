@@ -33,23 +33,22 @@ curl_cffi
 fake-useragent
 
 # ── LLM / AI backends ─────────────────────────────────────────────────────
-openai>=1.55.0,<2.0.0  # >=1.55 required for httpx 0.28 compat; <2.0 for langchain-openai
+# LLMRouter (scripts/llm_router.py -> circuitforge_core.llm) talks to these
+# SDKs directly — no langchain in the request path.
+openai>=1.55.0  # >=1.55 required for httpx 0.28 compat
 anthropic>=0.80
 ollama
-langchain>=0.2
-langchain-openai
-langchain-anthropic
-langchain-ollama
-langchain-community
-langchain-google-genai
 google-generativeai
 tiktoken
 
 # ── Resume matching ───────────────────────────────────────────────────────
 scikit-learn>=1.3
 rapidfuzz
-# lib-resume-builder-aihawk intentionally excluded — pulls torch+CUDA (~7GB).
-# AIHawk runs in its own conda env (aihawk-env) outside the Docker container.
+# lib-resume-builder-aihawk (and its langchain dependency chain) removed —
+# a pre-CircuitForge leftover from before Peregrine had its own scrapers and
+# matching. Nothing in this codebase imports it; task_runner.py only parses
+# AIHawK-format plain_text_resume.yaml files via PyYAML for backward-compat
+# resume import, which needs no package. See issue #121.
 
 # ── Notion integration ────────────────────────────────────────────────────
 notion-client>=3.0
