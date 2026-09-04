@@ -73,9 +73,6 @@ sudo podman run -d \
   --health-start-period=60s \
   --health-retries=3 \
   localhost/peregrine:latest
-  # To override the default port (8501), uncomment and edit the line below,
-  # then remove the image name above and place it at the end of the CMD:
-  # streamlit run app/app.py --server.port=8501 --server.headless=true --server.fileWatcherType=none
 
 echo ""
 echo "Peregrine is starting up."

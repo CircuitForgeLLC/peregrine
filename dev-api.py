@@ -866,8 +866,18 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
         job = {"title": job_row[0], "company": job_row[1]} if job_row else {}
 
         from scripts.user_profile import UserProfile
-        from app.cloud_session import get_config_dir
-        _user_yaml = get_config_dir() / "user.yaml"
+        # Config dir: cloud mode is per-user (sibling of the request-scoped db),
+        # local mode is the repo-level config/ dir. Was previously routed through
+        # app.cloud_session.get_config_dir(), which read st.session_state — that
+        # never reflected this request's user under FastAPI (no Streamlit runtime),
+        # so cloud-mode candidate_voice silently fell back to empty. Use the same
+        # _request_db contextvar every other per-request path in this file uses.
+        _config_dir = (
+            Path(_request_db.get() or DB_PATH).parent / "config"
+            if _CLOUD_MODE
+            else Path(__file__).parent / "config"
+        )
+        _user_yaml = _config_dir / "user.yaml"
         candidate_voice = UserProfile(_user_yaml).candidate_voice if UserProfile.exists(_user_yaml) else ""
 
         struct = frame_skill_gaps(struct, framings, job, candidate_voice)
@@ -2807,7 +2817,7 @@ def get_app_config():
         except Exception:
             wizard_complete = False
 
-    from app.wizard.tiers import has_configured_llm
+    from scripts.wizard.tiers import has_configured_llm
     byok_unlocked = has_configured_llm()
 
     return {
@@ -4836,7 +4846,7 @@ _WIZARD_ALLOWED_FIELDS: frozenset[str] = frozenset({
 @limiter.limit(_RL_WIZARD)
 def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
     """Conduct one turn of the AI-guided profile interview. Tier-gated (BYOK-unlockable)."""
-    from app.wizard.tiers import can_use, has_configured_llm
+    from scripts.wizard.tiers import can_use, has_configured_llm
 
     tier = _get_effective_tier()
     if not can_use(tier, "llm_ai_wizard", has_byok=has_configured_llm()):
@@ -5018,14 +5028,14 @@ def _get_effective_tier() -> str:
     """Resolve effective tier: Heimdall in cloud mode, APP_TIER env var in single-tenant."""
     if _CLOUD_MODE:
         return _resolve_cloud_tier()
-    from app.wizard.tiers import effective_tier
+    from scripts.wizard.tiers import effective_tier
     return effective_tier()
 
 
 @app.post("/api/contacts/{contact_id}/draft-reply")
 def draft_reply(contact_id: int):
     """Generate an LLM draft reply for an inbound job_contacts row. Tier-gated."""
-    from app.wizard.tiers import can_use, has_configured_llm
+    from scripts.wizard.tiers import can_use, has_configured_llm
     from scripts.messaging import create_message
     from scripts.llm_reply_draft import generate_draft_reply
 
