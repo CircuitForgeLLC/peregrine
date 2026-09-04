@@ -9,12 +9,14 @@ dependencies:
   - pip
   - pip:
     # ── Web UI ────────────────────────────────────────────────────────────────
+    # Peregrine itself is served by the Vue 3 SPA (uvicorn dev_api:app) — no
+    # streamlit dependency in that path. Kept only for the orphaned pre-Vue
+    # app/ tree and tools/label_tool.py (references the legacy job-seeker
+    # conda env, not cf; superseded by Avocet's own label tool at the same
+    # port). See issue #145 for whether to delete that dead code outright.
     - streamlit>=1.35
-    - watchdog            # live reload
-    - reportlab>=4.0      # PDF cover letter export
-    - pandas>=2.0
-    - pyarrow             # streamlit data tables
-    - streamlit-paste-button>=0.1.0
+    - reportlab>=4.0      # PDF cover letter export — dev-api.py, scripts/resume_optimizer.py
+    - pandas>=2.0          # scripts/discover.py
 
     # ── Job scraping ──────────────────────────────────────────────────────────
     - python-jobspy>=1.1
