@@ -20,6 +20,8 @@ from scripts.db import DEFAULT_DB, init_db, insert_job, get_existing_urls as db_
 from scripts.custom_boards import adzuna as _adzuna
 from scripts.custom_boards import theladders as _theladders
 from scripts.custom_boards import craigslist as _craigslist
+from scripts.custom_boards import remoteok as _remoteok
+from scripts.custom_boards import weworkremotely as _weworkremotely
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 NOTION_CFG = CONFIG_DIR / "notion.yaml"
@@ -31,6 +33,8 @@ CUSTOM_SCRAPERS: dict[str, object] = {
     "adzuna": _adzuna.scrape,
     "theladders": _theladders.scrape,
     "craigslist": _craigslist.scrape,
+    "remoteok": _remoteok.scrape,
+    "weworkremotely": _weworkremotely.scrape,
 }
 
 
