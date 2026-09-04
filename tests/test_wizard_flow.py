@@ -12,12 +12,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 def test_all_mandatory_steps_accept_minimal_valid_data():
     """Each step's validate() accepts the minimum required input."""
-    from app.wizard.step_hardware import validate as hw
-    from app.wizard.step_tier import validate as tier
-    from app.wizard.step_identity import validate as ident
-    from app.wizard.step_resume import validate as resume
-    from app.wizard.step_inference import validate as inf
-    from app.wizard.step_search import validate as search
+    from scripts.wizard.step_hardware import validate as hw
+    from scripts.wizard.step_tier import validate as tier
+    from scripts.wizard.step_identity import validate as ident
+    from scripts.wizard.step_resume import validate as resume
+    from scripts.wizard.step_inference import validate as inf
+    from scripts.wizard.step_search import validate as search
 
     assert hw({"inference_profile": "remote"}) == []
     assert tier({"tier": "free"}) == []
@@ -29,12 +29,12 @@ def test_all_mandatory_steps_accept_minimal_valid_data():
 
 def test_mandatory_steps_reject_empty_data():
     """Each step's validate() rejects completely empty input."""
-    from app.wizard.step_hardware import validate as hw
-    from app.wizard.step_tier import validate as tier
-    from app.wizard.step_identity import validate as ident
-    from app.wizard.step_resume import validate as resume
-    from app.wizard.step_inference import validate as inf
-    from app.wizard.step_search import validate as search
+    from scripts.wizard.step_hardware import validate as hw
+    from scripts.wizard.step_tier import validate as tier
+    from scripts.wizard.step_identity import validate as ident
+    from scripts.wizard.step_resume import validate as resume
+    from scripts.wizard.step_inference import validate as inf
+    from scripts.wizard.step_search import validate as search
 
     assert hw({}) != []
     assert tier({}) != []

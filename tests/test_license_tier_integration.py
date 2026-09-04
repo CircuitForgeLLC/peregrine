@@ -35,7 +35,7 @@ def _write_jwt_license(license_path, private_pem, tier="paid", days=30):
 
 
 def test_effective_tier_free_without_license(tmp_path):
-    from app.wizard.tiers import effective_tier
+    from scripts.wizard.tiers import effective_tier
     tier = effective_tier(
         profile=None,
         license_path=tmp_path / "missing.json",
@@ -47,7 +47,7 @@ def test_effective_tier_free_without_license(tmp_path):
 def test_effective_tier_paid_with_valid_license(license_env):
     private_pem, public_path, license_path = license_env
     _write_jwt_license(license_path, private_pem, tier="paid")
-    from app.wizard.tiers import effective_tier
+    from scripts.wizard.tiers import effective_tier
     tier = effective_tier(profile=None, license_path=license_path,
                           public_key_path=public_path)
     assert tier == "paid"
@@ -61,7 +61,7 @@ def test_effective_tier_dev_override_takes_precedence(license_env):
     class FakeProfile:
         dev_tier_override = "premium"
 
-    from app.wizard.tiers import effective_tier
+    from scripts.wizard.tiers import effective_tier
     tier = effective_tier(profile=FakeProfile(), license_path=license_path,
                           public_key_path=public_path)
     assert tier == "premium"
