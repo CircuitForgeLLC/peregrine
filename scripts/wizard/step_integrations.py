@@ -19,7 +19,7 @@ def get_available(tier: str) -> list[str]:
     integration's minimum required tier (as declared by cls.tier).
     """
     from scripts.integrations import REGISTRY
-    from app.wizard.tiers import TIERS
+    from scripts.wizard.tiers import TIERS
 
     available = []
     for name, cls in REGISTRY.items():

@@ -9,12 +9,10 @@ dependencies:
   - pip
   - pip:
     # ── Web UI ────────────────────────────────────────────────────────────────
-    - streamlit>=1.35
-    - watchdog            # live reload
-    - reportlab>=4.0      # PDF cover letter export
-    - pandas>=2.0
-    - pyarrow             # streamlit data tables
-    - streamlit-paste-button>=0.1.0
+    # Peregrine is served by the Vue 3 SPA (uvicorn dev_api:app) — no
+    # streamlit dependency anywhere in this product anymore (#145).
+    - reportlab>=4.0      # PDF cover letter export — dev-api.py, scripts/resume_optimizer.py
+    - pandas>=2.0          # scripts/discover.py
 
     # ── Job scraping ──────────────────────────────────────────────────────────
     - python-jobspy>=1.1
