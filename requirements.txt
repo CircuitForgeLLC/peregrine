@@ -28,6 +28,7 @@ selenium
 undetected-chromedriver
 webdriver-manager
 beautifulsoup4
+defusedxml     # safe RSS/XML parsing (weworkremotely, craigslist scrapers)
 requests
 curl_cffi
 fake-useragent
