@@ -23,6 +23,7 @@ dependencies:
     - undetected-chromedriver
     - webdriver-manager
     - beautifulsoup4
+    - defusedxml          # safe RSS/XML parsing (weworkremotely, craigslist scrapers)
     - requests>=2.33.0        # CVE-2026-25645
     - curl_cffi>=0.15.0       # CVE-2026-33752
     - fake-useragent      # company scraper rotation

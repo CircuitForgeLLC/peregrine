@@ -13,12 +13,12 @@ Returns a list of dicts compatible with scripts.db.insert_job().
 from __future__ import annotations
 
 import time
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import quote_plus
 
+import defusedxml.ElementTree as ET
 import requests
 import yaml
 
