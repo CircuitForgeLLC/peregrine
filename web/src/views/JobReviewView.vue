@@ -35,6 +35,8 @@
       </div>
     </header>
 
+    <MatchCriteriaStrip v-if="activeTab === 'pending'" />
+
     <!-- ── PENDING: card stack ──────────────────────────────────────────── -->
     <div v-if="activeTab === 'pending'" class="review__body">
       <!-- Loading -->
@@ -221,6 +223,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useReviewStore } from '../stores/review'
 import JobCardStack from '../components/JobCardStack.vue'
 import HintChip from '../components/HintChip.vue'
+import MatchCriteriaStrip from '../components/MatchCriteriaStrip.vue'
 import { useAppConfigStore } from '../stores/appConfig'
 
 const config = useAppConfigStore()
