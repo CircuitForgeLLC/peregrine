@@ -1,6 +1,7 @@
 """Tests for /api/resumes/* endpoints."""
 import io
 import sqlite3
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -206,3 +207,46 @@ def test_apply_suggestion_409_when_no_struct_json(client):
         json={"suggestion": {"section": "skills", "before": "Python", "after": "Python 3"}},
     )
     assert resp.status_code == 409
+
+
+def test_score_persists_struct_json_when_missing_and_unblocks_apply(client):
+    from pathlib import Path as _Path
+    from scripts.task_runner import _run_task
+    c, db = client
+    resume_text = 'Jane Doe\njane@example.com\n\nExperience\nSoftware Engineer | Acme Corp\nJan 2020 - Dec 2023\n\u2022 Built things\n\nSkills\nPython, SQL'
+    resume = c.post('/api/resumes', json={'name': 'No Struct', 'text': resume_text}).json()
+    assert resume['struct_json'] is None
+    fake_llm_json = '{"overall_score": 6, "summary": "ok", "strengths": [], "improvements": [], "suggestions": [{"id": "sugg-1", "section": "skills", "before": "Python", "after": "Python 3", "rationale": "x"}]}'
+    with patch('scripts.resume_scorer.LLMRouter') as mock_router_cls:
+        mock_router_cls.return_value.complete.return_value = fake_llm_json
+        _run_task(_Path(db), 1, 'resume_score', 0, params=_json.dumps(dict(resume_id=resume['id'])))
+    updated = c.get('/api/resumes/' + str(resume['id'])).json()
+    assert updated['struct_json'] is not None
+    struct = _json.loads(updated['struct_json'])
+    assert 'skills' in struct
+    apply_resp = c.post('/api/resumes/' + str(resume['id']) + '/score/apply-suggestion', json={'suggestion': {'section': 'skills', 'before': 'Python', 'after': 'Python 3'}})
+    assert apply_resp.status_code == 200
+
+
+def test_apply_suggestion_422_when_before_text_does_not_match(client):
+    c, db = client
+    struct = {'career_summary': 'A developer.', 'experience': [], 'education': [], 'skills': ['Python'], 'achievements': []}
+    resume = c.post('/api/resumes', json={'name': 'Test', 'text': 'A developer.', 'struct_json': _json.dumps(struct)}).json()
+    resp = c.post('/api/resumes/' + str(resume['id']) + '/score/apply-suggestion', json={'suggestion': {'section': 'skills', 'before': 'text that does not exist', 'after': 'new text'}})
+    assert resp.status_code == 422
+
+
+def test_apply_suggestion_creates_backup_before_overwrite(client):
+    c, db = client
+    struct = {'career_summary': 'A developer.', 'experience': [], 'education': [], 'skills': ['Python'], 'achievements': []}
+    resume = c.post('/api/resumes', json={'name': 'Backup Me', 'text': 'A developer.', 'struct_json': _json.dumps(struct)}).json()
+    before_count = len(c.get('/api/resumes').json()['resumes'])
+    resp = c.post('/api/resumes/' + str(resume['id']) + '/score/apply-suggestion', json={'suggestion': {'section': 'skills', 'before': 'Python', 'after': 'Python 3'}})
+    assert resp.status_code == 200
+    all_resumes = c.get('/api/resumes').json()['resumes']
+    assert len(all_resumes) == before_count + 1
+    backups = [r for r in all_resumes if r['source'] == 'pre-apply-backup']
+    assert len(backups) == 1
+    assert 'Backup Me' in backups[0]['name']
+    backup_struct = _json.loads(backups[0]['struct_json'])
+    assert backup_struct['skills'] == ['Python']

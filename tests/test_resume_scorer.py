@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from scripts.resume_scorer import score_resume, score_ats_hygiene, apply_suggestion
 
 SAMPLE_STRUCT = {

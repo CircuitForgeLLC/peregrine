@@ -416,9 +416,11 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 return
 
             struct = _json.loads(resume_row["struct_json"]) if resume_row.get("struct_json") else {}
+            needs_struct_persist = False
             if not struct:
                 from scripts.resume_parser import parse_resume
                 struct, _err = parse_resume(resume_row.get("text", ""))
+                needs_struct_persist = True
 
             update_task_stage(db_path, task_id, "scoring resume")
             holistic = score_resume(struct)
@@ -428,7 +430,7 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             conn.row_factory = sqlite3.Row
             recent_rows = conn.execute(
                 "SELECT description FROM jobs WHERE description IS NOT NULL AND description != '' "
-                "ORDER BY created_at DESC LIMIT 10"
+                "ORDER BY date_found DESC LIMIT 10"
             ).fetchall()
             conn.close()
             recent_descriptions = [r["description"] for r in recent_rows]
@@ -437,12 +439,25 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             feedback = dict(holistic)
             feedback.update(ats)
             conn = sqlite3.connect(db_path)
-            conn.execute(
-                "UPDATE resumes SET score=?, ats_score=?, feedback_json=?, "
-                "scored_at=datetime('now') WHERE id=?",
-                (holistic.get("overall_score"), ats.get("ats_score"),
-                 _json.dumps(feedback), resume_id),
-            )
+            if needs_struct_persist:
+                # struct_json was empty on this row (e.g. non-YAML imports never
+                # populate it) — we had to fall back to parse_resume() above to
+                # score it at all. Persist that parsed struct now so downstream
+                # apply-suggestion calls have structured data to edit instead of
+                # permanently 409ing on a resume that was just scored fine.
+                conn.execute(
+                    "UPDATE resumes SET score=?, ats_score=?, feedback_json=?, "
+                    "struct_json=?, scored_at=datetime('now') WHERE id=?",
+                    (holistic.get("overall_score"), ats.get("ats_score"),
+                     _json.dumps(feedback), _json.dumps(struct), resume_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE resumes SET score=?, ats_score=?, feedback_json=?, "
+                    "scored_at=datetime('now') WHERE id=?",
+                    (holistic.get("overall_score"), ats.get("ats_score"),
+                     _json.dumps(feedback), resume_id),
+                )
             conn.commit()
             conn.close()
 

@@ -2,13 +2,17 @@
   <Teleport to="body">
     <div
       class="rsm-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="rsm-title"
       @keydown.esc="close"
       @click.self="close"
     >
-      <div class="rsm-card" ref="cardRef" tabindex="-1">
+      <div
+        class="rsm-card"
+        ref="cardRef"
+        tabindex="-1"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rsm-title"
+      >
         <div class="rsm__header">
           <h2 id="rsm-title" class="rsm__title">Resume Score</h2>
           <button class="rsm__close" aria-label="Close" @click="close">✕</button>
@@ -28,56 +32,68 @@
             <button class="btn-secondary" @click="startScoring">Try again</button>
           </div>
           <div v-else-if="state === 'done' && feedback" class="rsm__result">
-            <div class="rsm__score-badge" :class="scoreClass(feedback.overall_score)">
-              <span class="rsm__score-value">{{ overallScoreLabel }}</span>
-              <span class="rsm__score-max">/10</span>
+            <div v-if="feedback.overall_score === null" class="rsm__llm-failure" role="alert">
+              <p>Scoring failed — try again.</p>
+              <button class="btn-secondary" @click="startScoring">Retry</button>
             </div>
-            <p class="rsm__summary">{{ feedback.summary }}</p>
+            <template v-else>
+              <div class="rsm__score-badge" :class="scoreClass(feedback.overall_score)">
+                <span class="rsm__score-value">{{ overallScoreLabel }}</span>
+                <span class="rsm__score-max">/10</span>
+                <span class="rsm__score-label">{{ scoreLabel(feedback.overall_score) }}</span>
+              </div>
+              <p class="rsm__summary">{{ feedback.summary }}</p>
 
-            <div class="rsm__columns">
-              <div class="rsm__column">
-                <h3>Strengths</h3>
-                <ul>
-                  <li v-for="(s, i) in feedback.strengths" :key="i">{{ s }}</li>
-                </ul>
+              <div class="rsm__columns">
+                <div class="rsm__column">
+                  <h3>Strengths</h3>
+                  <ul>
+                    <li v-for="(s, i) in feedback.strengths" :key="i">{{ s }}</li>
+                  </ul>
+                </div>
+                <div class="rsm__column">
+                  <h3>Areas for Improvement</h3>
+                  <ul>
+                    <li v-for="(s, i) in feedback.improvements" :key="i">{{ s }}</li>
+                  </ul>
+                </div>
               </div>
-              <div class="rsm__column">
-                <h3>Areas for Improvement</h3>
-                <ul>
-                  <li v-for="(s, i) in feedback.improvements" :key="i">{{ s }}</li>
-                </ul>
-              </div>
-            </div>
-            <h3>Suggestions</h3>
-            <ul class="rsm__suggestions">
-              <li v-for="sugg in feedback.suggestions" :key="sugg.id" class="rsm__suggestion">
-                <p class="rsm__before"><strong>Before:</strong> {{ sugg.before }}</p>
-                <p class="rsm__after"><strong>After:</strong> {{ sugg.after }}</p>
-                <p class="rsm__rationale">{{ sugg.rationale }}</p>
-                <button
-                  v-if="sugg.appliable"
-                  class="btn-secondary"
-                  :disabled="applyingId === sugg.id || appliedIds.has(sugg.id)"
-                  @click="applySuggestion(sugg)"
-                >
-                  {{ applyLabel(sugg) }}
-                </button>
-                <button v-else class="btn-secondary" disabled>Needs manual review</button>
-              </li>
-            </ul>
-            <div class="rsm__ats-card">
+              <h3>Suggestions</h3>
+              <ul class="rsm__suggestions">
+                <li v-for="sugg in feedback.suggestions" :key="sugg.id" class="rsm__suggestion">
+                  <p class="rsm__before"><strong>Before:</strong> {{ sugg.before }}</p>
+                  <p class="rsm__after"><strong>After:</strong> {{ sugg.after }}</p>
+                  <p class="rsm__rationale">{{ sugg.rationale }}</p>
+                  <button
+                    v-if="sugg.appliable"
+                    class="btn-secondary"
+                    :disabled="applyingId === sugg.id || appliedIds.has(sugg.id)"
+                    @click="applySuggestion(sugg)"
+                  >
+                    {{ applyLabel(sugg) }}
+                  </button>
+                  <button v-else class="btn-secondary" disabled>Needs manual review</button>
+                  <p v-if="applyErrors[sugg.id]" class="rsm__apply-error" role="alert">
+                    {{ applyErrors[sugg.id] }}
+                  </p>
+                </li>
+              </ul>
+
+              <button class="btn-secondary" @click="startScoring">Re-score</button>
+            </template>
+
+            <div v-if="feedback.ats_score !== null" class="rsm__ats-card">
               <h3>ATS Hygiene</h3>
               <div class="rsm__score-badge rsm__score-badge--small" :class="scoreClass(feedback.ats_score)">
                 <span class="rsm__score-value">{{ atsScoreLabel }}</span>
                 <span class="rsm__score-max">/10</span>
+                <span class="rsm__score-label">{{ scoreLabel(feedback.ats_score) }}</span>
               </div>
               <p class="rsm__ats-basis">{{ feedback.ats_basis }}</p>
               <ul>
                 <li v-for="(issue, i) in feedback.ats_issues" :key="i">{{ issue }}</li>
               </ul>
             </div>
-
-            <button class="btn-secondary" @click="startScoring">Re-score</button>
           </div>
         </div>
       </div>
@@ -109,6 +125,7 @@ const errorMessage = ref<string | null>(null)
 const feedback = ref<Feedback | null>(null)
 const applyingId = ref<string | null>(null)
 const appliedIds = ref<Set<string>>(new Set())
+const applyErrors = ref<Record<string, string>>({})
 const cardRef = ref<HTMLElement | null>(null)
 
 const stageLabel = computed(() => phaseText.value || 'Scoring…')
@@ -119,6 +136,14 @@ const formatScore = (score: number | null | undefined) => (score === null || sco
 
 const applyLabel = (sugg: Suggestion) =>
   appliedIds.value.has(sugg.id) ? 'Applied ✓' : (applyingId.value === sugg.id ? 'Applying…' : 'Apply')
+
+// Thresholds mirror scoreClass() below — keep the two in sync.
+const scoreLabel = (score: number | null | undefined) => {
+  if (score === null || score === undefined) return 'Not scored'
+  if (score >= 8) return 'Strong'
+  if (score >= 5) return 'Solid'
+  return 'Needs work'
+}
 
 const scoreClass = (score: number | null | undefined) => {
   if (score === null || score === undefined) return 'rsm__score-badge--unknown'
@@ -144,8 +169,7 @@ async function startScoring() {
   state.value = 'loading'
   errorMessage.value = null
   const url = `/api/resumes/${props.resumeId}/score`
-  const POST = 'POST'
-  const { error } = await useApiFetch(url, { method: POST })
+  const { error } = await useApiFetch(url, { method: 'POST' })
   if (error) {
     state.value = 'error'
     return
@@ -181,20 +205,20 @@ async function pollStatus() {
 
 async function applySuggestion(sugg: Suggestion) {
   applyingId.value = sugg.id
+  applyErrors.value = { ...applyErrors.value, [sugg.id]: '' }
   const url = `/api/resumes/${props.resumeId}/score/apply-suggestion`
-  const body = JSON.stringify({ suggestion: sugg })
-  const jsonType = 'application/json'
-  const ctKey = 'Content-Type'
-  const headers: Record<string, string> = {}
-  headers[ctKey] = jsonType
-  const postMethod = 'POST'
-  const opts = { method: postMethod, body, headers }
-  const { error } = await useApiFetch(url, opts)
+  const { error } = await useApiFetch(url, {
+    method: 'POST',
+    body: JSON.stringify({ suggestion: sugg }),
+    headers: { 'Content-Type': 'application/json' },
+  })
   applyingId.value = null
-  if (!error) {
-    appliedIds.value = new Set([...appliedIds.value, sugg.id])
-    emit('applied')
+  if (error) {
+    applyErrors.value = { ...applyErrors.value, [sugg.id]: "Couldn't apply this suggestion — try re-scoring." }
+    return
   }
+  appliedIds.value = new Set([...appliedIds.value, sugg.id])
+  emit('applied')
 }
 
 function close() {
@@ -265,6 +289,15 @@ onUnmounted(() => document.removeEventListener('keydown', trapFocus))
 .rsm__score-badge--unknown { border-color: var(--color-border, #a8b8d0); color: var(--color-text-muted, #4a5c7a); }
 .rsm__score-badge--small { font-size: 1rem; padding: 0.25rem 0.6rem; }
 .rsm__score-max { font-size: 0.85rem; font-weight: 400; opacity: 0.7; }
+.rsm__score-label {
+  font-size: var(--text-sm, 0.875rem); font-weight: 600; opacity: 0.85;
+  margin-left: 0.4rem;
+}
+.rsm__llm-failure { color: var(--color-error, #c0392b); }
+.rsm__apply-error {
+  color: var(--color-error, #c0392b); font-size: var(--text-sm, 0.875rem);
+  margin-top: var(--space-1, 0.25rem);
+}
 
 .rsm__columns { display: flex; gap: var(--space-4, 1rem); flex-wrap: wrap; }
 .rsm__column { flex: 1 1 12rem; min-width: 0; }

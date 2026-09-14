@@ -1143,9 +1143,10 @@ class ApplySuggestionBody(BaseModel):
 @app.post("/api/resumes/{resume_id}/score/apply-suggestion")
 def apply_resume_suggestion(resume_id: int, body: ApplySuggestionBody):
     import json as _json
-    from scripts.db import get_resume as _get, update_resume_struct as _update_struct
+    from scripts.db import get_resume as _get, update_resume_struct as _update_struct, create_resume as _create
     from scripts.resume_optimizer import hallucination_check, render_resume_text
     from scripts.resume_scorer import apply_suggestion
+    from scripts.resume_sync import make_auto_backup_name
 
     db_path = Path(_request_db.get() or DB_PATH)
     r = _get(db_path, resume_id)
@@ -1157,10 +1158,26 @@ def apply_resume_suggestion(resume_id: int, body: ApplySuggestionBody):
         raise HTTPException(409, "Resume has no structured data to edit — re-import it.")
 
     rewritten = apply_suggestion(struct, body.suggestion)
+    if rewritten == struct:
+        raise HTTPException(
+            422,
+            "Couldn't find the original text to replace — the resume may have "
+            "changed since it was scored. Re-score to refresh.",
+        )
     # hallucination_check() only verifies company/title/dates/institution anchors,
     # not bullet-text content -- see issue #160 for the known gap.
     if not hallucination_check(struct, rewritten):
         raise HTTPException(409, "This suggestion could not be safely applied — it introduces new facts.")
+
+    # Back up the resume's current content before overwriting it in place, same
+    # pattern as apply_resume_to_profile()'s backup-before-overwrite below.
+    _create(
+        db_path,
+        name=make_auto_backup_name(r["name"]),
+        text=r.get("text", ""),
+        source="pre-apply-backup",
+        struct_json=r.get("struct_json"),
+    )
 
     final_text = render_resume_text(rewritten)
     _update_struct(db_path, resume_id=resume_id, text=final_text, struct_json=_json.dumps(rewritten))

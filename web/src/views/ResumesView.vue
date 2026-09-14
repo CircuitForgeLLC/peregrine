@@ -123,7 +123,7 @@
     v-if="showScoreModal && selected"
     :resume-id="selected.id"
     @close="showScoreModal = false"
-    @applied="loadList"
+    @applied="handleApplied"
   />
 
   <ResumeSyncConfirmModal
@@ -236,6 +236,14 @@ async function setDefault() {
   actionError.value = ''
   const { error } = await useApiFetch(`/api/resumes/${selected.value.id}/set-default`, { method: 'POST' })
   if (error) { actionError.value = 'Failed to set default.'; return }
+  await loadList()
+  if (selected.value) {
+    const refreshed = resumes.value.find(r => r.id === selected.value!.id)
+    if (refreshed) select(refreshed)
+  }
+}
+
+async function handleApplied() {
   await loadList()
   if (selected.value) {
     const refreshed = resumes.value.find(r => r.id === selected.value!.id)

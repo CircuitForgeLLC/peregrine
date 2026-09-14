@@ -89,6 +89,11 @@ def score_resume(struct: dict[str, Any]) -> dict[str, Any]:
     suggestions = []
     for i, sugg in enumerate(parsed.get("suggestions") or []):
         rewritten = _apply_to_copy(struct, sugg)
+        # hallucination_check() only verifies company/title/dates/institution
+        # anchors, not bullet-text content -- see issue #160 for the known gap.
+        # This is the gate that decides whether the Apply button even appears
+        # in the UI, so a false "appliable: true" here is what a user actually
+        # sees and acts on.
         appliable = hallucination_check(struct, rewritten)
         suggestions.append({
             "id": sugg.get("id") or f"sugg-{i+1}",
