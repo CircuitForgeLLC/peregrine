@@ -16,6 +16,7 @@ export const router = createRouter({
     { path: '/contacts',    redirect: '/messages' },
     { path: '/references',  component: () => import('../views/ReferencesView.vue') },
     { path: '/digest',     component: () => import('../views/DigestView.vue') },
+    { path: '/salary-calculator', component: () => import('../views/SalaryCalculatorView.vue') },
     { path: '/prep',       component: () => import('../views/InterviewPrepView.vue') },
     { path: '/prep/:id',   component: () => import('../views/InterviewPrepView.vue') },
     { path: '/survey',     component: () => import('../views/SurveyView.vue') },
