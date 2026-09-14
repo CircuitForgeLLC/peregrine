@@ -132,6 +132,36 @@ def test_returns_none_stats_when_no_salary_data(db):
     assert result["p75"] is None
 
 
+@pytest.mark.parametrize("hourly_text", ["$10 – $12", "$15 – $18", "$60 – $70"])
+def test_bare_hourly_salary_excluded_from_salary_stats_but_counted(db, hourly_text):
+    _insert(db, "Engineer", "Remote", "$100,000")
+    _insert(db, "Engineer", "Remote", hourly_text)
+    db.commit()
+
+    result = get_salary_stats(db, ["Engineer"])
+
+    assert result["count"] == 2
+    assert result["count_with_salary"] == 1
+    assert result["median"] == 100000
+    assert result["p25"] == 100000
+    assert result["p75"] == 100000
+
+
+@pytest.mark.parametrize(
+    "annual_text",
+    ["$20,000 – $25,000", "$65,000 – $85,000", "$150,000 – $170,000"],
+)
+def test_genuine_annual_salary_not_incorrectly_excluded(db, annual_text):
+    _insert(db, "Engineer", "Remote", annual_text)
+    db.commit()
+
+    result = get_salary_stats(db, ["Engineer"])
+
+    assert result["count"] == 1
+    assert result["count_with_salary"] == 1
+    assert result["median"] is not None
+
+
 def test_single_number_salary_string_midpoint(db):
     _insert(db, "Engineer", "Remote", "$80,000")
     db.commit()

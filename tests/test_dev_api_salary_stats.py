@@ -84,6 +84,40 @@ def test_salary_stats_honors_titles_and_location_params(tmp_path, monkeypatch):
     assert data["median"] == 100000
 
 
+def test_salary_stats_empty_location_param_not_falls_back_and_not_filtered(tmp_path, monkeypatch):
+    """A deliberately-cleared `location=` param means "no filter", not
+    "use my saved profile's location" — distinct from omitting it entirely."""
+    db_path = tmp_path / "staging.db"
+    _seed_db(db_path, [
+        ("Software Engineer", "Austin, TX", "$100,000"),
+        ("Software Engineer", "New York, NY", "$150,000"),
+    ])
+    monkeypatch.setenv("STAGING_DB", str(db_path))
+    monkeypatch.setattr("dev_api.DB_PATH", str(db_path))
+
+    fake_search_path = tmp_path / "config" / "search_profiles.yaml"
+    fake_search_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(fake_search_path, "w") as f:
+        yaml.dump({"default": {"job_titles": [], "locations": ["Austin"]}}, f)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_search_path)
+
+    from dev_api import app
+    c = TestClient(app)
+
+    # location explicitly present but empty -> no location filter applied,
+    # profile's "Austin" location must NOT be silently re-applied.
+    resp = c.get("/api/salary-stats", params={"titles": "Software Engineer", "location": ""})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 2
+
+    # location omitted entirely -> falls back to the saved profile's "Austin".
+    resp2 = c.get("/api/salary-stats", params={"titles": "Software Engineer"})
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert data2["count"] == 1
+
+
 def test_salary_stats_omitting_titles_falls_back_to_search_profile(tmp_path, monkeypatch):
     db_path = tmp_path / "staging.db"
     _seed_db(db_path, [

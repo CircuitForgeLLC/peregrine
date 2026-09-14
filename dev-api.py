@@ -509,38 +509,45 @@ def job_counts():
 # ── GET /api/salary-stats ──────────────────────────────────────────────────────
 
 @app.get("/api/salary-stats")
-def salary_stats(titles: str = "", location: str = ""):
+def salary_stats(titles: str | None = None, location: str | None = None):
     """Salary range across the user's own scraped job listings.
 
-    `titles`/`location` are optional query params. When omitted, they fall
-    back to the saved search profile's `job_titles`/`locations` (same
-    read path as GET /api/settings/search).
+    `titles`/`location` are optional query params. They fall back to the
+    saved search profile's `job_titles`/`locations` (same read path as
+    GET /api/settings/search) only when OMITTED from the request entirely
+    — not when present-but-empty. A deliberately-cleared field (e.g.
+    `location=`) must mean "no filter", not "use my saved profile".
     """
     from scripts.salary_stats import get_salary_stats
 
-    title_list = [t.strip() for t in titles.split(",") if t.strip()]
-    location_val = location.strip()
+    title_list = [t.strip() for t in titles.split(",") if t.strip()] if titles is not None else []
+    location_val = location.strip() if location is not None else ""
 
-    if not title_list or not location_val:
-        p = _search_prefs_path()
-        if p.exists():
-            with open(p) as f:
-                data = yaml.safe_load(f) or {}
-            from scripts.discover import _normalize_profiles
-            normalized = _normalize_profiles(data)
-            profiles = normalized.get("profiles", [])
-            profile = next((pr for pr in profiles if pr.get("name") == "default"), None)
-            if profile is None:
-                profile = data.get("default", {})
-            if not title_list:
-                title_list = profile.get("job_titles") or profile.get("titles") or []
-            if not location_val:
-                locations = profile.get("locations") or []
-                location_val = locations[0] if locations else ""
+    if titles is None or location is None:
+        try:
+            p = _search_prefs_path()
+            if p.exists():
+                with open(p) as f:
+                    data = yaml.safe_load(f) or {}
+                from scripts.discover import _normalize_profiles
+                normalized = _normalize_profiles(data)
+                profiles = normalized.get("profiles", [])
+                profile = next((pr for pr in profiles if pr.get("name") == "default"), None)
+                if profile is None:
+                    profile = data.get("default", {})
+                if titles is None:
+                    title_list = profile.get("job_titles") or profile.get("titles") or []
+                if location is None:
+                    locations = profile.get("locations") or []
+                    location_val = locations[0] if locations else ""
+        except Exception:
+            pass
 
     db = _get_db()
-    result = get_salary_stats(db, title_list, location_val or None)
-    db.close()
+    try:
+        result = get_salary_stats(db, title_list, location_val or None)
+    finally:
+        db.close()
     return result
 
 

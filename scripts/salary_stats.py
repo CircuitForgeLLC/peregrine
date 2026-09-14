@@ -8,10 +8,45 @@ segmentation here.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import statistics
 
 from scripts.job_ranker import _parse_salary_range
+
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _looks_hourly(salary_text: str) -> bool:
+    """True when raw salary text looks like a bare hourly rate, not annual.
+
+    `_parse_salary_range()` multiplies any bare number under 1000 by 1000
+    on the assumption it's shorthand (e.g. the "80" in "80-120k" means
+    80,000). That heuristic is wrong for real scraped listings that store
+    a bare hourly rate with no unit text at all, e.g. "$10 – $12" or
+    "$60 – $70" — those get silently inflated into $10,000–$12,000 and
+    $60,000–$70,000.
+
+    A listing is treated as hourly (and excluded from the stats pool)
+    only when ALL of the following hold against the ORIGINAL text:
+      - no comma anywhere (genuine annual figures like "$20,000" always
+        carry a comma in scraped listings; this is what distinguishes a
+        real low annual salary from a bare hourly rate)
+      - no 'k'/'K' suffix anywhere (shorthand like "80-120k" is explicitly
+        annual and should NOT be rejected)
+      - every number that appears in the text is below 1000
+
+    Any one of these failing means the text is NOT unambiguously hourly,
+    so it's left to `_parse_salary_range()` as before.
+    """
+    if "," in salary_text:
+        return False
+    if "k" in salary_text.lower():
+        return False
+    numbers = _NUMBER_RE.findall(salary_text)
+    if not numbers:
+        return False
+    return all(float(n) < 1000 for n in numbers)
 
 
 def get_salary_stats(
@@ -62,6 +97,11 @@ def get_salary_stats(
     midpoints: list[int] = []
     for row in rows:
         salary_text = row["salary"] if isinstance(row, sqlite3.Row) else row[0]
+        if _looks_hourly(salary_text):
+            # Rejected as unambiguously hourly — still counted in `count`
+            # (via the base query above) but excluded from the salary pool,
+            # same treatment as an already-unparseable salary string.
+            continue
         low, high = _parse_salary_range(salary_text)
         if low is None or high is None:
             continue

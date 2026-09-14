@@ -2,22 +2,18 @@
 import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useApiFetch } from '../composables/useApi'
-
-interface SalaryStats {
-  count: number
-  count_with_salary: number
-  median: number | null
-  p25: number | null
-  p75: number | null
-}
+import {
+  formatCurrency,
+  hasSalaryRange,
+  salaryCountLine,
+  salaryRolesLine,
+  SALARY_EMPTY_STATE_TEXT,
+  type SalaryStats,
+} from '../composables/useSalaryStats'
 
 const loading = ref(true)
 const errored = ref(false)
 const stats = ref<SalaryStats | null>(null)
-
-function formatCurrency(value: number): string {
-  return `$${value.toLocaleString('en-US')}`
-}
 
 onMounted(async () => {
   const { data, error } = await useApiFetch<SalaryStats>('/api/salary-stats')
@@ -42,19 +38,19 @@ onMounted(async () => {
 
     <template v-else-if="stats">
       <p class="market-snapshot__count">
-        {{ stats.count }} open {{ stats.count === 1 ? 'role' : 'roles' }} in your search results
+        {{ salaryRolesLine(stats) }}
       </p>
 
-      <template v-if="stats.count_with_salary > 0">
+      <template v-if="hasSalaryRange(stats)">
         <p class="market-snapshot__range">
-          Median {{ formatCurrency(stats.p25 ?? 0) }}–{{ formatCurrency(stats.p75 ?? 0) }}
+          Typical range {{ formatCurrency(stats.p25!) }}–{{ formatCurrency(stats.p75!) }}
         </p>
         <p class="market-snapshot__sub">
-          based on {{ stats.count_with_salary }} of {{ stats.count }} roles with a listed salary
+          {{ salaryCountLine(stats) }}
         </p>
       </template>
       <p v-else class="market-snapshot__sub">
-        No salary data in your current search results yet
+        {{ SALARY_EMPTY_STATE_TEXT }}
       </p>
     </template>
 
