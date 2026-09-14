@@ -506,6 +506,44 @@ def job_counts():
     }
 
 
+# ── GET /api/salary-stats ──────────────────────────────────────────────────────
+
+@app.get("/api/salary-stats")
+def salary_stats(titles: str = "", location: str = ""):
+    """Salary range across the user's own scraped job listings.
+
+    `titles`/`location` are optional query params. When omitted, they fall
+    back to the saved search profile's `job_titles`/`locations` (same
+    read path as GET /api/settings/search).
+    """
+    from scripts.salary_stats import get_salary_stats
+
+    title_list = [t.strip() for t in titles.split(",") if t.strip()]
+    location_val = location.strip()
+
+    if not title_list or not location_val:
+        p = _search_prefs_path()
+        if p.exists():
+            with open(p) as f:
+                data = yaml.safe_load(f) or {}
+            from scripts.discover import _normalize_profiles
+            normalized = _normalize_profiles(data)
+            profiles = normalized.get("profiles", [])
+            profile = next((pr for pr in profiles if pr.get("name") == "default"), None)
+            if profile is None:
+                profile = data.get("default", {})
+            if not title_list:
+                title_list = profile.get("job_titles") or profile.get("titles") or []
+            if not location_val:
+                locations = profile.get("locations") or []
+                location_val = locations[0] if locations else ""
+
+    db = _get_db()
+    result = get_salary_stats(db, title_list, location_val or None)
+    db.close()
+    return result
+
+
 # ── POST /api/jobs/{id}/approve ───────────────────────────────────────────────
 
 @app.post("/api/jobs/{job_id}/approve")
