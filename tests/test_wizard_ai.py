@@ -40,7 +40,7 @@ class TestAppConfigByokField:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": True})
         with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
                 r = client.get("/api/config/app")
         assert r.status_code == 200
         assert r.json()["byokUnlocked"] is False
@@ -49,7 +49,7 @@ class TestAppConfigByokField:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": True})
         with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=True):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 r = client.get("/api/config/app")
         assert r.status_code == 200
         assert r.json()["byokUnlocked"] is True
@@ -61,7 +61,7 @@ class TestWizardAIInterviewTierGate:
     def test_returns_402_when_tier_blocked(self, client):
         """Free tier with no BYOK: expect 402."""
         with patch("dev_api._get_effective_tier", return_value="free"):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
                 r = client.post(
                     "/api/wizard/ai/interview",
                     json={"history": [{"role": "user", "content": "Hello"}]},
@@ -72,7 +72,7 @@ class TestWizardAIInterviewTierGate:
     def test_returns_402_for_free_tier_without_byok(self, client):
         """Explicit check that free tier without LLM configured is gated."""
         with patch("dev_api._get_effective_tier", return_value="free"):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
                 r = client.post(
                     "/api/wizard/ai/interview",
                     json={"history": [], "profile_so_far": {}},
@@ -87,7 +87,7 @@ class TestWizardAIInterviewTierGate:
             "complete": False,
         })
         with patch("dev_api._get_effective_tier", return_value="free"):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=True):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
                     mock_cls.return_value.complete.return_value = llm_reply
                     r = client.post(
@@ -104,7 +104,7 @@ class TestWizardAIInterviewLLM:
         """Context managers for paid tier + BYOK."""
         return (
             patch("dev_api._get_effective_tier", return_value="paid"),
-            patch("app.wizard.tiers.has_configured_llm", return_value=True),
+            patch("scripts.wizard.tiers.has_configured_llm", return_value=True),
         )
 
     def test_returns_valid_reply_structure(self, client):
@@ -114,7 +114,7 @@ class TestWizardAIInterviewLLM:
             "complete": False,
         })
         with patch("dev_api._get_effective_tier", return_value="paid"):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=True):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
                     mock_cls.return_value.complete.return_value = llm_reply
                     r = client.post(
@@ -142,7 +142,7 @@ class TestWizardAIInterviewLLM:
             "complete": True,
         })
         with patch("dev_api._get_effective_tier", return_value="paid"):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=True):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
                     mock_cls.return_value.complete.return_value = llm_reply
                     r = client.post(
@@ -161,7 +161,7 @@ class TestWizardAIInterviewLLM:
     def test_fallback_when_llm_returns_non_json(self, client):
         """If LLM returns non-JSON, the endpoint still returns 200 with raw reply."""
         with patch("dev_api._get_effective_tier", return_value="paid"):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=True):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
                     mock_cls.return_value.complete.return_value = "Hello, what is your name?"
                     r = client.post(
@@ -179,7 +179,7 @@ class TestWizardAIInterviewLLM:
         llm_reply = json.dumps({"reply": "OK", "extracted_fields": {}, "complete": False})
         captured_calls = []
         with patch("dev_api._get_effective_tier", return_value="paid"):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=True):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
                     mock_cls.return_value.complete.side_effect = (
                         lambda prompt, system=None: (captured_calls.append(prompt) or llm_reply)
@@ -204,7 +204,7 @@ class TestWizardAIInterviewLLM:
         llm_reply = json.dumps({"reply": "Got it!", "extracted_fields": {}, "complete": False})
         captured_calls = []
         with patch("dev_api._get_effective_tier", return_value="paid"):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=True):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
                     mock_cls.return_value.complete.side_effect = (
                         lambda prompt, system=None: (captured_calls.append(prompt) or llm_reply)
@@ -229,7 +229,7 @@ class TestWizardAIInterviewLLM:
     def test_llm_error_returns_503(self, client):
         """If LLM raises, the endpoint returns 503."""
         with patch("dev_api._get_effective_tier", return_value="paid"):
-            with patch("app.wizard.tiers.has_configured_llm", return_value=True):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
                     mock_cls.return_value.complete.side_effect = RuntimeError("no backends")
                     r = client.post(

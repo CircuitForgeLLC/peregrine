@@ -41,8 +41,11 @@ cd peregrine
 **Conda (no Docker):**
 
 ```bash
-conda run -n job-seeker pip install -r requirements.txt
-streamlit run app/app.py
+conda run -n cf pip install -r requirements.txt
+conda run -n cf uvicorn dev_api:app --port 8601   # FastAPI backend
+
+# in a second shell:
+cd web && npm install && npm run dev              # Vite dev server at :5173
 ```
 
 ---

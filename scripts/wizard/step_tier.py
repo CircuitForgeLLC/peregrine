@@ -1,5 +1,5 @@
 """Step 2 — Tier selection (free / paid / premium)."""
-from app.wizard.tiers import TIERS
+from scripts.wizard.tiers import TIERS
 
 
 def validate(data: dict) -> list[str]:
