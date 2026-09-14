@@ -154,6 +154,56 @@ describe('ProfileSummaryCard', () => {
     expect(wrapper.find('.error').text()).toContain('Save failed')
   })
 
+  it('disables Save and never calls save when the initial load fails (not just while in flight)', async () => {
+    // Both search.load() and resume.load() resolve with an error — this leaves
+    // store fields at their constructor defaults (e.g. resume.salary_min === 0),
+    // not the user's real data, so Save must stay disabled after loading settles,
+    // not just while it's in flight.
+    mockFetch.mockResolvedValue({ data: null, error: { kind: 'http', status: 500, detail: 'Server error' } })
+    const search = useSearchStore()
+    const resume = useResumeStore()
+    const wrapper = mount(ProfileSummaryCard, { global: { plugins: [makeRouter()] } })
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(search.loading).toBe(false)
+    expect(resume.loading).toBe(false)
+    expect(search.loadError).toBeTruthy()
+    expect(resume.loadError).toBeTruthy()
+
+    const searchSaveSpy = vi.spyOn(search, 'save')
+    const resumeSaveSpy = vi.spyOn(resume, 'save')
+
+    const saveBtn = wrapper.find('.btn-primary')
+    expect(saveBtn.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.error-banner').exists()).toBe(true)
+
+    // Prove a click structurally cannot fire a save — not just that the
+    // `disabled` attribute is present — by asserting the spies were never called.
+    await saveBtn.trigger('click')
+    expect(searchSaveSpy).not.toHaveBeenCalled()
+    expect(resumeSaveSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not re-fire load on a second mount once a store already loaded successfully', async () => {
+    mockFetch.mockResolvedValue({ data: null, error: null })
+    const search = useSearchStore()
+    const resume = useResumeStore()
+
+    const first = mount(ProfileSummaryCard, { global: { plugins: [makeRouter()] } })
+    await first.vm.$nextTick()
+    await first.vm.$nextTick()
+    expect(search.loaded).toBe(true)
+    expect(resume.loaded).toBe(true)
+    first.unmount()
+    vi.clearAllMocks()
+
+    // Same (still-active) Pinia stores, simulating navigating back to the dashboard.
+    mount(ProfileSummaryCard, { global: { plugins: [makeRouter()] } })
+    await Promise.resolve()
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
   it('the "Full preferences" link points to /settings/search', async () => {
     mockFetch.mockResolvedValue({ data: null, error: null })
     const wrapper = mount(ProfileSummaryCard, { global: { plugins: [makeRouter()] } })

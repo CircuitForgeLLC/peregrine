@@ -5,6 +5,10 @@
       <RouterLink to="/settings/search" class="profile-summary__link">Full preferences →</RouterLink>
     </div>
 
+    <p v-if="loadErrorMessage" class="error-banner" role="alert">
+      Couldn't load your saved preferences, so Save is disabled to avoid overwriting them — {{ loadErrorMessage }}
+    </p>
+
     <!-- Locations -->
     <div class="profile-summary__field">
       <label class="profile-summary__label">Locations</label>
@@ -39,6 +43,7 @@
           v-for="opt in remoteOptions"
           :key="opt.value"
           :class="['remote-btn', { active: search.remote_preference === opt.value }]"
+          :aria-pressed="search.remote_preference === opt.value"
           @click="search.remote_preference = opt.value"
         >{{ opt.label }}</button>
       </div>
@@ -56,15 +61,15 @@
     </div>
 
     <!-- Save -->
-    <div class="profile-summary__actions">
+    <div class="profile-summary__actions" role="status" aria-live="polite">
       <button
         class="btn-primary"
-        :disabled="isLoading || isSaving"
+        :disabled="isLoading || isSaving || !!loadErrorMessage"
         @click="handleSave"
       >
         {{ isSaving ? 'Saving…' : (justSaved ? '✓ Saved' : 'Save') }}
       </button>
-      <p v-if="saveError" class="error">{{ saveError }}</p>
+      <p v-if="saveErrorMessage" class="error" role="alert">{{ saveErrorMessage }}</p>
     </div>
   </section>
 </template>
@@ -89,7 +94,30 @@ const justSaved = ref(false)
 
 const isLoading = computed(() => search.loading || resume.loading)
 const isSaving = computed(() => search.saving || resume.saving)
-const saveError = computed(() => search.saveError || resume.saveError)
+
+// A failed initial load leaves store fields at their constructor defaults
+// (e.g. resume.salary_min === 0, resume.experience === []) rather than the
+// user's real data — Save must stay disabled in that case, not just while
+// loading is in flight, or one click PUTs a blank object over their profile.
+const loadErrorMessage = computed(() => {
+  const searchMsg = search.loadError
+  const resumeMsg = resume.loadError
+  if (searchMsg && resumeMsg) return `Search preferences: ${searchMsg} — Resume: ${resumeMsg}`
+  if (searchMsg) return `Search preferences: ${searchMsg}`
+  if (resumeMsg) return `Resume: ${resumeMsg}`
+  return null
+})
+
+// Name which half failed when only one of the two saves errors, so the user
+// isn't left guessing whether their locations or their salary didn't save.
+const saveErrorMessage = computed(() => {
+  const searchMsg = search.saveError
+  const resumeMsg = resume.saveError
+  if (searchMsg && resumeMsg) return `Search preferences: ${searchMsg} — Salary: ${resumeMsg}`
+  if (searchMsg) return `Search preferences: ${searchMsg}`
+  if (resumeMsg) return `Salary: ${resumeMsg}`
+  return null
+})
 
 function addLocation() {
   search.addTag('locations', locationInput.value)
@@ -104,8 +132,13 @@ async function handleSave() {
 }
 
 onMounted(() => {
-  search.load()
-  resume.load()
+  // Stores are shared Pinia singletons — re-loading on every mount would
+  // silently discard unsaved edits made on the Settings pages before the
+  // user navigated back to the dashboard, plus cost two needless round-trips
+  // per visit. Only load once per session (per store), unless a previous
+  // load failed (loaded stays false on failure so a retry can still happen).
+  if (!search.loaded) search.load()
+  if (!resume.loaded) resume.load()
 })
 </script>
 
@@ -231,6 +264,15 @@ onMounted(() => {
 }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .error { color: var(--color-error); font-size: 0.82rem; margin: 0; }
+.error-banner {
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--color-error);
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin: 0;
+}
 
 @media (max-width: 480px) {
   .profile-summary { padding: var(--space-4); }

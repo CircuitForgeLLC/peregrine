@@ -24,6 +24,10 @@ export const useSearchStore = defineStore('settings/search', () => {
   const saving = ref(false)
   const saveError = ref<string | null>(null)
   const loadError = ref<string | null>(null)
+  // Set true only after a successful load — lets callers (e.g. dashboard
+  // cards) avoid re-fetching on every mount, without masking a failed load
+  // as "already loaded" (a failure leaves this false so a retry can happen).
+  const loaded = ref(false)
 
   async function load() {
     loading.value = true
@@ -31,6 +35,7 @@ export const useSearchStore = defineStore('settings/search', () => {
     const { data, error } = await useApiFetch<Record<string, unknown>>('/api/settings/search')
     loading.value = false
     if (error) { loadError.value = 'Failed to load search preferences'; return }
+    loaded.value = true
     if (!data) return
     remote_preference.value = (data.remote_preference as RemotePreference) ?? 'both'
     job_titles.value = (data.job_titles as string[]) ?? []
@@ -134,7 +139,7 @@ export const useSearchStore = defineStore('settings/search', () => {
     remote_preference, job_titles, locations, exclude_keywords, job_boards,
     custom_board_urls, blocklist_companies, blocklist_industries, blocklist_locations,
     titleSuggestions, locationSuggestions, excludeSuggestions,
-    loading, saving, saveError, loadError,
+    loading, saving, saveError, loadError, loaded,
     load, save, suggestTitles, suggestLocations, suggestExcludeKeywords,
     addTag, removeTag, acceptSuggestion, toggleBoard,
   }
