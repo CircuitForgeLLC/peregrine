@@ -124,3 +124,33 @@ def test_per_job_resume_endpoints(client):
     c.patch("/api/jobs/1/resume", json={"resume_id": specific["id"]})
     result2 = c.get("/api/jobs/1/resume").json()
     assert result2["id"] == specific["id"]
+
+
+import json as _json
+
+
+def test_score_endpoint_queues_task_and_status_round_trips(client):
+    c, db = client
+    struct = dict(name="Jane Doe", career_summary="A developer.",
+                  experience=[], education=[], skills=[], achievements=[])
+    resume = c.post("/api/resumes", json=dict(
+        name="Test Resume", text="Jane Doe\nSUMMARY\nA developer.",
+        struct_json=_json.dumps(struct),
+    )).json()
+
+    resume_id = resume["id"]
+    resp = c.post("/api/resumes/" + str(resume_id) + "/score")
+    assert resp.status_code == 200
+    assert "task_id" in resp.json()
+
+    status_resp = c.get("/api/resumes/" + str(resume_id) + "/score/task")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["status"] in ("queued", "running", "completed")
+
+
+def test_get_score_before_scoring_returns_null(client):
+    c, db = client
+    resume = c.post("/api/resumes", json=dict(name="Unscored", text="x")).json()
+    resp = c.get("/api/resumes/" + str(resume["id"]) + "/score")
+    assert resp.status_code == 200
+    assert resp.json() == dict(score=None, scored_at=None)

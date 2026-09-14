@@ -1084,6 +1084,58 @@ def get_resume_endpoint(resume_id: int):
     return r
 
 
+@app.post("/api/resumes/{resume_id}/score")
+def score_resume_endpoint(resume_id: int):
+    from scripts.db import get_resume as _get
+    from scripts.task_runner import submit_task
+    db_path = Path(_request_db.get() or DB_PATH)
+    if not _get(db_path, resume_id):
+        raise HTTPException(404, "Resume not found")
+    import json as _json
+    task_id, is_new = submit_task(
+        db_path=db_path,
+        task_type="resume_score",
+        job_id=0,
+        params=_json.dumps(dict(resume_id=resume_id)),
+    )
+    return dict(task_id=task_id, is_new=is_new)
+
+
+@app.get("/api/resumes/{resume_id}/score/task")
+def resume_score_task_status(resume_id: int):
+    """Poll the latest resume_score task status for this resume.
+
+    task_id/job_id are not scoped to resume_id in the background_tasks schema
+    (resume_score tasks are submitted with job_id=0, matching the "global task"
+    convention used by discovery), so this filters on the resume_id embedded in
+    the task's params JSON via SQLite's json_extract (confirmed available in
+    this repo's sqlite3 build).
+    """
+    db = _get_db()
+    row = db.execute(
+        "SELECT status, stage, error FROM background_tasks "
+        "WHERE task_type = 'resume_score' AND json_extract(params, '$.resume_id') = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (resume_id,),
+    ).fetchone()
+    db.close()
+    if not row:
+        return dict(status="none", stage=None, message=None)
+    return dict(status=row["status"], stage=row["stage"], message=row["error"])
+
+
+@app.get("/api/resumes/{resume_id}/score")
+def get_resume_score_endpoint(resume_id: int):
+    from scripts.db import get_resume as _get
+    import json as _json
+    db_path = Path(_request_db.get() or DB_PATH)
+    r = _get(db_path, resume_id)
+    if not r:
+        raise HTTPException(404, "Resume not found")
+    feedback = _json.loads(r["feedback_json"]) if r.get("feedback_json") else None
+    return dict(score=feedback, scored_at=r.get("scored_at"))
+
+
 @app.patch("/api/resumes/{resume_id}")
 def update_resume_endpoint(resume_id: int, body: dict):
     from scripts.db import get_resume as _get, update_resume as _update

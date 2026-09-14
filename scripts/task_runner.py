@@ -403,6 +403,49 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 save_optimized_resume(db_path, job_id=job_id,
                                       text="", gap_report=gap_report)
 
+        elif task_type == "resume_score":
+            import json as _json
+            from scripts.db import get_resume as _get_resume
+            from scripts.resume_scorer import score_resume, score_ats_hygiene
+
+            p = _json.loads(params or "{}")
+            resume_id = p.get("resume_id")
+            resume_row = _get_resume(db_path, resume_id)
+            if not resume_row:
+                update_task_status(db_path, task_id, "failed", error=f"Resume {resume_id} not found")
+                return
+
+            struct = _json.loads(resume_row["struct_json"]) if resume_row.get("struct_json") else {}
+            if not struct:
+                from scripts.resume_parser import parse_resume
+                struct, _err = parse_resume(resume_row.get("text", ""))
+
+            update_task_stage(db_path, task_id, "scoring resume")
+            holistic = score_resume(struct)
+
+            update_task_stage(db_path, task_id, "checking ATS hygiene")
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            recent_rows = conn.execute(
+                "SELECT description FROM jobs WHERE description IS NOT NULL AND description != '' "
+                "ORDER BY created_at DESC LIMIT 10"
+            ).fetchall()
+            conn.close()
+            recent_descriptions = [r["description"] for r in recent_rows]
+            ats = score_ats_hygiene(struct, recent_descriptions)
+
+            feedback = dict(holistic)
+            feedback.update(ats)
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                "UPDATE resumes SET score=?, ats_score=?, feedback_json=?, "
+                "scored_at=datetime('now') WHERE id=?",
+                (holistic.get("overall_score"), ats.get("ats_score"),
+                 _json.dumps(feedback), resume_id),
+            )
+            conn.commit()
+            conn.close()
+
         elif task_type == "survey_analyze":
             import json as _json
             from scripts.survey_assistant import run_survey_analyze
