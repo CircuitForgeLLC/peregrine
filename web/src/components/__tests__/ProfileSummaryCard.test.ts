@@ -129,6 +129,31 @@ describe('ProfileSummaryCard', () => {
     expect(resumeSaveSpy).toHaveBeenCalled()
   })
 
+  it('does not show "✓ Saved" and surfaces the error when a save fails', async () => {
+    mockFetch.mockResolvedValue({ data: null, error: null })
+    const search = useSearchStore()
+    const resume = useResumeStore()
+    const wrapper = mount(ProfileSummaryCard, { global: { plugins: [makeRouter()] } })
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    // Simulate resume.save() failing (matching how resume.test.ts exercises the failure path:
+    // saveError is set internally when the mocked useApiFetch call errors).
+    vi.spyOn(search, 'save').mockResolvedValue(undefined)
+    vi.spyOn(resume, 'save').mockImplementation(async () => {
+      resume.saveError = 'Save failed — please try again.'
+    })
+
+    const saveBtn = wrapper.find('.btn-primary')
+    await saveBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(saveBtn.text()).not.toContain('✓ Saved')
+    expect(wrapper.find('.error').exists()).toBe(true)
+    expect(wrapper.find('.error').text()).toContain('Save failed')
+  })
+
   it('the "Full preferences" link points to /settings/search', async () => {
     mockFetch.mockResolvedValue({ data: null, error: null })
     const wrapper = mount(ProfileSummaryCard, { global: { plugins: [makeRouter()] } })
