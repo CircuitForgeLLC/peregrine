@@ -187,3 +187,22 @@ def test_apply_suggestion_rejects_hallucinated_content(client):
                               "before": "Did work", "after": "Served as CTO of Globex Inc"}},
     )
     assert resp.status_code == 409
+
+
+def test_apply_suggestion_404_when_resume_missing(client):
+    c, db = client
+    resp = c.post(
+        "/api/resumes/99999/score/apply-suggestion",
+        json={"suggestion": {"section": "skills", "before": "Python", "after": "Python 3"}},
+    )
+    assert resp.status_code == 404
+
+
+def test_apply_suggestion_409_when_no_struct_json(client):
+    c, db = client
+    resume = c.post("/api/resumes", json={"name": "NoStruct", "text": "plain text only"}).json()
+    resp = c.post(
+        f"/api/resumes/{resume['id']}/score/apply-suggestion",
+        json={"suggestion": {"section": "skills", "before": "Python", "after": "Python 3"}},
+    )
+    assert resp.status_code == 409

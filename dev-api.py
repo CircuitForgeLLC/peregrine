@@ -1157,6 +1157,8 @@ def apply_resume_suggestion(resume_id: int, body: ApplySuggestionBody):
         raise HTTPException(409, "Resume has no structured data to edit — re-import it.")
 
     rewritten = apply_suggestion(struct, body.suggestion)
+    # hallucination_check() only verifies company/title/dates/institution anchors,
+    # not bullet-text content -- see issue #160 for the known gap.
     if not hallucination_check(struct, rewritten):
         raise HTTPException(409, "This suggestion could not be safely applied — it introduces new facts.")
 
