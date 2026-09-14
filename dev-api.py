@@ -1136,6 +1136,36 @@ def get_resume_score_endpoint(resume_id: int):
     return dict(score=feedback, scored_at=r.get("scored_at"))
 
 
+class ApplySuggestionBody(BaseModel):
+    suggestion: dict
+
+
+@app.post("/api/resumes/{resume_id}/score/apply-suggestion")
+def apply_resume_suggestion(resume_id: int, body: ApplySuggestionBody):
+    import json as _json
+    from scripts.db import get_resume as _get, update_resume_struct as _update_struct
+    from scripts.resume_optimizer import hallucination_check, render_resume_text
+    from scripts.resume_scorer import apply_suggestion
+
+    db_path = Path(_request_db.get() or DB_PATH)
+    r = _get(db_path, resume_id)
+    if not r:
+        raise HTTPException(404, "Resume not found")
+
+    struct = _json.loads(r["struct_json"]) if r.get("struct_json") else {}
+    if not struct:
+        raise HTTPException(409, "Resume has no structured data to edit — re-import it.")
+
+    rewritten = apply_suggestion(struct, body.suggestion)
+    if not hallucination_check(struct, rewritten):
+        raise HTTPException(409, "This suggestion could not be safely applied — it introduces new facts.")
+
+    final_text = render_resume_text(rewritten)
+    _update_struct(db_path, resume_id=resume_id, text=final_text, struct_json=_json.dumps(rewritten))
+    updated = _get(db_path, resume_id)
+    return {"ok": True, "resume": updated}
+
+
 @app.patch("/api/resumes/{resume_id}")
 def update_resume_endpoint(resume_id: int, body: dict):
     from scripts.db import get_resume as _get, update_resume as _update

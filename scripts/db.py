@@ -1133,6 +1133,31 @@ def update_resume_content(
         conn.close()
 
 
+def update_resume_struct(
+    db_path: Path = DEFAULT_DB,
+    resume_id: int = 0,
+    text: str = "",
+    struct_json: str = "",
+) -> None:
+    """Update text and struct_json after an in-place suggestion apply.
+
+    Unlike update_resume_content(), this does NOT stamp synced_at — that field
+    means "synced to the profile", and applying a scoring suggestion here has
+    nothing to do with profile sync.
+    """
+    word_count = len(text.split()) if text else 0
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE resumes SET text=?, struct_json=?, word_count=?, "
+            "updated_at=datetime('now') WHERE id=?",
+            (text, struct_json, word_count, resume_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_job_resume(db_path: Path = DEFAULT_DB, job_id: int = 0) -> dict | None:
     """Return the resume for a job: job-specific first, then default, then None."""
     conn = sqlite3.connect(db_path)

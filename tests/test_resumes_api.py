@@ -154,3 +154,36 @@ def test_get_score_before_scoring_returns_null(client):
     resp = c.get("/api/resumes/" + str(resume["id"]) + "/score")
     assert resp.status_code == 200
     assert resp.json() == dict(score=None, scored_at=None)
+
+
+def test_apply_suggestion_updates_resume_text(client):
+    c, db = client
+    struct = {"career_summary": "A developer.", "experience": [], "education": [],
+              "skills": ["Python"], "achievements": []}
+    resume = c.post("/api/resumes", json={
+        "name": "Test", "text": "A developer.", "struct_json": _json.dumps(struct),
+    }).json()
+    resp = c.post(
+        f"/api/resumes/{resume['id']}/score/apply-suggestion",
+        json={"suggestion": {"section": "skills", "before": "Python", "after": "Python 3"}},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert "Python 3" in _json.loads(body["resume"]["struct_json"])["skills"]
+
+
+def test_apply_suggestion_rejects_hallucinated_content(client):
+    c, db = client
+    struct = {"career_summary": "A developer.", "experience": [
+        {"title": "Developer", "company": "Acme", "bullets": ["Did work"]}
+    ], "education": [], "skills": [], "achievements": []}
+    resume = c.post("/api/resumes", json={
+        "name": "Test", "text": "A developer.", "struct_json": _json.dumps(struct),
+    }).json()
+    resp = c.post(
+        f"/api/resumes/{resume['id']}/score/apply-suggestion",
+        json={"suggestion": {"section": "experience", "target": "Globex Inc|CTO",
+                              "before": "Did work", "after": "Served as CTO of Globex Inc"}},
+    )
+    assert resp.status_code == 409

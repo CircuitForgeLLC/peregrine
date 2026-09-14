@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from scripts.resume_scorer import score_resume, score_ats_hygiene
+from scripts.resume_scorer import score_resume, score_ats_hygiene, apply_suggestion
 
 SAMPLE_STRUCT = {
     "name": "Jane Doe",
@@ -68,3 +68,28 @@ def test_score_ats_hygiene_with_no_history_uses_fallback_basis():
     result = score_ats_hygiene(SAMPLE_STRUCT, [])
     assert result["ats_basis"] == "general ATS best practices — save some jobs to sharpen this"
     assert isinstance(result["ats_score"], int)
+
+
+def test_apply_suggestion_replaces_matching_experience_bullet():
+    struct = {
+        "career_summary": "A developer.",
+        "experience": [{"title": "Senior Developer", "company": "Acme Corp",
+                         "bullets": ["Responsible for managing a team", "Other bullet"]}],
+        "education": [], "skills": [], "achievements": [],
+    }
+    suggestion = {
+        "section": "experience", "target": "Acme Corp|Senior Developer",
+        "before": "Responsible for managing a team",
+        "after": "Led a team of 6 engineers",
+    }
+    result = apply_suggestion(struct, suggestion)
+    assert result["experience"][0]["bullets"] == ["Led a team of 6 engineers", "Other bullet"]
+    # Original struct must be untouched (apply_suggestion returns a copy).
+    assert struct["experience"][0]["bullets"][0] == "Responsible for managing a team"
+
+
+def test_apply_suggestion_no_match_is_a_no_op():
+    struct = {"career_summary": "x", "experience": [], "education": [], "skills": [], "achievements": []}
+    suggestion = {"section": "summary", "before": "does not match", "after": "new text"}
+    result = apply_suggestion(struct, suggestion)
+    assert result["career_summary"] == "x"
