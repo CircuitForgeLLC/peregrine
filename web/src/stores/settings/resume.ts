@@ -20,6 +20,10 @@ export const useResumeStore = defineStore('settings/resume', () => {
   const saving = ref(false)
   const saveError = ref<string | null>(null)
   const loadError = ref<string | null>(null)
+  // Set true only after a successful load — lets callers (e.g. dashboard
+  // cards) avoid re-fetching on every mount, without masking a failed load
+  // as "already loaded" (a failure leaves this false so a retry can happen).
+  const loaded = ref(false)
 
   // Identity (synced from profile store)
   const name = ref(''); const email = ref(''); const phone = ref(''); const linkedin_url = ref('')
@@ -62,6 +66,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
       loadError.value = error.kind === 'network' ? error.message : (error.detail || 'Failed to load resume')
       return
     }
+    loaded.value = true
     if (!data || !data.exists) { hasResume.value = false; return }
     hasResume.value = true
     name.value = String(data.name ?? ''); email.value = String(data.email ?? '')
@@ -174,7 +179,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
   }
 
   return {
-    hasResume, loading, saving, saveError, loadError,
+    hasResume, loading, saving, saveError, loadError, loaded,
     name, email, phone, linkedin_url, surname, address, city, zip_code, date_of_birth,
     experience, salary_min, salary_max, notice_period, remote, relocation, assessment, background_check,
     gender, pronouns, ethnicity, veteran_status, disability,
