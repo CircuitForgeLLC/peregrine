@@ -29,12 +29,24 @@ function medianPosition(): number {
   return Math.min(100, Math.max(0, pct))
 }
 
-async function fetchStats() {
+async function fetchStats(forceExplicitParams = false) {
   loading.value = true
   errored.value = false
   const params = new URLSearchParams()
-  if (titlesInput.value.trim()) params.set('titles', titlesInput.value.trim())
-  if (locationInput.value.trim()) params.set('location', locationInput.value.trim())
+
+  if (forceExplicitParams) {
+    // When recalculating: always send params, even if empty.
+    // This lets the backend distinguish "cleared override" (empty string)
+    // from "not overridden, use profile" (omitted param).
+    params.set('titles', titlesInput.value.trim())
+    params.set('location', locationInput.value.trim())
+  } else {
+    // On initial mount: only set params if they have content.
+    // The auto-filled values from the store will already be populated.
+    if (titlesInput.value.trim()) params.set('titles', titlesInput.value.trim())
+    if (locationInput.value.trim()) params.set('location', locationInput.value.trim())
+  }
+
   const qs = params.toString()
   const { data, error } = await useApiFetch<SalaryStats>(`/api/salary-stats${qs ? `?${qs}` : ''}`)
   if (error || !data) {
@@ -46,7 +58,7 @@ async function fetchStats() {
 }
 
 async function recalculate() {
-  await fetchStats()
+  await fetchStats(true)
 }
 
 onMounted(async () => {

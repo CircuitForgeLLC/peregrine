@@ -113,4 +113,23 @@ describe('SalaryCalculatorView', () => {
       expect(text).not.toContain(forbidden)
     }
   })
+
+  it('sends explicit empty params when user clears an override and clicks Recalculate', async () => {
+    mockApi({ job_titles: ['Backend Developer'], locations: ['Remote'] }, FULL_STATS)
+    const w = await mountView()
+    vi.mocked(useApiFetch).mockClear()
+
+    // User clears the location field
+    await w.find('#salary-location').setValue('')
+    // Click Recalculate
+    await w.find('form').trigger('submit')
+    await flushPromises()
+
+    const call = vi.mocked(useApiFetch).mock.calls.find(c => (c[0] as string).startsWith('/api/salary-stats'))
+    expect(call).toBeDefined()
+    const url = call![0] as string
+    // Should include location= (empty) to signal "no filter", not omit it (which means "use profile")
+    expect(url).toContain('location=')
+    expect(url).toContain('titles=')
+  })
 })
