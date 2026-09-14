@@ -58,6 +58,9 @@
                     aria-describedby="apply-to-profile-desc">
               {{ syncApplying ? 'Applying…' : '⇩ Apply to profile' }}
             </button>
+            <button class="btn-secondary" @click="showScoreModal = true">
+              Score this resume
+            </button>
             <button class="btn-secondary" @click="toggleEdit">
               {{ editing ? 'Cancel' : 'Edit' }}
             </button>
@@ -116,6 +119,13 @@
     <button class="rv__sync-notice-dismiss" @click="dismissSyncNotice" aria-label="Dismiss">✕</button>
   </div>
 
+  <ResumeScoreModal
+    v-if="showScoreModal && selected"
+    :resume-id="selected.id"
+    @close="showScoreModal = false"
+    @applied="loadList"
+  />
+
   <ResumeSyncConfirmModal
     :show="showSyncModal"
     :current-summary="buildSummary(resumes.find(r => r.is_default === 1) ?? null)"
@@ -135,6 +145,7 @@ import { ref, onMounted } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useApiFetch } from '../composables/useApi'
 import ResumeSyncConfirmModal from '../components/ResumeSyncConfirmModal.vue'
+import ResumeScoreModal from '../components/ResumeScoreModal.vue'
 
 interface Resume {
   id: number; name: string; source: string; job_id: number | null
@@ -152,6 +163,7 @@ const editText     = ref('')
 const saving       = ref(false)
 const actionError  = ref('')
 const showDownloadMenu = ref(false)
+const showScoreModal = ref(false)
 
 const showSyncModal   = ref(false)
 const syncApplying    = ref(false)
