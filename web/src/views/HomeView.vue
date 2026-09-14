@@ -41,6 +41,8 @@
     <!-- Profile summary -->
     <ProfileSummaryCard />
 
+    <MarketSnapshotCard />
+
     <!-- Primary workflow -->
     <section class="home__section" aria-labelledby="workflow-heading">
       <h2 id="workflow-heading" class="home__section-title">Primary Workflow</h2>
@@ -391,6 +393,7 @@ import WorkflowButton from '../components/WorkflowButton.vue'
 import HintChip from '../components/HintChip.vue'
 import PipelineStepper from '../components/PipelineStepper.vue'
 import ProfileSummaryCard from '../components/ProfileSummaryCard.vue'
+import MarketSnapshotCard from '../components/MarketSnapshotCard.vue'
 import { useAppConfigStore } from '../stores/appConfig'
 
 const config = useAppConfigStore()
