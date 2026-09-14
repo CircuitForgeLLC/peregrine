@@ -64,6 +64,7 @@
       >
         {{ isSaving ? 'Saving…' : (justSaved ? '✓ Saved' : 'Save') }}
       </button>
+      <p v-if="saveError" class="error">{{ saveError }}</p>
     </div>
   </section>
 </template>
@@ -88,6 +89,7 @@ const justSaved = ref(false)
 
 const isLoading = computed(() => search.loading || resume.loading)
 const isSaving = computed(() => search.saving || resume.saving)
+const saveError = computed(() => search.saveError || resume.saveError)
 
 function addLocation() {
   search.addTag('locations', locationInput.value)
@@ -96,6 +98,7 @@ function addLocation() {
 
 async function handleSave() {
   await Promise.all([search.save(), resume.save()])
+  if (search.saveError || resume.saveError) return
   justSaved.value = true
   setTimeout(() => { justSaved.value = false }, 2000)
 }
@@ -227,6 +230,7 @@ onMounted(() => {
   font-weight: 600;
 }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.error { color: var(--color-error); font-size: 0.82rem; margin: 0; }
 
 @media (max-width: 480px) {
   .profile-summary { padding: var(--space-4); }
