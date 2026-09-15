@@ -70,7 +70,13 @@ function applyToneChip(chip: string) {
 
 async function handleSave() {
   const ok = await store.finalize()
-  if (ok) router.push('/settings/my-profile')
+  if (!ok) return
+  // Reached from onboarding (WizardResumeStep's AI Assistant tab) or from
+  // settings after onboarding is done — send the user back to whichever one.
+  // /settings/my-profile while the wizard is still incomplete would bounce
+  // through the global wizard gate straight to /setup's step-1 redirect,
+  // undoing the progress they just made.
+  router.push(config.wizardComplete ? '/settings/my-profile' : '/setup/resume')
 }
 
 onMounted(async () => {

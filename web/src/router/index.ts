@@ -38,7 +38,9 @@ export const router = createRouter({
         { path: 'developer',   component: () => import('../views/settings/DeveloperView.vue') },
       ],
     },
-    // AI profile wizard — post-setup settings entry point (correctly blocked by wizard gate during onboarding)
+    // AI profile assistant — reachable both during onboarding (linked from the
+    // resume step's "AI Assistant" tab) and afterward as a settings entry
+    // point, so it's exempt from the wizard-completion gate below.
     { path: '/wizard/ai-profile', component: () => import('../views/wizard/WizardAIView.vue') },
     // Onboarding wizard — full-page layout, no AppNav
     {
@@ -68,8 +70,9 @@ router.beforeEach(async (to, _from, next) => {
   // Demo mode: pre-seeded data, no wizard needed — route freely
   if (config.isDemo) return next()
 
-  // Wizard gate runs first for every route except /setup itself
-  if (!to.path.startsWith('/setup') && !config.wizardComplete) {
+  // Wizard gate runs first for every route except /setup itself and the AI
+  // profile assistant, which is reachable both during and after onboarding.
+  if (!to.path.startsWith('/setup') && to.path !== '/wizard/ai-profile' && !config.wizardComplete) {
     return next('/setup')
   }
 
