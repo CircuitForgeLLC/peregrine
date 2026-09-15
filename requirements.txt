@@ -9,7 +9,7 @@
 # CI / fresh checkouts: falls back to the Forgejo VCS URL below.
 # To use local editable install run: pip install -e ../circuitforge-core
 # TODO: pin to @v0.7.0 tag once cf-core cuts a release tag.
-git+https://git.opensourcesolarpunk.com/Circuit-Forge/circuitforge-core.git@main
+git+https://git.circuitforge.tech/Circuit-Forge/circuitforge-core.git@main
 
 # ── Web UI ────────────────────────────────────────────────────────────────
 # Peregrine is served by the Vue 3 SPA (uvicorn dev_api:app) — no
