@@ -176,6 +176,38 @@ describe('useAiInterviewStore', () => {
     expect(body.history[0]).toEqual({ role: 'user', content: 'skip' })
   })
 
+  // ── Content-Type header regression ──────────────────────────────────────────
+  // useApiFetch is a thin wrapper over raw fetch() with no default headers.
+  // Without an explicit Content-Type, the browser sends a stringified JSON
+  // body as text/plain, which FastAPI can't parse — it 422s the request
+  // before it ever reaches the LLM, surfacing as a generic "Could not reach
+  // the assistant" error with no indication it never left the browser.
+
+  it('send() sets Content-Type: application/json', async () => {
+    mockFetch.mockResolvedValue({
+      data: { reply: 'Hi!', extracted_fields: {}, complete: false },
+      error: null,
+    })
+    const store = useAiInterviewStore()
+    await store.send('hello')
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/wizard/ai/interview',
+      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } }),
+    )
+  })
+
+  it('finalize() sets Content-Type: application/json', async () => {
+    mockFetch.mockResolvedValue({ data: {}, error: null })
+    const store = useAiInterviewStore()
+    await store.finalize()
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/wizard/ai/finalize',
+      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } }),
+    )
+  })
+
   // ── keepChatting() ─────────────────────────────────────────────────────────
 
   it('keepChatting() clears the complete flag without resetting messages', async () => {

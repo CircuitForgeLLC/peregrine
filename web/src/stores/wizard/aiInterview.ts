@@ -52,6 +52,7 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     }>('/api/wizard/ai/interview', {
       method: 'POST',
       body: JSON.stringify({ history: messages.value, profile_so_far: fields.value }),
+      headers: { 'Content-Type': 'application/json' },
     })
     loading.value = false
     if (err || !data) {
@@ -83,6 +84,7 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     const { error: err } = await useApiFetch('/api/wizard/ai/finalize', {
       method: 'POST',
       body: JSON.stringify({ profile: fields.value }),
+      headers: { 'Content-Type': 'application/json' },
     })
     saving.value = false
     if (err) {
