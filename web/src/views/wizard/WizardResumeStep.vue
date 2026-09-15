@@ -137,18 +137,22 @@
           or <button class="ai-gate__link" @click="tab = 'manual'">Build Manually</button>.
         </p>
       </div>
-      <div v-else class="ai-embed">
+      <div v-else-if="!showAiChat" class="ai-embed">
         <p class="ai-embed__intro">
           The AI assistant will ask you a few questions to build your profile.
           Your answers are saved locally — nothing is sent anywhere without your approval.
         </p>
-        <a href="/wizard/ai-profile" class="btn-primary ai-embed__cta">
-          Open AI Assistant →
-        </a>
-        <p class="ai-embed__note">
-          Opens in a focused view. Come back here to continue the wizard once you're done.
-        </p>
+        <div class="ai-embed__actions">
+          <button class="btn-primary" @click="showAiChat = true">
+            ✨ Review with LLM
+          </button>
+          <button class="btn-ghost" @click="skipAiReview">
+            Skip →
+          </button>
+        </div>
       </div>
+
+      <AiProfileChat v-else />
     </div>
 
     <div v-if="validationError" class="step__warning" style="margin-top: var(--space-4)">
@@ -171,13 +175,28 @@ import { useWizardStore } from '../../stores/wizard'
 import type { WorkExperience } from '../../stores/wizard'
 import { useApiFetch } from '../../composables/useApi'
 import { useAppConfigStore } from '../../stores/appConfig'
+import { useAiInterviewStore } from '../../stores/wizard/aiInterview'
+import AiProfileChat from '../../components/AiProfileChat.vue'
 import './wizard.css'
 
 const wizard = useWizardStore()
 const router = useRouter()
 const config = useAppConfigStore()
+const aiStore = useAiInterviewStore()
 
 const hasAiAccess = computed(() => config.tier !== 'free' || config.byokUnlocked)
+
+// The chat is embedded right in this tab (analysis happens "right there,"
+// not on a separate page) behind an explicit "Review with LLM" action, with
+// "Skip" sitting prominently alongside it — a user shouldn't feel funneled
+// into the AI flow. Resumes straight into the chat if a draft already
+// exists from an earlier visit (aiInterview.ts persists to localStorage).
+aiStore.restore()
+const showAiChat = ref(aiStore.messages.length > 0)
+
+function skipAiReview() {
+  tab.value = 'upload'
+}
 
 const tab = ref<'upload' | 'manual' | 'ai'>(
   wizard.resume.experience.length > 0 ? 'manual' : 'upload',
@@ -404,7 +423,14 @@ async function next() {
   min-height: 200px;
   display: flex;
   flex-direction: column;
+  /* The intro card is short and reads better centered; the embedded chat is
+     tall and should start from the top instead — toggled via the tab's
+     empty-state modifier below rather than forcing one layout for both. */
   justify-content: center;
+}
+
+.resume-ai:has(.ai-chat) {
+  justify-content: flex-start;
 }
 
 .ai-gate {
@@ -469,15 +495,10 @@ async function next() {
   margin: 0;
 }
 
-.ai-embed__cta {
-  text-decoration: none;
-  display: inline-flex;
+.ai-embed__actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
   align-items: center;
-}
-
-.ai-embed__note {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  margin: 0;
 }
 </style>
