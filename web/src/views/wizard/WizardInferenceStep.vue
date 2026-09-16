@@ -1,6 +1,6 @@
 <template>
   <div class="step">
-    <h2 class="step__heading">Step 6 — Inference & API Keys</h2>
+    <h2 class="step__heading">Step 2 — Inference & API Keys</h2>
     <p class="step__caption">
       Configure how Peregrine generates AI content. You can adjust this any time
       in Settings → System.

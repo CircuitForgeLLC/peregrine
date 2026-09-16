@@ -1,6 +1,6 @@
 <template>
   <div class="step">
-    <h2 class="step__heading">Step 3 — Your Resume</h2>
+    <h2 class="step__heading">Step 4 — Your Resume</h2>
     <p class="step__caption">
       Upload a resume to auto-populate your profile, build it manually, or let an AI guide you.
     </p>

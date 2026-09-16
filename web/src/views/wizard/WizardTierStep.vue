@@ -1,6 +1,6 @@
 <template>
   <div class="step">
-    <h2 class="step__heading">Step 2 — Choose Your Plan</h2>
+    <h2 class="step__heading">Step 3 — Choose Your Plan</h2>
     <p class="step__caption">
       You can upgrade or change this later in Settings → License.
     </p>
