@@ -92,14 +92,14 @@ async function next() {
   }
 
   wizard.identity = { ...form }
-  const ok = await wizard.saveStep(5, {
+  const ok = await wizard.saveStep(6, {
     name: form.name,
     email: form.email,
     phone: form.phone,
     linkedin: form.linkedin,
     career_summary: form.careerSummary,
   })
-  if (ok) router.push('/setup/inference')
+  if (ok) router.push('/setup/search')
 }
 </script>
 

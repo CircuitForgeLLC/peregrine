@@ -73,7 +73,7 @@ describe('WizardLayout — progress step sync', () => {
     mount(WizardLayout, { global: { plugins: [router] } })
     await flushPromises()
 
-    expect(router.currentRoute.value.path).toBe('/setup/resume')
+    expect(router.currentRoute.value.path).toBe('/setup/tier')
     const wizard = useWizardStore()
     expect(wizard.currentStep).toBe(3)
   })
@@ -94,6 +94,6 @@ describe('WizardLayout — progress step sync', () => {
 
     await router.push('/setup/identity')
     await flushPromises()
-    expect(wizard.currentStep).toBe(5)
+    expect(wizard.currentStep).toBe(6)
   })
 })

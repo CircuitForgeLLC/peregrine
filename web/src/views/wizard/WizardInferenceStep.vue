@@ -170,7 +170,7 @@ async function runTest() {
   testing.value = false
 }
 
-function back() { router.push('/setup/identity') }
+function back() { router.push('/setup/hardware') }
 
 async function next() {
   wizard.inference.anthropicKey = form.anthropicKey
@@ -185,14 +185,14 @@ async function next() {
   })
   wizard.inference.services = svcMap
 
-  const ok = await wizard.saveStep(6, {
+  const ok = await wizard.saveStep(2, {
     anthropic_key: form.anthropicKey,
     openai_url: form.openaiUrl,
     openai_key: form.openaiKey,
     orch_url: form.orchUrl,
     services: svcMap,
   })
-  if (ok) router.push('/setup/search')
+  if (ok) router.push('/setup/tier')
 }
 </script>
 

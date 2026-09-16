@@ -280,7 +280,7 @@ async function next() {
     validationError.value = 'Add at least one experience entry with a title and company.'
     return
   }
-  const ok = await wizard.saveStep(3, { resume: {
+  const ok = await wizard.saveStep(4, { resume: {
     experience: wizard.resume.experience,
     ...(wizard.resume.parsedData ?? {}),
   }})

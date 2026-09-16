@@ -127,7 +127,7 @@ function removeLocation(i: number) {
   form.locations.splice(i, 1)
 }
 
-function back() { router.push('/setup/inference') }
+function back() { router.push('/setup/identity') }
 
 async function next() {
   // Flush any partial inputs before validating

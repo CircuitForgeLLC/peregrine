@@ -164,7 +164,7 @@ async function next() {
     stepData.cf_orch_url = orchUrl.value
   }
   const ok = await wizard.saveStep(1, stepData)
-  if (ok) router.push('/setup/tier')
+  if (ok) router.push('/setup/inference')
 }
 </script>
 

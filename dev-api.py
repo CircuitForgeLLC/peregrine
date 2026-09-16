@@ -4621,6 +4621,14 @@ def wizard_save_step(payload: WizardStepPayload):
     updates: dict = {"wizard_step": step}
 
     # ── Step-specific field extraction ────────────────────────────────────────
+    # Step numbers below reflect the current onboarding order: Hardware(1),
+    # Inference(2), Tier(3), Resume(4), Training(5, no server-side save —
+    # posts directly to /api/settings/fine-tune/opt-in), Identity(6),
+    # Search(7), Integrations(8). Inference moved from 6 to 2 (right after
+    # Hardware — the two are directly related) as of the v1.0.0 reorder; the
+    # step-4-meant-identity legacy alias from the pre-training-step era is
+    # dropped here since nothing has sent step=4 in a long time and it would
+    # now collide with Resume's new number.
     if step == 1:
         profile = data.get("inference_profile", "remote")
         if profile not in _WIZARD_PROFILES:
@@ -4628,43 +4636,7 @@ def wizard_save_step(payload: WizardStepPayload):
         updates["inference_profile"] = profile
 
     elif step == 2:
-        tier = data.get("tier", "free")
-        if tier not in _WIZARD_TIERS:
-            raise HTTPException(status_code=400, detail=f"Unknown tier: {tier}")
-        updates["tier"] = tier
-
-    elif step == 3:
-        # Resume data: merge into plain_text_resume.yaml.
-        # The wizard's Resume step only ever has the fields the user actually
-        # touched in this session (e.g. just `experience` when the incoming
-        # payload's parsedData wasn't set — Build Manually tab, a re-upload
-        # that raced, etc). A blind overwrite here would silently wipe
-        # name/email/career_summary/education/skills/achievements that
-        # /api/settings/resume/upload already wrote directly to this same
-        # file moments earlier. Merge onto the existing file instead, same
-        # pattern as step 7 (search preferences) below.
-        resume = data.get("resume", {})
-        if resume:
-            resume_path = Path(_wizard_yaml_path()).parent / "plain_text_resume.yaml"
-            resume_path.parent.mkdir(parents=True, exist_ok=True)
-            existing_resume: dict = {}
-            if resume_path.exists():
-                with open(resume_path) as f:
-                    existing_resume = yaml.safe_load(f) or {}
-            existing_resume.update(resume)
-            with open(resume_path, "w") as f:
-                yaml.dump(existing_resume, f, allow_unicode=True, default_flow_style=False)
-
-    elif step in (4, 5):
-        # Step 4 (legacy) or step 5 (current) — identity fields.
-        # Step 4 was the original numbering before the training step was inserted
-        # between resume and identity; both are accepted for backward compat.
-        for field in ("name", "email", "phone", "linkedin", "career_summary"):
-            if field in data:
-                updates[field] = data[field]
-
-    elif step == 6:
-        # Step 6 — inference: API keys + optional Orchard coordinator URL.
+        # Step 2 — inference: API keys + optional Orchard coordinator URL.
         env_path = Path(_wizard_yaml_path()).parent.parent / ".env"
         env_lines = env_path.read_text().splitlines() if env_path.exists() else []
 
@@ -4691,6 +4663,40 @@ def wizard_save_step(payload: WizardStepPayload):
 
         if "services" in data:
             updates["services"] = data["services"]
+
+    elif step == 3:
+        tier = data.get("tier", "free")
+        if tier not in _WIZARD_TIERS:
+            raise HTTPException(status_code=400, detail=f"Unknown tier: {tier}")
+        updates["tier"] = tier
+
+    elif step == 4:
+        # Resume data: merge into plain_text_resume.yaml.
+        # The wizard's Resume step only ever has the fields the user actually
+        # touched in this session (e.g. just `experience` when the incoming
+        # payload's parsedData wasn't set — Build Manually tab, a re-upload
+        # that raced, etc). A blind overwrite here would silently wipe
+        # name/email/career_summary/education/skills/achievements that
+        # /api/settings/resume/upload already wrote directly to this same
+        # file moments earlier. Merge onto the existing file instead, same
+        # pattern as step 7 (search preferences) below.
+        resume = data.get("resume", {})
+        if resume:
+            resume_path = Path(_wizard_yaml_path()).parent / "plain_text_resume.yaml"
+            resume_path.parent.mkdir(parents=True, exist_ok=True)
+            existing_resume: dict = {}
+            if resume_path.exists():
+                with open(resume_path) as f:
+                    existing_resume = yaml.safe_load(f) or {}
+            existing_resume.update(resume)
+            with open(resume_path, "w") as f:
+                yaml.dump(existing_resume, f, allow_unicode=True, default_flow_style=False)
+
+    elif step == 6:
+        # Step 6 — identity fields.
+        for field in ("name", "email", "phone", "linkedin", "career_summary"):
+            if field in data:
+                updates[field] = data[field]
 
     elif step == 7:
         # Step 7 — search preferences.

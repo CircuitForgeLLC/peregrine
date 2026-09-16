@@ -45,15 +45,19 @@ export interface WizardInferenceData {
 }
 
 // Total mandatory steps (integrations step 8 is optional/skip-able)
+// Backend/Inference config sits right after Hardware Detection — the two are
+// directly related (what hardware you have determines what inference setup
+// makes sense), and it used to be buried at position 6, after several
+// unrelated steps.
 export const WIZARD_STEPS = 8
-export const STEP_LABELS = ['Hardware', 'Tier', 'Resume', 'Training', 'Identity', 'Inference', 'Search', 'Integrations']
+export const STEP_LABELS = ['Hardware', 'Inference', 'Tier', 'Resume', 'Training', 'Identity', 'Search', 'Integrations']
 export const STEP_ROUTES = [
   '/setup/hardware',
+  '/setup/inference',
   '/setup/tier',
   '/setup/resume',
   '/setup/training',
   '/setup/identity',
-  '/setup/inference',
   '/setup/search',
   '/setup/integrations',
 ]
