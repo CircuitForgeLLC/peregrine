@@ -17,6 +17,12 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
   const loading     = ref(false)
   const saving      = ref(false)
   const error       = ref<string | null>(null)
+  // The field name the assistant's last reply is asking about, reported
+  // explicitly by the LLM (see dev-api.py's asking_about) — not guessed by
+  // keyword-matching the reply text, which produced false positives (e.g. a
+  // career_summary question that happened to contain the word "writing"
+  // wrongly triggered the candidate_voice tone-chip suggestions).
+  const askingAbout = ref<string | null>(null)
 
   function _persist() {
     localStorage.setItem(LS_KEY, JSON.stringify({
@@ -68,6 +74,7 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
       reply: string
       extracted_fields: Record<string, unknown>
       complete: boolean
+      asking_about: string | null
     }>('/api/wizard/ai/interview', {
       method: 'POST',
       body: JSON.stringify({ history: messages.value, profile_so_far: fields.value }),
@@ -103,6 +110,7 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     messages.value = [...messages.value, { role: 'assistant', content: data.reply ?? '' }]
     fields.value   = { ...fields.value, ...(data.extracted_fields ?? {}) }
     complete.value = data.complete
+    askingAbout.value = data.asking_about ?? null
     _persist()
   }
 
@@ -136,8 +144,9 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     fields.value   = {}
     complete.value = false
     error.value    = null
+    askingAbout.value = null
     localStorage.removeItem(LS_KEY)
   }
 
-  return { messages, fields, complete, loading, saving, error, restore, seedFields, send, skip, finalize, keepChatting, startOver }
+  return { messages, fields, complete, loading, saving, error, askingAbout, restore, seedFields, send, skip, finalize, keepChatting, startOver }
 })

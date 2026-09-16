@@ -4975,9 +4975,10 @@ Rules:
 4. For candidate_accessibility_focus and candidate_lgbtq_focus, use plain language: "Would you like me to look into whether companies actively support employees with disabilities or neurodivergent needs?" and "Would you like me to check whether companies have strong LGBTQIA+ inclusion policies?"
 5. When you have gathered enough information or the user says they are done, set complete to true
 6. Some fields may already be filled in — a message below may say "[Already gathered: ...]". NEVER ask about a field listed there; it was already pulled from their resume or an earlier step. Skip straight to the first field that's still missing. If your very first reply is being generated and fields are already gathered, briefly acknowledge what you already have (e.g. "I've got your name and background from your resume") before asking about what's missing.
+7. Set asking_about to the exact field name (from the list above) your reply's question is primarily about, so the UI can show the right help alongside it. Set it to null if your reply isn't asking about a specific field (e.g. a greeting, an acknowledgment, or the closing message).
 
 You must ALWAYS respond with valid JSON in this exact format:
-{"reply": "your conversational message here", "extracted_fields": {"name": "...", ...}, "complete": false}
+{"reply": "your conversational message here", "extracted_fields": {"name": "...", ...}, "complete": false, "asking_about": "candidate_voice"}
 
 Only include fields in extracted_fields that you are confident about from the conversation. Do not include fields the user hasn't mentioned. Infer complete=true when all required fields (name, email, career_summary) are gathered or when user explicitly says done."""
 
@@ -5056,13 +5057,20 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
         # then fails Pydantic's `content: str` validation on the *next* turn
         # (that None gets echoed back in `history`), 422ing every message
         # after it until the client clears its draft. `or` catches null too.
+        asking_about = parsed.get("asking_about")
+        if asking_about not in _WIZARD_ALLOWED_FIELDS:
+            # Defensive: a hallucinated/misspelled field name would otherwise
+            # make the frontend confidently show the wrong contextual help
+            # (e.g. tone-of-voice chips) for a question that isn't about tone.
+            asking_about = None
         return {
             "reply": parsed.get("reply") or "",
             "extracted_fields": parsed.get("extracted_fields") or {},
             "complete": bool(parsed.get("complete", False)),
+            "asking_about": asking_about,
         }
     except (json.JSONDecodeError, AttributeError):
-        return {"reply": response_text, "extracted_fields": {}, "complete": False}
+        return {"reply": response_text, "extracted_fields": {}, "complete": False, "asking_about": None}
 
 
 @app.post("/api/wizard/ai/finalize")

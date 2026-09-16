@@ -131,6 +131,52 @@ class TestWizardAIInterviewLLM:
         assert body["extracted_fields"] == {"name": "Alex Rivera"}
         assert body["complete"] is False
 
+    def test_asking_about_passed_through(self, client):
+        """The LLM's asking_about should reach the client unchanged when it's
+        a real field name — the frontend uses it (not keyword-sniffing the
+        reply text) to decide when to show tone-of-voice chip suggestions."""
+        llm_reply = json.dumps({
+            "reply": "What's your preferred writing tone for cover letters?",
+            "extracted_fields": {},
+            "complete": False,
+            "asking_about": "candidate_voice",
+        })
+        with patch("dev_api._get_effective_tier", return_value="paid"):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
+                with patch("scripts.llm_router.LLMRouter") as mock_cls:
+                    mock_cls.return_value.complete.return_value = llm_reply
+                    r = client.post("/api/wizard/ai/interview", json={"history": []})
+        assert r.status_code == 200
+        assert r.json()["asking_about"] == "candidate_voice"
+
+    def test_asking_about_null_when_not_provided(self, client):
+        llm_reply = json.dumps({"reply": "Hi there!", "extracted_fields": {}, "complete": False})
+        with patch("dev_api._get_effective_tier", return_value="paid"):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
+                with patch("scripts.llm_router.LLMRouter") as mock_cls:
+                    mock_cls.return_value.complete.return_value = llm_reply
+                    r = client.post("/api/wizard/ai/interview", json={"history": []})
+        assert r.status_code == 200
+        assert r.json()["asking_about"] is None
+
+    def test_asking_about_discarded_when_not_a_known_field(self, client):
+        """A hallucinated/misspelled field name must not reach the client as
+        if it were valid — that would make the frontend confidently show
+        contextual help for a question the LLM was never actually asking."""
+        llm_reply = json.dumps({
+            "reply": "Tell me about yourself.",
+            "extracted_fields": {},
+            "complete": False,
+            "asking_about": "candidate_writing_tone",  # not a real field name
+        })
+        with patch("dev_api._get_effective_tier", return_value="paid"):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
+                with patch("scripts.llm_router.LLMRouter") as mock_cls:
+                    mock_cls.return_value.complete.return_value = llm_reply
+                    r = client.post("/api/wizard/ai/interview", json={"history": []})
+        assert r.status_code == 200
+        assert r.json()["asking_about"] is None
+
     def test_returns_complete_true_when_llm_signals_done(self, client):
         llm_reply = json.dumps({
             "reply": "You're all set! Your profile is complete.",

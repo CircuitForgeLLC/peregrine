@@ -29,18 +29,8 @@ const TONE_CHIPS = [
   'Enthusiastic and personable',
 ]
 
-function lastAssistantMsg(): string {
-  const msgs = store.messages
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === 'assistant') return msgs[i].content
-  }
-  return ''
-}
-
 function showToneChips(): boolean {
-  if (store.messages.length === 0) return false
-  const lower = lastAssistantMsg().toLowerCase()
-  return lower.includes('writing') || lower.includes('voice') || lower.includes('cover letter')
+  return store.askingAbout === 'candidate_voice'
 }
 
 async function scrollToBottom() {

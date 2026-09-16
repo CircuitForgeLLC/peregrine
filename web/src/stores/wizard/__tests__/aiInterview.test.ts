@@ -117,6 +117,60 @@ describe('useAiInterviewStore', () => {
     ])
   })
 
+  // ── askingAbout ────────────────────────────────────────────────────────────
+  // Regression coverage: the UI previously guessed which field was being
+  // asked about by keyword-matching the reply text ("writing", "voice",
+  // "cover letter"), which false-positived on unrelated questions (e.g. a
+  // career_summary question containing the word "writing"). The backend now
+  // reports this explicitly.
+
+  it('send() tracks the asking_about field reported by the backend', async () => {
+    mockFetch.mockResolvedValue({
+      data: {
+        reply: "What's your preferred writing tone?",
+        extracted_fields: {},
+        complete: false,
+        asking_about: 'candidate_voice',
+      },
+      error: null,
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('Hello')
+
+    expect(store.askingAbout).toBe('candidate_voice')
+  })
+
+  it('send() clears askingAbout when the backend reports null', async () => {
+    mockFetch.mockResolvedValueOnce({
+      data: { reply: 'What tone?', extracted_fields: {}, complete: false, asking_about: 'candidate_voice' },
+      error: null,
+    })
+    mockFetch.mockResolvedValueOnce({
+      data: { reply: 'Great, thanks!', extracted_fields: {}, complete: false, asking_about: null },
+      error: null,
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('first')
+    expect(store.askingAbout).toBe('candidate_voice')
+    await store.send('warm and conversational')
+    expect(store.askingAbout).toBeNull()
+  })
+
+  it('startOver() resets askingAbout', async () => {
+    mockFetch.mockResolvedValue({
+      data: { reply: 'Tone?', extracted_fields: {}, complete: false, asking_about: 'candidate_voice' },
+      error: null,
+    })
+    const store = useAiInterviewStore()
+    await store.send('hi')
+    expect(store.askingAbout).toBe('candidate_voice')
+
+    store.startOver()
+    expect(store.askingAbout).toBeNull()
+  })
+
   it('send() merges extracted_fields into existing fields', async () => {
     mockFetch.mockResolvedValueOnce({
       data: { reply: 'Got it.', extracted_fields: { name: 'Alice' }, complete: false },
