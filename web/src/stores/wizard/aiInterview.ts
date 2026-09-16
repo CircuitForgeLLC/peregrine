@@ -67,13 +67,22 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
         } catch {
           error.value = 'Could not reach the assistant. Please try again.'
         }
+      } else if (err?.kind === 'http' && err.status === 422) {
+        // The server rejected the conversation history itself — usually a
+        // malformed prior turn (e.g. a null reply that slipped through).
+        // Retrying with the same history will 422 again, so tell the user
+        // to start over rather than implying a transient connectivity issue.
+        error.value = 'This conversation hit an unexpected error and can\'t continue. Please start over.'
       } else {
         error.value = 'Could not reach the assistant. Please try again.'
       }
       return
     }
-    messages.value = [...messages.value, { role: 'assistant', content: data.reply }]
-    fields.value   = { ...fields.value, ...data.extracted_fields }
+    // Defensive: never let a non-string reply (e.g. a model emitting
+    // `"reply": null`) into message history — it would fail server-side
+    // validation on the very next turn and get every message after it stuck.
+    messages.value = [...messages.value, { role: 'assistant', content: data.reply ?? '' }]
+    fields.value   = { ...fields.value, ...(data.extracted_fields ?? {}) }
     complete.value = data.complete
     _persist()
   }

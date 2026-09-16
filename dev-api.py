@@ -5050,9 +5050,14 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
 
     try:
         parsed = json.loads(response_text)
+        # .get(key, default) only falls back when the key is *absent* — a
+        # model that emits `"reply": null` still slips a None through, which
+        # then fails Pydantic's `content: str` validation on the *next* turn
+        # (that None gets echoed back in `history`), 422ing every message
+        # after it until the client clears its draft. `or` catches null too.
         return {
-            "reply": parsed.get("reply", ""),
-            "extracted_fields": parsed.get("extracted_fields", {}),
+            "reply": parsed.get("reply") or "",
+            "extracted_fields": parsed.get("extracted_fields") or {},
             "complete": bool(parsed.get("complete", False)),
         }
     except (json.JSONDecodeError, AttributeError):

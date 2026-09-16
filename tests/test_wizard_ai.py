@@ -174,6 +174,29 @@ class TestWizardAIInterviewLLM:
         assert body["extracted_fields"] == {}
         assert body["complete"] is False
 
+    def test_null_reply_coalesced_to_empty_string(self, client):
+        """A model that emits `"reply": null` shouldn't produce a null reply.
+
+        .get(key, default) only falls back when the key is absent, not when
+        its value is explicitly null, so a raw .get("reply", "") would let
+        None through — and that None, echoed back as history on the client's
+        next turn, fails HistoryMessage.content: str validation with a 422
+        that then repeats on every subsequent turn.
+        """
+        llm_reply = json.dumps({"reply": None, "extracted_fields": None, "complete": False})
+        with patch("dev_api._get_effective_tier", return_value="paid"):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
+                with patch("scripts.llm_router.LLMRouter") as mock_cls:
+                    mock_cls.return_value.complete.return_value = llm_reply
+                    r = client.post(
+                        "/api/wizard/ai/interview",
+                        json={"history": []},
+                    )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["reply"] == ""
+        assert body["extracted_fields"] == {}
+
     def test_history_passed_to_llm(self, client):
         """Verify the history turns are included in the prompt sent to the LLM."""
         llm_reply = json.dumps({"reply": "OK", "extracted_fields": {}, "complete": False})

@@ -173,6 +173,31 @@ describe('useAiInterviewStore', () => {
     expect(store.error).toBe('Could not reach the assistant. Please try again.')
   })
 
+  it('send() tells the user to start over on a 422 (corrupted history)', async () => {
+    mockFetch.mockResolvedValue({
+      data: null,
+      error: { kind: 'http', status: 422, detail: JSON.stringify({ detail: [] }) },
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('Hello')
+
+    expect(store.error).toBe("This conversation hit an unexpected error and can't continue. Please start over.")
+  })
+
+  it('send() never pushes a non-string reply into message history', async () => {
+    mockFetch.mockResolvedValue({
+      data: { reply: null as unknown as string, extracted_fields: null as unknown as Record<string, unknown>, complete: false },
+      error: null,
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('Hello')
+
+    expect(store.messages[store.messages.length - 1]).toEqual({ role: 'assistant', content: '' })
+    expect(store.fields).toEqual({})
+  })
+
   it('send() sets a fixed message on a 402 tier-gate error', async () => {
     mockFetch.mockResolvedValue({
       data: null,
