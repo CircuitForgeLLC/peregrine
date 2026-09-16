@@ -44,14 +44,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useWizardStore } from '../../stores/wizard'
 import { useAppConfigStore } from '../../stores/appConfig'
 
 const wizard = useWizardStore()
 const config = useAppConfigStore()
 const router = useRouter()
+const route = useRoute()
 
 // Peregrine logo — served from the static assets directory
 const logoSrc = '/static/peregrine_logo_circle.png'
@@ -61,14 +62,29 @@ const logoSrc = '/static/peregrine_logo_circle.png'
 // themselves by setting the shared loading flag.
 const layoutReady = ref(false)
 
+// Keeps the progress bar's step number matched to whichever /setup/<step>
+// route is actually mounted. loadStatus()'s "resume at" calculation reflects
+// server-side progress, not the page being viewed — landing directly on a
+// specific step route (direct nav, refresh, browser back/forward) would
+// otherwise leave wizard.currentStep (and the "Step N of 8" label) out of
+// sync with the step actually on screen.
+function syncStepToRoute() {
+  const step = wizard.stepForRoute(route.path)
+  if (step !== null) wizard.currentStep = step
+}
+
 onMounted(async () => {
   if (!config.loaded) await config.load()
   const target = await wizard.loadStatus(config.isCloud)
   layoutReady.value = true
   if (router.currentRoute.value.path === '/setup') {
     router.replace(target)
+  } else {
+    syncStepToRoute()
   }
 })
+
+watch(() => route.path, syncStepToRoute)
 </script>
 
 <style scoped>

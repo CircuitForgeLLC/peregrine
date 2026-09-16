@@ -116,6 +116,10 @@ export const useWizardStore = defineStore('wizard', () => {
   )
 
   const routeForStep = (step: number) => STEP_ROUTES[step - 1] ?? '/setup/hardware'
+  const stepForRoute = (path: string): number | null => {
+    const idx = STEP_ROUTES.indexOf(path)
+    return idx === -1 ? null : idx + 1
+  }
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -282,5 +286,6 @@ export const useWizardStore = defineStore('wizard', () => {
     testInference,
     complete,
     routeForStep,
+    stepForRoute,
   }
 })

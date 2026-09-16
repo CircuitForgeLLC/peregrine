@@ -47,7 +47,14 @@ export const router = createRouter({
       path: '/setup',
       component: () => import('../views/wizard/WizardLayout.vue'),
       children: [
-        { path: '',           redirect: '/setup/hardware' },
+        // No `redirect` here on purpose: a static redirect resolves before
+        // WizardLayout ever mounts, which made its own resume-at-last-step
+        // logic (onMounted checking route.path === '/setup') permanently
+        // unreachable — bare /setup always silently landed fresh visitors on
+        // step 1 regardless of real progress. Render the hardware step here
+        // as a same-content fallback; WizardLayout's onMounted still owns
+        // routing to the real resume point once loadStatus() resolves.
+        { path: '',           component: () => import('../views/wizard/WizardHardwareStep.vue') },
         { path: 'hardware',   component: () => import('../views/wizard/WizardHardwareStep.vue') },
         { path: 'tier',       component: () => import('../views/wizard/WizardTierStep.vue') },
         { path: 'resume',     component: () => import('../views/wizard/WizardResumeStep.vue') },

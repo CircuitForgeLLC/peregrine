@@ -40,6 +40,10 @@ describe('wizard gate: /wizard/ai-profile', () => {
     config.wizardComplete = false
 
     await router.push('/settings/my-profile')
-    expect(router.currentRoute.value.path).toBe('/setup/hardware')
+    // Resolves to bare /setup, not /setup/hardware — the '' child route no
+    // longer has a static redirect (see router/index.ts comment); it's
+    // WizardLayout's own onMounted logic that routes on to the real resume
+    // point from there.
+    expect(router.currentRoute.value.path).toBe('/setup')
   })
 })
