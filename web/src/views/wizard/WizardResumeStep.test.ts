@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import WizardResumeStep from './WizardResumeStep.vue'
 import { useAppConfigStore } from '../../stores/appConfig'
+import { useWizardStore } from '../../stores/wizard'
 
 vi.mock('../../composables/useApi', () => ({ useApiFetch: vi.fn() }))
 import { useApiFetch } from '../../composables/useApi'
@@ -64,5 +65,33 @@ describe('WizardResumeStep — AI Assistant tab', () => {
 
     expect(wrapper.find('.resume-tab--active').text()).toContain('Upload File')
     expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  // Regression coverage: deterministic fields already known from an earlier
+  // resume parse (name/email/career_summary land in wizard.identity) must be
+  // sent to the LLM as already-gathered, so it doesn't re-ask for them.
+  it('seeds the AI chat with identity fields already known from the resume parse', async () => {
+    const config = useAppConfigStore()
+    config.tier = 'paid'
+    const wizard = useWizardStore()
+    wizard.identity.name = 'Alex Rivera'
+    wizard.identity.email = 'alex@example.com'
+    wizard.identity.careerSummary = 'Backend engineer with 5 years experience.'
+
+    const wrapper = mount(WizardResumeStep, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('.resume-tab--ai').trigger('click')
+    const buttons = wrapper.findAll('.ai-embed__actions button')
+    const reviewBtn = buttons.find(b => b.text().includes('Review with LLM'))
+    await reviewBtn!.trigger('click')
+    await Promise.resolve()
+
+    const call = mockFetch.mock.calls.find(c => c[0] === '/api/wizard/ai/interview')
+    expect(call).toBeDefined()
+    const body = JSON.parse((call![1] as { body: string }).body)
+    expect(body.profile_so_far).toEqual({
+      name: 'Alex Rivera',
+      email: 'alex@example.com',
+      career_summary: 'Backend engineer with 5 years experience.',
+    })
   })
 })

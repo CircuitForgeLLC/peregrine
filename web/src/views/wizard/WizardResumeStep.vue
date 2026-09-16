@@ -194,6 +194,18 @@ const hasAiAccess = computed(() => config.tier !== 'free' || config.byokUnlocked
 aiStore.restore()
 const showAiChat = ref(aiStore.messages.length > 0)
 
+// Deterministic fields already known from the resume parse / identity step
+// shouldn't be re-asked by the LLM — feed them in as already-gathered.
+function seedAiFieldsFromResume() {
+  aiStore.seedFields({
+    name: wizard.identity.name,
+    email: wizard.identity.email,
+    career_summary: wizard.identity.careerSummary,
+    linkedin: wizard.identity.linkedin,
+  })
+}
+seedAiFieldsFromResume()
+
 function skipAiReview() {
   tab.value = 'upload'
 }
@@ -250,6 +262,7 @@ async function parseResume() {
     if (data.phone && !wizard.identity.phone) wizard.identity.phone = data.phone
     if (data.career_summary && !wizard.identity.careerSummary)
       wizard.identity.careerSummary = data.career_summary
+    seedAiFieldsFromResume()
 
     parsedOk.value = true
     tab.value = 'manual'

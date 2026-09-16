@@ -37,6 +37,25 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     } catch { /* ignore corrupted draft */ }
   }
 
+  /**
+   * Fill in fields already known from elsewhere in the wizard (resume parse,
+   * identity step) without overwriting anything the chat itself has already
+   * gathered or the user already edited — deterministic data should never
+   * make the LLM re-ask for it.
+   */
+  function seedFields(known: Record<string, unknown>) {
+    const additions: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(known)) {
+      if (value !== undefined && value !== null && value !== '' && !(key in fields.value)) {
+        additions[key] = value
+      }
+    }
+    if (Object.keys(additions).length > 0) {
+      fields.value = { ...fields.value, ...additions }
+      _persist()
+    }
+  }
+
   async function send(userText: string) {
     if (loading.value) return
     if (userText !== '') {
@@ -120,5 +139,5 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     localStorage.removeItem(LS_KEY)
   }
 
-  return { messages, fields, complete, loading, saving, error, restore, send, skip, finalize, keepChatting, startOver }
+  return { messages, fields, complete, loading, saving, error, restore, seedFields, send, skip, finalize, keepChatting, startOver }
 })

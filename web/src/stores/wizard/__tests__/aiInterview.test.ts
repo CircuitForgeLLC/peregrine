@@ -48,6 +48,42 @@ describe('useAiInterviewStore', () => {
     expect(store.messages).toEqual([])
   })
 
+  // ── seedFields() ───────────────────────────────────────────────────────────
+  // Deterministic data already known from the resume parse / identity step
+  // must never be re-asked by the LLM.
+
+  it('seedFields() fills in fields not already present', () => {
+    const store = useAiInterviewStore()
+    store.seedFields({ name: 'Alex Rivera', email: 'alex@example.com', linkedin: '' })
+
+    expect(store.fields).toEqual({ name: 'Alex Rivera', email: 'alex@example.com' })
+  })
+
+  it('seedFields() never overwrites a field already present', () => {
+    const store = useAiInterviewStore()
+    store.fields.name = 'Chat-provided Name'
+
+    store.seedFields({ name: 'Resume Name', email: 'from-resume@example.com' })
+
+    expect(store.fields.name).toBe('Chat-provided Name')
+    expect(store.fields.email).toBe('from-resume@example.com')
+  })
+
+  it('seedFields() skips null, undefined, and empty-string values', () => {
+    const store = useAiInterviewStore()
+    store.seedFields({ name: undefined, email: null, linkedin: '' })
+
+    expect(store.fields).toEqual({})
+  })
+
+  it('seedFields() persists to localStorage', () => {
+    const store = useAiInterviewStore()
+    store.seedFields({ name: 'Alex Rivera' })
+
+    const stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '{}')
+    expect(stored.fields).toEqual({ name: 'Alex Rivera' })
+  })
+
   // ── send() ─────────────────────────────────────────────────────────────────
 
   it('send() appends user message and assistant reply on success', async () => {
