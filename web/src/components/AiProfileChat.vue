@@ -33,6 +33,45 @@ function showToneChips(): boolean {
   return store.askingAbout === 'candidate_voice'
 }
 
+// Human review before save. "LLMs are drafts, never decisions" — the chat's
+// completion panel used to just say "ready to save" with no visibility into
+// what was actually extracted, so the user (especially the LLM-authored
+// career_summary prose) never got a real look before it was written. Every
+// field is editable right here; what's shown is exactly what gets saved.
+interface ReviewFieldDef {
+  fieldName: string
+  label: string
+  type: 'text' | 'textarea' | 'list' | 'boolean'
+}
+
+const REVIEW_FIELDS: ReviewFieldDef[] = [
+  { fieldName: 'name', label: 'Full name', type: 'text' },
+  { fieldName: 'email', label: 'Email', type: 'text' },
+  { fieldName: 'career_summary', label: 'Career summary', type: 'textarea' },
+  { fieldName: 'candidate_voice', label: 'Preferred writing tone', type: 'text' },
+  { fieldName: 'mission_preferences', label: 'Industries / causes you care about', type: 'list' },
+  { fieldName: 'candidate_accessibility_focus', label: 'Research accessibility culture', type: 'boolean' },
+  { fieldName: 'candidate_lgbtq_focus', label: 'Research LGBTQIA+ inclusion', type: 'boolean' },
+  { fieldName: 'linkedin', label: 'LinkedIn URL', type: 'text' },
+]
+
+function reviewFieldsPresent(): ReviewFieldDef[] {
+  return REVIEW_FIELDS.filter(f => {
+    const v = store.fields[f.fieldName]
+    return v !== undefined && v !== null && v !== '' &&
+      !(Array.isArray(v) && v.length === 0)
+  })
+}
+
+function listFieldText(fieldName: string): string {
+  const v = store.fields[fieldName]
+  return Array.isArray(v) ? v.join(', ') : ''
+}
+
+function setListField(fieldName: string, text: string) {
+  store.fields[fieldName] = text.split(',').map(s => s.trim()).filter(Boolean)
+}
+
 async function scrollToBottom() {
   await nextTick()
   if (messageList.value) {
@@ -119,7 +158,47 @@ onMounted(async () => {
       <p class="ai-complete__msg">✓ Profile saved.</p>
     </div>
     <div v-else-if="store.complete" class="ai-complete">
-      <p class="ai-complete__msg">Your profile is ready to save.</p>
+      <p class="ai-complete__msg">Review what I've gathered before saving — edit anything that's off.</p>
+
+      <div class="ai-review" role="group" aria-label="Review profile before saving">
+        <div v-for="field in reviewFieldsPresent()" :key="field.fieldName" class="ai-review__field">
+          <label class="ai-review__label" :for="`ai-review-${field.fieldName}`">{{ field.label }}</label>
+
+          <textarea
+            v-if="field.type === 'textarea'"
+            :id="`ai-review-${field.fieldName}`"
+            v-model="(store.fields[field.fieldName] as string)"
+            class="ai-review__textarea"
+            rows="3"
+          />
+          <input
+            v-else-if="field.type === 'text'"
+            :id="`ai-review-${field.fieldName}`"
+            v-model="(store.fields[field.fieldName] as string)"
+            type="text"
+            class="ai-review__input"
+          />
+          <input
+            v-else-if="field.type === 'list'"
+            :id="`ai-review-${field.fieldName}`"
+            :value="listFieldText(field.fieldName)"
+            @input="setListField(field.fieldName, ($event.target as HTMLInputElement).value)"
+            type="text"
+            class="ai-review__input"
+            placeholder="Comma-separated"
+          />
+          <label v-else-if="field.type === 'boolean'" class="ai-review__checkbox-label">
+            <input
+              :id="`ai-review-${field.fieldName}`"
+              v-model="(store.fields[field.fieldName] as boolean)"
+              type="checkbox"
+              class="ai-review__checkbox"
+            />
+            <span>{{ store.fields[field.fieldName] ? 'Yes' : 'No' }}</span>
+          </label>
+        </div>
+      </div>
+
       <div class="ai-complete__actions">
         <button
           class="btn-primary"
@@ -329,13 +408,17 @@ onMounted(async () => {
   border-radius: var(--radius-md);
   padding: var(--space-4);
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-4);
-  flex-wrap: wrap;
+}
+
+.ai-complete--saved {
+  flex-direction: row;
+  align-items: center;
 }
 
 .ai-complete__msg {
-  flex: 1;
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
@@ -346,6 +429,67 @@ onMounted(async () => {
   display: flex;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+/* ── Review-before-save panel ─────────────────────────── */
+.ai-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.ai-review__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ai-review__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.ai-review__input,
+.ai-review__textarea {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+}
+
+.ai-review__textarea {
+  resize: vertical;
+}
+
+.ai-review__input:focus,
+.ai-review__textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+
+.ai-review__checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.ai-review__checkbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-primary);
+  cursor: pointer;
 }
 
 /* ── Input area ────────────────────────────────────── */
