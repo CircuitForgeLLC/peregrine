@@ -165,13 +165,17 @@ export const useWizardStore = defineStore('wizard', () => {
       if (saved.career_summary) identity.value.careerSummary = saved.career_summary
       if (saved.services) inference.value.services = saved.services
 
-      // Cloud: auto-skip steps 1 (hardware), 2 (tier), 5 (inference)
+      // Cloud: auto-skip steps 1 (hardware), 2 (inference), 3 (tier) — a cloud
+      // instance always routes AI generation through the CircuitForge-managed
+      // Orchard cluster (GPU_SERVER_URL is already set server-side), and tier
+      // comes from the account's license, not user choice.
       if (isCloud) {
         const cloudStep = data.wizard_step
         if (cloudStep < 1) {
-          await saveStep(1, { inference_profile: 'single-gpu' })
-          await saveStep(2, { tier: tier.value })
-          currentStep.value = 3
+          await saveStep(1, { inference_profile: 'cf-orch' })
+          await saveStep(2, {})
+          await saveStep(3, { tier: tier.value })
+          currentStep.value = 4
           return '/setup/resume'
         }
       }
