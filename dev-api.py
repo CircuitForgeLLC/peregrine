@@ -4634,13 +4634,26 @@ def wizard_save_step(payload: WizardStepPayload):
         updates["tier"] = tier
 
     elif step == 3:
-        # Resume data: persist to plain_text_resume.yaml
+        # Resume data: merge into plain_text_resume.yaml.
+        # The wizard's Resume step only ever has the fields the user actually
+        # touched in this session (e.g. just `experience` when the incoming
+        # payload's parsedData wasn't set — Build Manually tab, a re-upload
+        # that raced, etc). A blind overwrite here would silently wipe
+        # name/email/career_summary/education/skills/achievements that
+        # /api/settings/resume/upload already wrote directly to this same
+        # file moments earlier. Merge onto the existing file instead, same
+        # pattern as step 7 (search preferences) below.
         resume = data.get("resume", {})
         if resume:
             resume_path = Path(_wizard_yaml_path()).parent / "plain_text_resume.yaml"
             resume_path.parent.mkdir(parents=True, exist_ok=True)
+            existing_resume: dict = {}
+            if resume_path.exists():
+                with open(resume_path) as f:
+                    existing_resume = yaml.safe_load(f) or {}
+            existing_resume.update(resume)
             with open(resume_path, "w") as f:
-                yaml.dump(resume, f, allow_unicode=True, default_flow_style=False)
+                yaml.dump(existing_resume, f, allow_unicode=True, default_flow_style=False)
 
     elif step in (4, 5):
         # Step 4 (legacy) or step 5 (current) — identity fields.

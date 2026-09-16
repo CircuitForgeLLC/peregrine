@@ -189,6 +189,45 @@ class TestWizardStep:
         saved_resume = yaml.safe_load(resume_path.read_text())
         assert saved_resume["experience"][0]["title"] == "Engineer"
 
+    def test_step3_merges_onto_existing_resume_yaml_instead_of_overwriting(self, client, tmp_path):
+        # Regression: /api/settings/resume/upload writes the full parsed
+        # resume (name/email/career_summary/education/skills/achievements)
+        # directly to plain_text_resume.yaml. If the wizard's Resume step
+        # then sends a step-3 payload with only `experience` (e.g. the
+        # "Build Manually" tab, which never populates parsedData), a blind
+        # overwrite here would silently wipe everything else the upload had
+        # already saved. Confirms the merge instead.
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        resume_path = yaml_path.parent / "plain_text_resume.yaml"
+        resume_path.parent.mkdir(parents=True, exist_ok=True)
+        resume_path.write_text(yaml.dump({
+            "name": "Alex Doe",
+            "email": "alex@example.com",
+            "career_summary": "Experienced engineer.",
+            "experience": [{"title": "Old Title", "company": "Old Co"}],
+            "education": [{"institution": "State U"}],
+            "skills": ["Python"],
+            "achievements": ["Shipped a thing"],
+        }, allow_unicode=True, default_flow_style=False))
+
+        minimal_resume = {"experience": [{"title": "Engineer", "company": "Acme"}]}
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/step",
+                            json={"step": 3, "data": {"resume": minimal_resume}})
+        assert r.status_code == 200
+
+        saved_resume = yaml.safe_load(resume_path.read_text())
+        # The new experience list wins (that's the field this step actually sent)...
+        assert saved_resume["experience"][0]["title"] == "Engineer"
+        # ...but everything else from the earlier upload survives.
+        assert saved_resume["name"] == "Alex Doe"
+        assert saved_resume["email"] == "alex@example.com"
+        assert saved_resume["career_summary"] == "Experienced engineer."
+        assert saved_resume["education"] == [{"institution": "State U"}]
+        assert saved_resume["skills"] == ["Python"]
+        assert saved_resume["achievements"] == ["Shipped a thing"]
+
     def test_step4_saves_identity_fields(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})

@@ -74,7 +74,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
     surname.value = String(data.surname ?? ''); address.value = String(data.address ?? '')
     city.value = String(data.city ?? ''); zip_code.value = String(data.zip_code ?? '')
     date_of_birth.value = String(data.date_of_birth ?? '')
-    experience.value = (data.experience as Omit<WorkEntry, 'id'>[]).map(e => ({ ...e, id: crypto.randomUUID() })) ?? []
+    experience.value = ((data.experience as Omit<WorkEntry, 'id'>[]) ?? []).map(e => ({ ...e, id: crypto.randomUUID() }))
     salary_min.value = Number(data.salary_min ?? 0); salary_max.value = Number(data.salary_max ?? 0)
     notice_period.value = String(data.notice_period ?? '')
     remote.value = Boolean(data.remote); relocation.value = Boolean(data.relocation)
