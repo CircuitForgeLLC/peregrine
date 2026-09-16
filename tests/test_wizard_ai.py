@@ -177,6 +177,87 @@ class TestWizardAIInterviewLLM:
         assert r.status_code == 200
         assert r.json()["asking_about"] is None
 
+    def test_forces_complete_once_all_required_fields_are_known(self, client):
+        """A small local model can loop indefinitely (re-confirming, "one more
+        thing", re-summarizing) instead of setting complete itself even once
+        everything is gathered. Once every required field (all but the
+        optional linkedin) has a value across profile_so_far + this turn's
+        extracted_fields, complete must be forced true regardless of what the
+        model says."""
+        profile_so_far = {
+            "name": "Alex",
+            "email": "alex@example.com",
+            "career_summary": "Backend engineer.",
+            "candidate_voice": "warm and conversational",
+            "mission_preferences": ["climate", "animal welfare"],
+            "candidate_accessibility_focus": True,
+        }
+        llm_reply = json.dumps({
+            "reply": "Great, just confirming that's all set!",
+            "extracted_fields": {"candidate_lgbtq_focus": True},
+            "complete": False,  # model fails to notice everything is done
+        })
+        with patch("dev_api._get_effective_tier", return_value="paid"):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
+                with patch("scripts.llm_router.LLMRouter") as mock_cls:
+                    mock_cls.return_value.complete.return_value = llm_reply
+                    r = client.post(
+                        "/api/wizard/ai/interview",
+                        json={"history": [], "profile_so_far": profile_so_far},
+                    )
+        assert r.status_code == 200
+        assert r.json()["complete"] is True
+
+    def test_does_not_force_complete_when_a_required_field_is_still_missing(self, client):
+        profile_so_far = {
+            "name": "Alex",
+            "email": "alex@example.com",
+            "career_summary": "Backend engineer.",
+        }
+        llm_reply = json.dumps({
+            "reply": "What's your preferred tone?",
+            "extracted_fields": {},
+            "complete": False,
+        })
+        with patch("dev_api._get_effective_tier", return_value="paid"):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
+                with patch("scripts.llm_router.LLMRouter") as mock_cls:
+                    mock_cls.return_value.complete.return_value = llm_reply
+                    r = client.post(
+                        "/api/wizard/ai/interview",
+                        json={"history": [], "profile_so_far": profile_so_far},
+                    )
+        assert r.status_code == 200
+        assert r.json()["complete"] is False
+
+    def test_does_not_force_complete_when_only_linkedin_is_missing(self, client):
+        """linkedin is explicitly optional and may never get a value if the
+        user skips it — it must not block auto-completion."""
+        profile_so_far = {
+            "name": "Alex",
+            "email": "alex@example.com",
+            "career_summary": "Backend engineer.",
+            "candidate_voice": "warm and conversational",
+            "mission_preferences": ["climate"],
+            "candidate_accessibility_focus": False,
+            "candidate_lgbtq_focus": False,
+        }
+        llm_reply = json.dumps({
+            "reply": "All set!",
+            "extracted_fields": {},
+            "complete": False,
+        })
+        with patch("dev_api._get_effective_tier", return_value="paid"):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
+                with patch("scripts.llm_router.LLMRouter") as mock_cls:
+                    mock_cls.return_value.complete.return_value = llm_reply
+                    r = client.post(
+                        "/api/wizard/ai/interview",
+                        json={"history": [], "profile_so_far": profile_so_far},
+                    )
+        assert r.status_code == 200
+        assert r.json()["complete"] is True
+
     def test_returns_complete_true_when_llm_signals_done(self, client):
         llm_reply = json.dumps({
             "reply": "You're all set! Your profile is complete.",

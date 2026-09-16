@@ -4974,8 +4974,9 @@ Rules:
 3. For candidate_voice, offer these options if they struggle: "professional and direct", "warm and conversational", "concise and clear", "enthusiastic and personable"
 4. For candidate_accessibility_focus and candidate_lgbtq_focus, use plain language: "Would you like me to look into whether companies actively support employees with disabilities or neurodivergent needs?" and "Would you like me to check whether companies have strong LGBTQIA+ inclusion policies?"
 5. When you have gathered enough information or the user says they are done, set complete to true
-6. Some fields may already be filled in — a message below may say "[Already gathered: ...]". NEVER ask about a field listed there; it was already pulled from their resume or an earlier step. Skip straight to the first field that's still missing. If your very first reply is being generated and fields are already gathered, briefly acknowledge what you already have (e.g. "I've got your name and background from your resume") before asking about what's missing.
-7. Set asking_about to the exact field name (from the list above) your reply's question is primarily about, so the UI can show the right help alongside it. Set it to null if your reply isn't asking about a specific field (e.g. a greeting, an acknowledgment, or the closing message).
+6. Some fields may already be filled in — a message below may say "[Already gathered: ...]". NEVER ask about, re-ask about, or re-confirm a field listed there, even if the user brings it up again or you feel unsure — it is already settled. Do not say things like "just to confirm" or "you mentioned this earlier, but..." about a gathered field; treat it as closed and move straight to the next missing field. Skip straight to the first field that's still missing. If your very first reply is being generated and fields are already gathered, briefly acknowledge what you already have (e.g. "I've got your name and background from your resume") before asking about what's missing.
+7. Set asking_about to the exact field name your reply's question is primarily about — it MUST match what you are actually asking, not a leftover from an earlier turn. Use exactly one of: "name", "email", "career_summary", "candidate_voice", "mission_preferences", "candidate_accessibility_focus", "candidate_lgbtq_focus", "linkedin". A question about accessibility culture must use "candidate_accessibility_focus", never "candidate_voice" — asking_about names the field the CURRENT question is collecting, not a topic mentioned in passing. Set it to null if your reply isn't asking about a specific field (e.g. a greeting, an acknowledgment, or the closing message).
+8. Once every field listed above (including the optional ones) appears in "[Already gathered: ...]", stop asking anything else and set complete to true immediately — do not add "one more thing" or circle back to summarize and ask again.
 
 You must ALWAYS respond with valid JSON in this exact format:
 {"reply": "your conversational message here", "extracted_fields": {"name": "...", ...}, "complete": false, "asking_about": "candidate_voice"}
@@ -5008,6 +5009,11 @@ _WIZARD_ALLOWED_FIELDS: frozenset[str] = frozenset({
     "linkedin",
 })
 
+# linkedin is explicitly optional (see _AI_WIZARD_SYSTEM_PROMPT) and may never
+# get a value if the user skips it — excluded from the auto-complete backstop
+# below so a skipped linkedin can't block the conversation from ever ending.
+_WIZARD_REQUIRED_FOR_AI_COMPLETE: frozenset[str] = _WIZARD_ALLOWED_FIELDS - {"linkedin"}
+
 
 @app.post("/api/wizard/ai/interview")
 @limiter.limit(_RL_WIZARD)
@@ -5032,13 +5038,12 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
     history_block = "\n".join(conversation_lines) if conversation_lines else "User: (starting conversation)"
 
     # Build profile summary to give LLM context about what's already known
-    if body.profile_so_far:
-        gathered = ", ".join(
-            f"{k}={repr(v)}"
-            for k, v in body.profile_so_far.items()
-            if v not in (None, "", [], {})
-        )
-        profile_context = f"\n\n[Already gathered: {gathered}]" if gathered else ""
+    gathered_so_far = {
+        k: v for k, v in body.profile_so_far.items() if v not in (None, "", [], {})
+    }
+    if gathered_so_far:
+        gathered = ", ".join(f"{k}={repr(v)}" for k, v in gathered_so_far.items())
+        profile_context = f"\n\n[Already gathered: {gathered}]"
     else:
         profile_context = ""
 
@@ -5063,10 +5068,23 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
             # make the frontend confidently show the wrong contextual help
             # (e.g. tone-of-voice chips) for a question that isn't about tone.
             asking_about = None
+
+        extracted_fields = parsed.get("extracted_fields") or {}
+        merged_known = {
+            **gathered_so_far,
+            **{k: v for k, v in extracted_fields.items() if v not in (None, "", [], {})},
+        }
+        # Deterministic backstop: a small local model doesn't reliably notice
+        # when every field is already gathered and can loop indefinitely
+        # ("just confirming", "one more thing", re-summarizing) instead of
+        # setting complete itself. Once every field actually has a value,
+        # force completion rather than depend on the model recognizing that.
+        complete = bool(parsed.get("complete", False)) or _WIZARD_REQUIRED_FOR_AI_COMPLETE.issubset(merged_known)
+
         return {
             "reply": parsed.get("reply") or "",
-            "extracted_fields": parsed.get("extracted_fields") or {},
-            "complete": bool(parsed.get("complete", False)),
+            "extracted_fields": extracted_fields,
+            "complete": complete,
             "asking_about": asking_about,
         }
     except (json.JSONDecodeError, AttributeError):
