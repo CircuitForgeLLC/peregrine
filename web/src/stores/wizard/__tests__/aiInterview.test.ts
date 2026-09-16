@@ -120,6 +120,71 @@ describe('useAiInterviewStore', () => {
     expect(store.loading).toBe(false)
   })
 
+  // ── 503 llm_error surfacing ───────────────────────────────────────────────
+  // The backend's LLMRouter reports *why* each backend was skipped (unreachable,
+  // missing API key, model not pulled, etc). Previously this store discarded
+  // that detail and always guessed "add an API key", which was actively wrong
+  // when e.g. the real issue was an Ollama model tag that was never pulled.
+
+  it('send() surfaces the backend-provided message on a 503 llm_error', async () => {
+    mockFetch.mockResolvedValue({
+      data: null,
+      error: {
+        kind: 'http',
+        status: 503,
+        detail: JSON.stringify({
+          detail: {
+            error: 'llm_error',
+            message: 'All LLM backends exhausted. Tried: ollama: model "llama3.2:3b" not found',
+          },
+        }),
+      },
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('Hello')
+
+    expect(store.error).toBe(
+      "Couldn't reach the AI assistant: All LLM backends exhausted. Tried: ollama: model \"llama3.2:3b\" not found",
+    )
+  })
+
+  it('send() falls back to a generic message on a 503 with no llm_error detail', async () => {
+    mockFetch.mockResolvedValue({
+      data: null,
+      error: { kind: 'http', status: 503, detail: JSON.stringify({ detail: 'Service Unavailable' }) },
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('Hello')
+
+    expect(store.error).toBe('Could not reach the assistant. Please try again.')
+  })
+
+  it('send() falls back to a generic message when 503 body is not valid JSON', async () => {
+    mockFetch.mockResolvedValue({
+      data: null,
+      error: { kind: 'http', status: 503, detail: 'not json' },
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('Hello')
+
+    expect(store.error).toBe('Could not reach the assistant. Please try again.')
+  })
+
+  it('send() sets a fixed message on a 402 tier-gate error', async () => {
+    mockFetch.mockResolvedValue({
+      data: null,
+      error: { kind: 'http', status: 402, detail: JSON.stringify({ detail: { error: 'tier_required' } }) },
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('Hello')
+
+    expect(store.error).toBe('AI profile assistant requires a Paid plan or a BYOK API key.')
+  })
+
   it('send() persists draft to localStorage on success', async () => {
     mockFetch.mockResolvedValue({
       data: { reply: 'Hi!', extracted_fields: { name: 'Bob' }, complete: false },
