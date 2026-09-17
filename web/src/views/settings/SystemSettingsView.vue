@@ -136,6 +136,68 @@
       <p v-if="store.deployError" class="error-msg">{{ store.deployError }}</p>
     </section>
 
+    <!-- Compute & AI Backend -->
+    <section v-if="!config.isCloud" class="form-section">
+      <h3>Compute &amp; AI Backend</h3>
+      <p class="section-note">
+        Which hardware profile Peregrine uses, and the keys/hosts for
+        whichever inference backend that profile needs.
+      </p>
+
+      <div class="field-row">
+        <label>Hardware profile</label>
+        <select v-model="hardwareProfile" class="field-select">
+          <option v-for="p in hardwareProfiles" :key="p" :value="p">{{ p }}</option>
+        </select>
+      </div>
+      <p v-if="detectedGpus.length" class="section-note">
+        Detected: {{ detectedGpus.join(', ') }}
+      </p>
+
+      <div class="field-row">
+        <label>Anthropic API key</label>
+        <input
+          v-model="anthropicKey"
+          type="password"
+          :placeholder="anthropicKeySet ? '••••••••  (set, enter to replace)' : 'sk-ant-…'"
+          class="field-input-wide"
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="field-row">
+        <label>OpenAI-compatible endpoint</label>
+        <input v-model="openaiUrl" type="url" placeholder="https://api.together.xyz/v1" class="field-input-wide" />
+      </div>
+      <div v-if="openaiUrl" class="field-row">
+        <label>Endpoint API key</label>
+        <input
+          v-model="openaiKey"
+          type="password"
+          :placeholder="openaiKeySet ? '••••••••  (set, enter to replace)' : 'API key for the endpoint above'"
+          class="field-input-wide"
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="field-row">
+        <label>Ollama host</label>
+        <input v-model="ollamaHost" type="text" placeholder="localhost" class="field-input-wide" />
+      </div>
+      <div class="field-row">
+        <label>Ollama port</label>
+        <input v-model.number="ollamaPort" type="number" class="field-input-wide" />
+      </div>
+
+      <div class="form-actions">
+        <button @click="saveLlmBackend" :disabled="llmBackendSaving" class="btn-primary">
+          {{ llmBackendSaving ? 'Saving…' : 'Save Compute & AI Backend' }}
+        </button>
+        <p v-if="llmBackendError" class="error">{{ llmBackendError }}</p>
+        <p v-if="llmBackendSaved" class="success">Saved.</p>
+      </div>
+    </section>
+
     <!-- Orchard coordinator -->
     <section class="form-section">
       <h3>Orchard Coordinator</h3>
@@ -299,6 +361,67 @@ async function saveOrchUrl() {
   setTimeout(() => { orchSaved.value = false }, 3000)
 }
 
+// ── Compute & AI Backend ──────────────────────────────────────────────────────
+const hardwareProfile   = ref('')
+const hardwareProfiles  = ref<string[]>([])
+const detectedGpus      = ref<string[]>([])
+const anthropicKey      = ref('')
+const anthropicKeySet   = ref(false)
+const openaiUrl         = ref('')
+const openaiKey         = ref('')
+const openaiKeySet      = ref(false)
+const ollamaHost        = ref('')
+const ollamaPort        = ref(11434)
+const llmBackendSaving  = ref(false)
+const llmBackendError   = ref<string | null>(null)
+const llmBackendSaved   = ref(false)
+
+async function loadLlmBackend() {
+  const { data } = await useApiFetch<{
+    anthropic_key_set: boolean; openai_url: string; openai_key_set: boolean
+    ollama_host: string; ollama_port: number
+  }>('/api/settings/system/llm-backend')
+  if (data) {
+    anthropicKeySet.value = data.anthropic_key_set
+    openaiUrl.value       = data.openai_url
+    openaiKeySet.value    = data.openai_key_set
+    ollamaHost.value      = data.ollama_host
+    ollamaPort.value      = data.ollama_port
+  }
+
+  const { data: hwData } = await useApiFetch<{ profiles: string[]; suggested_profile: string; gpus: string[] }>(
+    '/api/wizard/hardware',
+  )
+  if (hwData) {
+    hardwareProfiles.value = hwData.profiles ?? []
+    detectedGpus.value     = hwData.gpus ?? []
+    if (!hardwareProfile.value) hardwareProfile.value = hwData.suggested_profile ?? ''
+  }
+}
+
+async function saveLlmBackend() {
+  llmBackendSaving.value = true
+  llmBackendError.value  = null
+  llmBackendSaved.value  = false
+  const { error } = await useApiFetch('/api/settings/system/llm-backend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      anthropic_key: anthropicKey.value,
+      openai_url: openaiUrl.value,
+      openai_key: openaiKey.value,
+      ollama_host: ollamaHost.value,
+      ollama_port: ollamaPort.value,
+    }),
+  })
+  llmBackendSaving.value = false
+  if (error) { llmBackendError.value = 'Failed to save.'; return }
+  anthropicKey.value = ''
+  openaiKey.value = ''
+  llmBackendSaved.value = true
+  setTimeout(() => { llmBackendSaved.value = false }, 3000)
+}
+
 onMounted(async () => {
   await store.loadLlm()
   const tasks = [
@@ -309,6 +432,9 @@ onMounted(async () => {
   ]
   if (config.isCloud && tierOrder.indexOf(tier.value) >= tierOrder.indexOf('paid')) {
     tasks.push(loadCoverLetterModel())
+  }
+  if (!config.isCloud) {
+    tasks.push(loadLlmBackend())
   }
   await Promise.all(tasks)
 })
