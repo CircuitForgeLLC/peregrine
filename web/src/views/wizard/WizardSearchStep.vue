@@ -127,7 +127,7 @@ function removeLocation(i: number) {
   form.locations.splice(i, 1)
 }
 
-function back() { router.push('/setup/identity') }
+function back() { router.push('/setup/legacy/identity') }
 
 async function next() {
   // Flush any partial inputs before validating
@@ -150,7 +150,7 @@ async function next() {
       remote_only: form.remoteOnly,
     },
   })
-  if (ok) router.push('/setup/integrations')
+  if (ok) router.push('/setup/legacy/integrations')
 }
 </script>
 

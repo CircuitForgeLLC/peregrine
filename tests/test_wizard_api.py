@@ -179,6 +179,23 @@ class TestWizardStatus:
                 r = client.get("/api/wizard/status")
         assert r.json()["sections"]["search"] is False
 
+    def test_sections_search_true_after_put_settings_search(self, client, tmp_path):
+        """Integration-shaped regression test for C1: PUT /api/settings/search writes
+        the flat legacy `default: {...}` format, not the `profiles: [...]` list. The
+        section-status check must normalize before looking for the default profile.
+        """
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        search_path = yaml_path.parent / "search_profiles.yaml"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                save_r = client.put("/api/settings/search", json={
+                    "job_titles": ["Software Engineer"],
+                })
+                assert save_r.status_code == 200
+                status_r = client.get("/api/wizard/status")
+        assert status_r.json()["sections"]["search"] is True
+
     def test_sections_compute_backend_true_when_inference_profile_set(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"inference_profile": "single-gpu"})

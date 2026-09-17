@@ -82,7 +82,7 @@ function labelFor(id: string): string {
   return integrations.find(i => i.id === id)?.name ?? id
 }
 
-function back() { router.push('/setup/search') }
+function back() { router.push('/setup/legacy/search') }
 
 async function finish() {
   // Save integration selections (step 7) then mark wizard complete

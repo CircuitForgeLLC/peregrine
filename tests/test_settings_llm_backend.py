@@ -86,6 +86,59 @@ class TestLlmBackendSettings:
         assert saved["services"]["ollama_host"] == "10.1.10.5"
         assert saved["services"]["ollama_port"] == 11500
 
+    def test_post_preserves_unrelated_existing_services_keys(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"services": {
+            "vllm_host": "10.1.10.9",
+            "ollama_host": "old-host",
+        }})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.post("/api/settings/system/llm-backend", json={
+                    "ollama_host": "10.1.10.5",
+                })
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["services"]["vllm_host"] == "10.1.10.9"
+        assert saved["services"]["ollama_host"] == "10.1.10.5"
+
+    def test_post_writes_inference_profile_to_user_yaml(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.post("/api/settings/system/llm-backend", json={
+                    "inference_profile": "dual-gpu",
+                })
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["inference_profile"] == "dual-gpu"
+
+    def test_post_blank_inference_profile_does_not_clobber_existing(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"inference_profile": "single-gpu"})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.post("/api/settings/system/llm-backend", json={
+                    "ollama_host": "10.1.10.5",
+                })
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["inference_profile"] == "single-gpu"
+
+    def test_get_returns_inference_profile(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"inference_profile": "cpu"})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.get("/api/settings/system/llm-backend")
+        assert r.status_code == 200
+        assert r.json()["inference_profile"] == "cpu"
+
     def test_post_blank_key_does_not_overwrite_existing_env_value(self, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})

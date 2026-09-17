@@ -170,7 +170,7 @@ async function runTest() {
   testing.value = false
 }
 
-function back() { router.push('/setup/hardware') }
+function back() { router.push('/setup/legacy/hardware') }
 
 async function next() {
   wizard.inference.anthropicKey = form.anthropicKey
@@ -192,7 +192,7 @@ async function next() {
     orch_url: form.orchUrl,
     services: svcMap,
   })
-  if (ok) router.push('/setup/tier')
+  if (ok) router.push('/setup/legacy/tier')
 }
 </script>
 

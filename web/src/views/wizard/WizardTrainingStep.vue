@@ -18,13 +18,13 @@ async function next() {
         body: JSON.stringify({ enabled: true }),
       })
     }
-    router.push('/setup/identity')
+    router.push('/setup/legacy/identity')
   } finally {
     saving.value = false
   }
 }
 
-function back() { router.push('/setup/resume') }
+function back() { router.push('/setup/legacy/resume') }
 </script>
 
 <template>

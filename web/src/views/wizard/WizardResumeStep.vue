@@ -284,7 +284,7 @@ function removeExp(i: number) {
   wizard.resume.experience.splice(i, 1)
 }
 
-function back() { router.push('/setup/tier') }
+function back() { router.push('/setup/legacy/tier') }
 
 async function next() {
   validationError.value = ''
@@ -297,7 +297,7 @@ async function next() {
     experience: wizard.resume.experience,
     ...(wizard.resume.parsedData ?? {}),
   }})
-  if (ok) router.push('/setup/training')
+  if (ok) router.push('/setup/legacy/training')
 }
 </script>
 
