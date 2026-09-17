@@ -4061,11 +4061,21 @@ def save_orch_url(payload: OrchUrlPayload):
 
 
 def _env_path() -> Path:
-    """Resolve the .env file path — same directory as user.yaml's grandparent."""
+    """Resolve the .env file path, same directory as user.yaml's grandparent."""
     return Path(_wizard_yaml_path()).parent.parent / ".env"
 
 
 def _set_env_key(lines: list[str], key: str, val: str) -> list[str]:
+    """Set key=val in a list of .env lines, replacing an existing entry.
+
+    Rejects values containing a newline or carriage return, since either
+    would inject an arbitrary extra line into the written .env file.
+    """
+    if "\n" in val or "\r" in val:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{key} value must not contain newline characters",
+        )
     for i, line in enumerate(lines):
         if line.startswith(f"{key}="):
             lines[i] = f"{key}={val}"
@@ -4123,6 +4133,17 @@ def save_llm_backend_settings(payload: LlmBackendPayload):
     """Persist LLM backend configuration: API keys/URL to .env, host/port
     to user.yaml's services map. A blank key field means "leave unchanged",
     not "clear it" -- same semantics as the wizard's inference step."""
+    for field_name, value in (
+        ("anthropic_key", payload.anthropic_key),
+        ("openai_url", payload.openai_url),
+        ("openai_key", payload.openai_key),
+    ):
+        if "\n" in value or "\r" in value:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} must not contain newline characters",
+            )
+
     env_path = _env_path()
     env_lines = env_path.read_text().splitlines() if env_path.exists() else []
 
@@ -4133,8 +4154,9 @@ def save_llm_backend_settings(payload: LlmBackendPayload):
     if payload.openai_key:
         env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_KEY", payload.openai_key)
     if payload.anthropic_key or payload.openai_url or payload.openai_key:
-        env_path.parent.mkdir(parents=True, exist_ok=True)
+        env_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         env_path.write_text("\n".join(env_lines) + "\n")
+        env_path.chmod(0o600)
 
     services = {
         "ollama_host": payload.ollama_host,

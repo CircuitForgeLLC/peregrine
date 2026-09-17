@@ -1,3 +1,4 @@
+import os
 import yaml
 from unittest.mock import patch
 from fastapi.testclient import TestClient
@@ -94,3 +95,48 @@ class TestLlmBackendSettings:
             with patch("dev_api._env_path", return_value=env_path):
                 client.post("/api/settings/system/llm-backend", json={"anthropic_key": ""})
         assert "ANTHROPIC_API_KEY=sk-ant-keepme" in env_path.read_text()
+
+    def test_post_rejects_newline_in_anthropic_key(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.post("/api/settings/system/llm-backend", json={
+                    "anthropic_key": "x\nGPU_SERVER_URL=http://evil",
+                })
+        assert r.status_code == 400
+        assert not env_path.exists()
+
+    def test_post_rejects_newline_in_openai_url_and_key(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.post("/api/settings/system/llm-backend", json={
+                    "openai_url": "http://x\r\nEVIL=1",
+                })
+        assert r.status_code == 400
+        assert not env_path.exists()
+
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.post("/api/settings/system/llm-backend", json={
+                    "openai_key": "sk-x\nEVIL=1",
+                })
+        assert r.status_code == 400
+        assert not env_path.exists()
+
+    def test_post_sets_env_file_permissions_to_owner_only(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.post("/api/settings/system/llm-backend", json={
+                    "anthropic_key": "sk-ant-new",
+                })
+        assert r.status_code == 200
+        mode = os.stat(env_path).st_mode & 0o777
+        assert mode == 0o600
