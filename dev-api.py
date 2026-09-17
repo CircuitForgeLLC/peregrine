@@ -4060,6 +4060,93 @@ def save_orch_url(payload: OrchUrlPayload):
     return {"ok": True}
 
 
+def _env_path() -> Path:
+    """Resolve the .env file path — same directory as user.yaml's grandparent."""
+    return Path(_wizard_yaml_path()).parent.parent / ".env"
+
+
+def _set_env_key(lines: list[str], key: str, val: str) -> list[str]:
+    for i, line in enumerate(lines):
+        if line.startswith(f"{key}="):
+            lines[i] = f"{key}={val}"
+            return lines
+    lines.append(f"{key}={val}")
+    return lines
+
+
+def _env_key_is_set(key: str) -> bool:
+    env_path = _env_path()
+    if not env_path.exists():
+        return False
+    for line in env_path.read_text().splitlines():
+        if line.startswith(f"{key}=") and line.split("=", 1)[1].strip():
+            return True
+    return False
+
+
+class LlmBackendPayload(BaseModel):
+    anthropic_key: str = ""
+    openai_url: str = ""
+    openai_key: str = ""
+    ollama_host: str = ""
+    ollama_port: int = 11434
+    searxng_host: str = ""
+    searxng_port: int = 8080
+
+
+@app.get("/api/settings/system/llm-backend")
+def get_llm_backend_settings():
+    """Report LLM backend configuration. API keys report presence only,
+    never plaintext -- matches the existing BYOK acknowledgment flow's
+    stance of never round-tripping a raw key to the client."""
+    cfg = _load_wizard_yaml()
+    services = cfg.get("services", {})
+    env_path = _env_path()
+    openai_url = ""
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("OPENAI_COMPAT_URL="):
+                openai_url = line.split("=", 1)[1]
+    return {
+        "anthropic_key_set": _env_key_is_set("ANTHROPIC_API_KEY"),
+        "openai_url": openai_url,
+        "openai_key_set": _env_key_is_set("OPENAI_COMPAT_KEY"),
+        "ollama_host": services.get("ollama_host", ""),
+        "ollama_port": services.get("ollama_port", 11434),
+        "searxng_host": services.get("searxng_host", ""),
+        "searxng_port": services.get("searxng_port", 8080),
+    }
+
+
+@app.post("/api/settings/system/llm-backend")
+def save_llm_backend_settings(payload: LlmBackendPayload):
+    """Persist LLM backend configuration: API keys/URL to .env, host/port
+    to user.yaml's services map. A blank key field means "leave unchanged",
+    not "clear it" -- same semantics as the wizard's inference step."""
+    env_path = _env_path()
+    env_lines = env_path.read_text().splitlines() if env_path.exists() else []
+
+    if payload.anthropic_key:
+        env_lines = _set_env_key(env_lines, "ANTHROPIC_API_KEY", payload.anthropic_key)
+    if payload.openai_url:
+        env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_URL", payload.openai_url)
+    if payload.openai_key:
+        env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_KEY", payload.openai_key)
+    if payload.anthropic_key or payload.openai_url or payload.openai_key:
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        env_path.write_text("\n".join(env_lines) + "\n")
+
+    services = {
+        "ollama_host": payload.ollama_host,
+        "ollama_port": payload.ollama_port,
+        "searxng_host": payload.searxng_host,
+        "searxng_port": payload.searxng_port,
+    }
+    _save_wizard_yaml({"services": services})
+
+    return {"ok": True}
+
+
 # ── Settings: Fine-Tune ───────────────────────────────────────────────────────
 
 _TRAINING_JSONL = Path("/Library/Documents/JobSearch/training_data/cover_letters.jsonl")
@@ -4689,16 +4776,8 @@ def wizard_save_step(payload: WizardStepPayload):
 
     elif step == 2:
         # Step 2 — inference: API keys + optional Orchard coordinator URL.
-        env_path = Path(_wizard_yaml_path()).parent.parent / ".env"
+        env_path = _env_path()
         env_lines = env_path.read_text().splitlines() if env_path.exists() else []
-
-        def _set_env_key(lines: list[str], key: str, val: str) -> list[str]:
-            for i, line in enumerate(lines):
-                if line.startswith(f"{key}="):
-                    lines[i] = f"{key}={val}"
-                    return lines
-            lines.append(f"{key}={val}")
-            return lines
 
         if data.get("anthropic_key"):
             env_lines = _set_env_key(env_lines, "ANTHROPIC_API_KEY", data["anthropic_key"])
