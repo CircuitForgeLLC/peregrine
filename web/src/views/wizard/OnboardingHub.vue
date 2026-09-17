@@ -72,7 +72,7 @@ const ALL_CARDS: HubCardDef[] = [
 
 const cards = computed(() => ALL_CARDS.filter(c => !(c.cloudHidden && config.isCloud)))
 
-// Required for completion: profile, resume, search — matches the spec's
+// Required for completion: profile, resume, search. Matches the spec's
 // minimal-required-section set. compute_backend stays optional (sensible
 // hardware/inference defaults exist from day one) and is never required
 // here, in cloud mode or self-hosted.
