@@ -77,7 +77,7 @@ onMounted(async () => {
   if (!config.loaded) await config.load()
   const target = await wizard.loadStatus(config.isCloud)
   layoutReady.value = true
-  if (router.currentRoute.value.path === '/setup') {
+  if (router.currentRoute.value.path === '/setup/legacy') {
     router.replace(target)
   } else {
     syncStepToRoute()

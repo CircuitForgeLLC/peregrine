@@ -42,18 +42,25 @@ export const router = createRouter({
     // resume step's "AI Assistant" tab) and afterward as a settings entry
     // point, so it's exempt from the wizard-completion gate below.
     { path: '/wizard/ai-profile', component: () => import('../views/wizard/WizardAIView.vue') },
-    // Onboarding wizard — full-page layout, no AppNav
+    // Onboarding hub — full-page layout, no AppNav
     {
       path: '/setup',
+      component: () => import('../views/wizard/OnboardingHub.vue'),
+    },
+    // Legacy linear wizard — kept reachable directly, unlinked from the Hub.
+    // Not deleted in this phase; see the plan's Global Constraints.
+    {
+      path: '/setup/legacy',
       component: () => import('../views/wizard/WizardLayout.vue'),
       children: [
         // No `redirect` here on purpose: a static redirect resolves before
         // WizardLayout ever mounts, which made its own resume-at-last-step
-        // logic (onMounted checking route.path === '/setup') permanently
-        // unreachable — bare /setup always silently landed fresh visitors on
-        // step 1 regardless of real progress. Render the hardware step here
-        // as a same-content fallback; WizardLayout's onMounted still owns
-        // routing to the real resume point once loadStatus() resolves.
+        // logic (onMounted checking route.path === '/setup/legacy')
+        // permanently unreachable — bare /setup/legacy always silently
+        // landed fresh visitors on step 1 regardless of real progress.
+        // Render the hardware step here as a same-content fallback;
+        // WizardLayout's onMounted still owns routing to the real resume
+        // point once loadStatus() resolves.
         { path: '',           component: () => import('../views/wizard/WizardHardwareStep.vue') },
         { path: 'hardware',   component: () => import('../views/wizard/WizardHardwareStep.vue') },
         { path: 'tier',       component: () => import('../views/wizard/WizardTierStep.vue') },
@@ -77,9 +84,16 @@ router.beforeEach(async (to, _from, next) => {
   // Demo mode: pre-seeded data, no wizard needed — route freely
   if (config.isDemo) return next()
 
-  // Wizard gate runs first for every route except /setup itself and the AI
-  // profile assistant, which is reachable both during and after onboarding.
-  if (!to.path.startsWith('/setup') && to.path !== '/wizard/ai-profile' && !config.wizardComplete) {
+  // Wizard gate runs first for every route except /setup itself, the AI
+  // profile assistant (reachable both during and after onboarding), and
+  // /settings/* (the Hub links onboarding users into Settings pages before
+  // wizardComplete, e.g. to fill in Profile/Resume/Search).
+  if (
+    !to.path.startsWith('/setup') &&
+    to.path !== '/wizard/ai-profile' &&
+    !to.path.startsWith('/settings/') &&
+    !config.wizardComplete
+  ) {
     return next('/setup')
   }
 
