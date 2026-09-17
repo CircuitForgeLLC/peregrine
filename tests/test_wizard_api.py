@@ -96,6 +96,96 @@ class TestWizardStatus:
             r = client.get("/api/wizard/status")
         assert r.json()["wizard_complete"] is True
 
+    def test_sections_all_false_when_nothing_saved(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.status_code == 200
+        sections = r.json()["sections"]
+        assert sections == {
+            "profile": False,
+            "resume": False,
+            "search": False,
+            "compute_backend": False,
+        }
+
+    def test_sections_profile_true_when_name_email_summary_present(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {
+            "name": "Alex Rivera",
+            "email": "alex@example.com",
+            "career_summary": "Backend engineer.",
+        })
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["profile"] is True
+
+    def test_sections_profile_false_when_only_some_fields_present(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"name": "Alex Rivera", "email": "alex@example.com"})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["profile"] is False
+
+    def test_sections_resume_true_when_experience_present(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        resume_path = yaml_path.parent / "plain_text_resume.yaml"
+        resume_path.write_text(yaml.safe_dump({
+            "experience": [{"title": "Engineer", "company": "Acme"}]
+        }))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["resume"] is True
+
+    def test_sections_resume_false_when_file_missing(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["resume"] is False
+
+    def test_sections_resume_false_when_experience_empty_list(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        resume_path = yaml_path.parent / "plain_text_resume.yaml"
+        resume_path.write_text(yaml.safe_dump({"experience": []}))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["resume"] is False
+
+    def test_sections_search_true_when_default_profile_has_titles(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        search_path = yaml_path.parent / "search_profiles.yaml"
+        search_path.write_text(yaml.safe_dump({
+            "profiles": [{"name": "default", "job_titles": ["Software Engineer"], "locations": []}]
+        }))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["search"] is True
+
+    def test_sections_search_false_when_default_profile_has_no_titles(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        search_path = yaml_path.parent / "search_profiles.yaml"
+        search_path.write_text(yaml.safe_dump({
+            "profiles": [{"name": "default", "job_titles": [], "locations": []}]
+        }))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["search"] is False
+
+    def test_sections_compute_backend_true_when_inference_profile_set(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"inference_profile": "single-gpu"})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["compute_backend"] is True
+
 
 # ── GET /api/wizard/hardware ──────────────────────────────────────────────────
 

@@ -4572,6 +4572,52 @@ def _suggest_profile(gpus: list[str]) -> str:
     return "cpu"
 
 
+def _wizard_section_status(cfg: dict) -> dict:
+    """Compute which onboarding sections have real data, for the non-linear
+    Onboarding Hub. A section is complete when its required fields have
+    meaningful values, same "has real value" filter used by the wizard
+    AI-chat completion backstop (dev-api.py's wizard_ai_interview): a value
+    counts unless it's None, "", [], or {}.
+    """
+    def _has_value(v) -> bool:
+        return v not in (None, "", [], {})
+
+    profile_complete = all(
+        _has_value(cfg.get(f)) for f in ("name", "email", "career_summary")
+    )
+
+    resume_path = Path(_wizard_yaml_path()).parent / "plain_text_resume.yaml"
+    resume_complete = False
+    if resume_path.exists():
+        try:
+            with open(resume_path) as f:
+                resume_cfg = yaml.safe_load(f) or {}
+            resume_complete = _has_value(resume_cfg.get("experience"))
+        except Exception:
+            resume_complete = False
+
+    search_path = _search_prefs_path()
+    search_complete = False
+    if search_path.exists():
+        try:
+            with open(search_path) as f:
+                search_cfg = yaml.safe_load(f) or {}
+            default_profile = next(
+                (p for p in search_cfg.get("profiles", []) if p.get("name") == "default"),
+                None,
+            )
+            search_complete = bool(default_profile) and _has_value(default_profile.get("job_titles"))
+        except Exception:
+            search_complete = False
+
+    return {
+        "profile": profile_complete,
+        "resume": resume_complete,
+        "search": search_complete,
+        "compute_backend": _has_value(cfg.get("inference_profile")),
+    }
+
+
 @app.get("/api/wizard/status")
 def wizard_status():
     """Return current wizard state for resume-after-refresh.
@@ -4579,6 +4625,11 @@ def wizard_status():
     wizard_complete=True means the wizard has been finished and the app
     should not redirect to /setup.  wizard_step is the last completed step
     (0 = not started); the SPA advances to step+1 on load.
+
+    sections reports per-section completion for the non-linear Onboarding
+    Hub (profile / resume / search / compute_backend), independent of the
+    step-counter-driven fields above which remain for the legacy linear
+    wizard's own resume-at-step logic.
     """
     cfg = _load_wizard_yaml()
     return {
@@ -4595,6 +4646,7 @@ def wizard_status():
             "services": cfg.get("services", {}),
             "cf_orch_url": cfg.get("cf_orch_url", ""),
         },
+        "sections": _wizard_section_status(cfg),
     }
 
 
