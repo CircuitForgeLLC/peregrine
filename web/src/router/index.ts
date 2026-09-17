@@ -38,16 +38,16 @@ export const router = createRouter({
         { path: 'developer',   component: () => import('../views/settings/DeveloperView.vue') },
       ],
     },
-    // AI profile assistant — reachable both during onboarding (linked from the
+    // AI profile assistant, reachable both during onboarding (linked from the
     // resume step's "AI Assistant" tab) and afterward as a settings entry
     // point, so it's exempt from the wizard-completion gate below.
     { path: '/wizard/ai-profile', component: () => import('../views/wizard/WizardAIView.vue') },
-    // Onboarding hub — full-page layout, no AppNav
+    // Onboarding hub: full-page layout, no AppNav
     {
       path: '/setup',
       component: () => import('../views/wizard/OnboardingHub.vue'),
     },
-    // Legacy linear wizard — kept reachable directly, unlinked from the Hub.
+    // Legacy linear wizard, kept reachable directly, unlinked from the Hub.
     // Not deleted in this phase; see the plan's Global Constraints.
     {
       path: '/setup/legacy',

@@ -25,10 +25,10 @@ export async function wizardGuard(
   const onSettings = to.path.startsWith('/settings/')
   const complete = config.wizardComplete
 
-  // Wizard done — keep user out of /setup (but /settings stays reachable, as always)
+  // Wizard done: keep user out of /setup (but /settings stays reachable, as always)
   if (complete && onSetup) return next('/')
 
-  // Wizard not done — allow /setup and /settings through; redirect everything else
+  // Wizard not done: allow /setup and /settings through; redirect everything else
   if (!complete && !onSetup && !onSettings) return next('/setup')
 
   next()
