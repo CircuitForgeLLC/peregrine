@@ -74,7 +74,7 @@ const form = reactive({
   careerSummary: wizard.identity.careerSummary,
 })
 
-function back() { router.push('/setup/training') }
+function back() { router.push('/setup/legacy/training') }
 
 async function next() {
   validationError.value = ''
@@ -99,7 +99,7 @@ async function next() {
     linkedin: form.linkedin,
     career_summary: form.careerSummary,
   })
-  if (ok) router.push('/setup/search')
+  if (ok) router.push('/setup/legacy/search')
 }
 </script>
 

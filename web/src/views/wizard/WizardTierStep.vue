@@ -58,11 +58,11 @@ const tiers = [
   },
 ]
 
-function back() { router.push('/setup/inference') }
+function back() { router.push('/setup/legacy/inference') }
 
 async function next() {
   wizard.tier = selected.value
   const ok = await wizard.saveStep(3, { tier: selected.value })
-  if (ok) router.push('/setup/resume')
+  if (ok) router.push('/setup/legacy/resume')
 }
 </script>

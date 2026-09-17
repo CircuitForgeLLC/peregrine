@@ -379,7 +379,7 @@ const llmBackendSaved   = ref(false)
 async function loadLlmBackend() {
   const { data } = await useApiFetch<{
     anthropic_key_set: boolean; openai_url: string; openai_key_set: boolean
-    ollama_host: string; ollama_port: number
+    ollama_host: string; ollama_port: number; inference_profile: string
   }>('/api/settings/system/llm-backend')
   if (data) {
     anthropicKeySet.value = data.anthropic_key_set
@@ -387,6 +387,7 @@ async function loadLlmBackend() {
     openaiKeySet.value    = data.openai_key_set
     ollamaHost.value      = data.ollama_host
     ollamaPort.value      = data.ollama_port
+    if (data.inference_profile) hardwareProfile.value = data.inference_profile
   }
 
   const { data: hwData } = await useApiFetch<{ profiles: string[]; suggested_profile: string; gpus: string[] }>(
@@ -412,6 +413,7 @@ async function saveLlmBackend() {
       openai_key: openaiKey.value,
       ollama_host: ollamaHost.value,
       ollama_port: ollamaPort.value,
+      inference_profile: hardwareProfile.value,
     }),
   })
   llmBackendSaving.value = false

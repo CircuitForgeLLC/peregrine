@@ -4102,6 +4102,7 @@ class LlmBackendPayload(BaseModel):
     ollama_port: int = 11434
     searxng_host: str = ""
     searxng_port: int = 8080
+    inference_profile: str = ""
 
 
 @app.get("/api/settings/system/llm-backend")
@@ -4125,6 +4126,7 @@ def get_llm_backend_settings():
         "ollama_port": services.get("ollama_port", 11434),
         "searxng_host": services.get("searxng_host", ""),
         "searxng_port": services.get("searxng_port", 8080),
+        "inference_profile": cfg.get("inference_profile", ""),
     }
 
 
@@ -4158,13 +4160,18 @@ def save_llm_backend_settings(payload: LlmBackendPayload):
         env_path.write_text("\n".join(env_lines) + "\n")
         env_path.chmod(0o600)
 
-    services = {
+    cfg = _load_wizard_yaml()
+    svc = dict(cfg.get("services", {}))
+    svc.update({
         "ollama_host": payload.ollama_host,
         "ollama_port": payload.ollama_port,
         "searxng_host": payload.searxng_host,
         "searxng_port": payload.searxng_port,
-    }
-    _save_wizard_yaml({"services": services})
+    })
+    updates: dict = {"services": svc}
+    if payload.inference_profile:
+        updates["inference_profile"] = payload.inference_profile
+    _save_wizard_yaml(updates)
 
     return {"ok": True}
 
@@ -4684,9 +4691,7 @@ def _suggest_profile(gpus: list[str]) -> str:
 def _wizard_section_status(cfg: dict) -> dict:
     """Compute which onboarding sections have real data, for the non-linear
     Onboarding Hub. A section is complete when its required fields have
-    meaningful values, same "has real value" filter used by the wizard
-    AI-chat completion backstop (dev-api.py's wizard_ai_interview): a value
-    counts unless it's None, "", [], or {}.
+    meaningful values: a value counts unless it's None, "", [], or {}.
     """
     def _has_value(v) -> bool:
         return v not in (None, "", [], {})
@@ -4711,8 +4716,10 @@ def _wizard_section_status(cfg: dict) -> dict:
         try:
             with open(search_path) as f:
                 search_cfg = yaml.safe_load(f) or {}
+            from scripts.discover import _normalize_profiles
+            normalized_search = _normalize_profiles(search_cfg)
             default_profile = next(
-                (p for p in search_cfg.get("profiles", []) if p.get("name") == "default"),
+                (p for p in normalized_search.get("profiles", []) if p.get("name") == "default"),
                 None,
             )
             search_complete = bool(default_profile) and _has_value(default_profile.get("job_titles"))
@@ -4813,6 +4820,7 @@ def wizard_save_step(payload: WizardStepPayload):
         if any(data.get(k) for k in ("anthropic_key", "openai_url", "openai_key", "orch_url")):
             env_path.parent.mkdir(parents=True, exist_ok=True)
             env_path.write_text("\n".join(env_lines) + "\n")
+            env_path.chmod(0o600)
 
         if "services" in data:
             updates["services"] = data["services"]

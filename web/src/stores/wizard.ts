@@ -52,14 +52,14 @@ export interface WizardInferenceData {
 export const WIZARD_STEPS = 8
 export const STEP_LABELS = ['Hardware', 'Inference', 'Tier', 'Resume', 'Training', 'Identity', 'Search', 'Integrations']
 export const STEP_ROUTES = [
-  '/setup/hardware',
-  '/setup/inference',
-  '/setup/tier',
-  '/setup/resume',
-  '/setup/training',
-  '/setup/identity',
-  '/setup/search',
-  '/setup/integrations',
+  '/setup/legacy/hardware',
+  '/setup/legacy/inference',
+  '/setup/legacy/tier',
+  '/setup/legacy/resume',
+  '/setup/legacy/training',
+  '/setup/legacy/identity',
+  '/setup/legacy/search',
+  '/setup/legacy/integrations',
 ]
 
 export const useWizardStore = defineStore('wizard', () => {
@@ -119,7 +119,7 @@ export const useWizardStore = defineStore('wizard', () => {
       : 'Almost done!',
   )
 
-  const routeForStep = (step: number) => STEP_ROUTES[step - 1] ?? '/setup/hardware'
+  const routeForStep = (step: number) => STEP_ROUTES[step - 1] ?? '/setup/legacy/hardware'
   const stepForRoute = (path: string): number | null => {
     const idx = STEP_ROUTES.indexOf(path)
     return idx === -1 ? null : idx + 1

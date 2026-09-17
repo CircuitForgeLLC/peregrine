@@ -100,7 +100,8 @@ router.beforeEach(async (to, _from, next) => {
   // /setup routes: let wizardGuard handle complete→redirect-to-home logic
   if (to.path.startsWith('/setup')) return wizardGuard(to, _from, next)
 
-  // Settings tier-gating (runs only when wizard is complete)
+  // Settings tier-gating (runs on every /settings/* navigation, regardless of
+  // whether the wizard/onboarding hub has been completed)
   if (to.path.startsWith('/settings/')) return settingsGuard(to, _from, next)
 
   next()
