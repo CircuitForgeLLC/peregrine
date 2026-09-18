@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
+import { genId } from '../../utils/id'
 
 export interface MissionPref { id: string; industry: string; note: string }
 
@@ -40,7 +41,7 @@ export const useProfileStore = defineStore('settings/profile', () => {
     candidate_voice.value = String(data.candidate_voice ?? '')
     inference_profile.value = String(data.inference_profile ?? 'cpu')
     mission_preferences.value = ((data.mission_preferences as Array<{ industry: string; note: string }>) ?? [])
-      .map((m) => ({ id: crypto.randomUUID(), industry: m.industry ?? '', note: m.note ?? '' }))
+      .map((m) => ({ id: genId(), industry: m.industry ?? '', note: m.note ?? '' }))
     nda_companies.value = (data.nda_companies as string[]) ?? []
     accessibility_focus.value = Boolean(data.accessibility_focus)
     lgbtq_focus.value = Boolean(data.lgbtq_focus)

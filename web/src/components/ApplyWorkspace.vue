@@ -309,6 +309,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useStorage } from '@vueuse/core'
 import { useApiFetch } from '../composables/useApi'
+import { genId } from '../utils/id'
 import { useAppConfigStore } from '../stores/appConfig'
 import type { Job } from '../stores/review'
 import ResumeOptimizerModal from './ResumeOptimizerModal.vue'
@@ -544,7 +545,7 @@ const suggesting  = ref<string | null>(null)
 function addQA() {
   const q = newQuestion.value.trim()
   if (!q) return
-  qaItems.value = [...qaItems.value, { id: crypto.randomUUID(), question: q, answer: '' }]
+  qaItems.value = [...qaItems.value, { id: genId(), question: q, answer: '' }]
   newQuestion.value = ''
   qaSaved.value = false
   qaExpanded.value = true

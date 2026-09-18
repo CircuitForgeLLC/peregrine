@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
+import { genId } from '../../utils/id'
 
 export interface WorkEntry {
   id: string
@@ -74,7 +75,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
     surname.value = String(data.surname ?? ''); address.value = String(data.address ?? '')
     city.value = String(data.city ?? ''); zip_code.value = String(data.zip_code ?? '')
     date_of_birth.value = String(data.date_of_birth ?? '')
-    experience.value = ((data.experience as Omit<WorkEntry, 'id'>[]) ?? []).map(e => ({ ...e, id: crypto.randomUUID() }))
+    experience.value = ((data.experience as Omit<WorkEntry, 'id'>[]) ?? []).map(e => ({ ...e, id: genId() }))
     salary_min.value = Number(data.salary_min ?? 0); salary_max.value = Number(data.salary_max ?? 0)
     notice_period.value = String(data.notice_period ?? '')
     remote.value = Boolean(data.remote); relocation.value = Boolean(data.relocation)
@@ -86,7 +87,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
     domains.value = (data.domains as string[]) ?? []
     keywords.value = (data.keywords as string[]) ?? []
     career_summary.value = String(data.career_summary ?? '')
-    education.value = ((data.education as Omit<EducationEntry, 'id'>[]) ?? []).map(e => ({ ...e, id: crypto.randomUUID() }))
+    education.value = ((data.education as Omit<EducationEntry, 'id'>[]) ?? []).map(e => ({ ...e, id: genId() }))
     achievements.value = (data.achievements as string[]) ?? []
   }
 
@@ -124,7 +125,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
   }
 
   function addExperience() {
-    experience.value.push({ id: crypto.randomUUID(), title: '', company: '', period: '', location: '', industry: '', responsibilities: '', skills: [] })
+    experience.value.push({ id: genId(), title: '', company: '', period: '', location: '', industry: '', responsibilities: '', skills: [] })
   }
 
   function removeExperience(idx: number) {
@@ -133,7 +134,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
 
   function addEducation() {
     education.value.push({
-      id: crypto.randomUUID(), institution: '', degree: '', field: '', start_date: '', end_date: ''
+      id: genId(), institution: '', degree: '', field: '', start_date: '', end_date: ''
     })
   }
 
