@@ -149,10 +149,13 @@ def _router_with_task_models(task_models: dict, backends: dict, extra_config: di
     return LLMRouter(config)
 
 
-def test_complete_task_raises_when_task_not_assigned():
+def test_complete_task_raises_when_unassigned_and_no_fallback_chain():
+    """Only a genuinely unconfigured install (no assignment AND no usable
+    fallback chain) is a hard TaskModelNotAssignedError."""
     router = _router_with_task_models(
         task_models={},
         backends={"ollama": {"type": "openai_compat", "base_url": "http://x", "model": "m", "enabled": True}},
+        extra_config={"fallback_order": [], "research_fallback_order": []},
     )
     try:
         router.complete_task("research", "prompt")
@@ -161,10 +164,11 @@ def test_complete_task_raises_when_task_not_assigned():
         assert e.task == "research"
 
 
-def test_complete_task_raises_when_assigned_backend_missing():
+def test_complete_task_raises_when_assigned_backend_missing_and_no_fallback_chain():
     router = _router_with_task_models(
         task_models={"research": {"backend": "does_not_exist", "model": "m"}},
         backends={"ollama": {"type": "openai_compat", "base_url": "http://x", "model": "m", "enabled": True}},
+        extra_config={"fallback_order": [], "research_fallback_order": []},
     )
     try:
         router.complete_task("research", "prompt")
@@ -214,3 +218,114 @@ def test_complete_task_wraps_runtime_error_as_unreachable():
             assert e.task == "chat"
             assert e.backend_id == "ollama"
             assert "all backends exhausted" in e.detail
+
+
+# ── Graceful degradation: no task_models assigned anywhere ───────────────────
+# Nothing seeds task_models on a fresh install (and cloud tenants have no UI to
+# set one), so complete_task() must fall back to the existing fallback chains
+# rather than hard-failing every LLM feature.
+
+
+def test_complete_task_falls_back_to_research_fallback_order_when_unassigned():
+    from unittest.mock import patch
+    router = _router_with_task_models(
+        task_models={},
+        backends={
+            "cf_text": {"type": "openai_compat", "base_url": "http://x", "model": "cf-text", "enabled": True},
+            "ollama": {"type": "openai_compat", "base_url": "http://y", "model": "llama3.2:3b", "enabled": True},
+        },
+        extra_config={"fallback_order": ["ollama"], "research_fallback_order": ["cf_text"]},
+    )
+    with patch.object(router, "complete", return_value="result") as mock_complete:
+        assert router.complete_task("research", "prompt") == "result"
+    mock_complete.assert_called_once_with(
+        "prompt", system=None, fallback_order=["cf_text"], model_override="cf-text", max_tokens=None,
+    )
+
+
+def test_complete_task_chat_falls_back_to_research_fallback_order_too():
+    from unittest.mock import patch
+    router = _router_with_task_models(
+        task_models={},
+        backends={"cf_text": {"type": "openai_compat", "base_url": "http://x", "model": "cf-text", "enabled": True}},
+        extra_config={"fallback_order": [], "research_fallback_order": ["cf_text"]},
+    )
+    with patch.object(router, "complete", return_value="hi") as mock_complete:
+        assert router.complete_task("chat", "prompt") == "hi"
+    assert mock_complete.call_args.kwargs["model_override"] == "cf-text"
+
+
+def test_complete_task_falls_back_to_fallback_order_when_no_research_chain():
+    from unittest.mock import patch
+    router = _router_with_task_models(
+        task_models={},
+        backends={"ollama": {"type": "openai_compat", "base_url": "http://y", "model": "llama3.2:3b", "enabled": True}},
+        extra_config={"fallback_order": ["ollama"]},
+    )
+    with patch.object(router, "complete", return_value="result") as mock_complete:
+        assert router.complete_task("research", "prompt") == "result"
+    assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama"]
+    assert mock_complete.call_args.kwargs["model_override"] == "llama3.2:3b"
+
+
+def test_complete_task_primary_falls_back_to_fallback_order_not_research_chain():
+    from unittest.mock import patch
+    router = _router_with_task_models(
+        task_models={},
+        backends={
+            "cf_text": {"type": "openai_compat", "base_url": "http://x", "model": "cf-text", "enabled": True},
+            "ollama": {"type": "openai_compat", "base_url": "http://y", "model": "llama3.2:3b", "enabled": True},
+        },
+        extra_config={"fallback_order": ["ollama"], "research_fallback_order": ["cf_text"]},
+    )
+    with patch.object(router, "complete", return_value="letter") as mock_complete:
+        assert router.complete_task("primary", "prompt") == "letter"
+    assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama"]
+
+
+def test_complete_task_explicit_assignment_wins_over_fallback():
+    from unittest.mock import patch
+    router = _router_with_task_models(
+        task_models={"research": {"backend": "ollama", "model": "llama3.1:8b"}},
+        backends={
+            "cf_text": {"type": "openai_compat", "base_url": "http://x", "model": "cf-text", "enabled": True},
+            "ollama": {"type": "openai_compat", "base_url": "http://y", "model": "llama3.2:3b", "enabled": True},
+        },
+        extra_config={"fallback_order": ["cf_text"], "research_fallback_order": ["cf_text"]},
+    )
+    with patch.object(router, "complete", return_value="result") as mock_complete:
+        router.complete_task("research", "prompt")
+    mock_complete.assert_called_once_with(
+        "prompt", system=None, fallback_order=["ollama"], model_override="llama3.1:8b", max_tokens=None,
+    )
+
+
+def test_complete_task_fallback_derived_disabled_backend_is_unreachable_not_skipped():
+    """One candidate per task, predictably named -- a disabled derived backend
+    surfaces as TaskModelUnreachableError rather than silently sliding to the
+    next chain entry."""
+    router = _router_with_task_models(
+        task_models={},
+        backends={
+            "cf_text": {"type": "openai_compat", "base_url": "http://x", "model": "cf-text", "enabled": False},
+            "ollama": {"type": "openai_compat", "base_url": "http://y", "model": "llama3.2:3b", "enabled": True},
+        },
+        extra_config={"fallback_order": ["ollama"], "research_fallback_order": ["cf_text", "ollama"]},
+    )
+    try:
+        router.complete_task("research", "prompt")
+        assert False, "expected TaskModelUnreachableError"
+    except TaskModelUnreachableError as e:
+        assert e.backend_id == "cf_text"
+
+
+def test_complete_task_skips_chain_entry_naming_an_unknown_backend():
+    from unittest.mock import patch
+    router = _router_with_task_models(
+        task_models={},
+        backends={"ollama": {"type": "openai_compat", "base_url": "http://y", "model": "llama3.2:3b", "enabled": True}},
+        extra_config={"fallback_order": ["ollama"], "research_fallback_order": ["ghost_backend"]},
+    )
+    with patch.object(router, "complete", return_value="result") as mock_complete:
+        router.complete_task("research", "prompt")
+    assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama"]

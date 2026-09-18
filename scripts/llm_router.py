@@ -60,6 +60,37 @@ class LLMRouter(_CoreLLMRouter):
             # won't exist either, so _auto_config_from_env() will be triggered.
             super().__init__()
 
+    # Which config fallback chain a task falls back to when nothing is
+    # explicitly assigned to it, most-specific chain first.
+    _TASK_FALLBACK_CHAINS: dict[str, tuple[str, ...]] = {
+        "research": ("research_fallback_order", "fallback_order"),
+        "chat": ("research_fallback_order", "fallback_order"),
+        "primary": ("fallback_order",),
+    }
+
+    def _default_task_model(self, task: str) -> tuple[str, str, dict] | None:
+        """Derive a sensible (backend_id, model, backend) for `task` from the
+        existing fallback chains, for installs that have never assigned one.
+
+        Deliberately picks exactly ONE candidate -- the first entry of the
+        first chain that names a backend which exists and has a model -- and
+        does not skip a disabled backend. That keeps behavior predictable and
+        keeps the caller's "unreachable" error naming the backend a user would
+        actually recognise, instead of silently re-implementing complete()'s
+        whole-chain-with-skip semantics.
+        """
+        backends = self.config.get("backends") or {}
+        for chain_key in self._TASK_FALLBACK_CHAINS.get(task, ("fallback_order",)):
+            chain = self.config.get(chain_key) or []
+            if not chain:
+                continue
+            backend_id = chain[0]
+            backend = backends.get(backend_id)
+            model = (backend or {}).get("model")
+            if backend is not None and model:
+                return backend_id, model, backend
+        return None
+
     def complete_task(
         self,
         task: str,
@@ -77,15 +108,24 @@ class LLMRouter(_CoreLLMRouter):
         unrelated chain.
         """
         task_models = self.config.get("task_models") or {}
-        assignment = task_models.get(task)
-        if not assignment:
-            raise TaskModelNotAssignedError(task)
+        assignment = task_models.get(task) or {}
 
         backend_id = assignment.get("backend")
         model = assignment.get("model")
-        backend = self.config.get("backends", {}).get(backend_id) if backend_id else None
+        backends = self.config.get("backends") or {}
+        backend = backends.get(backend_id) if backend_id else None
+
         if backend is None or not model:
-            raise TaskModelNotAssignedError(task)
+            # No explicit assignment (fresh install, cloud tenant, or an
+            # assignment pointing at a backend that no longer exists). Rather
+            # than hard-fail every LLM feature until someone visits Settings,
+            # degrade gracefully to this task's existing fallback chain --
+            # which is what these call sites used before per-task assignment.
+            derived = self._default_task_model(task)
+            if derived is None:
+                raise TaskModelNotAssignedError(task)
+            backend_id, model, backend = derived
+
         if not backend.get("enabled", True):
             raise TaskModelUnreachableError(task, backend_id, "backend is disabled")
 
