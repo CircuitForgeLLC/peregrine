@@ -292,7 +292,6 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { storeToRefs } from 'pinia'
 import { useSystemStore } from '../../stores/settings/system'
 import { useAppConfigStore } from '../../stores/appConfig'
 import { useApiFetch } from '../../composables/useApi'
@@ -300,7 +299,6 @@ import { useTaskModelsStore, type TaskName } from '../../stores/settings/taskMod
 
 const store = useSystemStore()
 const config = useAppConfigStore()
-const { tier } = storeToRefs(config)
 
 const byokConfirmed = ref(false)
 const dragIdx = ref<number | null>(null)
@@ -312,11 +310,6 @@ const visibleBackends = computed(() =>
     !CONTRACTED_ONLY.includes(b.id) || config.contractedClient
   )
 )
-
-const tierOrder = ['free', 'paid', 'premium', 'ultra']
-function meetsRequiredTier(required: string): boolean {
-  return tierOrder.indexOf(tier.value) >= tierOrder.indexOf(required || 'free')
-}
 
 function dragStart(idx: number) {
   dragIdx.value = idx
