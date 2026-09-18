@@ -88,3 +88,16 @@ def test_cover_letter_model_endpoints_removed(tmp_path, monkeypatch):
     client = TestClient(dev_api.app)
     resp = client.get("/api/settings/llm/cover-letter-model")
     assert resp.status_code == 404
+
+
+def test_get_task_models_includes_ollama_models(tmp_path, monkeypatch):
+    import dev_api
+    cfg = _cfg_dir(tmp_path)
+    monkeypatch.setattr(dev_api, "_config_dir", lambda: cfg)
+    monkeypatch.setattr(dev_api, "get_ollama_models", lambda: {"models": ["llama3.1:8b", "mistral:7b"]})
+    client = TestClient(dev_api.app)
+    resp = client.get("/api/settings/system/task-models")
+    body = resp.json()
+    assert "ollama_models" in body
+    assert isinstance(body["ollama_models"], list)
+    assert body["ollama_models"] == ["llama3.1:8b", "mistral:7b"]
