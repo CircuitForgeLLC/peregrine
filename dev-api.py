@@ -3907,10 +3907,12 @@ def get_task_models():
         with open(cfg_path, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
 
+    ollama_resp = get_ollama_models()
     return {
         "primary": task_models.get("primary"),
         "research": task_models.get("research"),
         "chat": task_models.get("chat"),
+        "ollama_models": ollama_resp.get("models", []),
     }
 
 
