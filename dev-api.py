@@ -2048,13 +2048,14 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
         "Be specific and genuine. Do not use hollow filler phrases."
     )
 
+    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        from scripts.llm_router import LLMRouter
-        router = LLMRouter()
-        answer = router.complete(prompt)
+        answer = LLMRouter().complete_task("chat", prompt)
         return {"answer": answer.strip()}
-    except Exception as e:
-        raise HTTPException(500, f"LLM generation failed: {e}")
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Chat model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
 
 
 # ── POST /api/jobs/:id/hired-feedback ─────────────────────────────────────────
@@ -3173,23 +3174,6 @@ def _resume_context_snippet() -> str:
         return ""
 
 
-def _llm_research_complete(prompt: str, *, system: str | None = None) -> str:
-    """Run a short, general instruction-following completion (a suggestion,
-    a JSON blob, a one-off summary) -- not primary content generation.
-
-    Routes through research_fallback_order instead of the default
-    fallback_order, matching the existing convention in company_research.py
-    and survey_assistant.py. The default chain's top ollama-backed entry may
-    be a fine-tune specialized for a different task (e.g. cover letter
-    writing) and won't reliably follow instructions like "return only JSON"
-    or "write a 2-3 sentence summary" for anything else.
-    """
-    from scripts.llm_router import LLMRouter
-    router = LLMRouter()
-    research_order = router.config.get("research_fallback_order") or router.config["fallback_order"]
-    return router.complete(prompt, system=system, fallback_order=research_order)
-
-
 def _extract_json_array(raw: str, *, log_context: str = "") -> list | None:
     """Extract a JSON array from LLM output that may include surrounding
     prose despite being asked for "only JSON". Returns None (never raises)
@@ -3287,11 +3271,14 @@ def generate_career_summary():
         "Be specific, highlight key strengths, and avoid hollow filler phrases like "
         "'results-driven' or 'passionate self-starter'."
     )
+    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        summary = _llm_research_complete(prompt)
+        summary = LLMRouter().complete_task("research", prompt)
         return {"summary": summary.strip()}
-    except Exception as e:
-        raise HTTPException(500, f"LLM generation failed: {e}")
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
 
 
 @app.post("/api/settings/profile/generate-missions")
@@ -3307,8 +3294,14 @@ def generate_mission_preferences():
         "'label' (human-readable name), and 'note' (one sentence on why it fits). "
         "Only output the JSON array, no other text."
     )
+    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        raw = _llm_research_complete(prompt)
+        raw = LLMRouter().complete_task("research", prompt)
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+    try:
         items = _extract_json_array(raw, log_context="generate-missions")
         if items is None:
             raise ValueError("LLM did not return a JSON array")
@@ -3336,11 +3329,14 @@ def generate_candidate_voice():
         "values that come through in their writing, and any standout personality. "
         "Write it in third person as a style directive (e.g. 'Writes in a clear, direct tone...')."
     )
+    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        voice = _llm_research_complete(prompt)
+        voice = LLMRouter().complete_task("research", prompt)
         return {"voice": voice.strip()}
-    except Exception as e:
-        raise HTTPException(500, f"LLM generation failed: {e}")
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
 
 
 # ── Settings: Resume Profile endpoints ───────────────────────────────────────
@@ -3723,8 +3719,14 @@ def suggest_resume_tags(payload: ResumeTagSuggestPayload):
     else:
         raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
 
+    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        raw = _llm_research_complete(prompt)
+        raw = LLMRouter().complete_task("research", prompt)
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+    try:
         suggestions = _extract_json_array(raw, log_context=f"suggest-tags:{payload.type}")
         if suggestions is None:
             return {"suggestions": []}
@@ -3770,8 +3772,14 @@ def suggest_search(payload: SearchSuggestPayload):
     else:
         raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
 
+    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        raw = _llm_research_complete(prompt)
+        raw = LLMRouter().complete_task("research", prompt)
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+    try:
         suggestions = _extract_json_array(raw, log_context=f"suggest-search:{payload.type}")
         if suggestions is None:
             return {"suggestions": []}
@@ -5472,11 +5480,13 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
 
     prompt = history_block + profile_context
 
+    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        from scripts.llm_router import LLMRouter
-        response_text = LLMRouter().complete(prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
-    except Exception as exc:
-        raise HTTPException(503, detail={"error": "llm_error", "message": str(exc)})
+        response_text = LLMRouter().complete_task("chat", prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Chat model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
 
     try:
         parsed = json.loads(response_text)

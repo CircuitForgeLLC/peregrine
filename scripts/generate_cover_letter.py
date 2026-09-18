@@ -274,7 +274,13 @@ def generate(
 
     # max_tokens=1200 caps generation at ~900 words — enough for any cover letter
     # and prevents fine-tuned models from looping into repetitive garbage output.
-    result = _router.complete(prompt, max_tokens=1200)
+    from scripts.llm_router import TaskModelUnreachableError, TaskModelNotAssignedError
+    try:
+        result = _router.complete_task("primary", prompt, max_tokens=1200)
+    except TaskModelNotAssignedError:
+        raise RuntimeError("No model is assigned to the Primary task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise RuntimeError(f"Can't reach the Primary model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
     return _trim_to_letter_end(result, _prof)
 
 
