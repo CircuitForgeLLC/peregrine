@@ -265,7 +265,7 @@
     </section>
 
     <!-- Orchard coordinator -->
-    <section class="form-section">
+    <section v-if="!config.isCloud" class="form-section">
       <h3>Orchard Coordinator</h3>
       <p class="section-note">
         The Orchard is CircuitForge's distributed GPU cluster. Requires a Paid license or higher.
@@ -285,6 +285,30 @@
       </div>
       <p v-if="orchError" class="error">{{ orchError }}</p>
       <p v-if="orchSaved" class="success">Saved.</p>
+    </section>
+
+    <!-- Custom fine-tuned model (cloud managed users only) -->
+    <section v-if="config.isCloud" class="form-section">
+      <h3>Custom Model</h3>
+      <p class="section-note">
+        If CircuitForge has provisioned a fine-tuned model for your account (Premium tier),
+        enter its alias here to use it for cover letter generation. Leave blank to use the
+        standard managed model.
+      </p>
+      <div class="field-row">
+        <label>Model alias</label>
+        <input
+          v-model="customModelAlias"
+          type="text"
+          placeholder="e.g. meghan-letter-writer-v2"
+          class="field-input-wide"
+        />
+        <button @click="saveCustomModel" :disabled="customModelSaving" class="btn-save-inline">
+          {{ customModelSaving ? 'Saving…' : 'Save' }}
+        </button>
+      </div>
+      <p v-if="customModelError" class="error">{{ customModelError }}</p>
+      <p v-if="customModelSaved" class="success">Saved.</p>
     </section>
 
     <!-- BYOK Modal -->
@@ -480,6 +504,32 @@ async function saveOrchUrl() {
   setTimeout(() => { orchSaved.value = false }, 3000)
 }
 
+// ── Custom fine-tuned model (cloud managed users only) ────────────────────────
+const customModelAlias   = ref('')
+const customModelSaving  = ref(false)
+const customModelError   = ref<string | null>(null)
+const customModelSaved   = ref(false)
+
+async function loadCustomModel() {
+  const { data } = await useApiFetch<{ custom_model_alias: string }>('/api/settings/system/custom-model')
+  if (data) customModelAlias.value = data.custom_model_alias ?? ''
+}
+
+async function saveCustomModel() {
+  customModelSaving.value = true
+  customModelError.value  = null
+  customModelSaved.value  = false
+  const { error } = await useApiFetch('/api/settings/system/custom-model', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ custom_model_alias: customModelAlias.value }),
+  })
+  customModelSaving.value = false
+  if (error) { customModelError.value = 'Failed to save.'; return }
+  customModelSaved.value = true
+  setTimeout(() => { customModelSaved.value = false }, 3000)
+}
+
 // ── Compute & AI Backend ──────────────────────────────────────────────────────
 const hardwareProfile   = ref('')
 const hardwareProfiles  = ref<string[]>([])
@@ -602,13 +652,15 @@ onMounted(async () => {
     store.loadServices(),
     store.loadFilePaths(),
     store.loadDeployConfig(),
-    loadOrchUrl(),
   ]
   if (!config.isCloud) {
+    tasks.push(loadOrchUrl())
     tasks.push(loadLlmBackend())
     tasks.push(taskModelsStore.load())
     tasks.push(taskModelsStore.loadOllamaModels())
     tasks.push(taskModelsStore.loadVllmModels())
+  } else {
+    tasks.push(loadCustomModel())
   }
   await Promise.all(tasks)
 })

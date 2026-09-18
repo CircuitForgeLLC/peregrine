@@ -4396,6 +4396,32 @@ def save_orch_url(payload: OrchUrlPayload):
     return {"ok": True}
 
 
+class CustomModelPayload(BaseModel):
+    custom_model_alias: str = ""
+
+
+@app.get("/api/settings/system/custom-model")
+def get_custom_model():
+    """Return the cloud managed user's custom fine-tuned model alias, if set.
+
+    Not yet routed to cf-orch (task_allocate has no user_id threading, and
+    there's no self-service registration API) -- see
+    circuitforge-plans/peregrine/superpowers/plans/2026-09-18-cloud-custom-model-cforch-followup.md.
+    This just persists the setting so it's ready once that lands.
+    """
+    cfg = _load_wizard_yaml()
+    return {"custom_model_alias": cfg.get("custom_model_alias", "")}
+
+
+@app.put("/api/settings/system/custom-model")
+def save_custom_model(payload: CustomModelPayload):
+    """Persist the custom fine-tuned model alias to user.yaml."""
+    cfg = _load_wizard_yaml()
+    cfg["custom_model_alias"] = payload.custom_model_alias.strip()
+    _save_wizard_yaml(cfg)
+    return {"ok": True}
+
+
 def _env_path() -> Path:
     """Resolve the .env file path, same directory as user.yaml's grandparent."""
     return Path(_wizard_yaml_path()).parent.parent / ".env"
