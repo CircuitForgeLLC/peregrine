@@ -3301,18 +3301,22 @@ def generate_mission_preferences():
         raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
     except TaskModelUnreachableError as e:
         raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
-    try:
-        items = _extract_json_array(raw, log_context="generate-missions")
-        if items is None:
-            raise ValueError("LLM did not return a JSON array")
-        # Normalise to {industry, note} — LLM may return {tag, label, note}
-        missions = [
-            {"industry": m.get("label") or m.get("tag") or str(m), "note": m.get("note", "")}
-            for m in items if isinstance(m, dict)
-        ]
-        return {"mission_preferences": missions}
-    except Exception as e:
-        raise HTTPException(500, f"LLM generation failed: {e}")
+    items = _extract_json_array(raw, log_context="generate-missions")
+    if items is None:
+        # The assigned Research model answered, but not with usable structured
+        # output -- exactly the failure this feature exists to name specifically
+        # instead of hiding behind a generic "LLM generation failed".
+        raise HTTPException(
+            502,
+            "The model assigned to Research didn't return usable output — try a different model, "
+            "or re-run its capability check in Settings → System → Model Assignments.",
+        )
+    # Normalise to {industry, note} — LLM may return {tag, label, note}
+    missions = [
+        {"industry": m.get("label") or m.get("tag") or str(m), "note": m.get("note", "")}
+        for m in items if isinstance(m, dict)
+    ]
+    return {"mission_preferences": missions}
 
 
 @app.post("/api/settings/profile/generate-voice")
