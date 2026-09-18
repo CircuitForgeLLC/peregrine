@@ -189,6 +189,25 @@
         <input v-model.number="ollamaPort" type="number" class="field-input-wide" />
       </div>
 
+      <div class="field-row">
+        <label>Ollama model</label>
+        <select v-model="ollamaModel" class="field-select">
+          <option value="">(none selected)</option>
+          <option v-for="m in ollamaModelOptions" :key="m" :value="m">{{ m }}</option>
+        </select>
+      </div>
+      <p v-if="ollamaModel && ollamaModelAvailable" class="model-status model-status--ok">
+        ✓ Installed and ready to use.
+      </p>
+      <p v-else-if="ollamaModel && !ollamaModelAvailable" class="model-status model-status--warn">
+        ⚠ Not installed on this Ollama host yet.
+        <button
+          class="btn-save-inline"
+          :disabled="ollamaModelPulling"
+          @click="pullOllamaModel"
+        >{{ ollamaModelPulling ? 'Downloading…' : 'Download' }}</button>
+      </p>
+
       <div class="form-actions">
         <button @click="saveLlmBackend" :disabled="llmBackendSaving" class="btn-primary">
           {{ llmBackendSaving ? 'Saving…' : 'Save Compute & AI Backend' }}
@@ -372,14 +391,27 @@ const openaiKey         = ref('')
 const openaiKeySet      = ref(false)
 const ollamaHost        = ref('')
 const ollamaPort        = ref(11434)
+const ollamaModel       = ref('')
+const ollamaModelPulling = ref(false)
 const llmBackendSaving  = ref(false)
 const llmBackendError   = ref<string | null>(null)
 const llmBackendSaved   = ref(false)
 
+// The dropdown must always include the currently configured model, even if
+// it isn't installed yet -- otherwise picking a model that needs a download
+// would silently disappear from its own picker.
+const ollamaModelOptions = computed(() => {
+  if (ollamaModel.value && !ollamaModels.value.includes(ollamaModel.value)) {
+    return [ollamaModel.value, ...ollamaModels.value]
+  }
+  return ollamaModels.value
+})
+const ollamaModelAvailable = computed(() => ollamaModels.value.includes(ollamaModel.value))
+
 async function loadLlmBackend() {
   const { data } = await useApiFetch<{
     anthropic_key_set: boolean; openai_url: string; openai_key_set: boolean
-    ollama_host: string; ollama_port: number; inference_profile: string
+    ollama_host: string; ollama_port: number; inference_profile: string; ollama_model: string
   }>('/api/settings/system/llm-backend')
   if (data) {
     anthropicKeySet.value = data.anthropic_key_set
@@ -387,6 +419,7 @@ async function loadLlmBackend() {
     openaiKeySet.value    = data.openai_key_set
     ollamaHost.value      = data.ollama_host
     ollamaPort.value      = data.ollama_port
+    ollamaModel.value     = data.ollama_model
     if (data.inference_profile) hardwareProfile.value = data.inference_profile
   }
 
@@ -398,6 +431,9 @@ async function loadLlmBackend() {
     detectedGpus.value     = hwData.gpus ?? []
     if (!hardwareProfile.value) hardwareProfile.value = hwData.suggested_profile ?? ''
   }
+
+  const { data: mData } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
+  if (mData) ollamaModels.value = mData.models ?? []
 }
 
 async function saveLlmBackend() {
@@ -414,6 +450,7 @@ async function saveLlmBackend() {
       ollama_host: ollamaHost.value,
       ollama_port: ollamaPort.value,
       inference_profile: hardwareProfile.value,
+      ollama_model: ollamaModel.value,
     }),
   })
   llmBackendSaving.value = false
@@ -422,6 +459,28 @@ async function saveLlmBackend() {
   openaiKey.value = ''
   llmBackendSaved.value = true
   setTimeout(() => { llmBackendSaved.value = false }, 3000)
+}
+
+async function pullOllamaModel() {
+  if (!ollamaModel.value || ollamaModelPulling.value) return
+  ollamaModelPulling.value = true
+  await useApiFetch('/api/settings/system/ollama-pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: ollamaModel.value }),
+  })
+  await pollForOllamaModel(ollamaModel.value)
+  ollamaModelPulling.value = false
+}
+
+async function pollForOllamaModel(model: string, attempt = 0) {
+  const MAX_ATTEMPTS = 120  // 120 x 5s = 10 minutes
+  if (attempt >= MAX_ATTEMPTS) return
+  const { data } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
+  if (data) ollamaModels.value = data.models ?? []
+  if (ollamaModels.value.includes(model)) return
+  await new Promise(resolve => setTimeout(resolve, 5000))
+  await pollForOllamaModel(model, attempt + 1)
 }
 
 onMounted(async () => {
@@ -449,6 +508,9 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .tab-note { font-size: 0.82rem; color: var(--color-text-muted); margin-bottom: var(--space-6); }
 .form-section { margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--color-border); }
 .section-note { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 14px; }
+.model-status { font-size: 0.82rem; margin-bottom: 14px; display: flex; align-items: center; gap: var(--space-2); }
+.model-status--ok { color: var(--color-success); }
+.model-status--warn { color: var(--color-warning); }
 .backend-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
 .backend-card { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 8px; cursor: grab; user-select: none; }
 .backend-card:active { cursor: grabbing; }
