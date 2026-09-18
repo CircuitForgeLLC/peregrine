@@ -3263,9 +3263,15 @@ def probe_model(payload: ProbeModelPayload):
     'model failed the probe' apart from 'couldn't test it at all'."""
     try:
         return _probe_model_capability(payload.backend, payload.model)
-    except Exception as e:
+    except RuntimeError as e:
+        # Connectivity failure from router.complete() -- backend is unreachable
         _log.warning("[probe-model] %s/%s unreachable: %s", payload.backend, payload.model, e)
         return {"error": "unreachable"}
+    except Exception as e:
+        # Unexpected error (e.g. YAML write failure, etc.) -- log and re-raise
+        # so caller can see it's not a model-unavailability issue
+        _log.error("[probe-model] %s/%s unexpected failure: %s", payload.backend, payload.model, e)
+        raise
 
 
 @app.post("/api/settings/profile/generate-summary")
