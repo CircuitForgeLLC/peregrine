@@ -21,6 +21,7 @@ function makeRouter(startPath: string) {
         component: WizardLayout,
         children: [
           { path: '', component: DummyStep },
+          { path: 'legacy', component: DummyStep },
           ...STEP_ROUTES.map((p) => ({ path: p.replace('/setup/', ''), component: DummyStep })),
         ],
       },
@@ -52,7 +53,7 @@ describe('WizardLayout — progress step sync', () => {
       error: null,
     } as never)
 
-    const router = makeRouter('/setup/hardware')
+    const router = makeRouter('/setup/legacy/hardware')
     await router.isReady()
     mount(WizardLayout, { global: { plugins: [router] } })
     await flushPromises()
@@ -62,18 +63,18 @@ describe('WizardLayout — progress step sync', () => {
     expect(wizard.stepLabel).toBe('Step 1 of 8')
   })
 
-  it('still redirects bare /setup to the server resume-at step', async () => {
+  it('still redirects bare /setup/legacy to the server resume-at step', async () => {
     mockFetch.mockResolvedValue({
       data: { wizard_complete: false, wizard_step: 2, saved_data: {} },
       error: null,
     } as never)
 
-    const router = makeRouter('/setup')
+    const router = makeRouter('/setup/legacy')
     await router.isReady()
     mount(WizardLayout, { global: { plugins: [router] } })
     await flushPromises()
 
-    expect(router.currentRoute.value.path).toBe('/setup/tier')
+    expect(router.currentRoute.value.path).toBe('/setup/legacy/tier')
     const wizard = useWizardStore()
     expect(wizard.currentStep).toBe(3)
   })
@@ -84,7 +85,7 @@ describe('WizardLayout — progress step sync', () => {
       error: null,
     } as never)
 
-    const router = makeRouter('/setup/hardware')
+    const router = makeRouter('/setup/legacy/hardware')
     await router.isReady()
     mount(WizardLayout, { global: { plugins: [router] } })
     await flushPromises()
@@ -92,7 +93,7 @@ describe('WizardLayout — progress step sync', () => {
     const wizard = useWizardStore()
     expect(wizard.currentStep).toBe(1)
 
-    await router.push('/setup/identity')
+    await router.push('/setup/legacy/identity')
     await flushPromises()
     expect(wizard.currentStep).toBe(6)
   })
