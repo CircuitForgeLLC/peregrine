@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
 
-export type RemotePreference = 'remote' | 'onsite' | 'both'
+export type RemotePreference = 'remote' | 'onsite' | 'hybrid' | 'both'
 export interface JobBoard { name: string; enabled: boolean }
 
 export const useSearchStore = defineStore('settings/search', () => {

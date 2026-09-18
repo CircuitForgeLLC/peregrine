@@ -210,6 +210,10 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
         if any(kw in title_lower or kw in desc_lower for kw in exclude_kw):
             return False
 
+        require_kw = job_row.get("_require_kw", [])
+        if require_kw and not any(kw in title_lower or kw in desc_lower for kw in require_kw):
+            return False
+
         tc_key = (title_lower[:80], job_row.get("company", "").lower().strip())
         if tc_key in existing_tc:
             return False
@@ -239,14 +243,15 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
         # Map remote_preference → JobSpy is_remote param:
         #   'remote'  → True  (remote-only listings)
         #   'onsite'  → False (on-site-only listings)
+        #   'hybrid'  → None  (board-side tagging is unreliable for hybrid -- see below)
         #   'both'    → None  (no filter — JobSpy default)
         _rp = profile.get("remote_preference", "both")
         _is_remote: bool | None = True if _rp == "remote" else (False if _rp == "onsite" else None)
 
-        # When filtering for remote-only, also drop hybrid roles at the description level.
         # Job boards (especially LinkedIn) tag hybrid listings as is_remote=True, so the
-        # board-side filter alone is not reliable.  We match specific work-arrangement
-        # phrases to avoid false positives like "hybrid cloud" or "hybrid architecture".
+        # board-side filter alone is not reliable for distinguishing hybrid from remote or
+        # onsite.  We match specific work-arrangement phrases at the description level
+        # instead, avoiding false positives like "hybrid cloud" or "hybrid architecture".
         _HYBRID_PHRASES = [
             "hybrid role", "hybrid position", "hybrid work", "hybrid schedule",
             "hybrid model", "hybrid arrangement", "hybrid opportunity",
@@ -255,8 +260,13 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
             "days in office", "days per week in", "days onsite", "days on-site",
             "required to be in office", "required in office",
         ]
+        # 'remote' preference: exclude anything that reads as hybrid.
+        # 'hybrid' preference: require a hybrid-phrase match instead (the inverse).
+        require_kw: list[str] = []
         if _rp == "remote":
             exclude_kw = exclude_kw + _HYBRID_PHRASES
+        elif _rp == "hybrid":
+            require_kw = _HYBRID_PHRASES
 
         for location in profile["locations"]:
 
@@ -326,6 +336,7 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                         "description": _s(job_dict.get("description")),
                         "date_posted": date_posted_str,
                         "_exclude_kw": exclude_kw,
+                        "_require_kw": require_kw,
                     }
                     if _insert_if_new(row, _s(job_dict.get("site"))):
                         if notion_push:
@@ -353,7 +364,7 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                 print(f"  [{board_name}] {len(custom_jobs)} raw results")
                 board_new = 0
                 for job in custom_jobs:
-                    row = {**job, "_exclude_kw": exclude_kw}
+                    row = {**job, "_exclude_kw": exclude_kw, "_require_kw": require_kw}
                     if _insert_if_new(row, board_name):
                         new_count += 1
                         board_new += 1

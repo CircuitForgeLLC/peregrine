@@ -174,6 +174,7 @@ const docsUrl = useDocsUrl('user-guide/settings/#search-prefs')
 const remoteOptions = [
   { value: 'remote' as const, label: 'Remote only' },
   { value: 'onsite' as const, label: 'On-site only' },
+  { value: 'hybrid' as const, label: 'Hybrid only' },
   { value: 'both' as const, label: 'Both' },
 ]
 
@@ -207,7 +208,7 @@ onMounted(() => store.load())
 h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: var(--space-6); }
 h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .form-section { margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--color-border); }
-.remote-options { display: flex; gap: 8px; margin-bottom: 10px; }
+.remote-options { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .remote-btn { padding: 8px 18px; border-radius: 6px; border: 1px solid var(--color-border); background: transparent; color: var(--color-text-muted); cursor: pointer; font-size: 0.88rem; transition: all 0.15s; }
 .remote-btn.active { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-inverse); }
 .section-note { font-size: 0.78rem; color: var(--color-text-muted); margin-top: 8px; }
