@@ -204,8 +204,7 @@
       </p>
 
       <div class="field-row">
-        <label>Ollama host</label>
-        <input v-model="detectHost" type="text" class="field-input-wide" placeholder="host.docker.internal" />
+        <label>Find Ollama</label>
         <button class="btn-save-inline" :disabled="detecting" @click="runOllamaDetect">
           {{ detecting ? 'Detecting…' : 'Detect' }}
         </button>
@@ -348,7 +347,6 @@ const taskModelsStore = useTaskModelsStore()
 const taskModels = computed(() => ({
   primary: taskModelsStore.primary, research: taskModelsStore.research, chat: taskModelsStore.chat,
 }))
-const detectHost = ref('')
 const detecting = ref(false)
 const detectResult = ref<string | null>(null)
 
@@ -380,8 +378,10 @@ async function runOllamaDetect() {
   const result = await taskModelsStore.detectOllama(11434)
   detecting.value = false
   if (result.found) {
-    detectHost.value = result.host ?? ''
-    detectResult.value = `Found Ollama at ${result.host}:${result.port}.`
+    // Write into the real, persisted Ollama host field (saved by
+    // saveLlmBackend) -- not a second, dead copy of it.
+    ollamaHost.value = result.host ?? ''
+    detectResult.value = `Found Ollama at ${result.host}:${result.port}. Filled into the Ollama host field above — click “Save Compute & AI Backend” to keep it.`
   } else {
     detectResult.value = `Couldn't find Ollama — tried: ${(result.tried ?? []).join(', ')}.`
   }
