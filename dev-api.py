@@ -3994,6 +3994,33 @@ def get_ollama_models():
     return {"models": []}
 
 
+class OllamaDetectPayload(BaseModel):
+    port: int = 11434
+
+
+@app.post("/api/settings/system/ollama-detect")
+def ollama_detect(payload: OllamaDetectPayload):
+    """Try candidate Ollama host addresses in the order appropriate to
+    whether Peregrine itself is dockerized, and report which one (if any)
+    actually responds. See _running_in_docker()."""
+    if _running_in_docker():
+        candidates = ["host.docker.internal", "ollama", "localhost"]
+    else:
+        candidates = ["localhost", "127.0.0.1"]
+
+    tried = []
+    for host in candidates:
+        url = f"http://{host}:{payload.port}/api/tags"
+        tried.append(host)
+        try:
+            resp = requests.get(url, timeout=3)
+            if resp.status_code == 200:
+                return {"found": True, "host": host, "port": payload.port}
+        except Exception:
+            continue
+    return {"found": False, "tried": tried}
+
+
 # ── Settings: System — Services ───────────────────────────────────────────────
 
 SERVICES_REGISTRY = [
