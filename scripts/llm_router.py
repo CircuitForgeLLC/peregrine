@@ -14,6 +14,24 @@ from circuitforge_core.llm import LLMRouter as _CoreLLMRouter
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "llm.yaml"
 
 
+class TaskModelNotAssignedError(Exception):
+    """No usable model is assigned to this task, or the assignment points
+    at a backend that no longer exists in config."""
+    def __init__(self, task: str):
+        self.task = task
+        super().__init__(f"No model assigned for task '{task}'")
+
+
+class TaskModelUnreachableError(Exception):
+    """A model is assigned to this task, but the backend is disabled or
+    the completion call itself failed (network, timeout, etc.)."""
+    def __init__(self, task: str, backend_id: str, detail: str = ""):
+        self.task = task
+        self.backend_id = backend_id
+        self.detail = detail
+        super().__init__(f"Backend '{backend_id}' for task '{task}' is unreachable: {detail}")
+
+
 class LLMRouter(_CoreLLMRouter):
     """Peregrine-specific LLMRouter — tri-level config path priority.
 
@@ -41,6 +59,46 @@ class LLMRouter(_CoreLLMRouter):
             # The core default CONFIG_PATH (~/.config/circuitforge/llm.yaml)
             # won't exist either, so _auto_config_from_env() will be triggered.
             super().__init__()
+
+    def complete_task(
+        self,
+        task: str,
+        prompt: str,
+        *,
+        system: str | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Complete a prompt using the model assigned to `task` in
+        config['task_models'] (e.g. 'primary' / 'research' / 'chat').
+
+        Unlike complete()'s general fallback_order, a task-scoped call
+        either has an assigned, working model or raises a specific,
+        classified error -- it never silently falls through to an
+        unrelated chain.
+        """
+        task_models = self.config.get("task_models") or {}
+        assignment = task_models.get(task)
+        if not assignment:
+            raise TaskModelNotAssignedError(task)
+
+        backend_id = assignment.get("backend")
+        model = assignment.get("model")
+        backend = self.config.get("backends", {}).get(backend_id) if backend_id else None
+        if backend is None or not model:
+            raise TaskModelNotAssignedError(task)
+        if not backend.get("enabled", True):
+            raise TaskModelUnreachableError(task, backend_id, "backend is disabled")
+
+        try:
+            return self.complete(
+                prompt,
+                system=system,
+                fallback_order=[backend_id],
+                model_override=model,
+                max_tokens=max_tokens,
+            )
+        except RuntimeError as e:
+            raise TaskModelUnreachableError(task, backend_id, str(e)) from e
 
 
 # Module-level singleton for convenience
