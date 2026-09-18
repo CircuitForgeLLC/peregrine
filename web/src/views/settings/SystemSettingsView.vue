@@ -44,30 +44,6 @@
       </div>
     </section>
 
-    <!-- Custom cover letter model (paid+, cloud) -->
-    <section v-if="config.isCloud && meetsRequiredTier('paid')" class="form-section">
-      <h3>Custom Cover Letter Model</h3>
-      <p class="section-note">
-        Select your fine-tuned Ollama model for cover letter generation.
-        Leave blank to use the cloud default.
-      </p>
-      <div class="field-row">
-        <label>Model</label>
-        <select v-model="coverLetterModel" class="field-select">
-          <option value="">(cloud default)</option>
-          <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
-        </select>
-        <button @click="saveCoverLetterModel" :disabled="clmSaving" class="btn-save-inline">
-          {{ clmSaving ? 'Saving…' : 'Save' }}
-        </button>
-      </div>
-      <p v-if="clmError" class="error">{{ clmError }}</p>
-      <p v-if="clmSaved" class="success">Saved.</p>
-      <p v-if="ollamaModels.length === 0" class="section-note">
-        No Ollama models found — make sure Ollama is running and has models pulled.
-      </p>
-    </section>
-
     <!-- Services section -->
     <section class="form-section">
       <h3>Services</h3>
@@ -217,6 +193,49 @@
       </div>
     </section>
 
+    <!-- Model Assignments -->
+    <section v-if="!config.isCloud" class="form-section">
+      <h3>Model Assignments</h3>
+      <p class="section-note">
+        Which model handles each kind of task. Research and Chat are checked
+        for reliable structured-output before being used without a warning;
+        Primary (cover letters) is not, since writing quality can't be
+        tested automatically.
+      </p>
+
+      <div class="field-row">
+        <label>Ollama host</label>
+        <input v-model="detectHost" type="text" class="field-input-wide" placeholder="host.docker.internal" />
+        <button class="btn-save-inline" :disabled="detecting" @click="runOllamaDetect">
+          {{ detecting ? 'Detecting…' : 'Detect' }}
+        </button>
+      </div>
+      <p v-if="detectResult" class="section-note">{{ detectResult }}</p>
+
+      <div v-for="task in (['primary', 'research', 'chat'] as const)" :key="task" class="field-row">
+        <label>{{ task === 'primary' ? 'Primary (cover letters)' : task === 'research' ? 'Research (suggestions)' : 'Chat (AI assistant)' }}</label>
+        <select :value="taskModels[task]?.model ?? ''" class="field-select" @change="onTaskModelChange(task, ($event.target as HTMLSelectElement).value)">
+          <option value="">(none assigned)</option>
+          <option v-for="m in taskModelsStore.ollamaModels" :key="m" :value="m">{{ m }}</option>
+        </select>
+        <span
+          v-if="task !== 'primary' && taskModels[task]?.model && probeBadge(task) === 'warn'"
+          class="model-status model-status--warn"
+        >⚠ May not follow instructions reliably</span>
+        <span
+          v-if="task !== 'primary' && taskModels[task]?.model && probeBadge(task) === 'ok'"
+          class="model-status model-status--ok"
+        >✓ Structured output OK</span>
+      </div>
+
+      <div class="form-actions">
+        <button @click="saveTaskModels" :disabled="taskModelsStore.saving" class="btn-primary">
+          {{ taskModelsStore.saving ? 'Saving…' : 'Save Model Assignments' }}
+        </button>
+        <p v-if="taskModelsStore.saveError" class="error">{{ taskModelsStore.saveError }}</p>
+      </div>
+    </section>
+
     <!-- Orchard coordinator -->
     <section class="form-section">
       <h3>Orchard Coordinator</h3>
@@ -277,6 +296,7 @@ import { storeToRefs } from 'pinia'
 import { useSystemStore } from '../../stores/settings/system'
 import { useAppConfigStore } from '../../stores/appConfig'
 import { useApiFetch } from '../../composables/useApi'
+import { useTaskModelsStore, type TaskName } from '../../stores/settings/taskModels'
 
 const store = useSystemStore()
 const config = useAppConfigStore()
@@ -325,33 +345,53 @@ async function handleConfirmByok() {
   byokConfirmed.value = false
 }
 
-// ── Custom cover letter model ─────────────────────────────────────────────────
-const coverLetterModel = ref('')
-const ollamaModels     = ref<string[]>([])
-const clmSaving        = ref(false)
-const clmError         = ref<string | null>(null)
-const clmSaved         = ref(false)
+// ── Model Assignments (Primary/Research/Chat) ─────────────────────────────────
+// Note: `ollamaModels` below is shared with the "Compute & AI Backend" section
+// (ollamaModelOptions/ollamaModelAvailable/pullOllamaModel/loadLlmBackend) --
+// it is unrelated to the removed cover-letter picker and is kept here.
+const ollamaModels = ref<string[]>([])
 
-async function loadCoverLetterModel() {
-  const { data } = await useApiFetch<{ model: string }>('/api/settings/llm/cover-letter-model')
-  if (data) coverLetterModel.value = data.model ?? ''
-  const { data: mData } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
-  if (mData) ollamaModels.value = mData.models ?? []
+const taskModelsStore = useTaskModelsStore()
+const taskModels = computed(() => ({
+  primary: taskModelsStore.primary, research: taskModelsStore.research, chat: taskModelsStore.chat,
+}))
+const detectHost = ref('')
+const detecting = ref(false)
+const detectResult = ref<string | null>(null)
+
+function onTaskModelChange(task: TaskName, model: string) {
+  const assignment = model ? { backend: 'ollama', model } : null
+  if (task === 'primary') taskModelsStore.primary = assignment
+  else if (task === 'research') taskModelsStore.research = assignment
+  else taskModelsStore.chat = assignment
+  if (assignment && task !== 'primary') {
+    taskModelsStore.probeModel('ollama', model)
+  }
 }
 
-async function saveCoverLetterModel() {
-  clmSaving.value = true
-  clmError.value  = null
-  clmSaved.value  = false
-  const { error } = await useApiFetch('/api/settings/llm/cover-letter-model', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: coverLetterModel.value }),
-  })
-  clmSaving.value = false
-  if (error) { clmError.value = 'Failed to save model.'; return }
-  clmSaved.value = true
-  setTimeout(() => { clmSaved.value = false }, 3000)
+function probeBadge(task: TaskName): 'ok' | 'warn' | null {
+  const assignment = taskModels.value[task]
+  if (!assignment) return null
+  const result = taskModelsStore.probeResults[`${assignment.backend}:${assignment.model}`]
+  if (!result) return null
+  return result.passed ? 'ok' : 'warn'
+}
+
+async function saveTaskModels() {
+  await taskModelsStore.save()
+}
+
+async function runOllamaDetect() {
+  detecting.value = true
+  detectResult.value = null
+  const result = await taskModelsStore.detectOllama(11434)
+  detecting.value = false
+  if (result.found) {
+    detectHost.value = result.host ?? ''
+    detectResult.value = `Found Ollama at ${result.host}:${result.port}.`
+  } else {
+    detectResult.value = `Couldn't find Ollama — tried: ${(result.tried ?? []).join(', ')}.`
+  }
 }
 
 // ── Orchard coordinator URL ───────────────────────────────────────────────────
@@ -491,11 +531,10 @@ onMounted(async () => {
     store.loadDeployConfig(),
     loadOrchUrl(),
   ]
-  if (config.isCloud && tierOrder.indexOf(tier.value) >= tierOrder.indexOf('paid')) {
-    tasks.push(loadCoverLetterModel())
-  }
   if (!config.isCloud) {
     tasks.push(loadLlmBackend())
+    tasks.push(taskModelsStore.load())
+    tasks.push(taskModelsStore.loadOllamaModels())
   }
   await Promise.all(tasks)
 })
