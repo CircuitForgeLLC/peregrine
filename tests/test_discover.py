@@ -183,6 +183,71 @@ def test_discover_custom_board_deduplicates(tmp_path):
     assert len(get_jobs_by_status(db_path, "pending")) == 1
 
 
+# ── Hybrid remote_preference ─────────────────────────────────────────────────
+# Board-side is_remote tagging is unreliable for hybrid roles (LinkedIn tags
+# many hybrid listings is_remote=True), so 'hybrid' preference doesn't filter
+# on JobSpy's is_remote param at all -- instead it requires the description
+# to match one of the same hybrid-arrangement phrases already used to
+# *exclude* hybrid roles under 'remote' preference, inverted into a
+# *require* filter.
+
+_PROFILE_HYBRID = {
+    "profiles": [{
+        "name": "cs", "titles": ["Customer Success Manager"], "locations": ["Remote"],
+        "boards": ["linkedin"], "results_per_board": 5, "hours_old": 72,
+        "remote_preference": "hybrid",
+    }]
+}
+
+
+def test_discover_hybrid_preference_keeps_jobs_matching_hybrid_phrases(tmp_path):
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/111",
+                  "description": "This is a hybrid role, 3 days in office per week."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_PROFILE_HYBRID, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([hybrid_job])), \
+         patch("scripts.discover.Client"):
+        count = run_discovery(db_path=db_path)
+
+    assert count == 1
+    assert len(get_jobs_by_status(db_path, "pending")) == 1
+
+
+def test_discover_hybrid_preference_drops_jobs_without_hybrid_phrases(tmp_path):
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    plain_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/222",
+                 "description": "Fully remote customer success role."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_PROFILE_HYBRID, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([plain_job])), \
+         patch("scripts.discover.Client"):
+        count = run_discovery(db_path=db_path)
+
+    assert count == 0
+    assert len(get_jobs_by_status(db_path, "pending")) == 0
+
+
+def test_discover_hybrid_preference_does_not_set_jobspy_is_remote_kwarg(tmp_path):
+    """Board-side is_remote tagging is unreliable for hybrid -- 'hybrid' must
+    not pass is_remote=True/False to JobSpy at all (unlike 'remote'/'onsite')."""
+    from scripts.discover import run_discovery
+
+    hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/333",
+                  "description": "Hybrid schedule, 2 days onsite."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_PROFILE_HYBRID, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([hybrid_job])) as mock_scrape, \
+         patch("scripts.discover.Client"):
+        run_discovery(db_path=db_path)
+
+    assert "is_remote" not in mock_scrape.call_args.kwargs
+
+
 # ── Blocklist integration ─────────────────────────────────────────────────────
 
 def test_is_blocklisted_jobgether():
