@@ -39,4 +39,46 @@ describe('useSearchStore', () => {
     await store.save()
     expect(mockFetch).toHaveBeenCalledWith('/api/settings/search', expect.objectContaining({ method: 'PUT' }))
   })
+
+  // Regression: the Suggest buttons on Search Prefs (titles/locations/
+  // exclude keywords) gave zero feedback on either a request error or a
+  // successful-but-empty response -- same silent-no-op shape as the Resume
+  // Profile Suggest button. suggestTitles/suggestLocations/
+  // suggestExcludeKeywords now surface both cases as a per-field message.
+  it('suggestTitles() sets a field error when the request fails', async () => {
+    mockFetch.mockResolvedValue({ data: null, error: { kind: 'network', message: 'boom' } })
+    const store = useSearchStore()
+    await store.suggestTitles()
+    expect(store.suggestErrors.titles).toBeTruthy()
+    expect(store.suggestingField).toBe(null)
+  })
+
+  it('suggestTitles() sets a field error when the LLM returns zero suggestions', async () => {
+    mockFetch.mockResolvedValue({ data: { suggestions: [] }, error: null })
+    const store = useSearchStore()
+    await store.suggestTitles()
+    expect(store.suggestErrors.titles).toBeTruthy()
+  })
+
+  it('suggestLocations() sets a field error on failure', async () => {
+    mockFetch.mockResolvedValue({ data: null, error: { kind: 'network', message: 'boom' } })
+    const store = useSearchStore()
+    await store.suggestLocations()
+    expect(store.suggestErrors.locations).toBeTruthy()
+  })
+
+  it('suggestExcludeKeywords() sets a field error on failure', async () => {
+    mockFetch.mockResolvedValue({ data: null, error: { kind: 'network', message: 'boom' } })
+    const store = useSearchStore()
+    await store.suggestExcludeKeywords()
+    expect(store.suggestErrors.exclude).toBeTruthy()
+  })
+
+  it('suggestTitles() clears a stale error on a successful non-empty response', async () => {
+    const store = useSearchStore()
+    store.suggestErrors.titles = 'stale error from a previous attempt'
+    mockFetch.mockResolvedValue({ data: { suggestions: ['Staff Engineer'] }, error: null })
+    await store.suggestTitles()
+    expect(store.suggestErrors.titles).toBe(null)
+  })
 })

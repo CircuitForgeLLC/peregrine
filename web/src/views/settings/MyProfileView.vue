@@ -71,6 +71,7 @@
             @click="generateSummary"
             :disabled="generatingSummary"
           >{{ generatingSummary ? 'Generating…' : 'Generate ✦' }}</button>
+          <p v-if="generateSummaryError" class="error-msg">{{ generateSummaryError }}</p>
         </div>
 
         <div class="field-row field-row--stacked">
@@ -89,6 +90,7 @@
             @click="generateVoice"
             :disabled="generatingVoice"
           >{{ generatingVoice ? 'Generating…' : 'Generate ✦' }}</button>
+          <p v-if="generateVoiceError" class="error-msg">{{ generateVoiceError }}</p>
         </div>
 
         <div v-if="!config.isCloud" class="field-row">
@@ -146,6 +148,7 @@
             :disabled="generatingMissions"
           >{{ generatingMissions ? 'Generating…' : 'Generate ✦' }}</button>
         </div>
+        <p v-if="generateMissionsError" class="error-msg">{{ generateMissionsError }}</p>
 
         <div class="save-row">
           <button class="btn-save" type="button" @click="store.save()" :disabled="store.saving">
@@ -242,6 +245,9 @@ const newNdaCompany = ref('')
 const generatingSummary = ref(false)
 const generatingMissions = ref(false)
 const generatingVoice = ref(false)
+const generateSummaryError = ref<string | null>(null)
+const generateMissionsError = ref<string | null>(null)
+const generateVoiceError = ref<string | null>(null)
 
 onMounted(() => { store.load() })
 
@@ -278,33 +284,46 @@ function autosave() {
 // ── AI generation (paid tier) ────────────────────────────
 async function generateSummary() {
   generatingSummary.value = true
+  generateSummaryError.value = null
   const { data, error } = await useApiFetch<{ summary?: string }>(
     '/api/settings/profile/generate-summary', { method: 'POST' }
   )
   generatingSummary.value = false
-  if (!error && data?.summary) store.career_summary = data.summary
+  if (!error && data?.summary) {
+    store.career_summary = data.summary
+  } else {
+    generateSummaryError.value = 'Could not generate a summary — please try again.'
+  }
 }
 
 async function generateMissions() {
   generatingMissions.value = true
+  generateMissionsError.value = null
   const { data, error } = await useApiFetch<{ mission_preferences?: Array<{ industry: string; note: string }> }>(
     '/api/settings/profile/generate-missions', { method: 'POST' }
   )
   generatingMissions.value = false
-  if (!error && data?.mission_preferences) {
+  if (!error && data?.mission_preferences?.length) {
     store.mission_preferences = data.mission_preferences.map((m) => ({
       id: genId(), industry: m.industry ?? '', note: m.note ?? '',
     }))
+  } else {
+    generateMissionsError.value = 'Could not generate suggestions — please try again.'
   }
 }
 
 async function generateVoice() {
   generatingVoice.value = true
+  generateVoiceError.value = null
   const { data, error } = await useApiFetch<{ voice?: string }>(
     '/api/settings/profile/generate-voice', { method: 'POST' }
   )
   generatingVoice.value = false
-  if (!error && data?.voice) store.candidate_voice = data.voice
+  if (!error && data?.voice) {
+    store.candidate_voice = data.voice
+  } else {
+    generateVoiceError.value = 'Could not generate a voice note — please try again.'
+  }
 }
 </script>
 
