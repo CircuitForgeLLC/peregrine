@@ -131,6 +131,22 @@
       </p>
 
       <div class="field-row">
+        <label>Find Ollama</label>
+        <button class="btn-save-inline" :disabled="detecting" @click="runOllamaDetect">
+          {{ detecting ? 'Detecting…' : 'Detect' }}
+        </button>
+      </div>
+      <p v-if="detectResult" class="section-note">{{ detectResult }}</p>
+
+      <div class="field-row">
+        <label>Find vLLM</label>
+        <button class="btn-save-inline" :disabled="vllmDetecting" @click="runVllmDetect">
+          {{ vllmDetecting ? 'Detecting…' : 'Detect' }}
+        </button>
+      </div>
+      <p v-if="vllmDetectResult" class="section-note">{{ vllmDetectResult }}</p>
+
+      <div class="field-row">
         <label>Anthropic API key</label>
         <input
           v-model="anthropicKey"
@@ -163,6 +179,15 @@
       <div class="field-row">
         <label>Ollama port</label>
         <input v-model.number="ollamaPort" type="number" class="field-input-wide" />
+      </div>
+
+      <div class="field-row">
+        <label>vLLM host</label>
+        <input v-model="vllmHost" type="text" placeholder="localhost" class="field-input-wide" />
+      </div>
+      <div class="field-row">
+        <label>vLLM port</label>
+        <input v-model.number="vllmPort" type="number" class="field-input-wide" />
       </div>
 
       <div class="field-row">
@@ -203,19 +228,23 @@
         tested automatically.
       </p>
 
-      <div class="field-row">
-        <label>Find Ollama</label>
-        <button class="btn-save-inline" :disabled="detecting" @click="runOllamaDetect">
-          {{ detecting ? 'Detecting…' : 'Detect' }}
-        </button>
-      </div>
-      <p v-if="detectResult" class="section-note">{{ detectResult }}</p>
-
       <div v-for="task in (['primary', 'research', 'chat'] as const)" :key="task" class="field-row">
         <label>{{ task === 'primary' ? 'Primary (cover letters)' : task === 'research' ? 'Research (suggestions)' : 'Chat (AI assistant)' }}</label>
+        <div class="provider-radio-group" role="radiogroup" :aria-label="`${task} provider`">
+          <label v-for="p in (['ollama', 'vllm'] as const)" :key="p" class="provider-radio">
+            <input
+              type="radio"
+              :name="`${task}-provider`"
+              :value="p"
+              :checked="taskProvider[task] === p"
+              @change="taskProvider[task] = p"
+            />
+            {{ p === 'ollama' ? 'Ollama' : 'vLLM' }}
+          </label>
+        </div>
         <select :value="taskModels[task]?.model ?? ''" class="field-select" @change="onTaskModelChange(task, ($event.target as HTMLSelectElement).value)">
           <option value="">(none assigned)</option>
-          <option v-for="m in taskModelsStore.ollamaModels" :key="m" :value="m">{{ m }}</option>
+          <option v-for="m in modelOptionsFor(task)" :key="m" :value="m">{{ m }}</option>
         </select>
         <span
           v-if="task !== 'primary' && taskModels[task]?.model && probeBadge(task) === 'warn'"
@@ -290,7 +319,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useSystemStore } from '../../stores/settings/system'
 import { useAppConfigStore } from '../../stores/appConfig'
 import { useApiFetch } from '../../composables/useApi'
@@ -349,14 +378,29 @@ const taskModels = computed(() => ({
 }))
 const detecting = ref(false)
 const detectResult = ref<string | null>(null)
+const vllmDetecting = ref(false)
+const vllmDetectResult = ref<string | null>(null)
+
+// Which provider's model list each task row is currently showing --
+// defaults from that task's existing assignment (if any), else Ollama.
+const taskProvider = reactive<Record<TaskName, 'ollama' | 'vllm'>>({
+  primary: (taskModels.value.primary?.backend as 'ollama' | 'vllm') ?? 'ollama',
+  research: (taskModels.value.research?.backend as 'ollama' | 'vllm') ?? 'ollama',
+  chat: (taskModels.value.chat?.backend as 'ollama' | 'vllm') ?? 'ollama',
+})
+
+function modelOptionsFor(task: TaskName): string[] {
+  return taskProvider[task] === 'vllm' ? taskModelsStore.vllmModels : taskModelsStore.ollamaModels
+}
 
 function onTaskModelChange(task: TaskName, model: string) {
-  const assignment = model ? { backend: 'ollama', model } : null
+  const backend = taskProvider[task]
+  const assignment = model ? { backend, model } : null
   if (task === 'primary') taskModelsStore.primary = assignment
   else if (task === 'research') taskModelsStore.research = assignment
   else taskModelsStore.chat = assignment
   if (assignment && task !== 'primary') {
-    taskModelsStore.probeModel('ollama', model)
+    taskModelsStore.probeModel(backend, model)
   }
 }
 
@@ -381,9 +425,32 @@ async function runOllamaDetect() {
     // Write into the real, persisted Ollama host field (saved by
     // saveLlmBackend) -- not a second, dead copy of it.
     ollamaHost.value = result.host ?? ''
+    ollamaPort.value = result.port ?? ollamaPort.value
     detectResult.value = `Found Ollama at ${result.host}:${result.port}. Filled into the Ollama host field above — click “Save Compute & AI Backend” to keep it.`
+    // Query the just-detected host directly for its models -- don't make
+    // the user Save first just to see what's installed there.
+    const { data } = await useApiFetch<{ models: string[] }>(
+      `/api/settings/llm/ollama-models?host=${encodeURIComponent(ollamaHost.value)}&port=${ollamaPort.value}`,
+    )
+    if (data) ollamaModels.value = data.models ?? []
+    await taskModelsStore.loadOllamaModels(ollamaHost.value, ollamaPort.value)
   } else {
     detectResult.value = `Couldn't find Ollama — tried: ${(result.tried ?? []).join(', ')}.`
+  }
+}
+
+async function runVllmDetect() {
+  vllmDetecting.value = true
+  vllmDetectResult.value = null
+  const result = await taskModelsStore.detectVllm(8000)
+  vllmDetecting.value = false
+  if (result.found) {
+    vllmHost.value = result.host ?? ''
+    vllmPort.value = result.port ?? vllmPort.value
+    vllmDetectResult.value = `Found vLLM at ${result.host}:${result.port}. Filled into the vLLM host field above — click “Save Compute & AI Backend” to keep it.`
+    await taskModelsStore.loadVllmModels(vllmHost.value, vllmPort.value)
+  } else {
+    vllmDetectResult.value = `Couldn't find vLLM — tried: ${(result.tried ?? []).join(', ')}.`
   }
 }
 
@@ -424,6 +491,8 @@ const openaiKey         = ref('')
 const openaiKeySet      = ref(false)
 const ollamaHost        = ref('')
 const ollamaPort        = ref(11434)
+const vllmHost          = ref('')
+const vllmPort          = ref(8000)
 const ollamaModel       = ref('')
 const ollamaModelPulling = ref(false)
 const llmBackendSaving  = ref(false)
@@ -444,7 +513,8 @@ const ollamaModelAvailable = computed(() => ollamaModels.value.includes(ollamaMo
 async function loadLlmBackend() {
   const { data } = await useApiFetch<{
     anthropic_key_set: boolean; openai_url: string; openai_key_set: boolean
-    ollama_host: string; ollama_port: number; inference_profile: string; ollama_model: string
+    ollama_host: string; ollama_port: number; vllm_host: string; vllm_port: number
+    inference_profile: string; ollama_model: string
   }>('/api/settings/system/llm-backend')
   if (data) {
     anthropicKeySet.value = data.anthropic_key_set
@@ -452,6 +522,8 @@ async function loadLlmBackend() {
     openaiKeySet.value    = data.openai_key_set
     ollamaHost.value      = data.ollama_host
     ollamaPort.value      = data.ollama_port
+    vllmHost.value        = data.vllm_host
+    vllmPort.value        = data.vllm_port
     ollamaModel.value     = data.ollama_model
     if (data.inference_profile) hardwareProfile.value = data.inference_profile
   }
@@ -482,6 +554,8 @@ async function saveLlmBackend() {
       openai_key: openaiKey.value,
       ollama_host: ollamaHost.value,
       ollama_port: ollamaPort.value,
+      vllm_host: vllmHost.value,
+      vllm_port: vllmPort.value,
       inference_profile: hardwareProfile.value,
       ollama_model: ollamaModel.value,
     }),
@@ -492,6 +566,12 @@ async function saveLlmBackend() {
   openaiKey.value = ''
   llmBackendSaved.value = true
   setTimeout(() => { llmBackendSaved.value = false }, 3000)
+  // The saved host/port may have just changed -- refresh both model lists
+  // so the dropdowns reflect it without requiring a manual page reload.
+  const { data: mData } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
+  if (mData) ollamaModels.value = mData.models ?? []
+  await taskModelsStore.loadOllamaModels()
+  await taskModelsStore.loadVllmModels()
 }
 
 async function pullOllamaModel() {
@@ -528,6 +608,7 @@ onMounted(async () => {
     tasks.push(loadLlmBackend())
     tasks.push(taskModelsStore.load())
     tasks.push(taskModelsStore.loadOllamaModels())
+    tasks.push(taskModelsStore.loadVllmModels())
   }
   await Promise.all(tasks)
 })
@@ -600,6 +681,9 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .field-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
 .field-row label { font-size: 0.82rem; color: var(--color-text-muted); }
 .field-row input { background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); padding: 7px 10px; font-size: 0.88rem; }
+.provider-radio-group { display: flex; gap: 14px; margin-bottom: 2px; }
+.provider-radio { display: flex; align-items: center; gap: 5px; font-size: 0.85rem; color: var(--color-text); cursor: pointer; }
+.provider-radio input[type="radio"] { accent-color: var(--color-primary); cursor: pointer; }
 .field-input-wide { width: 100%; max-width: 400px; }
 .field-hint { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 3px; }
 .btn-secondary { padding: 9px 18px; background: transparent; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text-muted); cursor: pointer; font-size: 0.88rem; }

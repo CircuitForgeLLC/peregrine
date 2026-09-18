@@ -88,4 +88,45 @@ describe('useTaskModelsStore', () => {
     const result = await store.detectOllama(11434)
     expect(result).toEqual({ found: true, host: 'host.docker.internal', port: 11434 })
   })
+
+  it('loadOllamaModels() with no args hits the endpoint with no query string', async () => {
+    mockFetch.mockResolvedValue({ data: { models: ['llama3.1:8b'] }, error: null })
+    const store = useTaskModelsStore()
+    await store.loadOllamaModels()
+    expect(mockFetch).toHaveBeenCalledWith('/api/settings/llm/ollama-models')
+    expect(store.ollamaModels).toEqual(['llama3.1:8b'])
+  })
+
+  it('loadOllamaModels(host, port) queries that host directly', async () => {
+    mockFetch.mockResolvedValue({ data: { models: ['llama3.1:8b'] }, error: null })
+    const store = useTaskModelsStore()
+    await store.loadOllamaModels('host.docker.internal', 11434)
+    expect(mockFetch).toHaveBeenCalledWith('/api/settings/llm/ollama-models?host=host.docker.internal&port=11434')
+  })
+
+  it('loadVllmModels() populates vllmModels', async () => {
+    mockFetch.mockResolvedValue({ data: { models: ['Qwen2.5-3B-Instruct'] }, error: null })
+    const store = useTaskModelsStore()
+    await store.loadVllmModels()
+    expect(mockFetch).toHaveBeenCalledWith('/api/settings/llm/vllm-models')
+    expect(store.vllmModels).toEqual(['Qwen2.5-3B-Instruct'])
+  })
+
+  it('loadVllmModels(host, port) queries that host directly', async () => {
+    mockFetch.mockResolvedValue({ data: { models: [] }, error: null })
+    const store = useTaskModelsStore()
+    await store.loadVllmModels('host.docker.internal', 8000)
+    expect(mockFetch).toHaveBeenCalledWith('/api/settings/llm/vllm-models?host=host.docker.internal&port=8000')
+  })
+
+  it('detectVllm() returns the found host', async () => {
+    mockFetch.mockResolvedValue({ data: { found: true, host: 'host.docker.internal', port: 8000 }, error: null })
+    const store = useTaskModelsStore()
+    const result = await store.detectVllm(8000)
+    expect(result).toEqual({ found: true, host: 'host.docker.internal', port: 8000 })
+    expect(mockFetch).toHaveBeenCalledWith('/api/settings/system/vllm-detect', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ port: 8000 }),
+    }))
+  })
 })
