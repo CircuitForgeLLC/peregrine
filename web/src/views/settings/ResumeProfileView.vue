@@ -281,6 +281,7 @@
           <div v-if="store.skillSuggestions.length > 0" class="suggestions">
             <span v-for="s in store.skillSuggestions" :key="s" class="suggestion-chip" @click="store.acceptTagSuggestion('skills', s)" title="Click to add">+ {{ s }}</span>
           </div>
+          <p v-if="store.suggestErrors.skills" class="error">{{ store.suggestErrors.skills }}</p>
           <input v-model="skillInput" @keydown.enter.prevent="store.addTag('skills', skillInput); skillInput = ''" placeholder="Add skill, press Enter" />
         </div>
         <div class="tag-section">
@@ -298,6 +299,7 @@
           <div v-if="store.domainSuggestions.length > 0" class="suggestions">
             <span v-for="s in store.domainSuggestions" :key="s" class="suggestion-chip" @click="store.acceptTagSuggestion('domains', s)" title="Click to add">+ {{ s }}</span>
           </div>
+          <p v-if="store.suggestErrors.domains" class="error">{{ store.suggestErrors.domains }}</p>
           <input v-model="domainInput" @keydown.enter.prevent="store.addTag('domains', domainInput); domainInput = ''" placeholder="Add domain, press Enter" />
         </div>
         <div class="tag-section">
@@ -315,6 +317,7 @@
           <div v-if="store.keywordSuggestions.length > 0" class="suggestions">
             <span v-for="s in store.keywordSuggestions" :key="s" class="suggestion-chip" @click="store.acceptTagSuggestion('keywords', s)" title="Click to add">+ {{ s }}</span>
           </div>
+          <p v-if="store.suggestErrors.keywords" class="error">{{ store.suggestErrors.keywords }}</p>
           <input v-model="kwInput" @keydown.enter.prevent="store.addTag('keywords', kwInput); kwInput = ''" placeholder="Add keyword, press Enter" />
         </div>
       </section>

@@ -95,4 +95,34 @@ describe('useResumeStore', () => {
     expect(store.experience[0].title).toBe('Engineer')
     expect(store.experience[0].id).toBeTruthy()
   })
+
+  // Regression: the Suggest button silently did nothing when the LLM
+  // returned no usable suggestions -- no error, no empty state, just a
+  // button that looked broken. suggestTags() now surfaces both failure
+  // modes (a request error, and a successful-but-empty response) as a
+  // per-field message instead of failing silently.
+  it('suggestTags() sets a per-field error when the request fails', async () => {
+    mockFetch.mockResolvedValue({ data: null, error: { kind: 'network', message: 'boom' } })
+    const store = useResumeStore()
+    await store.suggestTags('skills')
+    expect(store.suggestErrors.skills).toBeTruthy()
+    expect(store.suggestingField).toBe(null)
+  })
+
+  it('suggestTags() sets a per-field error when the LLM returns zero suggestions', async () => {
+    mockFetch.mockResolvedValue({ data: { suggestions: [] }, error: null })
+    const store = useResumeStore()
+    await store.suggestTags('domains')
+    expect(store.suggestErrors.domains).toBeTruthy()
+    expect(store.domainSuggestions).toEqual([])
+  })
+
+  it('suggestTags() clears the field error on a successful non-empty response', async () => {
+    const store = useResumeStore()
+    store.suggestErrors.keywords = 'stale error from a previous attempt'
+    mockFetch.mockResolvedValue({ data: { suggestions: ['SQL', 'Tableau'] }, error: null })
+    await store.suggestTags('keywords')
+    expect(store.suggestErrors.keywords).toBe(null)
+    expect(store.keywordSuggestions).toEqual(['SQL', 'Tableau'])
+  })
 })
