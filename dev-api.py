@@ -3454,6 +3454,29 @@ async def upload_resume(file: UploadFile):
         with open(resume_path, "w") as f:
             yaml.dump(result, f, allow_unicode=True, default_flow_style=False)
 
+        # Backfill empty My Profile fields from the parsed resume -- never
+        # overwrites a value the user already entered, only fills gaps.
+        try:
+            profile = load_user_profile(_user_yaml_path())
+            parsed_name = " ".join(
+                part for part in (result.get("name", ""), result.get("surname", "")) if part
+            )
+            backfill = {
+                "name": parsed_name,
+                "email": result.get("email", ""),
+                "phone": result.get("phone", ""),
+                "career_summary": result.get("career_summary", ""),
+            }
+            changed = False
+            for field, value in backfill.items():
+                if value and not profile.get(field):
+                    profile[field] = value
+                    changed = True
+            if changed:
+                save_user_profile(_user_yaml_path(), profile)
+        except Exception:
+            pass  # profile backfill is best-effort; never block the upload on it
+
         # Also add to resume library and mark as default
         import json as _json
         from scripts.db import create_resume as _create_r, set_default_resume as _set_default
