@@ -7,43 +7,16 @@ the same chain as primary content generation (cover letters). On an install
 where that chain's top ollama-backed entry is a fine-tune specialized for
 cover-letter writing, it doesn't reliably follow a "return only JSON"
 instruction and these silently returned nothing -- not a crash, just an
-empty result with no visible cause. All of these now route through
-research_fallback_order via _llm_research_complete(), matching the existing
-convention in company_research.py and survey_assistant.py.
+empty result with no visible cause.
+
+These endpoints now route through LLMRouter().complete_task("research", ...)
+(see tests/test_task_complete_call_sites.py for the per-endpoint error-path
+coverage) -- the former _llm_research_complete()/research_fallback_order
+helper this file used to test was removed once its last caller was migrated.
+The _extract_json_array() parsing helper below is unaffected and still used
+by every one of those endpoints.
 """
 from unittest.mock import MagicMock, patch
-
-
-def test_llm_research_complete_passes_research_fallback_order():
-    import dev_api
-
-    fake_router = MagicMock()
-    fake_router.config = {
-        "fallback_order": ["ollama"],
-        "research_fallback_order": ["ollama_research", "cf_text"],
-    }
-    fake_router.complete.return_value = "the result"
-
-    with patch("scripts.llm_router.LLMRouter", return_value=fake_router):
-        result = dev_api._llm_research_complete("suggest some skills")
-
-    assert result == "the result"
-    fake_router.complete.assert_called_once_with(
-        "suggest some skills", system=None, fallback_order=["ollama_research", "cf_text"]
-    )
-
-
-def test_llm_research_complete_falls_back_to_default_chain_when_unset():
-    import dev_api
-
-    fake_router = MagicMock()
-    fake_router.config = {"fallback_order": ["ollama"]}  # no research_fallback_order key
-    fake_router.complete.return_value = "ok"
-
-    with patch("scripts.llm_router.LLMRouter", return_value=fake_router):
-        dev_api._llm_research_complete("prompt")
-
-    fake_router.complete.assert_called_once_with("prompt", system=None, fallback_order=["ollama"])
 
 
 def test_extract_json_array_parses_array_with_surrounding_prose():

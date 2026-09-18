@@ -98,20 +98,21 @@ def test_load_corpus_returns_list():
 
 
 def test_generate_calls_llm_router():
-    """generate() calls the router's complete() and returns its output."""
+    """generate() calls the router's complete_task() and returns its output."""
     from scripts.generate_cover_letter import generate
 
     fake_corpus = [
         {"company": "Acme", "text": "I'm delighted to apply for the CSM role at Acme."},
     ]
     mock_router = MagicMock()
-    mock_router.complete.return_value = "Dear Hiring Team,\n\nI'm delighted to apply.\n\nWarm regards,\nAlex Rivera"
+    mock_router.complete_task.return_value = "Dear Hiring Team,\n\nI'm delighted to apply.\n\nWarm regards,\nAlex Rivera"
 
     with patch("scripts.generate_cover_letter.load_corpus", return_value=fake_corpus):
         result = generate("Customer Success Manager", "TestCo", "Looking for a CSM",
                           _router=mock_router)
 
-    mock_router.complete.assert_called_once()
+    mock_router.complete_task.assert_called_once()
+    assert mock_router.complete_task.call_args[0][0] == "primary"
     assert "Alex Rivera" in result
 
 

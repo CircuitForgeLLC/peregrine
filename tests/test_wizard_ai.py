@@ -89,7 +89,7 @@ class TestWizardAIInterviewTierGate:
         with patch("dev_api._get_effective_tier", return_value="free"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post(
                         "/api/wizard/ai/interview",
                         json={"history": [], "profile_so_far": {}},
@@ -116,7 +116,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post(
                         "/api/wizard/ai/interview",
                         json={
@@ -144,7 +144,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post("/api/wizard/ai/interview", json={"history": []})
         assert r.status_code == 200
         assert r.json()["asking_about"] == "candidate_voice"
@@ -154,7 +154,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post("/api/wizard/ai/interview", json={"history": []})
         assert r.status_code == 200
         assert r.json()["asking_about"] is None
@@ -172,7 +172,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post("/api/wizard/ai/interview", json={"history": []})
         assert r.status_code == 200
         assert r.json()["asking_about"] is None
@@ -200,7 +200,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post(
                         "/api/wizard/ai/interview",
                         json={"history": [], "profile_so_far": profile_so_far},
@@ -222,7 +222,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post(
                         "/api/wizard/ai/interview",
                         json={"history": [], "profile_so_far": profile_so_far},
@@ -250,7 +250,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post(
                         "/api/wizard/ai/interview",
                         json={"history": [], "profile_so_far": profile_so_far},
@@ -271,7 +271,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post(
                         "/api/wizard/ai/interview",
                         json={
@@ -290,7 +290,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = "Hello, what is your name?"
+                    mock_cls.return_value.complete_task.return_value = "Hello, what is your name?"
                     r = client.post(
                         "/api/wizard/ai/interview",
                         json={"history": []},
@@ -314,7 +314,7 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.return_value = llm_reply
+                    mock_cls.return_value.complete_task.return_value = llm_reply
                     r = client.post(
                         "/api/wizard/ai/interview",
                         json={"history": []},
@@ -331,8 +331,8 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.side_effect = (
-                        lambda prompt, system=None: (captured_calls.append(prompt) or llm_reply)
+                    mock_cls.return_value.complete_task.side_effect = (
+                        lambda task, prompt, system=None, max_tokens=None: (captured_calls.append(prompt) or llm_reply)
                     )
                     client.post(
                         "/api/wizard/ai/interview",
@@ -356,8 +356,8 @@ class TestWizardAIInterviewLLM:
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.side_effect = (
-                        lambda prompt, system=None: (captured_calls.append(prompt) or llm_reply)
+                    mock_cls.return_value.complete_task.side_effect = (
+                        lambda task, prompt, system=None, max_tokens=None: (captured_calls.append(prompt) or llm_reply)
                     )
                     client.post(
                         "/api/wizard/ai/interview",
@@ -376,17 +376,38 @@ class TestWizardAIInterviewLLM:
         assert "Alex Rivera" in prompt
         assert "alex@example.com" in prompt
 
-    def test_llm_error_returns_503(self, client):
-        """If LLM raises, the endpoint returns 503."""
+    def test_llm_error_returns_502_when_chat_backend_unreachable(self, client):
+        """If the assigned Chat model's backend is unreachable, the endpoint
+        returns 502 with the Chat-specific message (migrated onto
+        complete_task()'s classified errors — this used to be a generic 503
+        for any exception from complete())."""
+        from scripts.llm_router import TaskModelUnreachableError
         with patch("dev_api._get_effective_tier", return_value="paid"):
             with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
                 with patch("scripts.llm_router.LLMRouter") as mock_cls:
-                    mock_cls.return_value.complete.side_effect = RuntimeError("no backends")
+                    mock_cls.return_value.complete_task.side_effect = TaskModelUnreachableError(
+                        "chat", "ollama", "no backends"
+                    )
                     r = client.post(
                         "/api/wizard/ai/interview",
                         json={"history": [{"role": "user", "content": "hi"}]},
                     )
-        assert r.status_code == 503
+        assert r.status_code == 502
+        assert "ollama" in r.json()["detail"]
+
+    def test_llm_error_returns_400_when_no_chat_model_assigned(self, client):
+        """If no model is assigned to the Chat task, the endpoint returns 400."""
+        from scripts.llm_router import TaskModelNotAssignedError
+        with patch("dev_api._get_effective_tier", return_value="paid"):
+            with patch("scripts.wizard.tiers.has_configured_llm", return_value=True):
+                with patch("scripts.llm_router.LLMRouter") as mock_cls:
+                    mock_cls.return_value.complete_task.side_effect = TaskModelNotAssignedError("chat")
+                    r = client.post(
+                        "/api/wizard/ai/interview",
+                        json={"history": [{"role": "user", "content": "hi"}]},
+                    )
+        assert r.status_code == 400
+        assert "Chat" in r.json()["detail"]
 
 
 # ── POST /api/wizard/ai/finalize ──────────────────────────────────────────────
