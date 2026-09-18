@@ -43,3 +43,23 @@ describe('SettingsView sidebar', () => {
     store.setDevTierOverride(null)  // cleanup
   })
 })
+
+describe('SettingsView back-to-setup link', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('shows a Back to Setup link while onboarding is incomplete', () => {
+    const store = useAppConfigStore()
+    store.wizardComplete = false
+    const wrapper = mount(SettingsView, { global: { plugins: [makeRouter()] } })
+    const link = wrapper.find('.back-to-setup')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe('/setup')
+  })
+
+  it('hides the Back to Setup link once onboarding is complete', () => {
+    const store = useAppConfigStore()
+    store.wizardComplete = true
+    const wrapper = mount(SettingsView, { global: { plugins: [makeRouter()] } })
+    expect(wrapper.find('.back-to-setup').exists()).toBe(false)
+  })
+})
