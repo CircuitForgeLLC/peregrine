@@ -133,3 +133,84 @@ def test_complete_without_images_skips_vision_service(tmp_path):
         except RuntimeError:
             pass  # all backends exhausted is expected
         assert not mock_post.called
+
+
+# Tests for complete_task() and task-model exceptions
+from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
+
+
+def _router_with_task_models(task_models: dict, backends: dict, extra_config: dict | None = None):
+    config = {
+        "backends": backends,
+        "fallback_order": list(backends.keys()),
+        "task_models": task_models,
+        **(extra_config or {}),
+    }
+    return LLMRouter(config)
+
+
+def test_complete_task_raises_when_task_not_assigned():
+    router = _router_with_task_models(
+        task_models={},
+        backends={"ollama": {"type": "openai_compat", "base_url": "http://x", "model": "m", "enabled": True}},
+    )
+    try:
+        router.complete_task("research", "prompt")
+        assert False, "expected TaskModelNotAssignedError"
+    except TaskModelNotAssignedError as e:
+        assert e.task == "research"
+
+
+def test_complete_task_raises_when_assigned_backend_missing():
+    router = _router_with_task_models(
+        task_models={"research": {"backend": "does_not_exist", "model": "m"}},
+        backends={"ollama": {"type": "openai_compat", "base_url": "http://x", "model": "m", "enabled": True}},
+    )
+    try:
+        router.complete_task("research", "prompt")
+        assert False, "expected TaskModelNotAssignedError"
+    except TaskModelNotAssignedError as e:
+        assert e.task == "research"
+
+
+def test_complete_task_raises_unreachable_when_backend_disabled():
+    router = _router_with_task_models(
+        task_models={"research": {"backend": "ollama", "model": "m"}},
+        backends={"ollama": {"type": "openai_compat", "base_url": "http://x", "model": "m", "enabled": False}},
+    )
+    try:
+        router.complete_task("research", "prompt")
+        assert False, "expected TaskModelUnreachableError"
+    except TaskModelUnreachableError as e:
+        assert e.task == "research"
+        assert e.backend_id == "ollama"
+
+
+def test_complete_task_calls_complete_with_backend_and_model_pinned():
+    from unittest.mock import patch, MagicMock
+    router = _router_with_task_models(
+        task_models={"research": {"backend": "ollama", "model": "llama3.1:8b"}},
+        backends={"ollama": {"type": "openai_compat", "base_url": "http://x", "model": "meghan-cover-writer", "enabled": True}},
+    )
+    with patch.object(router, "complete", return_value="result") as mock_complete:
+        result = router.complete_task("research", "prompt", system="sys")
+    assert result == "result"
+    mock_complete.assert_called_once_with(
+        "prompt", system="sys", fallback_order=["ollama"], model_override="llama3.1:8b", max_tokens=None,
+    )
+
+
+def test_complete_task_wraps_runtime_error_as_unreachable():
+    from unittest.mock import patch
+    router = _router_with_task_models(
+        task_models={"chat": {"backend": "ollama", "model": "llama3.1:8b"}},
+        backends={"ollama": {"type": "openai_compat", "base_url": "http://x", "model": "m", "enabled": True}},
+    )
+    with patch.object(router, "complete", side_effect=RuntimeError("all backends exhausted")):
+        try:
+            router.complete_task("chat", "prompt")
+            assert False, "expected TaskModelUnreachableError"
+        except TaskModelUnreachableError as e:
+            assert e.task == "chat"
+            assert e.backend_id == "ollama"
+            assert "all backends exhausted" in e.detail
