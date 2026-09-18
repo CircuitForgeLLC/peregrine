@@ -3854,6 +3854,19 @@ def set_cover_letter_model(payload: CoverLetterModelPayload):
     return {"ok": True}
 
 
+def _running_in_docker() -> bool:
+    """True when this Peregrine process itself is running inside a Docker
+    container. Standard, cheap check -- Docker always creates /.dockerenv.
+
+    This is the fact that decides whether a saved "localhost" value should
+    be trusted or rewritten: "localhost" is correct when Peregrine itself
+    is bare-metal (Ollama on the same real machine), and wrong when
+    Peregrine is dockerized (its own "localhost" is the container, not the
+    host machine).
+    """
+    return os.path.exists("/.dockerenv")
+
+
 def _configured_ollama_base_url() -> str:
     """Resolve the Ollama base URL from the user's configured services map,
     falling back to the OLLAMA_HOST env var when nothing is configured yet.
@@ -3869,7 +3882,7 @@ def _configured_ollama_base_url() -> str:
         services = cfg.get("services", {})
         host = services.get("ollama_host")
         port = services.get("ollama_port")
-        if host and host not in ("localhost", "127.0.0.1"):
+        if host and not (_running_in_docker() and host in ("localhost", "127.0.0.1")):
             return f"http://{host}:{port or 11434}"
     except Exception:
         pass
@@ -5153,7 +5166,11 @@ def wizard_hardware():
 
 
 def _container_safe_url(url: str) -> str:
-    """Replace localhost/127.0.0.1 with host.docker.internal so tests reach the host."""
+    """Replace localhost/127.0.0.1 with host.docker.internal so this
+    process can reach a host-machine service -- but only when this process
+    is itself running inside Docker. See _running_in_docker()."""
+    if not _running_in_docker():
+        return url
     import re as _re
     return _re.sub(r"(https?://)(?:localhost|127\.0\.0\.1)\b", r"\1host.docker.internal", url)
 
