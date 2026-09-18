@@ -95,9 +95,20 @@ describe('ApplyWorkspace — Resume Optimizer modal', () => {
     expect(w.find('[role="dialog"]').exists()).toBe(false)
   })
 
+  function findResumeSectionToggle(w: ReturnType<typeof factory>) {
+    // Resume section defaults to collapsed -- find it among all
+    // CollapsibleSection toggles by its label, since the Cover Letter
+    // section's toggle (expanded by default) shares the same class.
+    const toggle = w.findAll('.collapsible-section__toggle')
+      .find(t => t.text().includes('Resume'))
+    if (!toggle) throw new Error('Resume section toggle not found')
+    return toggle
+  }
+
   it('opens the optimizer modal when the trigger button is clicked', async () => {
     const w = factory()
     await flushPromises()
+    await findResumeSectionToggle(w).trigger('click')
     await w.find('.optimizer-trigger').trigger('click')
     expect(w.find('[role="dialog"]').exists()).toBe(true)
   })
@@ -105,6 +116,7 @@ describe('ApplyWorkspace — Resume Optimizer modal', () => {
   it('closes the optimizer modal when its close button is clicked', async () => {
     const w = factory()
     await flushPromises()
+    await findResumeSectionToggle(w).trigger('click')
     await w.find('.optimizer-trigger').trigger('click')
     await w.find('[role="dialog"] .btn-close').trigger('click')
     expect(w.find('[role="dialog"]').exists()).toBe(false)
