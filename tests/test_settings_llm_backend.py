@@ -303,6 +303,28 @@ class TestOllamaModelsList:
         called_url = mock_get.call_args[0][0]
         assert "10.1.10.5:11500" in called_url
 
+    def test_falls_back_to_env_var_when_configured_host_is_localhost(self, tmp_path):
+        """"localhost" saved into services.ollama_host is a stale UI default
+        (the old wizard's field placeholder) that's never actually reachable
+        from inside this app's own Docker container -- Ollama on the host
+        machine or an adopted external instance must be reached via
+        OLLAMA_HOST (typically host.docker.internal). Trusting a saved
+        "localhost" here would silently break model discovery."""
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"services": {"ollama_host": "localhost", "ollama_port": 11434}})
+        fake_resp = type("R", (), {
+            "status_code": 200,
+            "json": lambda self: {"models": [{"name": "llama3.1:8b"}]},
+        })()
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch.dict(os.environ, {"OLLAMA_HOST": "http://host.docker.internal:11434"}):
+                with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
+                    r = client.get("/api/settings/llm/ollama-models")
+        assert r.status_code == 200
+        assert r.json()["models"] == ["llama3.1:8b"]
+        called_url = mock_get.call_args[0][0]
+        assert "host.docker.internal" in called_url
+
 
 class TestOllamaPull:
     def test_pull_kicks_off_background_request_and_returns_immediately(self, tmp_path):

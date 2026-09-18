@@ -3774,13 +3774,20 @@ def set_cover_letter_model(payload: CoverLetterModelPayload):
 
 def _configured_ollama_base_url() -> str:
     """Resolve the Ollama base URL from the user's configured services map,
-    falling back to the OLLAMA_HOST env var when nothing is configured yet."""
+    falling back to the OLLAMA_HOST env var when nothing is configured yet.
+
+    "localhost"/"127.0.0.1" saved into services.ollama_host is treated as
+    unset: it's the old wizard field's stale placeholder value, and it's
+    never actually reachable from inside this app's own Docker container --
+    Ollama on the host machine (or an adopted external instance) must be
+    reached via OLLAMA_HOST, typically host.docker.internal.
+    """
     try:
         cfg = _load_wizard_yaml()
         services = cfg.get("services", {})
         host = services.get("ollama_host")
         port = services.get("ollama_port")
-        if host:
+        if host and host not in ("localhost", "127.0.0.1"):
             return f"http://{host}:{port or 11434}"
     except Exception:
         pass
