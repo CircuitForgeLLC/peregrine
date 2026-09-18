@@ -3878,6 +3878,17 @@ def byok_ack(payload: ByokAckPayload):
 
 # ── Settings: per-task model assignments ─────────────────────────────────────
 
+# `task_models` must live in the SAME file `LLMRouter()` itself reads, or the
+# assignments saved here would never reach complete_task(). LLMRouter()'s
+# no-argument default resolves <repo>/config/llm.yaml first (that is
+# scripts.llm_router.CONFIG_PATH) -- which is also the file that already holds
+# `backends` / `fallback_order` / `research_fallback_order`. This is a
+# different path from `_config_dir()` (per-user data directory, /app/data/config
+# in the Docker deployment), so it must be spelled out explicitly rather than
+# assumed to coincide.
+from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH  # noqa: E402
+
+
 class TaskModelAssignment(BaseModel):
     backend: str
     model: str
@@ -3898,7 +3909,7 @@ def get_task_models():
     task_models.primary the first time this is read, so an existing
     user's customization isn't silently dropped.
     """
-    cfg_path = _config_dir() / "llm.yaml"
+    cfg_path = LLM_ROUTER_CONFIG_PATH
     data: dict = {}
     if cfg_path.exists():
         with open(cfg_path) as f:
@@ -3921,12 +3932,40 @@ def get_task_models():
         "research": task_models.get("research"),
         "chat": task_models.get("chat"),
         "ollama_models": ollama_resp.get("models", []),
+        "probes": _probes_for_assignments(task_models),
     }
+
+
+def _probes_for_assignments(task_models: dict) -> dict:
+    """Cached capability-probe state for whichever models are currently
+    assigned, keyed "<backend>:<model>" -- so the frontend can hydrate its
+    warning badges on page load instead of losing them on every reload
+    (a probe only re-runs when the user changes a dropdown)."""
+    probes: dict = {}
+    for task in ("primary", "research", "chat"):
+        assignment = task_models.get(task)
+        if not assignment:
+            continue
+        backend_id = assignment.get("backend")
+        model = assignment.get("model")
+        if not backend_id or not model:
+            continue
+        key = f"{backend_id}:{model}"
+        if key in probes:
+            continue
+        try:
+            cached = _get_cached_probe(backend_id, model)
+        except Exception as e:  # cache is advisory -- never fail the GET over it
+            _log.warning("[task-models] could not read cached probe for %s: %s", key, e)
+            continue
+        if cached is not None and "passed" in cached:
+            probes[key] = {"passed": bool(cached["passed"])}
+    return probes
 
 
 @app.put("/api/settings/system/task-models")
 def save_task_models(payload: TaskModelsPayload):
-    cfg_path = _config_dir() / "llm.yaml"
+    cfg_path = LLM_ROUTER_CONFIG_PATH
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     data: dict = {}
     if cfg_path.exists():
