@@ -3868,52 +3868,65 @@ def byok_ack(payload: ByokAckPayload):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Settings: per-user cover-letter model ────────────────────────────────────
+# ── Settings: per-task model assignments ─────────────────────────────────────
 
-@app.get("/api/settings/llm/cover-letter-model")
-def get_cover_letter_model():
-    """Return the user's custom cover letter model (from per-user llm.yaml if set)."""
-    cfg_path = _config_dir() / "llm.yaml"
-    if cfg_path.exists():
-        with open(cfg_path) as f:
-            data = yaml.safe_load(f) or {}
-        # Convention: the first backend in fallback_order that targets cover letters
-        # is stored under backends.cover_letter.model
-        model = (data.get("backends", {}).get("cover_letter") or {}).get("model", "")
-        return {"model": model}
-    return {"model": ""}
-
-
-class CoverLetterModelPayload(BaseModel):
+class TaskModelAssignment(BaseModel):
+    backend: str
     model: str
 
 
-@app.put("/api/settings/llm/cover-letter-model")
-def set_cover_letter_model(payload: CoverLetterModelPayload):
-    """Write the custom cover letter model into the per-user llm.yaml."""
+class TaskModelsPayload(BaseModel):
+    primary: TaskModelAssignment | None = None
+    research: TaskModelAssignment | None = None
+    chat: TaskModelAssignment | None = None
+
+
+@app.get("/api/settings/system/task-models")
+def get_task_models():
+    """Return the current Primary/Research/Chat model assignments.
+
+    One-time migration: a pre-existing backends.cover_letter.model (from
+    the now-removed single-purpose cover-letter-model picker) becomes
+    task_models.primary the first time this is read, so an existing
+    user's customization isn't silently dropped.
+    """
+    cfg_path = _config_dir() / "llm.yaml"
+    data: dict = {}
+    if cfg_path.exists():
+        with open(cfg_path) as f:
+            data = yaml.safe_load(f) or {}
+
+    task_models = data.get("task_models")
+    if task_models is None:
+        task_models = {"primary": None, "research": None, "chat": None}
+        legacy_model = (data.get("backends", {}).get("cover_letter") or {}).get("model")
+        if legacy_model:
+            task_models["primary"] = {"backend": "ollama", "model": legacy_model}
+        data["task_models"] = task_models
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cfg_path, "w") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+
+    return {
+        "primary": task_models.get("primary"),
+        "research": task_models.get("research"),
+        "chat": task_models.get("chat"),
+    }
+
+
+@app.put("/api/settings/system/task-models")
+def save_task_models(payload: TaskModelsPayload):
     cfg_path = _config_dir() / "llm.yaml"
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     data: dict = {}
     if cfg_path.exists():
         with open(cfg_path) as f:
             data = yaml.safe_load(f) or {}
-    backends = data.setdefault("backends", {})
-    if payload.model:
-        backends["cover_letter"] = {
-            "type": "openai_compat",
-            "enabled": True,
-            "base_url": "http://localhost:11434/v1",
-            "model": payload.model,
-            "api_key": "any",
-            "supports_images": False,
-        }
-        order = data.setdefault("fallback_order", [])
-        if "cover_letter" not in order:
-            order.insert(0, "cover_letter")
-    else:
-        # Clear custom model — remove the backend and drop from fallback order
-        backends.pop("cover_letter", None)
-        data["fallback_order"] = [b for b in data.get("fallback_order", []) if b != "cover_letter"]
+    data["task_models"] = {
+        "primary": payload.primary.model_dump() if payload.primary else None,
+        "research": payload.research.model_dump() if payload.research else None,
+        "chat": payload.chat.model_dump() if payload.chat else None,
+    }
     with open(cfg_path, "w") as f:
         yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
     return {"ok": True}
