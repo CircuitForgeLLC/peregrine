@@ -4122,9 +4122,9 @@ class LlmBackendPayload(BaseModel):
     openai_url: str = ""
     openai_key: str = ""
     ollama_host: str = ""
-    ollama_port: int = 11434
+    ollama_port: Optional[int] = None
     searxng_host: str = ""
-    searxng_port: int = 8080
+    searxng_port: Optional[int] = None
     inference_profile: str = ""
     ollama_model: str = ""
 
@@ -4203,12 +4203,18 @@ def save_llm_backend_settings(payload: LlmBackendPayload):
 
     cfg = _load_wizard_yaml()
     svc = dict(cfg.get("services", {}))
-    svc.update({
-        "ollama_host": payload.ollama_host,
-        "ollama_port": payload.ollama_port,
-        "searxng_host": payload.searxng_host,
-        "searxng_port": payload.searxng_port,
-    })
+    # A blank/omitted field means "leave unchanged", not "clear it" -- same
+    # semantics already used for the API key fields above. A partial payload
+    # (e.g. only ollama_model) must not silently wipe a previously configured
+    # host/port back to empty.
+    if payload.ollama_host:
+        svc["ollama_host"] = payload.ollama_host
+    if payload.ollama_port is not None:
+        svc["ollama_port"] = payload.ollama_port
+    if payload.searxng_host:
+        svc["searxng_host"] = payload.searxng_host
+    if payload.searxng_port is not None:
+        svc["searxng_port"] = payload.searxng_port
     updates: dict = {"services": svc}
     if payload.inference_profile:
         updates["inference_profile"] = payload.inference_profile

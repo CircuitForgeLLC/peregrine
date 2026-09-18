@@ -267,6 +267,34 @@ class TestOllamaModelConfig:
         assert saved["backends"]["anthropic"]["model"] == "claude-sonnet-4-6"
         assert saved["fallback_order"] == ["ollama", "anthropic"]
 
+    def test_post_with_only_ollama_model_preserves_existing_host_and_port(self, tmp_path):
+        """A partial payload (e.g. just switching the model) must not wipe a
+        previously configured ollama_host/port back to blank/default --
+        exactly the bug hit live: switching the model via curl with only
+        {"ollama_model": "..."} silently reset ollama_host to "" and broke
+        model discovery entirely."""
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"services": {
+            "ollama_host": "host.docker.internal",
+            "ollama_port": 11500,
+        }})
+        llm_yaml_path = tmp_path / "config" / "llm.yaml"
+        llm_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+        llm_yaml_path.write_text(yaml.safe_dump({
+            "backends": {"ollama": {"model": "llama3.2:3b", "type": "openai_compat"}},
+        }))
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
+                    r = client.post("/api/settings/system/llm-backend", json={
+                        "ollama_model": "llama3.1:8b",
+                    })
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["services"]["ollama_host"] == "host.docker.internal"
+        assert saved["services"]["ollama_port"] == 11500
+
     def test_post_blank_ollama_model_does_not_clobber_existing(self, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
