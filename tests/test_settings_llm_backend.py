@@ -193,3 +193,136 @@ class TestLlmBackendSettings:
         assert r.status_code == 200
         mode = os.stat(env_path).st_mode & 0o777
         assert mode == 0o600
+
+
+class TestOllamaModelConfig:
+    def test_get_returns_configured_ollama_model(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        llm_yaml_path = tmp_path / "config" / "llm.yaml"
+        llm_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+        llm_yaml_path.write_text(yaml.safe_dump({
+            "backends": {"ollama": {"model": "llama3.1:8b", "type": "openai_compat"}},
+        }))
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
+                    r = client.get("/api/settings/system/llm-backend")
+        assert r.status_code == 200
+        assert r.json()["ollama_model"] == "llama3.1:8b"
+
+    def test_get_returns_empty_ollama_model_when_llm_yaml_missing(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        llm_yaml_path = tmp_path / "config" / "llm.yaml"
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
+                    r = client.get("/api/settings/system/llm-backend")
+        assert r.status_code == 200
+        assert r.json()["ollama_model"] == ""
+
+    def test_post_writes_ollama_model_to_llm_yaml(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        llm_yaml_path = tmp_path / "config" / "llm.yaml"
+        llm_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+        llm_yaml_path.write_text(yaml.safe_dump({
+            "backends": {"ollama": {"model": "llama3.2:3b", "type": "openai_compat"}},
+        }))
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
+                    r = client.post("/api/settings/system/llm-backend", json={
+                        "ollama_model": "llama3.1:8b",
+                    })
+        assert r.status_code == 200
+        saved = yaml.safe_load(llm_yaml_path.read_text())
+        assert saved["backends"]["ollama"]["model"] == "llama3.1:8b"
+
+    def test_post_preserves_other_llm_yaml_backends_on_model_change(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        llm_yaml_path = tmp_path / "config" / "llm.yaml"
+        llm_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+        llm_yaml_path.write_text(yaml.safe_dump({
+            "backends": {
+                "ollama": {"model": "llama3.2:3b", "type": "openai_compat"},
+                "anthropic": {"model": "claude-sonnet-4-6", "type": "anthropic"},
+            },
+            "fallback_order": ["ollama", "anthropic"],
+        }))
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
+                    r = client.post("/api/settings/system/llm-backend", json={
+                        "ollama_model": "llama3.1:8b",
+                    })
+        assert r.status_code == 200
+        saved = yaml.safe_load(llm_yaml_path.read_text())
+        assert saved["backends"]["anthropic"]["model"] == "claude-sonnet-4-6"
+        assert saved["fallback_order"] == ["ollama", "anthropic"]
+
+    def test_post_blank_ollama_model_does_not_clobber_existing(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        llm_yaml_path = tmp_path / "config" / "llm.yaml"
+        llm_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+        llm_yaml_path.write_text(yaml.safe_dump({
+            "backends": {"ollama": {"model": "llama3.1:8b", "type": "openai_compat"}},
+        }))
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
+                    r = client.post("/api/settings/system/llm-backend", json={
+                        "ollama_host": "10.1.10.5",
+                    })
+        assert r.status_code == 200
+        saved = yaml.safe_load(llm_yaml_path.read_text())
+        assert saved["backends"]["ollama"]["model"] == "llama3.1:8b"
+
+
+class TestOllamaModelsList:
+    def test_lists_models_from_configured_services_host(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"services": {"ollama_host": "10.1.10.5", "ollama_port": 11500}})
+        fake_resp = type("R", (), {
+            "status_code": 200,
+            "json": lambda self: {"models": [{"name": "llama3.1:8b"}, {"name": "llama3.2:3b"}]},
+        })()
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
+                r = client.get("/api/settings/llm/ollama-models")
+        assert r.status_code == 200
+        assert r.json()["models"] == ["llama3.1:8b", "llama3.2:3b"]
+        called_url = mock_get.call_args[0][0]
+        assert "10.1.10.5:11500" in called_url
+
+
+class TestOllamaPull:
+    def test_pull_kicks_off_background_request_and_returns_immediately(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"services": {"ollama_host": "10.1.10.5", "ollama_port": 11500}})
+        fake_resp = type("R", (), {"status_code": 200, "json": lambda self: {}})()
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api.requests.post", return_value=fake_resp) as mock_post:
+                r = client.post("/api/settings/system/ollama-pull", json={"model": "llama3.2:3b"})
+        assert r.status_code == 200
+        assert r.json() == {"ok": True, "status": "pulling"}
+        mock_post.assert_called_once()
+        called_url = mock_post.call_args[0][0]
+        called_json = mock_post.call_args.kwargs.get("json")
+        assert "10.1.10.5:11500" in called_url
+        assert called_json["name"] == "llama3.2:3b"
+
+    def test_pull_rejects_blank_model(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/settings/system/ollama-pull", json={"model": ""})
+        assert r.status_code == 400

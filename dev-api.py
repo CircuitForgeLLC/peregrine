@@ -26,7 +26,7 @@ import yaml
 from bs4 import BeautifulSoup
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -3772,14 +3772,30 @@ def set_cover_letter_model(payload: CoverLetterModelPayload):
     return {"ok": True}
 
 
+def _configured_ollama_base_url() -> str:
+    """Resolve the Ollama base URL from the user's configured services map,
+    falling back to the OLLAMA_HOST env var when nothing is configured yet."""
+    try:
+        cfg = _load_wizard_yaml()
+        services = cfg.get("services", {})
+        host = services.get("ollama_host")
+        port = services.get("ollama_port")
+        if host:
+            return f"http://{host}:{port or 11434}"
+    except Exception:
+        pass
+    ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    if not ollama_host.startswith("http"):
+        ollama_host = f"http://{ollama_host}"
+    return ollama_host.rstrip("/")
+
+
 @app.get("/api/settings/llm/ollama-models")
 def get_ollama_models():
-    """Return available Ollama models by querying the local Ollama API."""
+    """Return available Ollama models by querying the configured Ollama host."""
     try:
-        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-        if not ollama_host.startswith("http"):
-            ollama_host = f"http://{ollama_host}"
-        resp = requests.get(f"{ollama_host.rstrip('/')}/api/tags", timeout=3)
+        base_url = _configured_ollama_base_url()
+        resp = requests.get(f"{base_url}/api/tags", timeout=3)
         if resp.status_code == 200:
             models = [m["name"] for m in resp.json().get("models", [])]
             return {"models": models}
@@ -4103,6 +4119,20 @@ class LlmBackendPayload(BaseModel):
     searxng_host: str = ""
     searxng_port: int = 8080
     inference_profile: str = ""
+    ollama_model: str = ""
+
+
+def _read_llm_config() -> dict:
+    if LLM_CONFIG_PATH.exists():
+        with open(LLM_CONFIG_PATH) as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+
+def _write_llm_config(data: dict) -> None:
+    LLM_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LLM_CONFIG_PATH, "w") as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
 
 
 @app.get("/api/settings/system/llm-backend")
@@ -4118,6 +4148,9 @@ def get_llm_backend_settings():
         for line in env_path.read_text().splitlines():
             if line.startswith("OPENAI_COMPAT_URL="):
                 openai_url = line.split("=", 1)[1]
+    llm_cfg = _read_llm_config()
+    ollama_model = (llm_cfg.get("backends", {}).get("ollama") or {}).get("model", "")
+
     return {
         "anthropic_key_set": _env_key_is_set("ANTHROPIC_API_KEY"),
         "openai_url": openai_url,
@@ -4127,6 +4160,7 @@ def get_llm_backend_settings():
         "searxng_host": services.get("searxng_host", ""),
         "searxng_port": services.get("searxng_port", 8080),
         "inference_profile": cfg.get("inference_profile", ""),
+        "ollama_model": ollama_model,
     }
 
 
@@ -4173,7 +4207,43 @@ def save_llm_backend_settings(payload: LlmBackendPayload):
         updates["inference_profile"] = payload.inference_profile
     _save_wizard_yaml(updates)
 
+    if payload.ollama_model:
+        llm_cfg = _read_llm_config()
+        backends = llm_cfg.setdefault("backends", {})
+        ollama_backend = dict(backends.get("ollama") or {})
+        ollama_backend["model"] = payload.ollama_model
+        backends["ollama"] = ollama_backend
+        _write_llm_config(llm_cfg)
+
     return {"ok": True}
+
+
+class OllamaPullPayload(BaseModel):
+    model: str = ""
+
+
+@app.post("/api/settings/system/ollama-pull")
+def pull_ollama_model(payload: OllamaPullPayload, background_tasks: BackgroundTasks):
+    """Kick off `ollama pull <model>` in the background and return immediately.
+
+    Pulls can take several minutes for multi-GB models, so this doesn't block
+    the request -- the frontend polls GET /api/settings/llm/ollama-models
+    until the model shows up in the installed list.
+    """
+    model = payload.model.strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="model is required")
+
+    base_url = _configured_ollama_base_url()
+
+    def _do_pull():
+        try:
+            requests.post(f"{base_url}/api/pull", json={"name": model, "stream": False}, timeout=1800)
+        except Exception:
+            pass  # best-effort -- frontend polling detects success/failure by presence, not by this call
+
+    background_tasks.add_task(_do_pull)
+    return {"ok": True, "status": "pulling"}
 
 
 # ── Settings: Fine-Tune ───────────────────────────────────────────────────────
