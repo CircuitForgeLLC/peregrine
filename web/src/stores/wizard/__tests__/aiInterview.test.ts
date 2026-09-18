@@ -210,23 +210,24 @@ describe('useAiInterviewStore', () => {
     expect(store.loading).toBe(false)
   })
 
-  // ── 503 llm_error surfacing ───────────────────────────────────────────────
-  // The backend's LLMRouter reports *why* each backend was skipped (unreachable,
-  // missing API key, model not pulled, etc). Previously this store discarded
-  // that detail and always guessed "add an API key", which was actively wrong
-  // when e.g. the real issue was an Ollama model tag that was never pulled.
+  // ── 400/502 classified-error surfacing ────────────────────────────────────
+  // The backend's complete_task() reports *why* the Chat model couldn't run
+  // (no model assigned -> 400, assigned backend unreachable -> 502) as a
+  // plain-string `detail`. This used to be a single 503 branch that parsed a
+  // nested `{detail: {error, message}}` shape (see git history) -- previously
+  // this store discarded that detail and always guessed "add an API key",
+  // which was actively wrong when e.g. the real issue was an Ollama model tag
+  // that was never pulled. It now surfaces the exact server-provided message
+  // for both classified error codes.
 
-  it('send() surfaces the backend-provided message on a 503 llm_error', async () => {
+  it('send() surfaces the backend-provided message on a 400 (no model assigned)', async () => {
     mockFetch.mockResolvedValue({
       data: null,
       error: {
         kind: 'http',
-        status: 503,
+        status: 400,
         detail: JSON.stringify({
-          detail: {
-            error: 'llm_error',
-            message: 'All LLM backends exhausted. Tried: ollama: model "llama3.2:3b" not found',
-          },
+          detail: 'No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.',
         }),
       },
     })
@@ -235,14 +236,34 @@ describe('useAiInterviewStore', () => {
     await store.send('Hello')
 
     expect(store.error).toBe(
-      "Couldn't reach the AI assistant: All LLM backends exhausted. Tried: ollama: model \"llama3.2:3b\" not found",
+      'No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.',
     )
   })
 
-  it('send() falls back to a generic message on a 503 with no llm_error detail', async () => {
+  it('send() surfaces the backend-provided message on a 502 (backend unreachable)', async () => {
     mockFetch.mockResolvedValue({
       data: null,
-      error: { kind: 'http', status: 503, detail: JSON.stringify({ detail: 'Service Unavailable' }) },
+      error: {
+        kind: 'http',
+        status: 502,
+        detail: JSON.stringify({
+          detail: "Can't reach the Chat model (ollama) — check it's running, or reassign in Settings → System.",
+        }),
+      },
+    })
+
+    const store = useAiInterviewStore()
+    await store.send('Hello')
+
+    expect(store.error).toBe(
+      "Can't reach the Chat model (ollama) — check it's running, or reassign in Settings → System.",
+    )
+  })
+
+  it('send() falls back to a generic message on a 502 with no detail', async () => {
+    mockFetch.mockResolvedValue({
+      data: null,
+      error: { kind: 'http', status: 502, detail: JSON.stringify({}) },
     })
 
     const store = useAiInterviewStore()
@@ -251,10 +272,10 @@ describe('useAiInterviewStore', () => {
     expect(store.error).toBe('Could not reach the assistant. Please try again.')
   })
 
-  it('send() falls back to a generic message when 503 body is not valid JSON', async () => {
+  it('send() falls back to a generic message when 400/502 body is not valid JSON', async () => {
     mockFetch.mockResolvedValue({
       data: null,
-      error: { kind: 'http', status: 503, detail: 'not json' },
+      error: { kind: 'http', status: 502, detail: 'not json' },
     })
 
     const store = useAiInterviewStore()

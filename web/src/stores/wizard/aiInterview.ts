@@ -84,12 +84,10 @@ export const useAiInterviewStore = defineStore('aiInterview', () => {
     if (err || !data) {
       if (err?.kind === 'http' && err.status === 402) {
         error.value = 'AI profile assistant requires a Paid plan or a BYOK API key.'
-      } else if (err?.kind === 'http' && err.status === 503) {
+      } else if (err?.kind === 'http' && (err.status === 400 || err.status === 502)) {
         try {
-          const body = JSON.parse(err.detail) as { detail?: { error?: string; message?: string } }
-          error.value = body.detail?.error === 'llm_error' && body.detail?.message
-            ? `Couldn't reach the AI assistant: ${body.detail.message}`
-            : 'Could not reach the assistant. Please try again.'
+          const body = JSON.parse(err.detail) as { detail?: string }
+          error.value = body.detail ?? 'Could not reach the assistant. Please try again.'
         } catch {
           error.value = 'Could not reach the assistant. Please try again.'
         }
