@@ -122,7 +122,7 @@
 
         <!-- ── Right: Cover letter ────────────────────────────────────── -->
         <main class="workspace__cl-panel">
-          <h2 class="cl-heading">Cover Letter</h2>
+        <CollapsibleSection title="Cover Letter" persist-id="peregrine_apply_cl_collapsed" :default-expanded="true">
 
           <!-- State: none — no draft yet -->
           <template v-if="clState === 'none'">
@@ -205,29 +205,30 @@
           >
             ↺ Regenerate
           </button>
+        </CollapsibleSection>
 
           <!-- ── Resume Library Card ──────────────────────────────── -->
-          <ResumeLibraryCard :job-id="props.jobId" class="apply__resume-card" />
+          <CollapsibleSection title="Resume" persist-id="peregrine_apply_resume_collapsed">
+            <ResumeLibraryCard :job-id="props.jobId" class="apply__resume-card" />
 
-          <!-- ── ATS Resume Optimizer ──────────────────────────────── -->
-          <button class="btn-ghost optimizer-trigger" @click="showOptimizer = true">
-            <span aria-hidden="true">🎯</span> Optimize for ATS
-          </button>
-          <ResumeOptimizerModal
-            v-if="showOptimizer"
-            :job-id="props.jobId"
-            @close="showOptimizer = false"
-          />
+            <!-- ── ATS Resume Optimizer ──────────────────────────────── -->
+            <button class="btn-ghost optimizer-trigger" @click="showOptimizer = true">
+              <span aria-hidden="true">🎯</span> Optimize for ATS
+            </button>
+            <ResumeOptimizerModal
+              v-if="showOptimizer"
+              :job-id="props.jobId"
+              @close="showOptimizer = false"
+            />
+          </CollapsibleSection>
 
           <!-- ── Application Q&A ───────────────────────────────────── -->
-          <div class="qa-section">
-            <button class="section-toggle" :aria-expanded="qaExpanded" @click="qaExpanded = !qaExpanded">
-              <span class="section-toggle__label">Application Q&amp;A</span>
-              <span v-if="qaItems.length" class="qa-count">{{ qaItems.length }}</span>
-              <span class="section-toggle__icon" aria-hidden="true">{{ qaExpanded ? '▲' : '▼' }}</span>
-            </button>
-
-            <div v-if="qaExpanded" class="qa-body">
+          <CollapsibleSection
+            title="Application Q&amp;A"
+            :badge="qaItems.length || null"
+            :model-value="qaExpanded"
+            @update:model-value="qaExpanded = $event"
+          >
               <p v-if="!qaItems.length" class="qa-empty">
                 No questions yet — add one below to get LLM-suggested answers.
               </p>
@@ -271,8 +272,7 @@
               >
                 {{ qaSaving ? 'Saving…' : (qaSaved ? '✓ Saved' : 'Save All') }}
               </button>
-            </div>
-          </div>
+          </CollapsibleSection>
 
           <!-- ── Bottom action bar ──────────────────────────────────── -->
           <div class="workspace__actions">
@@ -315,6 +315,7 @@ import type { Job } from '../stores/review'
 import ResumeOptimizerModal from './ResumeOptimizerModal.vue'
 import ResumeLibraryCard from './ResumeLibraryCard.vue'
 import MarkdownView from './MarkdownView.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
 
 const config = useAppConfigStore()
 
@@ -836,12 +837,6 @@ declare module '../stores/review' {
   gap: var(--space-4);
 }
 
-.cl-heading {
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  color: var(--color-text);
-}
-
 /* Empty state */
 .cl-empty {
   background: var(--color-surface-raised);
@@ -1195,41 +1190,6 @@ declare module '../stores/review' {
 }
 
 /* ── Application Q&A ─────────────────────────────────────────────────── */
-
-.qa-section {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.qa-section > .section-toggle {
-  padding: var(--space-3) var(--space-4);
-  color: var(--color-text);
-}
-
-.qa-section > .section-toggle:hover { background: var(--color-surface-alt); }
-
-.qa-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--app-primary-light);
-  color: var(--app-primary);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.qa-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-top: 1px solid var(--color-border-light);
-}
 
 .qa-empty {
   font-size: var(--text-xs);
