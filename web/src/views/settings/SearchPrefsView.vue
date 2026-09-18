@@ -30,7 +30,9 @@
       </div>
       <div class="tag-input-row">
         <input v-model="titleInput" @keydown.enter.prevent="addTitle" placeholder="Add title, press Enter" />
-        <button @click="store.suggestTitles()" class="btn-suggest">Suggest</button>
+        <button @click="store.suggestTitles()" :disabled="store.suggestingField === 'titles'" class="btn-suggest">
+          {{ store.suggestingField === 'titles' ? 'Thinking…' : 'Suggest' }}
+        </button>
       </div>
       <div v-if="store.titleSuggestions.length > 0" class="suggestions">
         <span
@@ -40,6 +42,7 @@
           @click="store.acceptSuggestion('title', s)"
         >+ {{ s }}</span>
       </div>
+      <p v-if="store.suggestErrors.titles" class="error">{{ store.suggestErrors.titles }}</p>
     </section>
 
     <!-- Locations -->
@@ -52,7 +55,9 @@
       </div>
       <div class="tag-input-row">
         <input v-model="locationInput" @keydown.enter.prevent="addLocation" placeholder="Add location, press Enter" />
-        <button @click="store.suggestLocations()" class="btn-suggest">Suggest</button>
+        <button @click="store.suggestLocations()" :disabled="store.suggestingField === 'locations'" class="btn-suggest">
+          {{ store.suggestingField === 'locations' ? 'Thinking…' : 'Suggest' }}
+        </button>
       </div>
       <div v-if="store.locationSuggestions.length > 0" class="suggestions">
         <span
@@ -62,6 +67,7 @@
           @click="store.acceptSuggestion('location', s)"
         >+ {{ s }}</span>
       </div>
+      <p v-if="store.suggestErrors.locations" class="error">{{ store.suggestErrors.locations }}</p>
     </section>
 
     <!-- Exclude Keywords -->
@@ -74,7 +80,9 @@
       </div>
       <div class="tag-input-row">
         <input v-model="excludeInput" @keydown.enter.prevent="store.addTag('exclude_keywords', excludeInput); excludeInput = ''" placeholder="Add keyword, press Enter" />
-        <button @click="store.suggestExcludeKeywords()" class="btn-suggest">Suggest</button>
+        <button @click="store.suggestExcludeKeywords()" :disabled="store.suggestingField === 'exclude'" class="btn-suggest">
+          {{ store.suggestingField === 'exclude' ? 'Thinking…' : 'Suggest' }}
+        </button>
       </div>
       <div v-if="store.excludeSuggestions.length > 0" class="suggestions">
         <span
@@ -84,6 +92,7 @@
           @click="store.acceptSuggestion('exclude', s)"
         >+ {{ s }}</span>
       </div>
+      <p v-if="store.suggestErrors.exclude" class="error">{{ store.suggestErrors.exclude }}</p>
     </section>
 
     <!-- Job Boards -->

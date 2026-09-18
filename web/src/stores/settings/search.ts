@@ -19,6 +19,10 @@ export const useSearchStore = defineStore('settings/search', () => {
   const titleSuggestions = ref<string[]>([])
   const locationSuggestions = ref<string[]>([])
   const excludeSuggestions = ref<string[]>([])
+  const suggestingField = ref<'titles' | 'locations' | 'exclude' | null>(null)
+  const suggestErrors = ref<{ titles: string | null; locations: string | null; exclude: string | null }>({
+    titles: null, locations: null, exclude: null,
+  })
 
   const loading = ref(false)
   const saving = ref(false)
@@ -72,24 +76,40 @@ export const useSearchStore = defineStore('settings/search', () => {
   }
 
   async function suggestTitles() {
-    const { data } = await useApiFetch<{ suggestions: string[] }>('/api/settings/search/suggest', {
+    suggestingField.value = 'titles'
+    suggestErrors.value.titles = null
+    const { data, error } = await useApiFetch<{ suggestions: string[] }>('/api/settings/search/suggest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'titles', current: job_titles.value }),
     })
-    if (data?.suggestions) {
-      titleSuggestions.value = data.suggestions.filter(s => !job_titles.value.includes(s))
+    suggestingField.value = null
+    if (error || !data?.suggestions) {
+      suggestErrors.value.titles = 'Could not generate suggestions — please try again.'
+      return
+    }
+    titleSuggestions.value = data.suggestions.filter(s => !job_titles.value.includes(s))
+    if (titleSuggestions.value.length === 0) {
+      suggestErrors.value.titles = 'No new suggestions right now — try again in a moment.'
     }
   }
 
   async function suggestLocations() {
-    const { data } = await useApiFetch<{ suggestions: string[] }>('/api/settings/search/suggest', {
+    suggestingField.value = 'locations'
+    suggestErrors.value.locations = null
+    const { data, error } = await useApiFetch<{ suggestions: string[] }>('/api/settings/search/suggest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'locations', current: locations.value }),
     })
-    if (data?.suggestions) {
-      locationSuggestions.value = data.suggestions.filter(s => !locations.value.includes(s))
+    suggestingField.value = null
+    if (error || !data?.suggestions) {
+      suggestErrors.value.locations = 'Could not generate suggestions — please try again.'
+      return
+    }
+    locationSuggestions.value = data.suggestions.filter(s => !locations.value.includes(s))
+    if (locationSuggestions.value.length === 0) {
+      suggestErrors.value.locations = 'No new suggestions right now — try again in a moment.'
     }
   }
 
@@ -106,13 +126,21 @@ export const useSearchStore = defineStore('settings/search', () => {
   }
 
   async function suggestExcludeKeywords() {
-    const { data } = await useApiFetch<{ suggestions: string[] }>('/api/settings/search/suggest', {
+    suggestingField.value = 'exclude'
+    suggestErrors.value.exclude = null
+    const { data, error } = await useApiFetch<{ suggestions: string[] }>('/api/settings/search/suggest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'exclude_keywords', current: exclude_keywords.value }),
     })
-    if (data?.suggestions) {
-      excludeSuggestions.value = data.suggestions.filter(s => !exclude_keywords.value.includes(s))
+    suggestingField.value = null
+    if (error || !data?.suggestions) {
+      suggestErrors.value.exclude = 'Could not generate suggestions — please try again.'
+      return
+    }
+    excludeSuggestions.value = data.suggestions.filter(s => !exclude_keywords.value.includes(s))
+    if (excludeSuggestions.value.length === 0) {
+      suggestErrors.value.exclude = 'No new suggestions right now — try again in a moment.'
     }
   }
 
@@ -138,7 +166,7 @@ export const useSearchStore = defineStore('settings/search', () => {
   return {
     remote_preference, job_titles, locations, exclude_keywords, job_boards,
     custom_board_urls, blocklist_companies, blocklist_industries, blocklist_locations,
-    titleSuggestions, locationSuggestions, excludeSuggestions,
+    titleSuggestions, locationSuggestions, excludeSuggestions, suggestingField, suggestErrors,
     loading, saving, saveError, loadError, loaded,
     load, save, suggestTitles, suggestLocations, suggestExcludeKeywords,
     addTag, removeTag, acceptSuggestion, toggleBoard,
