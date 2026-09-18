@@ -81,7 +81,7 @@ class TestTaskRunnerCoverLetterParams:
 
         def mock_generate(title, company, description="", previous_result="", feedback="",
                           is_jobgether=False, _router=None, config_path=None,
-                          user_yaml_path=None):
+                          user_yaml_path=None, user_id=None):
             captured.update({
                 "title": title, "company": company,
                 "previous_result": previous_result, "feedback": feedback,

@@ -12,6 +12,7 @@ Usage:
         conda run -n job-seeker python scripts/generate_cover_letter.py --job-id 42
 """
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -21,6 +22,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.user_profile import UserProfile
+from scripts.cf_orch_client import complete_via_cf_orch, CfOrchTaskError
 _USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
 _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
 
@@ -225,6 +227,7 @@ def generate(
     _router=None,
     config_path: "Path | None" = None,
     user_yaml_path: "Path | None" = None,
+    user_id: str | None = None,
 ) -> str:
     """Generate a cover letter and return it as a string.
 
@@ -234,6 +237,14 @@ def generate(
 
     user_yaml_path overrides the module-level profile — required in cloud mode
     so each user's name/voice/mission prefs are used instead of the global default.
+
+    user_id is the caller's Directus user_id (cloud mode only). When it's set,
+    user_yaml_path has a non-empty custom_model_alias, and CF_ORCH_URL is
+    configured, generation routes through cf-orch's task-allocation API with
+    that alias as a model_override instead of the local LLMRouter chain — see
+    circuitforge-plans/peregrine/superpowers/plans/2026-09-18-cloud-custom-model-cforch-followup.md.
+    Any missing piece falls back to the local router unchanged, so self-hosted
+    installs (which never set custom_model_alias) are unaffected.
 
     _router is an optional pre-built LLMRouter (used in tests to avoid real LLM calls).
     """
@@ -261,19 +272,41 @@ def generate(
     if feedback:
         prompt += f"\n\nUser feedback / requested changes:\n{feedback}\n\nPlease revise accordingly."
 
+    print(f"[cover-letter] Generating for: {title} @ {company}", file=sys.stderr)
+    print(f"[cover-letter] Style examples: {[e['company'] for e in examples]}", file=sys.stderr)
+    if feedback:
+        print("[cover-letter] Refinement mode: feedback provided", file=sys.stderr)
+
+    custom_model_alias = ""
+    if user_yaml_path and Path(user_yaml_path).exists():
+        try:
+            raw_yaml = yaml.safe_load(Path(user_yaml_path).read_text()) or {}
+            custom_model_alias = (raw_yaml.get("custom_model_alias") or "").strip()
+        except Exception:
+            custom_model_alias = ""
+    orch_url = os.environ.get("CF_ORCH_URL", "").strip()
+
+    # max_tokens=1200 caps generation at ~900 words — enough for any cover letter
+    # and prevents fine-tuned models from looping into repetitive garbage output.
+    if custom_model_alias and orch_url and user_id:
+        try:
+            result = complete_via_cf_orch(
+                orch_url, "peregrine", "primary", prompt,
+                user_id=user_id, model_override=custom_model_alias, max_tokens=1200,
+            )
+        except CfOrchTaskError as e:
+            raise RuntimeError(
+                f"Can't reach your custom model ({custom_model_alias}) — {e}. "
+                "Check it's configured correctly, or clear the alias in Settings → System to use the default model."
+            )
+        return _trim_to_letter_end(result, _prof)
+
     if _router is None:
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from scripts.llm_router import LLMRouter, CONFIG_PATH
         resolved = config_path if (config_path and Path(config_path).exists()) else CONFIG_PATH
         _router = LLMRouter(resolved)
 
-    print(f"[cover-letter] Generating for: {title} @ {company}", file=sys.stderr)
-    print(f"[cover-letter] Style examples: {[e['company'] for e in examples]}", file=sys.stderr)
-    if feedback:
-        print("[cover-letter] Refinement mode: feedback provided", file=sys.stderr)
-
-    # max_tokens=1200 caps generation at ~900 words — enough for any cover letter
-    # and prevents fine-tuned models from looping into repetitive garbage output.
     from scripts.llm_router import TaskModelUnreachableError, TaskModelNotAssignedError
     try:
         result = _router.complete_task("primary", prompt, max_tokens=1200)

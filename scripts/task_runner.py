@@ -10,11 +10,27 @@ Deduplication: only one queued/running task per (task_type, job_id) is allowed.
 Different task types for the same job run concurrently (e.g. cover letter + research).
 """
 import logging
+import re
 import sqlite3
 import threading
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+_VALID_USER_ID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+
+def _resolve_cloud_user_id(db_path) -> str | None:
+    """Extract the cloud tenant's user_id from a db_path shaped like
+    <CLOUD_DATA_ROOT>/<user_id>/peregrine/staging.db. Returns None for a
+    self-hosted db_path (no matching UUID segment) -- callers already treat
+    a missing user_id as "use local routing", so this degrades safely.
+    """
+    try:
+        candidate = Path(db_path).parts[-3]
+    except IndexError:
+        return None
+    return candidate if _VALID_USER_ID_RE.match(candidate) else None
 
 
 def _normalize_aihawk_resume(raw: dict) -> dict:
@@ -246,6 +262,7 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 is_jobgether=job.get("source") == "jobgether",
                 config_path=_user_llm_cfg,
                 user_yaml_path=_user_yaml,
+                user_id=_resolve_cloud_user_id(db_path),
             )
             update_cover_letter(db_path, job_id, result)
 
