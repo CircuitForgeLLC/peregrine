@@ -3209,6 +3209,65 @@ def _extract_json_array(raw: str, *, log_context: str = "") -> list | None:
         return None
 
 
+_CAPABILITY_PROBE_PROMPT = 'Return only this exact JSON array, nothing else: ["a", "b"]'
+
+
+def _get_cached_probe(backend_id: str, model: str) -> dict | None:
+    cfg_path = _config_dir() / "llm.yaml"
+    if not cfg_path.exists():
+        return None
+    with open(cfg_path) as f:
+        data = yaml.safe_load(f) or {}
+    key = f"{backend_id}:{model}"
+    probes = (data.get("model_capability_probes") or {}).get(key, {})
+    return probes.get("structured_output")
+
+
+def _probe_model_capability(backend_id: str, model: str) -> dict:
+    """Run the empirical structured-output canary against backend_id/model
+    and cache the pass/fail result. Raises on a genuine connectivity
+    failure (probe couldn't run) -- callers must distinguish that from a
+    probe that ran and failed, per the spec's error table."""
+    from scripts.llm_router import LLMRouter
+    router = LLMRouter()
+    raw = router.complete(_CAPABILITY_PROBE_PROMPT, fallback_order=[backend_id], model_override=model)
+    parsed = _extract_json_array(raw, log_context=f"capability-probe:{backend_id}:{model}")
+    passed = parsed is not None and parsed == ["a", "b"]
+
+    result = {"passed": passed, "checked_at": datetime.now(timezone.utc).isoformat()}
+
+    cfg_path = _config_dir() / "llm.yaml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict = {}
+    if cfg_path.exists():
+        with open(cfg_path) as f:
+            data = yaml.safe_load(f) or {}
+    probes = data.setdefault("model_capability_probes", {})
+    key = f"{backend_id}:{model}"
+    probes.setdefault(key, {})["structured_output"] = result
+    with open(cfg_path, "w") as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+
+    return result
+
+
+class ProbeModelPayload(BaseModel):
+    backend: str
+    model: str
+
+
+@app.post("/api/settings/system/probe-model")
+def probe_model(payload: ProbeModelPayload):
+    """Run (or re-run) the capability probe for a specific backend+model.
+    Never raises for an unreachable backend -- the frontend needs to tell
+    'model failed the probe' apart from 'couldn't test it at all'."""
+    try:
+        return _probe_model_capability(payload.backend, payload.model)
+    except Exception as e:
+        _log.warning("[probe-model] %s/%s unreachable: %s", payload.backend, payload.model, e)
+        return {"error": "unreachable"}
+
+
 @app.post("/api/settings/profile/generate-summary")
 def generate_career_summary():
     """LLM-generate a career summary from the candidate's resume profile."""
