@@ -246,9 +246,15 @@ def test_get_llm_config_returns_backends_and_byok(tmp_path, monkeypatch):
     _write_user_yaml(user_yaml)
     monkeypatch.setenv("STAGING_DB", str(db_dir / "staging.db"))
 
+    # backends is a dict keyed by id in the real config/llm.yaml shape
+    # (base_url/model/type/etc per entry), not a list -- the endpoint derives
+    # the reorderable list view from this dict plus fallback_order.
     fake_llm_path = tmp_path / "llm.yaml"
     with open(fake_llm_path, "w") as f:
-        yaml.dump({"backends": [{"name": "ollama", "enabled": True}]}, f)
+        yaml.dump({
+            "backends": {"ollama": {"type": "openai_compat", "model": "llama3.1:8b", "enabled": True}},
+            "fallback_order": ["ollama"],
+        }, f)
     monkeypatch.setattr("dev_api.LLM_CONFIG_PATH", fake_llm_path)
 
     from dev_api import app
@@ -258,6 +264,7 @@ def test_get_llm_config_returns_backends_and_byok(tmp_path, monkeypatch):
     data = resp.json()
     assert "backends" in data
     assert isinstance(data["backends"], list)
+    assert data["backends"][0]["id"] == "ollama"
     assert "byok_acknowledged" in data
 
 
