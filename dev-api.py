@@ -3683,25 +3683,63 @@ LLM_CONFIG_PATH = Path("config/llm.yaml")
 
 @app.get("/api/settings/system/llm")
 def get_llm_config():
+    """Report backends as a reorderable {id, enabled, priority} list for the
+    drag-and-drop UI. config/llm.yaml itself stores backends as a dict keyed
+    by id (with base_url/model/type/etc per entry) -- this derives the list
+    view from that dict plus fallback_order, it never returns the dict
+    as-is (the frontend calls .filter()/.map() on this, which crashed on
+    every page load when backends was returned as a raw dict)."""
     try:
         user = load_user_profile(_user_yaml_path())
-        backends = []
+        backend_defs = {}
+        fallback_order: list[str] = []
         if LLM_CONFIG_PATH.exists():
             with open(LLM_CONFIG_PATH) as f:
                 data = yaml.safe_load(f) or {}
-            backends = data.get("backends", [])
+            backend_defs = data.get("backends") or {}
+            fallback_order = data.get("fallback_order") or []
+
+        ordered_ids = [bid for bid in fallback_order if bid in backend_defs]
+        ordered_ids += [bid for bid in backend_defs if bid not in ordered_ids]
+
+        backends = [
+            {
+                "id": bid,
+                "enabled": bool(backend_defs[bid].get("enabled", True)),
+                "priority": i + 1,
+            }
+            for i, bid in enumerate(ordered_ids)
+        ]
         return {"backends": backends, "byok_acknowledged": user.get("byok_acknowledged_backends", [])}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/settings/system/llm")
 def save_llm_config(payload: LlmConfigPayload):
+    """Apply the reordered {id, enabled, priority} list onto the existing
+    per-backend config dict: updates each backend's `enabled` flag and
+    reorders fallback_order to match, without touching base_url/model/type/
+    or any other field. The previous handler replaced the whole backends
+    dict with this flat list, destroying every backend's configuration on
+    every save."""
     try:
         data = {}
         if LLM_CONFIG_PATH.exists():
             with open(LLM_CONFIG_PATH) as f:
                 data = yaml.safe_load(f) or {}
-        data["backends"] = payload.backends
+        backend_defs = data.get("backends") or {}
+
+        ordered = sorted(payload.backends, key=lambda b: b.get("priority", 0))
+        new_fallback_order = []
+        for entry in ordered:
+            bid = entry.get("id")
+            if bid not in backend_defs:
+                continue
+            backend_defs[bid]["enabled"] = bool(entry.get("enabled", True))
+            new_fallback_order.append(bid)
+
+        data["backends"] = backend_defs
+        data["fallback_order"] = new_fallback_order
         LLM_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(LLM_CONFIG_PATH, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
