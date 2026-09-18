@@ -346,8 +346,9 @@ class TestOllamaModelsList:
         })()
         with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
             with patch.dict(os.environ, {"OLLAMA_HOST": "http://host.docker.internal:11434"}):
-                with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
-                    r = client.get("/api/settings/llm/ollama-models")
+                with patch("dev_api._running_in_docker", return_value=True):
+                    with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
+                        r = client.get("/api/settings/llm/ollama-models")
         assert r.status_code == 200
         assert r.json()["models"] == ["llama3.1:8b"]
         called_url = mock_get.call_args[0][0]
