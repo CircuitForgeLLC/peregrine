@@ -52,6 +52,9 @@ export const useResumeStore = defineStore('settings/resume', () => {
   const domainSuggestions = ref<string[]>([])
   const keywordSuggestions = ref<string[]>([])
   const suggestingField = ref<'skills' | 'domains' | 'keywords' | null>(null)
+  const suggestErrors = ref<{ skills: string | null; domains: string | null; keywords: string | null }>({
+    skills: null, domains: null, keywords: null,
+  })
 
   function syncFromProfile(p: { name: string; email: string; phone: string; linkedin_url: string }) {
     name.value = p.name; email.value = p.email
@@ -144,19 +147,26 @@ export const useResumeStore = defineStore('settings/resume', () => {
 
   async function suggestTags(field: 'skills' | 'domains' | 'keywords') {
     suggestingField.value = field
+    suggestErrors.value[field] = null
     const current = field === 'skills' ? skills.value : field === 'domains' ? domains.value : keywords.value
-    const { data } = await useApiFetch<{ suggestions: string[] }>('/api/settings/resume/suggest-tags', {
+    const { data, error } = await useApiFetch<{ suggestions: string[] }>('/api/settings/resume/suggest-tags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: field, current }),
     })
     suggestingField.value = null
-    if (!data?.suggestions) return
+    if (error || !data?.suggestions) {
+      suggestErrors.value[field] = 'Could not generate suggestions — please try again.'
+      return
+    }
     const existing = field === 'skills' ? skills.value : field === 'domains' ? domains.value : keywords.value
     const fresh = data.suggestions.filter(s => !existing.includes(s))
     if (field === 'skills') skillSuggestions.value = fresh
     else if (field === 'domains') domainSuggestions.value = fresh
     else keywordSuggestions.value = fresh
+    if (fresh.length === 0) {
+      suggestErrors.value[field] = 'No new suggestions right now — try again in a moment.'
+    }
   }
 
   function acceptTagSuggestion(field: 'skills' | 'domains' | 'keywords', value: string) {
@@ -185,7 +195,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
     experience, salary_min, salary_max, notice_period, remote, relocation, assessment, background_check,
     gender, pronouns, ethnicity, veteran_status, disability,
     skills, domains, keywords,
-    skillSuggestions, domainSuggestions, keywordSuggestions, suggestingField,
+    skillSuggestions, domainSuggestions, keywordSuggestions, suggestingField, suggestErrors,
     career_summary, education, achievements, lastSynced,
     syncFromProfile, load, save, createBlank,
     addExperience, removeExperience, addEducation, removeEducation, addTag, removeTag, suggestTags, acceptTagSuggestion,

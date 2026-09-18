@@ -3173,6 +3173,42 @@ def _resume_context_snippet() -> str:
         return ""
 
 
+def _llm_research_complete(prompt: str, *, system: str | None = None) -> str:
+    """Run a short, general instruction-following completion (a suggestion,
+    a JSON blob, a one-off summary) -- not primary content generation.
+
+    Routes through research_fallback_order instead of the default
+    fallback_order, matching the existing convention in company_research.py
+    and survey_assistant.py. The default chain's top ollama-backed entry may
+    be a fine-tune specialized for a different task (e.g. cover letter
+    writing) and won't reliably follow instructions like "return only JSON"
+    or "write a 2-3 sentence summary" for anything else.
+    """
+    from scripts.llm_router import LLMRouter
+    router = LLMRouter()
+    research_order = router.config.get("research_fallback_order") or router.config["fallback_order"]
+    return router.complete(prompt, system=system, fallback_order=research_order)
+
+
+def _extract_json_array(raw: str, *, log_context: str = "") -> list | None:
+    """Extract a JSON array from LLM output that may include surrounding
+    prose despite being asked for "only JSON". Returns None (never raises)
+    if no array is found or it doesn't parse, logging what came back so a
+    consistently-empty result is diagnosable instead of silently mysterious.
+    """
+    import json as _json
+    start = raw.find("[")
+    end = raw.rfind("]") + 1
+    if start == -1 or end == 0:
+        _log.warning("[%s] LLM response had no JSON array: %r", log_context, raw[:200])
+        return None
+    try:
+        return _json.loads(raw[start:end])
+    except Exception:
+        _log.warning("[%s] LLM response had an unparsable JSON array: %r", log_context, raw[:200])
+        return None
+
+
 @app.post("/api/settings/profile/generate-summary")
 def generate_career_summary():
     """LLM-generate a career summary from the candidate's resume profile."""
@@ -3187,8 +3223,7 @@ def generate_career_summary():
         "'results-driven' or 'passionate self-starter'."
     )
     try:
-        from scripts.llm_router import LLMRouter
-        summary = LLMRouter().complete(prompt)
+        summary = _llm_research_complete(prompt)
         return {"summary": summary.strip()}
     except Exception as e:
         raise HTTPException(500, f"LLM generation failed: {e}")
@@ -3208,15 +3243,10 @@ def generate_mission_preferences():
         "Only output the JSON array, no other text."
     )
     try:
-        from scripts.llm_router import LLMRouter
-        import json as _json
-        raw = LLMRouter().complete(prompt)
-        # Extract JSON array from the response
-        start = raw.find("[")
-        end = raw.rfind("]") + 1
-        if start == -1 or end == 0:
+        raw = _llm_research_complete(prompt)
+        items = _extract_json_array(raw, log_context="generate-missions")
+        if items is None:
             raise ValueError("LLM did not return a JSON array")
-        items = _json.loads(raw[start:end])
         # Normalise to {industry, note} — LLM may return {tag, label, note}
         missions = [
             {"industry": m.get("label") or m.get("tag") or str(m), "note": m.get("note", "")}
@@ -3242,8 +3272,7 @@ def generate_candidate_voice():
         "Write it in third person as a style directive (e.g. 'Writes in a clear, direct tone...')."
     )
     try:
-        from scripts.llm_router import LLMRouter
-        voice = LLMRouter().complete(prompt)
+        voice = _llm_research_complete(prompt)
         return {"voice": voice.strip()}
     except Exception as e:
         raise HTTPException(500, f"LLM generation failed: {e}")
@@ -3630,14 +3659,10 @@ def suggest_resume_tags(payload: ResumeTagSuggestPayload):
         raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
 
     try:
-        import json as _json
-        from scripts.llm_router import LLMRouter
-        raw = LLMRouter().complete(prompt)
-        start = raw.find("[")
-        end   = raw.rfind("]") + 1
-        if start == -1 or end == 0:
+        raw = _llm_research_complete(prompt)
+        suggestions = _extract_json_array(raw, log_context=f"suggest-tags:{payload.type}")
+        if suggestions is None:
             return {"suggestions": []}
-        suggestions = _json.loads(raw[start:end])
         return {"suggestions": [str(s) for s in suggestions if s]}
     except Exception as e:
         raise HTTPException(500, f"LLM generation failed: {e}")
@@ -3681,14 +3706,10 @@ def suggest_search(payload: SearchSuggestPayload):
         raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
 
     try:
-        import json as _json
-        from scripts.llm_router import LLMRouter
-        raw = LLMRouter().complete(prompt)
-        start = raw.find("[")
-        end   = raw.rfind("]") + 1
-        if start == -1 or end == 0:
+        raw = _llm_research_complete(prompt)
+        suggestions = _extract_json_array(raw, log_context=f"suggest-search:{payload.type}")
+        if suggestions is None:
             return {"suggestions": []}
-        suggestions = _json.loads(raw[start:end])
         return {"suggestions": [str(s) for s in suggestions if s]}
     except Exception as e:
         raise HTTPException(500, f"LLM generation failed: {e}")
