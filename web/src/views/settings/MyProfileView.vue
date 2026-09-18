@@ -230,6 +230,7 @@ import { storeToRefs } from 'pinia'
 import { useProfileStore } from '../../stores/settings/profile'
 import { useAppConfigStore } from '../../stores/appConfig'
 import { useApiFetch } from '../../composables/useApi'
+import { genId } from '../../utils/id'
 
 const store = useProfileStore()
 const { loadError } = storeToRefs(store)
@@ -246,7 +247,7 @@ onMounted(() => { store.load() })
 
 // ── Mission helpers ──────────────────────────────────────
 function addMission() {
-  store.mission_preferences = [...store.mission_preferences, { id: crypto.randomUUID(), industry: '', note: '' }]
+  store.mission_preferences = [...store.mission_preferences, { id: genId(), industry: '', note: '' }]
 }
 
 function removeMission(idx: number) {
@@ -292,7 +293,7 @@ async function generateMissions() {
   generatingMissions.value = false
   if (!error && data?.mission_preferences) {
     store.mission_preferences = data.mission_preferences.map((m) => ({
-      id: crypto.randomUUID(), industry: m.industry ?? '', note: m.note ?? '',
+      id: genId(), industry: m.industry ?? '', note: m.note ?? '',
     }))
   }
 }
