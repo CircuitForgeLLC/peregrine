@@ -23,7 +23,7 @@ describe('wizard store — loadStatus cloud auto-skip', () => {
     const wizard = useWizardStore()
     const route = await wizard.loadStatus(true)
 
-    expect(route).toBe('/setup/resume')
+    expect(route).toBe('/setup/legacy/resume')
     expect(wizard.currentStep).toBe(4)
 
     // First saveStep call: hardware profile forced to cf-orch
@@ -50,7 +50,7 @@ describe('wizard store — loadStatus cloud auto-skip', () => {
     const wizard = useWizardStore()
     const route = await wizard.loadStatus(false)
 
-    expect(route).toBe('/setup/hardware')
+    expect(route).toBe('/setup/legacy/hardware')
     expect(mockFetch).toHaveBeenCalledTimes(1)
   })
 })

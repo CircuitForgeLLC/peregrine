@@ -148,7 +148,7 @@ export const useWizardStore = defineStore('wizard', () => {
         }
       }>('/api/wizard/status')
 
-      if (!data) return '/setup/hardware'
+      if (!data) return '/setup/legacy/hardware'
 
       const saved = data.saved_data
 
@@ -176,7 +176,7 @@ export const useWizardStore = defineStore('wizard', () => {
           await saveStep(2, {})
           await saveStep(3, { tier: tier.value })
           currentStep.value = 4
-          return '/setup/resume'
+          return '/setup/legacy/resume'
         }
       }
 

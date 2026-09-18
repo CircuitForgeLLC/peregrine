@@ -39,7 +39,10 @@ describe('wizard gate: /wizard/ai-profile', () => {
     const config = useAppConfigStore()
     config.wizardComplete = false
 
-    await router.push('/settings/my-profile')
+    // /settings/* is exempted too (Onboarding Hub cards link into Settings
+    // pages before wizardComplete) — pick a route outside both exemptions
+    // to verify the guard still gates ordinary main-app routes.
+    await router.push('/review')
     // Resolves to bare /setup, not /setup/hardware — the '' child route no
     // longer has a static redirect (see router/index.ts comment); it's
     // WizardLayout's own onMounted logic that routes on to the real resume
