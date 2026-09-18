@@ -10,6 +10,7 @@ export const useTaskModelsStore = defineStore('settings/taskModels', () => {
   const research = ref<TaskAssignment | null>(null)
   const chat = ref<TaskAssignment | null>(null)
   const ollamaModels = ref<string[]>([])
+  const vllmModels = ref<string[]>([])
   const probeResults = ref<Record<string, { passed: boolean }>>({})
 
   const loading = ref(false)
@@ -32,9 +33,16 @@ export const useTaskModelsStore = defineStore('settings/taskModels', () => {
     if (data.probes) probeResults.value = { ...probeResults.value, ...data.probes }
   }
 
-  async function loadOllamaModels() {
-    const { data } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
+  async function loadOllamaModels(host?: string, port?: number) {
+    const qs = host ? `?host=${encodeURIComponent(host)}&port=${port ?? 11434}` : ''
+    const { data } = await useApiFetch<{ models: string[] }>(`/api/settings/llm/ollama-models${qs}`)
     ollamaModels.value = data?.models ?? []
+  }
+
+  async function loadVllmModels(host?: string, port?: number) {
+    const qs = host ? `?host=${encodeURIComponent(host)}&port=${port ?? 8000}` : ''
+    const { data } = await useApiFetch<{ models: string[] }>(`/api/settings/llm/vllm-models${qs}`)
+    vllmModels.value = data?.models ?? []
   }
 
   async function save() {
@@ -69,8 +77,16 @@ export const useTaskModelsStore = defineStore('settings/taskModels', () => {
     return data ?? { found: false, tried: [] }
   }
 
+  async function detectVllm(port: number) {
+    const { data } = await useApiFetch<{ found: boolean; host?: string; port?: number; tried?: string[] }>(
+      '/api/settings/system/vllm-detect',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port }) },
+    )
+    return data ?? { found: false, tried: [] }
+  }
+
   return {
-    primary, research, chat, ollamaModels, probeResults, loading, saving, saveError,
-    load, loadOllamaModels, save, probeModel, detectOllama,
+    primary, research, chat, ollamaModels, vllmModels, probeResults, loading, saving, saveError,
+    load, loadOllamaModels, loadVllmModels, save, probeModel, detectOllama, detectVllm,
   }
 })

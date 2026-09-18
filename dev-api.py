@@ -4024,13 +4024,46 @@ def _configured_ollama_base_url() -> str:
 
 
 @app.get("/api/settings/llm/ollama-models")
-def get_ollama_models():
-    """Return available Ollama models by querying the configured Ollama host."""
+def get_ollama_models(host: Optional[str] = None, port: Optional[int] = None):
+    """Return available Ollama models by querying the configured Ollama host,
+    or an explicit host/port override -- lets the frontend show a just-detected
+    host's models immediately, before the user has saved it."""
     try:
-        base_url = _configured_ollama_base_url()
+        base_url = f"http://{host}:{port or 11434}" if host else _configured_ollama_base_url()
         resp = requests.get(f"{base_url}/api/tags", timeout=3)
         if resp.status_code == 200:
             models = [m["name"] for m in resp.json().get("models", [])]
+            return {"models": models}
+    except Exception:
+        pass
+    return {"models": []}
+
+
+def _configured_vllm_base_url() -> str:
+    """Resolve the vLLM base URL from the user's configured services map.
+    Mirrors _configured_ollama_base_url()'s "localhost is never reachable
+    from inside this app's own Docker container" handling."""
+    try:
+        cfg = _load_wizard_yaml()
+        services = cfg.get("services", {})
+        host = services.get("vllm_host")
+        port = services.get("vllm_port")
+        if host and not (_running_in_docker() and host in ("localhost", "127.0.0.1")):
+            return f"http://{host}:{port or 8000}"
+    except Exception:
+        pass
+    return "http://localhost:8000"
+
+
+@app.get("/api/settings/llm/vllm-models")
+def get_vllm_models(host: Optional[str] = None, port: Optional[int] = None):
+    """Return models currently served by vLLM's OpenAI-compatible /v1/models
+    endpoint, from the configured host or an explicit override."""
+    try:
+        base_url = f"http://{host}:{port or 8000}" if host else _configured_vllm_base_url()
+        resp = requests.get(f"{base_url}/v1/models", timeout=3)
+        if resp.status_code == 200:
+            models = [m["id"] for m in resp.json().get("data", [])]
             return {"models": models}
     except Exception:
         pass
@@ -4054,6 +4087,33 @@ def ollama_detect(payload: OllamaDetectPayload):
     tried = []
     for host in candidates:
         url = f"http://{host}:{payload.port}/api/tags"
+        tried.append(host)
+        try:
+            resp = requests.get(url, timeout=3)
+            if resp.status_code == 200:
+                return {"found": True, "host": host, "port": payload.port}
+        except Exception:
+            continue
+    return {"found": False, "tried": tried}
+
+
+class VllmDetectPayload(BaseModel):
+    port: int = 8000
+
+
+@app.post("/api/settings/system/vllm-detect")
+def vllm_detect(payload: VllmDetectPayload):
+    """Same docker/native-aware candidate probing as ollama_detect(), but
+    against vLLM's OpenAI-compatible /v1/models endpoint (not Ollama's
+    /api/tags -- a different API shape)."""
+    if _running_in_docker():
+        candidates = ["host.docker.internal", "vllm", "localhost"]
+    else:
+        candidates = ["localhost", "127.0.0.1"]
+
+    tried = []
+    for host in candidates:
+        url = f"http://{host}:{payload.port}/v1/models"
         tried.append(host)
         try:
             resp = requests.get(url, timeout=3)
@@ -4376,6 +4436,8 @@ class LlmBackendPayload(BaseModel):
     openai_key: str = ""
     ollama_host: str = ""
     ollama_port: Optional[int] = None
+    vllm_host: str = ""
+    vllm_port: Optional[int] = None
     searxng_host: str = ""
     searxng_port: Optional[int] = None
     inference_profile: str = ""
@@ -4417,6 +4479,8 @@ def get_llm_backend_settings():
         "openai_key_set": _env_key_is_set("OPENAI_COMPAT_KEY"),
         "ollama_host": services.get("ollama_host", ""),
         "ollama_port": services.get("ollama_port", 11434),
+        "vllm_host": services.get("vllm_host", ""),
+        "vllm_port": services.get("vllm_port", 8000),
         "searxng_host": services.get("searxng_host", ""),
         "searxng_port": services.get("searxng_port", 8080),
         "inference_profile": cfg.get("inference_profile", ""),
@@ -4464,6 +4528,10 @@ def save_llm_backend_settings(payload: LlmBackendPayload):
         svc["ollama_host"] = payload.ollama_host
     if payload.ollama_port is not None:
         svc["ollama_port"] = payload.ollama_port
+    if payload.vllm_host:
+        svc["vllm_host"] = payload.vllm_host
+    if payload.vllm_port is not None:
+        svc["vllm_port"] = payload.vllm_port
     if payload.searxng_host:
         svc["searxng_host"] = payload.searxng_host
     if payload.searxng_port is not None:

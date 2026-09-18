@@ -355,6 +355,144 @@ class TestOllamaModelsList:
         assert "host.docker.internal" in called_url
 
 
+    def test_host_override_queries_that_host_instead_of_configured_one(self, tmp_path):
+        """After Detect finds a host, the frontend needs to see that host's
+        models immediately, before the user clicks Save -- an explicit
+        host/port query param takes priority over the saved config."""
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"services": {"ollama_host": "10.1.10.5", "ollama_port": 11500}})
+        fake_resp = type("R", (), {
+            "status_code": 200,
+            "json": lambda self: {"models": [{"name": "llama3.1:8b"}]},
+        })()
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
+                r = client.get("/api/settings/llm/ollama-models?host=host.docker.internal&port=11434")
+        assert r.status_code == 200
+        assert r.json()["models"] == ["llama3.1:8b"]
+        called_url = mock_get.call_args[0][0]
+        assert "host.docker.internal:11434" in called_url
+
+    def test_no_override_still_uses_configured_host(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"services": {"ollama_host": "10.1.10.5", "ollama_port": 11500}})
+        fake_resp = type("R", (), {
+            "status_code": 200,
+            "json": lambda self: {"models": [{"name": "llama3.1:8b"}]},
+        })()
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
+                r = client.get("/api/settings/llm/ollama-models")
+        assert r.status_code == 200
+        called_url = mock_get.call_args[0][0]
+        assert "10.1.10.5:11500" in called_url
+
+
+class TestVllmHostPortConfig:
+    def test_get_returns_configured_vllm_host_and_port(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"services": {"vllm_host": "10.1.10.9", "vllm_port": 8001}})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.get("/api/settings/system/llm-backend")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["vllm_host"] == "10.1.10.9"
+        assert body["vllm_port"] == 8001
+
+    def test_get_returns_default_vllm_port_when_unset(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.get("/api/settings/system/llm-backend")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["vllm_host"] == ""
+        assert body["vllm_port"] == 8000
+
+    def test_post_writes_vllm_host_and_port(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.post("/api/settings/system/llm-backend", json={
+                    "vllm_host": "host.docker.internal",
+                    "vllm_port": 8000,
+                })
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["services"]["vllm_host"] == "host.docker.internal"
+        assert saved["services"]["vllm_port"] == 8000
+
+    def test_post_with_only_vllm_host_preserves_ollama_host(self, tmp_path):
+        """Same 'blank means unchanged' semantics already established for
+        ollama_host/port -- adding vllm fields must not regress that."""
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"services": {
+            "ollama_host": "10.1.10.5", "ollama_port": 11500,
+        }})
+        env_path = tmp_path / ".env"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._env_path", return_value=env_path):
+                r = client.post("/api/settings/system/llm-backend", json={
+                    "vllm_host": "10.1.10.9",
+                })
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["services"]["ollama_host"] == "10.1.10.5"
+        assert saved["services"]["ollama_port"] == 11500
+        assert saved["services"]["vllm_host"] == "10.1.10.9"
+
+
+class TestVllmDetect:
+    def test_vllm_detect_tries_docker_candidates_first_when_dockerized(self, tmp_path):
+        calls = []
+
+        def fake_get(url, **kw):
+            calls.append(url)
+            resp = type("R", (), {"status_code": 200 if "host.docker.internal" in url else 599})()
+            return resp
+
+        with patch("dev_api._running_in_docker", return_value=True), \
+             patch("dev_api.requests.get", side_effect=fake_get):
+            r = client.post("/api/settings/system/vllm-detect", json={"port": 8000})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["found"] is True
+        assert body["host"] == "host.docker.internal"
+        assert calls[0].startswith("http://host.docker.internal")
+
+    def test_vllm_detect_probes_v1_models_not_api_tags(self, tmp_path):
+        """vLLM speaks the OpenAI-compatible API (/v1/models), not Ollama's
+        /api/tags -- probing the wrong path would always report not-found
+        even against a healthy vLLM server."""
+        calls = []
+
+        def fake_get(url, **kw):
+            calls.append(url)
+            resp = type("R", (), {"status_code": 200})()
+            return resp
+
+        with patch("dev_api._running_in_docker", return_value=False), \
+             patch("dev_api.requests.get", side_effect=fake_get):
+            r = client.post("/api/settings/system/vllm-detect", json={"port": 8000})
+        assert r.status_code == 200
+        assert r.json()["found"] is True
+        assert "/v1/models" in calls[0]
+
+    def test_vllm_detect_reports_not_found_when_nothing_reachable(self, tmp_path):
+        with patch("dev_api._running_in_docker", return_value=True), \
+             patch("dev_api.requests.get", side_effect=Exception("connection refused")):
+            r = client.post("/api/settings/system/vllm-detect", json={"port": 8000})
+        body = r.json()
+        assert body["found"] is False
+        assert len(body["tried"]) >= 2
+
+
 class TestOllamaPull:
     def test_pull_kicks_off_background_request_and_returns_immediately(self, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
