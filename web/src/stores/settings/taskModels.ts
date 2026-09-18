@@ -20,12 +20,16 @@ export const useTaskModelsStore = defineStore('settings/taskModels', () => {
     loading.value = true
     const { data } = await useApiFetch<{
       primary: TaskAssignment | null; research: TaskAssignment | null; chat: TaskAssignment | null
+      probes?: Record<string, { passed: boolean }>
     }>('/api/settings/system/task-models')
     loading.value = false
     if (!data) return
     primary.value = data.primary
     research.value = data.research
     chat.value = data.chat
+    // Hydrate cached probe state so capability badges survive a page reload
+    // (a fresh probe otherwise only runs when the user changes a dropdown).
+    if (data.probes) probeResults.value = { ...probeResults.value, ...data.probes }
   }
 
   async function loadOllamaModels() {

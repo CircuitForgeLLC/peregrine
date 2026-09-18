@@ -25,6 +25,31 @@ describe('useTaskModelsStore', () => {
     expect(store.chat).toBe(null)
   })
 
+  it('load() hydrates probeResults from the response so badges survive a reload', async () => {
+    mockFetch.mockResolvedValue({
+      data: {
+        primary: null,
+        research: { backend: 'ollama', model: 'llama3.1:8b' },
+        chat: null,
+        probes: { 'ollama:llama3.1:8b': { passed: false } },
+      },
+      error: null,
+    })
+    const store = useTaskModelsStore()
+    await store.load()
+    expect(store.probeResults['ollama:llama3.1:8b']).toEqual({ passed: false })
+  })
+
+  it('load() leaves probeResults empty when the response has no probes', async () => {
+    mockFetch.mockResolvedValue({
+      data: { primary: null, research: null, chat: null },
+      error: null,
+    })
+    const store = useTaskModelsStore()
+    await store.load()
+    expect(store.probeResults).toEqual({})
+  })
+
   it('save() PUTs the current assignments', async () => {
     mockFetch.mockResolvedValue({ data: { ok: true }, error: null })
     const store = useTaskModelsStore()
