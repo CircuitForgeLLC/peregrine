@@ -47,4 +47,52 @@ describe('useResumeStore', () => {
     expect(store.loadError).toBeTruthy()
     expect(store.hasResume).toBe(false)
   })
+
+  // Regression: `.map() ?? []` (nullish-coalescing applied AFTER calling
+  // .map()) throws synchronously if experience is undefined, aborting the
+  // rest of load() before skills/education/achievements ever populate --
+  // a resume that parsed correctly on the backend showed as missing work
+  // experience AND skills on the Settings page, since both never got a
+  // chance to load. The safe pattern is `(x ?? []).map()`.
+  it('load() populates skills and education even when experience is missing from the response', async () => {
+    mockFetch.mockResolvedValue({
+      data: {
+        exists: true, name: 'Meg', email: '', phone: '', linkedin_url: '',
+        surname: '', address: '', city: '', zip_code: '', date_of_birth: '',
+        // experience deliberately omitted, matching a resume file the parser
+        // wrote without that key
+        salary_min: 0, salary_max: 0, notice_period: '', remote: false,
+        relocation: false, assessment: false, background_check: false,
+        gender: '', pronouns: '', ethnicity: '', veteran_status: '', disability: '',
+        skills: ['Python', 'TypeScript'], domains: [], keywords: [],
+        career_summary: '', education: [], achievements: ['Shipped a thing'],
+      },
+      error: null,
+    })
+    const store = useResumeStore()
+    await store.load()
+    expect(store.experience).toEqual([])
+    expect(store.skills).toEqual(['Python', 'TypeScript'])
+    expect(store.achievements).toEqual(['Shipped a thing'])
+  })
+
+  it('load() populates experience entries with generated ids when present', async () => {
+    mockFetch.mockResolvedValue({
+      data: {
+        exists: true, name: 'Meg', email: '', phone: '', linkedin_url: '',
+        surname: '', address: '', city: '', zip_code: '', date_of_birth: '',
+        experience: [{ title: 'Engineer', company: 'Acme', period: '2020-present', location: '', industry: '', responsibilities: '', skills: [] }],
+        salary_min: 0, salary_max: 0, notice_period: '', remote: false,
+        relocation: false, assessment: false, background_check: false,
+        gender: '', pronouns: '', ethnicity: '', veteran_status: '', disability: '',
+        skills: [], domains: [], keywords: [],
+      },
+      error: null,
+    })
+    const store = useResumeStore()
+    await store.load()
+    expect(store.experience).toHaveLength(1)
+    expect(store.experience[0].title).toBe('Engineer')
+    expect(store.experience[0].id).toBeTruthy()
+  })
 })
