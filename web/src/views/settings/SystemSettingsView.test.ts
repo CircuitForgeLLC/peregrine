@@ -145,7 +145,7 @@ describe('SystemSettingsView, Custom Model tier gate', () => {
     expect(wrapper.text()).not.toContain('Upgrade to use your own fine-tuned model.')
   })
 
-  it('keeps the Save button enabled for a non-Premium user clearing an existing alias', async () => {
+  it('lets a non-Premium user with an existing alias edit the input to clear it, and actually submits the clear', async () => {
     const config = useAppConfigStore()
     config.isCloud = true
     config.tier = 'paid'
@@ -157,7 +157,34 @@ describe('SystemSettingsView, Custom Model tier gate', () => {
     })
     const wrapper = mount(SystemSettingsView)
     await flushPromises()
+
+    const input = wrapper.find('input[data-testid="custom-model-alias-input"]')
+    // With an existing alias, the input must be editable (not unconditionally
+    // disabled) -- otherwise a non-Premium user can never actually produce an
+    // empty value to clear, regardless of whether the Save button is enabled.
+    expect(input.attributes('disabled')).toBeUndefined()
+
+    await input.setValue('')
     const saveBtn = wrapper.find('button[data-testid="custom-model-save"]')
     expect(saveBtn.attributes('disabled')).toBeUndefined()
+
+    await saveBtn.trigger('click')
+    await flushPromises()
+
+    const putCall = mockFetch.mock.calls.find(
+      call => call[0] === '/api/settings/system/custom-model' && (call[1] as { method?: string })?.method === 'PUT',
+    )
+    expect(putCall).toBeDefined()
+    expect((putCall as [string, { body: string }])[1].body).toBe(JSON.stringify({ custom_model_alias: '' }))
+  })
+
+  it('keeps the custom model input disabled for a non-Premium user with no existing alias', async () => {
+    const config = useAppConfigStore()
+    config.isCloud = true
+    config.tier = 'paid'
+    const wrapper = mount(SystemSettingsView)
+    await flushPromises()
+    const input = wrapper.find('input[data-testid="custom-model-alias-input"]')
+    expect(input.attributes('disabled')).toBeDefined()
   })
 })

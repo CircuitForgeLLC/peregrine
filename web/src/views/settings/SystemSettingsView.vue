@@ -306,13 +306,13 @@
           placeholder="e.g. meghan-letter-writer-v2"
           class="field-input-wide"
           data-testid="custom-model-alias-input"
-          :disabled="!isPremium"
-          :aria-disabled="!isPremium ? 'true' : undefined"
+          :disabled="!customModelEditable"
+          :aria-disabled="!customModelEditable ? 'true' : undefined"
         />
         <button
           @click="saveCustomModel"
-          :disabled="customModelSaving || (!isPremium && customModelAlias === '')"
-          :aria-disabled="(customModelSaving || (!isPremium && customModelAlias === '')) ? 'true' : undefined"
+          :disabled="customModelSaving || !customModelEditable"
+          :aria-disabled="(customModelSaving || !customModelEditable) ? 'true' : undefined"
           class="btn-save-inline"
           data-testid="custom-model-save"
         >
@@ -522,10 +522,20 @@ const customModelSaving  = ref(false)
 const customModelError   = ref<string | null>(null)
 const customModelSaved   = ref(false)
 const isPremium          = computed(() => config.tier === 'premium')
+// Set once from the loaded value, not the live input -- lets a non-Premium
+// user clear an existing alias down to '' without the Save button
+// re-disabling itself the instant the field goes empty (it would, if this
+// tracked customModelAlias directly instead of "was there something to
+// clear when the page loaded").
+const hadExistingCustomModelAlias = ref(false)
+// Editable when the user can either set (Premium) or clear (non-Premium,
+// something to clear) the alias -- same reasoning as the Save button below.
+const customModelEditable = computed(() => isPremium.value || hadExistingCustomModelAlias.value)
 
 async function loadCustomModel() {
   const { data } = await useApiFetch<{ custom_model_alias: string }>('/api/settings/system/custom-model')
   if (data) customModelAlias.value = data.custom_model_alias ?? ''
+  hadExistingCustomModelAlias.value = !!customModelAlias.value
 }
 
 async function saveCustomModel() {
