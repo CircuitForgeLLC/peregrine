@@ -39,7 +39,8 @@ class TestCustomModelAlias:
     def test_put_saves_alias(self, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)), \
+             patch("dev_api._get_effective_tier", return_value="premium"):
             r = client.put("/api/settings/system/custom-model", json={"custom_model_alias": "my-fine-tune"})
         assert r.status_code == 200
         assert r.json() == {"ok": True}
@@ -49,7 +50,8 @@ class TestCustomModelAlias:
     def test_put_can_clear_alias(self, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"custom_model_alias": "old-alias"})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)), \
+             patch("dev_api._get_effective_tier", return_value="premium"):
             r = client.put("/api/settings/system/custom-model", json={"custom_model_alias": ""})
         assert r.status_code == 200
         saved = yaml.safe_load(yaml_path.read_text())
@@ -58,10 +60,32 @@ class TestCustomModelAlias:
     def test_put_preserves_unrelated_existing_keys(self, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"inference_profile": "remote", "services": {"ollama_host": "10.1.10.5"}})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)), \
+             patch("dev_api._get_effective_tier", return_value="premium"):
             r = client.put("/api/settings/system/custom-model", json={"custom_model_alias": "my-fine-tune"})
         assert r.status_code == 200
         saved = yaml.safe_load(yaml_path.read_text())
         assert saved["inference_profile"] == "remote"
         assert saved["services"]["ollama_host"] == "10.1.10.5"
+        assert saved["custom_model_alias"] == "my-fine-tune"
+
+    def test_put_rejects_when_not_premium(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)), \
+             patch("dev_api._get_effective_tier", return_value="paid"):
+            r = client.put("/api/settings/system/custom-model", json={"custom_model_alias": "my-fine-tune"})
+        assert r.status_code == 402
+        assert r.json()["detail"] == {"error": "tier_required", "min_tier": "premium"}
+        saved = yaml.safe_load(yaml_path.read_text())
+        assert "custom_model_alias" not in saved
+
+    def test_put_allows_when_premium(self, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)), \
+             patch("dev_api._get_effective_tier", return_value="premium"):
+            r = client.put("/api/settings/system/custom-model", json={"custom_model_alias": "my-fine-tune"})
+        assert r.status_code == 200
+        saved = yaml.safe_load(yaml_path.read_text())
         assert saved["custom_model_alias"] == "my-fine-tune"
