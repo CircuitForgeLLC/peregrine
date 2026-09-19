@@ -4415,12 +4415,16 @@ def get_custom_model():
 
 @app.put("/api/settings/system/custom-model")
 def save_custom_model(payload: CustomModelPayload):
-    """Persist the custom fine-tuned model alias to user.yaml. Premium tier only."""
+    """Persist the custom fine-tuned model alias to user.yaml. Setting a
+    non-empty alias requires Premium tier; clearing it (empty string) is
+    always allowed so a downgraded user isn't stuck unable to follow the
+    app's own "clear the alias" error guidance."""
     from scripts.wizard.tiers import can_use
-    if not can_use(_get_effective_tier(), "model_fine_tuning"):
+    alias = payload.custom_model_alias.strip()
+    if alias and not can_use(_get_effective_tier(), "model_fine_tuning"):
         raise HTTPException(402, detail={"error": "tier_required", "min_tier": "premium"})
     cfg = _load_wizard_yaml()
-    cfg["custom_model_alias"] = payload.custom_model_alias.strip()
+    cfg["custom_model_alias"] = alias
     _save_wizard_yaml(cfg)
     return {"ok": True}
 
