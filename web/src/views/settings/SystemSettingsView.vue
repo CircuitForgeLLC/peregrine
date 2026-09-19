@@ -302,11 +302,21 @@
           type="text"
           placeholder="e.g. meghan-letter-writer-v2"
           class="field-input-wide"
+          data-testid="custom-model-alias-input"
+          :disabled="!isPremium"
+          :aria-disabled="!isPremium ? 'true' : undefined"
         />
-        <button @click="saveCustomModel" :disabled="customModelSaving" class="btn-save-inline">
+        <button
+          @click="saveCustomModel"
+          :disabled="customModelSaving || !isPremium"
+          class="btn-save-inline"
+        >
           {{ customModelSaving ? 'Saving…' : 'Save' }}
         </button>
       </div>
+      <p v-if="!isPremium" class="section-note">
+        Available on the Premium tier. Upgrade to use your own fine-tuned model.
+      </p>
       <p v-if="customModelError" class="error">{{ customModelError }}</p>
       <p v-if="customModelSaved" class="success">Saved.</p>
     </section>
@@ -509,6 +519,7 @@ const customModelAlias   = ref('')
 const customModelSaving  = ref(false)
 const customModelError   = ref<string | null>(null)
 const customModelSaved   = ref(false)
+const isPremium          = computed(() => config.tier === 'premium')
 
 async function loadCustomModel() {
   const { data } = await useApiFetch<{ custom_model_alias: string }>('/api/settings/system/custom-model')

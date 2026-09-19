@@ -112,3 +112,33 @@ describe('SystemSettingsView, Ollama model download', () => {
     expect(wrapper.find('.model-status--ok').exists()).toBe(true)
   })
 })
+
+describe('SystemSettingsView, Custom Model tier gate', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    mockFetch.mockResolvedValue({ data: {}, error: null } as never)
+  })
+
+  it('disables the custom model input and shows a Premium label when tier is not premium', async () => {
+    const config = useAppConfigStore()
+    config.isCloud = true
+    config.tier = 'paid'
+    const wrapper = mount(SystemSettingsView)
+    await flushPromises()
+    const input = wrapper.find('input[data-testid="custom-model-alias-input"]')
+    expect(input.attributes('disabled')).toBeDefined()
+    expect(input.attributes('aria-disabled')).toBe('true')
+    expect(wrapper.text()).toContain('Premium')
+  })
+
+  it('enables the custom model input when tier is premium', async () => {
+    const config = useAppConfigStore()
+    config.isCloud = true
+    config.tier = 'premium'
+    const wrapper = mount(SystemSettingsView)
+    await flushPromises()
+    const input = wrapper.find('input[data-testid="custom-model-alias-input"]')
+    expect(input.attributes('disabled')).toBeUndefined()
+  })
+})
