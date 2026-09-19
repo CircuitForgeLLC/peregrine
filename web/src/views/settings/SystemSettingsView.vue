@@ -295,6 +295,9 @@
         enter its alias here to use it for cover letter generation. Leave blank to use the
         standard managed model.
       </p>
+      <p v-if="!isPremium" class="section-note">
+        Upgrade to use your own fine-tuned model.
+      </p>
       <div class="field-row">
         <label>Model alias</label>
         <input
@@ -308,15 +311,14 @@
         />
         <button
           @click="saveCustomModel"
-          :disabled="customModelSaving || !isPremium"
+          :disabled="customModelSaving || (!isPremium && customModelAlias === '')"
+          :aria-disabled="(customModelSaving || (!isPremium && customModelAlias === '')) ? 'true' : undefined"
           class="btn-save-inline"
+          data-testid="custom-model-save"
         >
           {{ customModelSaving ? 'Saving…' : 'Save' }}
         </button>
       </div>
-      <p v-if="!isPremium" class="section-note">
-        Available on the Premium tier. Upgrade to use your own fine-tuned model.
-      </p>
       <p v-if="customModelError" class="error">{{ customModelError }}</p>
       <p v-if="customModelSaved" class="success">Saved.</p>
     </section>
@@ -536,7 +538,14 @@ async function saveCustomModel() {
     body: JSON.stringify({ custom_model_alias: customModelAlias.value }),
   })
   customModelSaving.value = false
-  if (error) { customModelError.value = 'Failed to save.'; return }
+  if (error) {
+    if (error.kind === 'http' && error.status === 402) {
+      customModelError.value = 'Custom models require the Premium tier.'
+    } else {
+      customModelError.value = 'Failed to save.'
+    }
+    return
+  }
   customModelSaved.value = true
   setTimeout(() => { customModelSaved.value = false }, 3000)
 }

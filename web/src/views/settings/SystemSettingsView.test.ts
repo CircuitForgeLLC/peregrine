@@ -120,7 +120,7 @@ describe('SystemSettingsView, Custom Model tier gate', () => {
     mockFetch.mockResolvedValue({ data: {}, error: null } as never)
   })
 
-  it('disables the custom model input and shows a Premium label when tier is not premium', async () => {
+  it('disables the custom model input and Save button, and shows the upgrade note, when tier is not premium', async () => {
     const config = useAppConfigStore()
     config.isCloud = true
     config.tier = 'paid'
@@ -129,7 +129,9 @@ describe('SystemSettingsView, Custom Model tier gate', () => {
     const input = wrapper.find('input[data-testid="custom-model-alias-input"]')
     expect(input.attributes('disabled')).toBeDefined()
     expect(input.attributes('aria-disabled')).toBe('true')
-    expect(wrapper.text()).toContain('Premium')
+    expect(wrapper.text()).toContain('Upgrade to use your own fine-tuned model.')
+    const saveBtn = wrapper.find('button[data-testid="custom-model-save"]')
+    expect(saveBtn.attributes('disabled')).toBeDefined()
   })
 
   it('enables the custom model input when tier is premium', async () => {
@@ -140,5 +142,22 @@ describe('SystemSettingsView, Custom Model tier gate', () => {
     await flushPromises()
     const input = wrapper.find('input[data-testid="custom-model-alias-input"]')
     expect(input.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('Upgrade to use your own fine-tuned model.')
+  })
+
+  it('keeps the Save button enabled for a non-Premium user clearing an existing alias', async () => {
+    const config = useAppConfigStore()
+    config.isCloud = true
+    config.tier = 'paid'
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/settings/system/custom-model') {
+        return Promise.resolve({ data: { custom_model_alias: 'old-alias' }, error: null }) as never
+      }
+      return Promise.resolve({ data: {}, error: null }) as never
+    })
+    const wrapper = mount(SystemSettingsView)
+    await flushPromises()
+    const saveBtn = wrapper.find('button[data-testid="custom-model-save"]')
+    expect(saveBtn.attributes('disabled')).toBeUndefined()
   })
 })
