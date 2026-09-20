@@ -3605,6 +3605,35 @@ class SearchPrefsPayload(BaseModel):
     blocklist_industries: List[str] = []
     blocklist_locations: List[str] = []
 
+def _default_boards_for_locations(locations: list[str]) -> list[str]:
+    """Sensible default job boards, expanded with regional boards when a
+    user's entered locations suggest they're relevant. Pure keyword
+    matching against location strings already collected by the wizard's
+    search step -- no external geocoding call, deterministic.
+    """
+    boards = ["linkedin", "indeed", "zip_recruiter", "glassdoor"]
+    joined = " ".join(locations).lower()
+
+    india_keywords = [
+        "india", "bangalore", "bengaluru", "mumbai", "delhi", "hyderabad",
+        "pune", "chennai", "gurgaon", "gurugram", "noida",
+    ]
+    if any(kw in joined for kw in india_keywords):
+        boards.append("naukri")
+
+    gulf_keywords = [
+        "uae", "dubai", "abu dhabi", "saudi arabia", "riyadh", "jeddah",
+        "qatar", "doha", "kuwait", "bahrain", "oman",
+    ]
+    if any(kw in joined for kw in gulf_keywords):
+        boards.append("bayt")
+
+    bangladesh_keywords = ["bangladesh", "dhaka", "chittagong", "chattogram"]
+    if any(kw in joined for kw in bangladesh_keywords):
+        boards.append("bdjobs")
+
+    return boards
+
 def _get_valid_jobspy_boards() -> set[str]:
     """Return the set of board names supported by the installed JobSpy version."""
     try:
@@ -5318,7 +5347,7 @@ def wizard_save_step(payload: WizardStepPayload):
         profiles_list = existing_search.get("profiles", [])
         default_profile = next((p for p in profiles_list if p.get("name") == "default"), None)
         if default_profile is None:
-            default_profile = {"name": "default"}
+            default_profile = {"name": "default", "boards": _default_boards_for_locations(locations)}
             profiles_list.append(default_profile)
         default_profile["job_titles"] = titles
         default_profile["locations"] = locations

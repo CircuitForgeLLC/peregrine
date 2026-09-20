@@ -389,6 +389,87 @@ class TestWizardStep:
         assert r.status_code == 200
         assert _read_user_yaml(yaml_path)["wizard_step"] == 7
 
+    def test_default_boards_for_locations_common_set_only(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["San Francisco, CA", "Remote"])
+        assert boards == ["linkedin", "indeed", "zip_recruiter", "glassdoor"]
+
+    def test_default_boards_for_locations_adds_naukri_for_india(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Bangalore, India"])
+        assert "naukri" in boards
+        assert "linkedin" in boards
+
+    def test_default_boards_for_locations_adds_bayt_for_gulf(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Dubai, UAE"])
+        assert "bayt" in boards
+
+    def test_default_boards_for_locations_adds_bdjobs_for_bangladesh(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Dhaka, Bangladesh"])
+        assert "bdjobs" in boards
+
+    def test_default_boards_for_locations_multiple_regions_at_once(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Mumbai, India", "Dubai, UAE"])
+        assert "naukri" in boards
+        assert "bayt" in boards
+        assert "bdjobs" not in boards
+
+    def test_default_boards_for_locations_case_insensitive(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["BANGALORE"])
+        assert "naukri" in boards
+
+    def test_default_boards_for_locations_empty_list(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations([])
+        assert boards == ["linkedin", "indeed", "zip_recruiter", "glassdoor"]
+
+    def test_step7_seeds_boards_on_brand_new_profile(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        search_path = tmp_path / "config" / "search_profiles.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                r = client.post("/api/wizard/step",
+                                json={"step": 7, "data": {
+                                    "titles": ["Software Engineer"],
+                                    "locations": ["Bangalore, India"],
+                                }})
+        assert r.status_code == 200
+        prefs = yaml.safe_load(search_path.read_text())
+        default = next(p for p in prefs["profiles"] if p["name"] == "default")
+        assert default["boards"] == ["linkedin", "indeed", "zip_recruiter", "glassdoor", "naukri"]
+
+    def test_step7_does_not_touch_boards_on_existing_profile(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        search_path = tmp_path / "config" / "search_profiles.yaml"
+        _write_user_yaml(yaml_path, {})
+        search_path.parent.mkdir(parents=True, exist_ok=True)
+        search_path.write_text(yaml.dump({
+            "profiles": [{
+                "name": "default",
+                "job_titles": ["Old Title"],
+                "locations": ["Old Location"],
+                "boards": ["indeed"],
+            }]
+        }))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                r = client.post("/api/wizard/step",
+                                json={"step": 7, "data": {
+                                    "titles": ["New Title"],
+                                    "locations": ["New Location"],
+                                }})
+        assert r.status_code == 200
+        prefs = yaml.safe_load(search_path.read_text())
+        default = next(p for p in prefs["profiles"] if p["name"] == "default")
+        assert default["job_titles"] == ["New Title"]
+        # boards must be completely untouched -- still exactly what it was before
+        assert default["boards"] == ["indeed"]
+
     def test_invalid_step_number(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
