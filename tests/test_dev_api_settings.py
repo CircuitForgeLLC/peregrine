@@ -222,6 +222,50 @@ def test_put_get_search_roundtrip(tmp_path, monkeypatch):
     assert get_resp.json()["remote_preference"] == ["remote"]
 
 
+def test_get_search_prefs_falls_back_to_full_catalog_when_job_boards_empty(tmp_path, monkeypatch):
+    """A profile with no job_boards at all gets the full valid-board catalog,
+    all unchecked, so the Settings checklist is never a dead end."""
+    fake_path = tmp_path / "config" / "search_profiles.yaml"
+    fake_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(fake_path, "w") as f:
+        yaml.dump({"default": {"job_titles": ["Engineer"], "locations": ["Remote"]}}, f)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
+
+    from dev_api import app
+    c = TestClient(app)
+    resp = c.get("/api/settings/search")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["job_boards"]) > 0
+    assert all(b["enabled"] is False for b in data["job_boards"])
+    assert all(b["supported"] is True for b in data["job_boards"])
+    names = [b["name"] for b in data["job_boards"]]
+    assert "linkedin" in names
+    assert names == sorted(names)
+
+
+def test_get_search_prefs_does_not_override_existing_job_boards(tmp_path, monkeypatch):
+    """A profile that already has real job_boards data must be returned
+    unchanged -- the fallback only applies when job_boards is truly empty."""
+    fake_path = tmp_path / "config" / "search_profiles.yaml"
+    fake_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(fake_path, "w") as f:
+        yaml.dump({"default": {
+            "job_titles": ["Engineer"],
+            "job_boards": [{"name": "indeed", "enabled": True}],
+        }}, f)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
+
+    from dev_api import app
+    c = TestClient(app)
+    resp = c.get("/api/settings/search")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["job_boards"]) == 1
+    assert data["job_boards"][0]["name"] == "indeed"
+    assert data["job_boards"][0]["enabled"] is True
+
+
 def test_get_search_missing_file_returns_empty(tmp_path, monkeypatch):
     """GET /api/settings/search when file missing returns empty dict."""
     fake_path = tmp_path / "config" / "search_profiles.yaml"

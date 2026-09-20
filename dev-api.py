@@ -3678,6 +3678,16 @@ def get_search_prefs():
                 for b in boards
             ]
 
+        # Still nothing? Fall back to the full valid-board catalog, all
+        # unchecked, so the Settings checklist is never a dead end with
+        # nothing to click (covers pre-fix accounts and direct API usage
+        # that bypassed the wizard's board-seeding entirely).
+        if not profile.get("job_boards"):
+            profile["job_boards"] = [
+                {"name": b, "enabled": False, "supported": True}
+                for b in sorted(valid)
+            ]
+
         # Normalize title key — wizard saved "titles", settings canonical is "job_titles"
         if "titles" in profile and "job_titles" not in profile:
             profile["job_titles"] = profile.pop("titles")
