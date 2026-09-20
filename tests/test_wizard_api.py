@@ -721,3 +721,72 @@ class TestWizardSetupPath:
         with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
             r = client.post("/api/wizard/setup-path", json={"path": "banana"})
         assert r.status_code == 422
+
+
+# ── Cloud free-tier onboarding LLM trial (server-side enforcement) ───────────
+
+class TestAiWizardCloudTrial:
+    def test_free_tier_cloud_incomplete_wizard_can_use_ai_wizard(self, tmp_path):
+        from dev_api import _can_use_ai_wizard
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": False})
+        # has_configured_llm patched False so this dev worktree's real
+        # config/llm.yaml (which has a backend enabled) can't short-circuit
+        # can_use() via BYOK_UNLOCKABLE and mask the cloud-trial branch.
+        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("dev_api._CLOUD_MODE", True):
+                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+                    assert _can_use_ai_wizard("free") is True
+
+    def test_free_tier_cloud_completed_wizard_cannot_use_ai_wizard(self, tmp_path):
+        from dev_api import _can_use_ai_wizard
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": True})
+        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("dev_api._CLOUD_MODE", True):
+                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+                    assert _can_use_ai_wizard("free") is False
+
+    def test_free_tier_self_hosted_incomplete_wizard_cannot_use_ai_wizard(self, tmp_path):
+        # The trial is cloud-only -- self-hosted installs get no exception,
+        # even mid-onboarding.
+        from dev_api import _can_use_ai_wizard
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": False})
+        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("dev_api._CLOUD_MODE", False):
+                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+                    assert _can_use_ai_wizard("free") is False
+
+    def test_paid_tier_can_use_ai_wizard_regardless_of_cloud_or_wizard_state(self, tmp_path):
+        from dev_api import _can_use_ai_wizard
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": True})
+        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("dev_api._CLOUD_MODE", True):
+                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+                    assert _can_use_ai_wizard("paid") is True
+
+    def test_ai_interview_endpoint_allows_free_cloud_incomplete_wizard(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": False})
+        with patch("dev_api._CLOUD_MODE", True), \
+             patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)), \
+             patch("dev_api._get_effective_tier", return_value="free"), \
+             patch("scripts.wizard.tiers.has_configured_llm", return_value=False), \
+             patch("scripts.llm_router.LLMRouter") as mock_router:
+            mock_router.return_value.complete_task.return_value = (
+                '{"reply": "hi", "extracted_fields": {}, "complete": false, "asking_about": "name"}'
+            )
+            r = client.post("/api/wizard/ai/interview", json={"history": [], "profile_so_far": {}})
+        assert r.status_code == 200
+
+    def test_ai_interview_endpoint_denies_free_cloud_completed_wizard(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": True})
+        with patch("dev_api._CLOUD_MODE", True), \
+             patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)), \
+             patch("dev_api._get_effective_tier", return_value="free"), \
+             patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            r = client.post("/api/wizard/ai/interview", json={"history": [], "profile_so_far": {}})
+        assert r.status_code == 402

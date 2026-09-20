@@ -5703,14 +5703,28 @@ _WIZARD_ALLOWED_FIELDS: frozenset[str] = frozenset({
 _WIZARD_REQUIRED_FOR_AI_COMPLETE: frozenset[str] = _WIZARD_ALLOWED_FIELDS - {"linkedin"}
 
 
+def _can_use_ai_wizard(tier: str) -> bool:
+    """Gate for the onboarding AI setup chat, scoped narrowly to this one
+    feature. Adds a cloud-only exception on top of the normal tier/BYOK
+    gate: CircuitForge-hosted free-tier users get a one-time trial of the
+    setup LLM during initial onboarding, reverting to the normal gate the
+    moment wizard_complete flips true. Self-hosted installs get no
+    exception -- the trial only makes sense where CF is providing compute.
+    """
+    from scripts.wizard.tiers import can_use, has_configured_llm
+    if can_use(tier, "llm_ai_wizard", has_byok=has_configured_llm()):
+        return True
+    if _CLOUD_MODE and not bool(_load_wizard_yaml().get("wizard_complete", False)):
+        return True
+    return False
+
+
 @app.post("/api/wizard/ai/interview")
 @limiter.limit(_RL_WIZARD)
 def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
     """Conduct one turn of the AI-guided profile interview. Tier-gated (BYOK-unlockable)."""
-    from scripts.wizard.tiers import can_use, has_configured_llm
-
     tier = _get_effective_tier()
-    if not can_use(tier, "llm_ai_wizard", has_byok=has_configured_llm()):
+    if not _can_use_ai_wizard(tier):
         raise HTTPException(402, detail={"error": "tier_required"})
 
     # Build conversation prompt from history
