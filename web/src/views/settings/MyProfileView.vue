@@ -6,7 +6,10 @@
     </header>
 
     <!-- ── AI wizard entry point ──────────────────────────── -->
-    <div class="wizard-cta" :class="hasWizardAccess ? 'wizard-cta--unlocked' : 'wizard-cta--locked'">
+    <!-- Only shown before setup is finished -- afterward the per-field
+         Suggest buttons throughout this page are the ongoing AI assist
+         entry point, not this big banner. -->
+    <div v-if="!config.wizardComplete" class="wizard-cta" :class="hasWizardAccess ? 'wizard-cta--unlocked' : 'wizard-cta--locked'">
       <div class="wizard-cta__body">
         <span class="wizard-cta__icon" aria-hidden="true">✦</span>
         <div>
