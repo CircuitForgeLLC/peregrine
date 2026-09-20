@@ -117,4 +117,66 @@ describe('OnboardingHub', () => {
     expect(config.wizardComplete).toBe(true)
     expect(router.currentRoute.value.path).toBe('/')
   })
+
+  it('submits an initial discovery run when finishing setup', async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/wizard/status') {
+        return Promise.resolve({
+          data: { sections: { profile: true, resume: true, search: true, compute_backend: false } },
+          error: null,
+        }) as never
+      }
+      if (url === '/api/wizard/complete') {
+        return Promise.resolve({ data: { ok: true }, error: null }) as never
+      }
+      return Promise.resolve({ data: {}, error: null }) as never
+    })
+    const config = useAppConfigStore()
+    config.isCloud = true
+    config.loaded = true
+    config.wizardComplete = false
+    const router = makeRouter()
+    const wrapper = mount(OnboardingHub, { global: { plugins: [router] } })
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.hub__finish button').trigger('click')
+    await flushPromises()
+
+    const discoveryCall = mockFetch.mock.calls.find(call => call[0] === '/api/tasks/discovery')
+    expect(discoveryCall).toBeDefined()
+    expect((discoveryCall as [string, { method?: string }])[1]?.method).toBe('POST')
+  })
+
+  it('still finishes setup and navigates home even if the discovery call fails', async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/wizard/status') {
+        return Promise.resolve({
+          data: { sections: { profile: true, resume: true, search: true, compute_backend: false } },
+          error: null,
+        }) as never
+      }
+      if (url === '/api/wizard/complete') {
+        return Promise.resolve({ data: { ok: true }, error: null }) as never
+      }
+      if (url === '/api/tasks/discovery') {
+        return Promise.resolve({ data: null, error: { kind: 'network', message: 'boom' } }) as never
+      }
+      return Promise.resolve({ data: {}, error: null }) as never
+    })
+    const config = useAppConfigStore()
+    config.isCloud = true
+    config.loaded = true
+    config.wizardComplete = false
+    const router = makeRouter()
+    const wrapper = mount(OnboardingHub, { global: { plugins: [router] } })
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.hub__finish button').trigger('click')
+    await flushPromises()
+
+    expect(config.wizardComplete).toBe(true)
+    expect(router.currentRoute.value.path).toBe('/')
+  })
 })
