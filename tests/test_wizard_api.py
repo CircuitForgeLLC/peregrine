@@ -203,6 +203,34 @@ class TestWizardStatus:
             r = client.get("/api/wizard/status")
         assert r.json()["sections"]["compute_backend"] is True
 
+    def test_connections_acknowledged_false_by_default(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["connections_acknowledged"] is False
+
+    def test_connections_acknowledged_true_when_saved(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"connections_acknowledged": True})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["connections_acknowledged"] is True
+
+    def test_setup_path_none_by_default(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["setup_path"] is None
+
+    def test_setup_path_returns_saved_value(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"setup_path": "manual"})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["setup_path"] == "manual"
+
 
 # ── GET /api/wizard/hardware ──────────────────────────────────────────────────
 
@@ -639,3 +667,57 @@ class TestWizardComplete:
             r = client.post("/api/wizard/complete")
         assert r.status_code == 200
         assert r.json()["ok"] is True
+
+
+# ── POST /api/wizard/connections/acknowledge ─────────────────────────────────
+
+class TestWizardConnectionsAcknowledge:
+    def test_sets_connections_acknowledged_true(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/connections/acknowledge")
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+        saved = _read_user_yaml(yaml_path)
+        assert saved["connections_acknowledged"] is True
+
+    def test_idempotent_when_already_true(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"connections_acknowledged": True, "name": "Alex"})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/connections/acknowledge")
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["connections_acknowledged"] is True
+        assert saved["name"] == "Alex"  # unrelated fields untouched
+
+
+# ── POST /api/wizard/setup-path ───────────────────────────────────────────────
+
+class TestWizardSetupPath:
+    def test_sets_setup_path_ai(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/setup-path", json={"path": "ai"})
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+        saved = _read_user_yaml(yaml_path)
+        assert saved["setup_path"] == "ai"
+
+    def test_sets_setup_path_manual(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/setup-path", json={"path": "manual"})
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["setup_path"] == "manual"
+
+    def test_rejects_invalid_path_value(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/setup-path", json={"path": "banana"})
+        assert r.status_code == 422

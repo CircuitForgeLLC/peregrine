@@ -18,7 +18,7 @@ import sys
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Literal
 from urllib.parse import urlparse
 
 import requests
@@ -5258,7 +5258,35 @@ def wizard_status():
             "cf_orch_url": cfg.get("cf_orch_url", ""),
         },
         "sections": _wizard_section_status(cfg),
+        "connections_acknowledged": bool(cfg.get("connections_acknowledged", False)),
+        "setup_path": cfg.get("setup_path"),
     }
+
+
+@app.post("/api/wizard/connections/acknowledge")
+def wizard_connections_acknowledge():
+    """Mark the onboarding Connections step as acknowledged (seen), unlocking
+    the next step in the gated flow. No required fields on this step, so
+    this is a pure acknowledgment, not a data save."""
+    try:
+        _save_wizard_yaml({"connections_acknowledged": True})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
+
+
+class WizardSetupPathPayload(BaseModel):
+    path: Literal["ai", "manual"]
+
+
+@app.post("/api/wizard/setup-path")
+def wizard_setup_path(payload: WizardSetupPathPayload):
+    """Persist the user's onboarding setup-path choice (AI-assisted vs manual)."""
+    try:
+        _save_wizard_yaml({"setup_path": payload.path})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
 
 
 class WizardStepPayload(BaseModel):
