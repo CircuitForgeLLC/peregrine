@@ -79,9 +79,14 @@
       <!-- Personal Information -->
       <section class="form-section">
         <h3>Personal Information</h3>
+        <p class="section-note">
+          Name, email, phone, and LinkedIn are managed on
+          <RouterLink to="/settings/my-profile">My Profile</RouterLink> and shown here read-only,
+          so this page can't drift out of sync with what your cover letters actually use.
+        </p>
         <div class="field-row">
           <label>First Name <span class="sync-label">← from My Profile</span></label>
-          <input v-model="store.name" />
+          <input :value="profileStore.name" readonly aria-readonly="true" data-testid="resume-name-input" />
         </div>
         <div class="field-row">
           <label>Last Name</label>
@@ -89,15 +94,15 @@
         </div>
         <div class="field-row">
           <label>Email <span class="sync-label">← from My Profile</span></label>
-          <input v-model="store.email" type="email" />
+          <input :value="profileStore.email" type="email" readonly aria-readonly="true" data-testid="resume-email-input" />
         </div>
         <div class="field-row">
           <label>Phone <span class="sync-label">← from My Profile</span></label>
-          <input v-model="store.phone" type="tel" />
+          <input :value="profileStore.phone" type="tel" readonly aria-readonly="true" data-testid="resume-phone-input" />
         </div>
         <div class="field-row">
           <label>LinkedIn URL <span class="sync-label">← from My Profile</span></label>
-          <input v-model="store.linkedin_url" type="url" />
+          <input :value="profileStore.linkedin_url" type="url" readonly aria-readonly="true" data-testid="resume-linkedin-input" />
         </div>
         <div class="field-row">
           <label>Address</label>
@@ -324,7 +329,7 @@
 
       <!-- Save -->
       <div class="form-actions">
-        <button @click="store.save()" :disabled="store.saving" class="btn-primary">
+        <button @click="handleSave" :disabled="store.saving" class="btn-primary">
           {{ store.saving ? 'Saving…' : 'Save Resume' }}
         </button>
         <p v-if="store.saveError" class="error">{{ store.saveError }}</p>
@@ -337,6 +342,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { RouterLink } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useResumeStore } from '../../stores/settings/resume'
 import { useProfileStore } from '../../stores/settings/profile'
@@ -358,17 +364,25 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const replaceFileInput = ref<HTMLInputElement | null>(null)
 
 onMounted(async () => {
-  await store.load()
-  // Only prime identity from profile on a fresh/empty resume
-  if (!store.hasResume) {
-    store.syncFromProfile({
-      name: profileStore.name,
-      email: profileStore.email,
-      phone: profileStore.phone,
-      linkedin_url: profileStore.linkedin_url,
-    })
-  }
+  await Promise.all([store.load(), profileStore.load()])
 })
+
+// Contact fields (name/email/phone/linkedin_url) are read-only here, sourced
+// live from My Profile -- these two views used to keep independent copies
+// that only matched at the moment a resume was first created, so editing
+// your phone number in My Profile silently left a stale copy behind here
+// (and in whatever plain_text_resume.yaml drives, e.g. cover letter
+// generation). Re-syncing immediately before every save means the value
+// actually persisted always matches what's live in My Profile right now.
+function handleSave() {
+  store.syncFromProfile({
+    name: profileStore.name,
+    email: profileStore.email,
+    phone: profileStore.phone,
+    linkedin_url: profileStore.linkedin_url,
+  })
+  store.save()
+}
 
 function handleFileSelect(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
