@@ -38,11 +38,6 @@
 
     <PipelineStepper />
 
-    <!-- Profile summary -->
-    <ProfileSummaryCard />
-
-    <MarketSnapshotCard />
-
     <!-- Primary workflow -->
     <section class="home__section" aria-labelledby="workflow-heading">
       <h2 id="workflow-heading" class="home__section-title">Primary Workflow</h2>
@@ -92,6 +87,11 @@
         <span v-if="taskRunning === 'sync'" class="spinner" aria-hidden="true" />
       </button>
     </section>
+
+    <!-- Profile summary -->
+    <ProfileSummaryCard />
+
+    <MarketSnapshotCard />
 
     <!-- Auto-enrichment status -->
     <section v-if="store.status?.enrichment_enabled" class="home__section">
@@ -505,6 +505,12 @@ let taskPollInterval: ReturnType<typeof setInterval> | null = null
 async function fetchActiveTasks() {
   const { data } = await useApiFetch<TaskRow[]>('/api/tasks')
   activeTasks.value = data ?? []
+  // Metric counts otherwise only refresh on mount or after an explicit user
+  // action (archive/purge) -- while a discovery/scoring task is actively
+  // running, new hits land silently until the user navigates away and back.
+  // Piggyback on this existing 5s poll (already running while any task is
+  // active) instead of adding a second interval.
+  if (activeTasks.value.length > 0) store.refresh()
 }
 
 async function fetchBanners() {

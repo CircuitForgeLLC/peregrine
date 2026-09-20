@@ -47,6 +47,7 @@ import { useRouter } from 'vue-router'
 import { useOnboardingHubStore } from '../../stores/onboardingHub'
 import { useAppConfigStore } from '../../stores/appConfig'
 import { useWizardStore } from '../../stores/wizard'
+import { useApiFetch } from '../../composables/useApi'
 
 const hub = useOnboardingHubStore()
 const config = useAppConfigStore()
@@ -84,6 +85,14 @@ async function finishSetup() {
   finishError.value = null
   const ok = await wizard.complete()
   if (!ok) { finishError.value = 'Failed to finish setup. Please try again.'; return }
+  // Kick off the first discovery run as part of finishing setup -- the user
+  // just told us their search preferences, so this is the expected next
+  // step, not a surprise background action. Fire-and-forget: the endpoint
+  // only submits the task (actual scraping runs async), and the Run
+  // Discovery button on Home will show it as already in progress once the
+  // page's task polling picks it up a few seconds after landing. Best-effort
+  // -- a failure here shouldn't block the user from finishing setup.
+  useApiFetch('/api/tasks/discovery', { method: 'POST' })
   // Order matters: config.wizardComplete must flip before the redirect,
   // or wizardGuard's next navigation check can still see the stale value
   // and bounce back to /setup (see peregrine_wizard_complete_guard).
