@@ -410,6 +410,16 @@ class TestWizardStep:
         boards = _default_boards_for_locations(["Dhaka, Bangladesh"])
         assert "bdjobs" in boards
 
+    def test_default_boards_for_locations_no_false_positive_indianapolis(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Indianapolis, Indiana"])
+        assert "naukri" not in boards
+
+    def test_default_boards_for_locations_no_false_positive_romania(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Bucharest, Romania"])
+        assert "bayt" not in boards
+
     def test_default_boards_for_locations_multiple_regions_at_once(self):
         from dev_api import _default_boards_for_locations
         boards = _default_boards_for_locations(["Mumbai, India", "Dubai, UAE"])
