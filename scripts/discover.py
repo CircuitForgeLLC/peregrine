@@ -46,6 +46,18 @@ def _normalize_profiles(raw: dict) -> dict:
     This converts on load so both formats work without a migration.
     """
     if "profiles" in raw:
+        # Per-entry job_boards -> boards conversion still has to run here,
+        # even though the top-level structure needs no migration -- writers
+        # like the Settings PUT handler (save_search_prefs) merge job_boards
+        # (the API schema) directly into an entry inside an already-
+        # `profiles`-format file, and this is the only place left that would
+        # otherwise translate it into the `boards` list run_discovery reads.
+        for profile in raw["profiles"]:
+            if not isinstance(profile, dict):
+                continue
+            job_boards = profile.get("job_boards")
+            if job_boards and not profile.get("boards"):
+                profile["boards"] = [b["name"] for b in job_boards if b.get("enabled", True)]
         return raw
     # Wizard-written format: top-level keys are profile names (usually "default")
     profiles = []

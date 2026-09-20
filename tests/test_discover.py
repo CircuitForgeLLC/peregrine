@@ -35,6 +35,45 @@ def make_jobs_df(jobs=None):
     return pd.DataFrame(jobs or [SAMPLE_JOB])
 
 
+def test_normalize_profiles_converts_job_boards_to_boards_even_when_already_profiles_format():
+    """save_search_prefs (dev-api.py) writes job_boards (Settings/API schema)
+    into an entry inside an already-`profiles`-format file. The short-circuit
+    `if "profiles" in raw: return raw` must not skip the job_boards -> boards
+    conversion for those entries, or run_discovery's `profile.get("boards")`
+    silently sees nothing and searches zero boards."""
+    from scripts.discover import _normalize_profiles
+    raw = {
+        "profiles": [{
+            "name": "default",
+            "job_titles": ["Engineer"],
+            "job_boards": [
+                {"name": "linkedin", "enabled": True},
+                {"name": "indeed", "enabled": False},
+            ],
+        }]
+    }
+    normalized = _normalize_profiles(raw)
+    default = next(p for p in normalized["profiles"] if p["name"] == "default")
+    assert default["boards"] == ["linkedin"]
+
+
+def test_normalize_profiles_does_not_override_existing_boards_when_already_profiles_format():
+    """If a profile entry already has both `boards` and `job_boards` (e.g.
+    written by the wizard's own boards-seeding, then later re-saved by
+    Settings), the existing `boards` list must not be silently replaced."""
+    from scripts.discover import _normalize_profiles
+    raw = {
+        "profiles": [{
+            "name": "default",
+            "boards": ["custom_already_set"],
+            "job_boards": [{"name": "linkedin", "enabled": True}],
+        }]
+    }
+    normalized = _normalize_profiles(raw)
+    default = next(p for p in normalized["profiles"] if p["name"] == "default")
+    assert default["boards"] == ["custom_already_set"]
+
+
 def test_discover_writes_to_sqlite(tmp_path):
     """run_discovery inserts new jobs into SQLite staging db."""
     from scripts.discover import run_discovery
