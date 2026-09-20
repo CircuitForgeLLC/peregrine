@@ -2955,14 +2955,11 @@ def get_app_config():
         raw_tier = _resolve_cloud_tier()
     else:
         raw_tier = os.environ.get("APP_TIER", "free")
-    if is_cloud:
-        wizard_complete = True
-    else:
-        try:
-            cfg = load_user_profile(_user_yaml_path())
-            wizard_complete = bool(cfg.get("wizard_complete", False))
-        except Exception:
-            wizard_complete = False
+    try:
+        cfg = load_user_profile(_user_yaml_path())
+        wizard_complete = bool(cfg.get("wizard_complete", False))
+    except Exception:
+        wizard_complete = False
 
     from scripts.wizard.tiers import has_configured_llm
     byok_unlocked = has_configured_llm()
@@ -5299,8 +5296,7 @@ def wizard_save_step(payload: WizardStepPayload):
     """Persist a single wizard step and advance the step counter.
 
     Side effects by step number:
-    - Step 3 (Resume): writes config/plain_text_resume.yaml
-    - Step 6 (Inference): writes API keys / Orchard URL into .env
+    - Step 4 (Resume): merges into config/plain_text_resume.yaml
     - Step 7 (Search): writes config/search_profiles.yaml
     """
     step = payload.step

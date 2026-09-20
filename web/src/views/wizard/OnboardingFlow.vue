@@ -22,6 +22,7 @@ const router = useRouter()
 
 const finishError = ref<string | null>(null)
 const connectionsSaving = ref(false)
+const connectionsError = ref<string | null>(null)
 
 const steps = computed<StepDef[]>(() => {
   const s = hub.sections
@@ -32,7 +33,7 @@ const steps = computed<StepDef[]>(() => {
   }
   list.push({ key: 'resume', label: 'Resume', to: '/settings/resume', complete: s.resume })
   list.push({ key: 'connections', label: 'Connections', to: '/settings/connections', complete: hub.connectionsAcknowledged })
-  list.push({ key: 'choice', label: 'How would you like to finish setting up?', complete: hub.setupPath !== null })
+  list.push({ key: 'choice', label: 'How would you like to finish setting up?', to: '/wizard/setup-path', complete: hub.setupPath !== null })
   list.push({ key: 'profile', label: 'Profile', to: '/settings/my-profile', complete: s.profile })
   list.push({ key: 'search', label: 'Search Preferences', to: '/settings/search', complete: s.search })
 
@@ -53,9 +54,11 @@ const requiredSectionsComplete = computed(() =>
 )
 
 async function acknowledgeConnections() {
+  connectionsError.value = null
   connectionsSaving.value = true
-  await useApiFetch('/api/wizard/connections/acknowledge', { method: 'POST' })
+  const { error } = await useApiFetch('/api/wizard/connections/acknowledge', { method: 'POST' })
   connectionsSaving.value = false
+  if (error) { connectionsError.value = 'Failed to save. Please try again.'; return }
   await hub.loadSections()
 }
 
@@ -93,11 +96,7 @@ onMounted(async () => {
                 {{ connectionsSaving ? 'Saving…' : 'Continue' }}
               </button>
             </div>
-          </div>
-        </template>
-        <template v-else-if="step.key === 'choice' && i === currentIndex && !step.complete">
-          <div class="flow-card">
-            <RouterLink to="/wizard/setup-path" class="flow-card__label">{{ step.label }}</RouterLink>
+            <p v-if="connectionsError" class="error">{{ connectionsError }}</p>
           </div>
         </template>
         <template v-else>

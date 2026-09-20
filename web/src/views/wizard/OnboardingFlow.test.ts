@@ -93,6 +93,16 @@ describe('OnboardingFlow', () => {
     expect(resumeLink!.attributes('href')).toBe('/settings/resume')
   })
 
+  it('renders the completed choice step as a real, reopenable link to /wizard/setup-path', async () => {
+    mockFetch.mockResolvedValue(statusResponse({
+      resume: true, connections_acknowledged: true, setup_path: 'manual', profile: true,
+    }))
+    const { wrapper } = await mountFlow({ isCloud: true })
+    const choiceLink = wrapper.findAll('a').find(a => a.text().includes('How would you like to finish setting up'))
+    expect(choiceLink).toBeDefined()
+    expect(choiceLink!.attributes('href')).toBe('/wizard/setup-path')
+  })
+
   it('shows Finish Setup once profile, resume, and search are all complete', async () => {
     mockFetch.mockResolvedValue(statusResponse({
       resume: true, connections_acknowledged: true, setup_path: 'manual',

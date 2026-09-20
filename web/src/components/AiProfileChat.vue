@@ -1,13 +1,11 @@
 <script setup lang="ts">
-// Shared AI profile-builder chat UI — used both standalone at
-// /wizard/ai-profile (WizardAIView.vue) and embedded inline in the
-// onboarding resume step's "AI Assistant" tab (WizardResumeStep.vue).
+// Shared AI profile-builder chat UI — used at /wizard/ai-profile, reached
+// either as a standalone settings entry point or via the "Set up with AI"
+// option on the onboarding choice step (SetupPathChoiceView.vue).
 //
 // The caller owns the tier gate and any outer container/heading; this
 // component owns only the conversation itself and emits `saved` once the
-// profile has been finalized — the caller decides what happens next
-// (navigate away for the standalone page, or just show a confirmation and
-// let the wizard's own Next button carry on, for the embedded tab).
+// profile has been finalized — the caller decides what happens next.
 import { ref, nextTick, onMounted, watch } from 'vue'
 import { useAiInterviewStore } from '../stores/wizard/aiInterview'
 
