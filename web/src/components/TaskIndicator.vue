@@ -22,20 +22,6 @@
       </div>
     </template>
   </div>
-
-  <!-- Mobile: fixed pill above bottom tab bar (compact — keeps existing design) -->
-  <Transition name="task-pill">
-    <div
-      v-if="count > 0"
-      class="task-indicator task-indicator--pill"
-      aria-live="polite"
-      role="status"
-    >
-      <span class="task-indicator__spinner" aria-hidden="true" />
-      <span class="task-indicator__label">{{ label }}</span>
-      <span class="task-indicator__badge">{{ count }}</span>
-    </div>
-  </Transition>
 </template>
 
 <script setup lang="ts">
@@ -44,7 +30,7 @@ import { useTasksStore, TASK_LABEL } from '../stores/tasks'
 import { storeToRefs } from 'pinia'
 
 const store = useTasksStore()
-const { count, groups, label } = storeToRefs(store)
+const { count, groups } = storeToRefs(store)
 
 onMounted(store.startPolling)
 onUnmounted(store.stopPolling)
@@ -58,45 +44,14 @@ onUnmounted(store.stopPolling)
   gap: var(--space-2);
 }
 
-/* Spinner — CSS-only rotating ring */
-.task-indicator__spinner {
-  flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-  border: 2px solid color-mix(in srgb, var(--app-primary) 30%, transparent);
-  border-top-color: var(--app-primary);
-  border-radius: 50%;
-  animation: task-spin 0.8s linear infinite;
-}
-
 @keyframes task-spin {
   to { transform: rotate(360deg); }
 }
 
-.task-indicator__label {
-  flex: 1;
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.task-indicator__badge {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  background: var(--app-primary);
-  color: white;
-  border-radius: var(--radius-full);
-  min-width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 4px;
-}
-
-/* ── Desktop sidebar variant — shown by the sidebar, hidden on mobile ── */
+/* ── Desktop sidebar variant — the only variant this component renders now.
+   The mobile pill variant moved to MobileTaskPill.vue, mounted as a sibling
+   of the mobile tab bar in AppNav.vue instead of nested in here -- being
+   nested inside .app-sidebar (display:none on mobile) made it unreachable. ── */
 .task-indicator--sidebar {
   padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--color-border-light);
@@ -165,41 +120,8 @@ onUnmounted(store.stopPolling)
   flex-shrink: 0;
 }
 
-/* ── Mobile pill variant — fixed above tab bar ─────── */
-.task-indicator--pill {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(56px + env(safe-area-inset-bottom) + var(--space-2));
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  padding: var(--space-1) var(--space-3);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  z-index: 200;
-  pointer-events: none;
-  /* hidden on desktop, shown on mobile */
-  display: none;
-}
-
 /* ── Responsive ─────────────────────────────────────── */
 @media (max-width: 1023px) {
   .task-indicator--sidebar { display: none; }
-  .task-indicator--pill    { display: flex; }
-}
-
-@media (min-width: 1024px) {
-  .task-indicator--pill { display: none; }
-}
-
-/* ── Transition (pill slide-up) ─────────────────────── */
-.task-pill-enter-active,
-.task-pill-leave-active {
-  transition: opacity 200ms ease, transform 200ms ease;
-}
-.task-pill-enter-from,
-.task-pill-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(8px);
 }
 </style>
