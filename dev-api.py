@@ -3595,7 +3595,7 @@ async def upload_resume(file: UploadFile):
 # ── Settings: Search Preferences endpoints ────────────────────────────────────
 
 class SearchPrefsPayload(BaseModel):
-    remote_preference: str = "both"
+    remote_preference: List[str] = ["onsite", "remote", "hybrid"]
     job_titles: List[str] = []
     locations: List[str] = []
     exclude_keywords: List[str] = []

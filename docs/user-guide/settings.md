@@ -78,7 +78,7 @@ Manage what Peregrine searches for across all job boards. Changes take effect on
 
 | Field | Description |
 |-------|-------------|
-| Remote preference | Remote only, on-site only, or both |
+| Remote preference | Multi-select any of On-site, Remote, Hybrid — select more than one to broaden the search |
 | Job Titles | Roles searched on every board |
 | Locations | Geographic scope; leave blank for unrestricted |
 | Exclude Keywords | Drop any job title containing these words before it enters the database |

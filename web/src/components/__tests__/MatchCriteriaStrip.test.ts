@@ -49,10 +49,22 @@ describe('MatchCriteriaStrip', () => {
     expect(w.text()).toContain('Min salary?')
   })
 
-  it('maps remote_preference to a readable label', () => {
-    useSearchStore().remote_preference = 'remote'
+  it('maps a single remote_preference selection to a readable label', () => {
+    useSearchStore().remote_preference = ['remote']
     const w = factory()
     expect(w.text()).toContain('Remote')
+  })
+
+  it('maps a partial multi-select to a slash-joined label', () => {
+    useSearchStore().remote_preference = ['remote', 'hybrid']
+    const w = factory()
+    expect(w.text()).toContain('Remote/Hybrid')
+  })
+
+  it('maps all three selected to "Any"', () => {
+    useSearchStore().remote_preference = ['onsite', 'remote', 'hybrid']
+    const w = factory()
+    expect(w.text()).toContain('Any')
   })
 
   it('shows a checkmark on the resume pill when a resume is uploaded', () => {
