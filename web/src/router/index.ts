@@ -42,11 +42,12 @@ export const router = createRouter({
     // resume step's "AI Assistant" tab) and afterward as a settings entry
     // point, so it's exempt from the wizard-completion gate below.
     { path: '/wizard/ai-profile', component: () => import('../views/wizard/WizardAIView.vue') },
-    // Onboarding hub: full-page layout, no AppNav
+    // Onboarding flow: full-page layout, no AppNav
     {
       path: '/setup',
-      component: () => import('../views/wizard/OnboardingHub.vue'),
+      component: () => import('../views/wizard/OnboardingFlow.vue'),
     },
+    { path: '/wizard/setup-path', component: () => import('../views/wizard/SetupPathChoiceView.vue') },
     // Legacy linear wizard, kept reachable directly, unlinked from the Hub.
     // Not deleted in this phase; see the plan's Global Constraints.
     {
@@ -91,6 +92,7 @@ router.beforeEach(async (to, _from, next) => {
   if (
     !to.path.startsWith('/setup') &&
     to.path !== '/wizard/ai-profile' &&
+    to.path !== '/wizard/setup-path' &&
     !to.path.startsWith('/settings/') &&
     !config.wizardComplete
   ) {
