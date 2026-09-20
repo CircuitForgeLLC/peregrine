@@ -204,7 +204,7 @@ def test_put_get_search_roundtrip(tmp_path, monkeypatch):
     from dev_api import app
     c = TestClient(app)
     put_resp = c.put("/api/settings/search", json={
-        "remote_preference": "remote",
+        "remote_preference": ["remote"],
         "job_titles": ["Engineer"],
         "locations": ["Remote"],
         "exclude_keywords": [],
@@ -219,7 +219,7 @@ def test_put_get_search_roundtrip(tmp_path, monkeypatch):
 
     get_resp = c.get("/api/settings/search")
     assert get_resp.status_code == 200
-    assert get_resp.json()["remote_preference"] == "remote"
+    assert get_resp.json()["remote_preference"] == ["remote"]
 
 
 def test_get_search_missing_file_returns_empty(tmp_path, monkeypatch):

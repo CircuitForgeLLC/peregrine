@@ -32,9 +32,14 @@ onMounted(() => {
 })
 
 const REMOTE_LABELS: Record<string, string> = {
-  remote: 'Remote',
   onsite: 'On-site',
-  both: 'Remote/Hybrid',
+  remote: 'Remote',
+  hybrid: 'Hybrid',
+}
+
+function remotePreferenceLabel(selected: string[]): string {
+  if (selected.length === 0 || selected.length === 3) return 'Any'
+  return selected.map(v => REMOTE_LABELS[v] ?? v).join('/')
 }
 
 interface Pill {
@@ -63,7 +68,7 @@ const pills = computed<Pill[]>(() => {
     result.push({ key: 'salary', text: 'Min salary?', unset: true })
   }
 
-  result.push({ key: 'remote', text: REMOTE_LABELS[search.remote_preference] ?? 'Remote/Hybrid' })
+  result.push({ key: 'remote', text: remotePreferenceLabel(search.remote_preference) })
 
   if (search.job_titles.length > 0) {
     const [first, ...rest] = search.job_titles

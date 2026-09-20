@@ -9,12 +9,14 @@
     <!-- Remote Preference -->
     <section class="form-section">
       <h3>Remote Preference</h3>
-      <div class="remote-options">
+      <div class="remote-options" role="group" aria-label="Remote preference (select any that apply)">
         <button
           v-for="opt in remoteOptions"
           :key="opt.value"
-          :class="['remote-btn', { active: store.remote_preference === opt.value }]"
-          @click="store.remote_preference = opt.value"
+          type="button"
+          :class="['remote-btn', { active: store.remote_preference.includes(opt.value) }]"
+          :aria-pressed="store.remote_preference.includes(opt.value)"
+          @click="store.toggleRemotePreference(opt.value)"
         >{{ opt.label }}</button>
       </div>
       <p class="section-note">This filter runs at scrape time — listings that don't match are excluded before they count against per-board quotas.</p>
@@ -172,10 +174,9 @@ const store = useSearchStore()
 const docsUrl = useDocsUrl('user-guide/settings/#search-prefs')
 
 const remoteOptions = [
-  { value: 'remote' as const, label: 'Remote only' },
-  { value: 'onsite' as const, label: 'On-site only' },
-  { value: 'hybrid' as const, label: 'Hybrid only' },
-  { value: 'both' as const, label: 'Both' },
+  { value: 'onsite' as const, label: 'On-site' },
+  { value: 'remote' as const, label: 'Remote' },
+  { value: 'hybrid' as const, label: 'Hybrid' },
 ]
 
 const titleInput = ref('')

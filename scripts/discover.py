@@ -240,13 +240,24 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
         exclude_kw = [kw.lower() for kw in profile.get("exclude_keywords", [])]
         results_per_board = profile.get("results_per_board", 25)
 
-        # Map remote_preference → JobSpy is_remote param:
-        #   'remote'  → True  (remote-only listings)
-        #   'onsite'  → False (on-site-only listings)
-        #   'hybrid'  → None  (board-side tagging is unreliable for hybrid -- see below)
-        #   'both'    → None  (no filter — JobSpy default)
-        _rp = profile.get("remote_preference", "both")
-        _is_remote: bool | None = True if _rp == "remote" else (False if _rp == "onsite" else None)
+        # remote_preference is a multi-select: any subset of {onsite, remote,
+        # hybrid}. Older profiles (pre-multi-select) may still have it as a
+        # single string, including the retired 'both' value -- normalize
+        # both shapes to a set before mapping.
+        _rp_raw = profile.get("remote_preference", ["onsite", "remote", "hybrid"])
+        if isinstance(_rp_raw, str):
+            _rp_selected = {"onsite", "remote", "hybrid"} if _rp_raw == "both" else {_rp_raw}
+        else:
+            _rp_selected = set(_rp_raw) if _rp_raw else {"onsite", "remote", "hybrid"}
+
+        # Map the selection → JobSpy's is_remote param: only an unambiguous
+        # single choice of 'remote' or 'onsite' can set it; every other
+        # combination (including all three, matching the old 'both') leaves
+        # it unfiltered at the board level.
+        _is_remote: bool | None = (
+            True if _rp_selected == {"remote"}
+            else (False if _rp_selected == {"onsite"} else None)
+        )
 
         # Job boards (especially LinkedIn) tag hybrid listings as is_remote=True, so the
         # board-side filter alone is not reliable for distinguishing hybrid from remote or
@@ -260,12 +271,16 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
             "days in office", "days per week in", "days onsite", "days on-site",
             "required to be in office", "required in office",
         ]
-        # 'remote' preference: exclude anything that reads as hybrid.
-        # 'hybrid' preference: require a hybrid-phrase match instead (the inverse).
+        # Hybrid not selected at all: exclude anything that reads as hybrid.
+        # Hybrid selected alone (no onsite/remote also wanted): require a
+        # hybrid-phrase match instead (the inverse). Hybrid selected alongside
+        # onsite and/or remote: neither filter applies -- those other
+        # arrangements are also acceptable, so requiring hybrid phrasing
+        # would wrongly drop legitimate non-hybrid results.
         require_kw: list[str] = []
-        if _rp == "remote":
+        if "hybrid" not in _rp_selected:
             exclude_kw = exclude_kw + _HYBRID_PHRASES
-        elif _rp == "hybrid":
+        elif _rp_selected == {"hybrid"}:
             require_kw = _HYBRID_PHRASES
 
         for location in profile["locations"]:

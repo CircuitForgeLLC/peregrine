@@ -38,13 +38,14 @@
     <!-- Remote preference -->
     <div class="profile-summary__field">
       <label class="profile-summary__label">Remote preference</label>
-      <div class="remote-options">
+      <div class="remote-options" role="group" aria-label="Remote preference (select any that apply)">
         <button
           v-for="opt in remoteOptions"
           :key="opt.value"
-          :class="['remote-btn', { active: search.remote_preference === opt.value }]"
-          :aria-pressed="search.remote_preference === opt.value"
-          @click="search.remote_preference = opt.value"
+          type="button"
+          :class="['remote-btn', { active: search.remote_preference.includes(opt.value) }]"
+          :aria-pressed="search.remote_preference.includes(opt.value)"
+          @click="search.toggleRemotePreference(opt.value)"
         >{{ opt.label }}</button>
       </div>
     </div>
@@ -84,9 +85,9 @@ const search = useSearchStore()
 const resume = useResumeStore()
 
 const remoteOptions = [
-  { value: 'remote' as const, label: 'Remote' },
   { value: 'onsite' as const, label: 'On-site' },
-  { value: 'both' as const, label: 'Remote/Hybrid' },
+  { value: 'remote' as const, label: 'Remote' },
+  { value: 'hybrid' as const, label: 'Hybrid' },
 ]
 
 const locationInput = ref('')

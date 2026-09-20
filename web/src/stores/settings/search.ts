@@ -2,11 +2,12 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
 
-export type RemotePreference = 'remote' | 'onsite' | 'hybrid' | 'both'
+export type RemotePreference = 'remote' | 'onsite' | 'hybrid'
+const ALL_REMOTE_PREFERENCES: RemotePreference[] = ['onsite', 'remote', 'hybrid']
 export interface JobBoard { name: string; enabled: boolean }
 
 export const useSearchStore = defineStore('settings/search', () => {
-  const remote_preference = ref<RemotePreference>('both')
+  const remote_preference = ref<RemotePreference[]>([...ALL_REMOTE_PREFERENCES])
   const job_titles = ref<string[]>([])
   const locations = ref<string[]>([])
   const exclude_keywords = ref<string[]>([])
@@ -41,7 +42,16 @@ export const useSearchStore = defineStore('settings/search', () => {
     if (error) { loadError.value = 'Failed to load search preferences'; return }
     loaded.value = true
     if (!data) return
-    remote_preference.value = (data.remote_preference as RemotePreference) ?? 'both'
+    // Backward compat: an install may still have an old single-string value
+    // on disk (including the retired 'both'), not yet re-saved as a list.
+    const _rp = data.remote_preference
+    if (Array.isArray(_rp) && _rp.length > 0) {
+      remote_preference.value = _rp as RemotePreference[]
+    } else if (typeof _rp === 'string') {
+      remote_preference.value = _rp === 'both' ? [...ALL_REMOTE_PREFERENCES] : [_rp as RemotePreference]
+    } else {
+      remote_preference.value = [...ALL_REMOTE_PREFERENCES]
+    }
     job_titles.value = (data.job_titles as string[]) ?? []
     locations.value = (data.locations as string[]) ?? []
     exclude_keywords.value = (data.exclude_keywords as string[]) ?? []
@@ -157,6 +167,12 @@ export const useSearchStore = defineStore('settings/search', () => {
     }
   }
 
+  function toggleRemotePreference(value: RemotePreference) {
+    remote_preference.value = remote_preference.value.includes(value)
+      ? remote_preference.value.filter(v => v !== value)
+      : [...remote_preference.value, value]
+  }
+
   function toggleBoard(name: string) {
     job_boards.value = job_boards.value.map(b =>
       b.name === name ? { ...b, enabled: !b.enabled } : b
@@ -169,6 +185,6 @@ export const useSearchStore = defineStore('settings/search', () => {
     titleSuggestions, locationSuggestions, excludeSuggestions, suggestingField, suggestErrors,
     loading, saving, saveError, loadError, loaded,
     load, save, suggestTitles, suggestLocations, suggestExcludeKeywords,
-    addTag, removeTag, acceptSuggestion, toggleBoard,
+    addTag, removeTag, acceptSuggestion, toggleBoard, toggleRemotePreference,
   }
 })

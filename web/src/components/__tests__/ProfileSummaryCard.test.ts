@@ -66,16 +66,34 @@ describe('ProfileSummaryCard', () => {
     expect(resume.salary_min).toBe(110000)
   })
 
-  it('clicking a remote-preference button updates search.remote_preference and marks it active', async () => {
+  it('clicking a remote-preference button toggles it out of the multi-select', async () => {
     mockFetch.mockResolvedValue({ data: null, error: null })
     const search = useSearchStore()
+    search.remote_preference = ['onsite', 'remote', 'hybrid']
     const wrapper = mount(ProfileSummaryCard, { global: { plugins: [makeRouter()] } })
     await wrapper.vm.$nextTick()
     const buttons = wrapper.findAll('.remote-btn')
     const remoteBtn = buttons.find(b => b.text() === 'Remote')
-    await remoteBtn!.trigger('click')
-    expect(search.remote_preference).toBe('remote')
     expect(remoteBtn!.classes()).toContain('active')
+
+    await remoteBtn!.trigger('click')
+    expect(search.remote_preference).toEqual(['onsite', 'hybrid'])
+    expect(remoteBtn!.classes()).not.toContain('active')
+  })
+
+  it('clicking an unselected remote-preference button adds it to the multi-select', async () => {
+    mockFetch.mockResolvedValue({ data: null, error: null })
+    const search = useSearchStore()
+    search.remote_preference = ['onsite']
+    const wrapper = mount(ProfileSummaryCard, { global: { plugins: [makeRouter()] } })
+    await wrapper.vm.$nextTick()
+    const buttons = wrapper.findAll('.remote-btn')
+    const hybridBtn = buttons.find(b => b.text() === 'Hybrid')
+    expect(hybridBtn!.classes()).not.toContain('active')
+
+    await hybridBtn!.trigger('click')
+    expect(search.remote_preference).toEqual(['onsite', 'hybrid'])
+    expect(hybridBtn!.classes()).toContain('active')
   })
 
   it('shows "Resume uploaded" with a checkmark when hasResume is true', async () => {
