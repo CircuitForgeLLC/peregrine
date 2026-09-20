@@ -48,31 +48,6 @@ export const router = createRouter({
       component: () => import('../views/wizard/OnboardingFlow.vue'),
     },
     { path: '/wizard/setup-path', component: () => import('../views/wizard/SetupPathChoiceView.vue') },
-    // Legacy linear wizard, kept reachable directly, unlinked from the Hub.
-    // Not deleted in this phase; see the plan's Global Constraints.
-    {
-      path: '/setup/legacy',
-      component: () => import('../views/wizard/WizardLayout.vue'),
-      children: [
-        // No `redirect` here on purpose: a static redirect resolves before
-        // WizardLayout ever mounts, which made its own resume-at-last-step
-        // logic (onMounted checking route.path === '/setup/legacy')
-        // permanently unreachable — bare /setup/legacy always silently
-        // landed fresh visitors on step 1 regardless of real progress.
-        // Render the hardware step here as a same-content fallback;
-        // WizardLayout's onMounted still owns routing to the real resume
-        // point once loadStatus() resolves.
-        { path: '',           component: () => import('../views/wizard/WizardHardwareStep.vue') },
-        { path: 'hardware',   component: () => import('../views/wizard/WizardHardwareStep.vue') },
-        { path: 'tier',       component: () => import('../views/wizard/WizardTierStep.vue') },
-        { path: 'resume',     component: () => import('../views/wizard/WizardResumeStep.vue') },
-        { path: 'training',   component: () => import('../views/wizard/WizardTrainingStep.vue') },
-        { path: 'identity',   component: () => import('../views/wizard/WizardIdentityStep.vue') },
-        { path: 'inference',  component: () => import('../views/wizard/WizardInferenceStep.vue') },
-        { path: 'search',     component: () => import('../views/wizard/WizardSearchStep.vue') },
-        { path: 'integrations', component: () => import('../views/wizard/WizardIntegrationsStep.vue') },
-      ],
-    },
     // Catch-all — FastAPI serves index.html for all unknown routes (SPA mode)
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
