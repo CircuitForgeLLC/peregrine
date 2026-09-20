@@ -230,19 +230,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useProfileStore } from '../../stores/settings/profile'
 import { useAppConfigStore } from '../../stores/appConfig'
 import { useApiFetch } from '../../composables/useApi'
+import { useAiSetupAccess } from '../../composables/useAiSetupAccess'
 import { genId } from '../../utils/id'
 
 const store = useProfileStore()
 const { loadError } = storeToRefs(store)
 const config = useAppConfigStore()
 
-const hasWizardAccess = computed(() => config.tier !== 'free' || config.byokUnlocked)
+const { hasAccess: hasWizardAccess } = useAiSetupAccess()
 
 const newNdaCompany = ref('')
 const generatingSummary = ref(false)

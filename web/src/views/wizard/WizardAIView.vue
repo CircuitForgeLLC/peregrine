@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppConfigStore } from '../../stores/appConfig'
+import { useAiSetupAccess } from '../../composables/useAiSetupAccess'
 import AiProfileChat from '../../components/AiProfileChat.vue'
 import { RouterLink } from 'vue-router'
 
 const router = useRouter()
 const config = useAppConfigStore()
 
-const hasAccess = computed(() => config.tier !== 'free' || config.byokUnlocked)
+const { hasAccess } = useAiSetupAccess()
 
 function onSaved() {
-  // Reached from onboarding (WizardResumeStep's AI Assistant tab) or from
-  // settings after onboarding is done — send the user back to whichever one.
-  // /settings/my-profile while the wizard is still incomplete would bounce
-  // through the global wizard gate straight to /setup's step-1 redirect,
-  // undoing the progress they just made.
-  router.push(config.wizardComplete ? '/settings/my-profile' : '/setup/resume')
+  // Reached from onboarding's setup-path choice (AI branch) or from
+  // settings after onboarding is done — send the user back to whichever
+  // one. '/setup' (not a specific step path) is correct for the
+  // incomplete case: OnboardingFlow.vue computes and shows the current
+  // step itself from wizard status, same as any other /setup visit.
+  router.push(config.wizardComplete ? '/settings/my-profile' : '/setup')
 }
 </script>
 
