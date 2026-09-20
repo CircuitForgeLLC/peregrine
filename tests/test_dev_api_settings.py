@@ -222,6 +222,55 @@ def test_put_get_search_roundtrip(tmp_path, monkeypatch):
     assert get_resp.json()["remote_preference"] == ["remote"]
 
 
+def test_put_get_search_roundtrip_profiles_format(tmp_path, monkeypatch):
+    """Regression test: PUT saves must be visible to a later GET when the
+    search_profiles.yaml file already uses the canonical `profiles: [...]`
+    format (exactly what the wizard and Task 1's board-seeding both write).
+
+    Before the fix, save_search_prefs wrote into a separate top-level
+    "default" key that _normalize_profiles never reads once a `profiles`
+    key exists -- so the PUT appeared to succeed but the GET kept returning
+    stale, pre-PUT data.
+    """
+    fake_path = tmp_path / "config" / "search_profiles.yaml"
+    fake_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(fake_path, "w") as f:
+        yaml.dump({
+            "profiles": [
+                {
+                    "name": "default",
+                    "job_titles": ["Old Title"],
+                    "locations": ["Old Location"],
+                    "boards": ["linkedin"],
+                }
+            ]
+        }, f)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
+
+    from dev_api import app
+    c = TestClient(app)
+    put_resp = c.put("/api/settings/search", json={
+        "remote_preference": ["remote"],
+        "job_titles": ["New Title"],
+        "locations": ["New Location"],
+        "exclude_keywords": [],
+        "job_boards": [],
+        "custom_board_urls": [],
+        "blocklist_companies": [],
+        "blocklist_industries": [],
+        "blocklist_locations": [],
+    })
+    assert put_resp.status_code == 200
+    assert put_resp.json()["ok"] is True
+
+    get_resp = c.get("/api/settings/search")
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["job_titles"] == ["New Title"]
+    assert data["locations"] == ["New Location"]
+    assert data["remote_preference"] == ["remote"]
+
+
 def test_get_search_prefs_falls_back_to_full_catalog_when_job_boards_empty(tmp_path, monkeypatch):
     """A profile with no job_boards at all gets the full valid-board catalog,
     all unchecked, so the Settings checklist is never a dead end."""

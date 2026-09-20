@@ -3614,22 +3614,25 @@ def _default_boards_for_locations(locations: list[str]) -> list[str]:
     boards = ["linkedin", "indeed", "zip_recruiter", "glassdoor"]
     joined = " ".join(locations).lower()
 
+    def _matches(keywords: list[str]) -> bool:
+        return any(re.search(rf"\b{re.escape(kw)}\b", joined) for kw in keywords)
+
     india_keywords = [
         "india", "bangalore", "bengaluru", "mumbai", "delhi", "hyderabad",
         "pune", "chennai", "gurgaon", "gurugram", "noida",
     ]
-    if any(kw in joined for kw in india_keywords):
+    if _matches(india_keywords):
         boards.append("naukri")
 
     gulf_keywords = [
         "uae", "dubai", "abu dhabi", "saudi arabia", "riyadh", "jeddah",
         "qatar", "doha", "kuwait", "bahrain", "oman",
     ]
-    if any(kw in joined for kw in gulf_keywords):
+    if _matches(gulf_keywords):
         boards.append("bayt")
 
     bangladesh_keywords = ["bangladesh", "dhaka", "chittagong", "chattogram"]
-    if any(kw in joined for kw in bangladesh_keywords):
+    if _matches(bangladesh_keywords):
         boards.append("bdjobs")
 
     return boards
@@ -3684,7 +3687,7 @@ def get_search_prefs():
         # that bypassed the wizard's board-seeding entirely).
         if not profile.get("job_boards"):
             profile["job_boards"] = [
-                {"name": b, "enabled": False, "supported": True}
+                {"name": b, "enabled": False, "supported": b in valid}
                 for b in sorted(valid)
             ]
 
@@ -3704,7 +3707,23 @@ def save_search_prefs(payload: SearchPrefsPayload):
         if p.exists():
             with open(p) as f:
                 data = yaml.safe_load(f) or {}
-        data["default"] = payload.model_dump()
+
+        # Normalize on load so we merge into the canonical `profiles` list
+        # rather than a separate top-level "default" key that
+        # _normalize_profiles never reads once a `profiles` key exists
+        # (same pattern as wizard_save_step's step==7 handler).
+        from scripts.discover import _normalize_profiles as _norm
+        data = _norm(data)
+
+        profiles_list = data.get("profiles", [])
+        default_profile = next((pr for pr in profiles_list if pr.get("name") == "default"), None)
+        payload_dict = payload.model_dump()
+        if default_profile is None:
+            default_profile = {"name": "default"}
+            profiles_list.append(default_profile)
+        default_profile.update(payload_dict)
+        data["profiles"] = profiles_list
+
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
