@@ -250,8 +250,8 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             import json as _json
             p = _json.loads(params or "{}")
             from scripts.generate_cover_letter import generate
+            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
             _cfg_dir = Path(db_path).parent / "config"
-            _user_llm_cfg = _cfg_dir / "llm.yaml"
             _user_yaml = _cfg_dir / "user.yaml"
             result = generate(
                 job.get("title", ""),
@@ -260,7 +260,7 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 previous_result=p.get("previous_result", ""),
                 feedback=p.get("feedback", ""),
                 is_jobgether=job.get("source") == "jobgether",
-                config_path=_user_llm_cfg,
+                config_path=LLM_ROUTER_CONFIG_PATH,
                 user_yaml_path=_user_yaml,
                 user_id=_resolve_cloud_user_id(db_path),
             )
@@ -268,12 +268,11 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
         elif task_type == "company_research":
             from scripts.company_research import research_company
-            _cfg_dir = Path(db_path).parent / "config"
-            _user_llm_cfg = _cfg_dir / "llm.yaml"
+            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
             result = research_company(
                 job,
                 on_stage=lambda s: update_task_stage(db_path, task_id, s),
-                config_path=_user_llm_cfg if _user_llm_cfg.exists() else None,
+                config_path=LLM_ROUTER_CONFIG_PATH,
             )
             save_research(db_path, job_id=job_id, **result)
 
@@ -481,14 +480,14 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
         elif task_type == "survey_analyze":
             import json as _json
             from scripts.survey_assistant import run_survey_analyze
+            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
             p = _json.loads(params or "{}")
-            _cfg_path = Path(db_path).parent / "config" / "llm.yaml"
             update_task_stage(db_path, task_id, "analyzing survey")
             result = run_survey_analyze(
                 text=p.get("text"),
                 image_b64=p.get("image_b64"),
                 mode=p.get("mode", "quick"),
-                config_path=_cfg_path if _cfg_path.exists() else None,
+                config_path=LLM_ROUTER_CONFIG_PATH,
             )
             update_task_status(
                 db_path, task_id, "completed",
