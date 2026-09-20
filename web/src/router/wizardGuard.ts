@@ -1,5 +1,4 @@
 import { useAppConfigStore } from '../stores/appConfig'
-import { useWizardStore } from '../stores/wizard'
 
 /**
  * Gate the entire app behind /setup until wizard_complete is true.

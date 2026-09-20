@@ -51,6 +51,24 @@ class TestAppConfigWizardFields:
             r = client.get("/api/config/app")
         assert r.json()["wizardComplete"] is True
 
+    def test_wizard_complete_false_for_cloud_when_missing(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        # user.yaml does not exist yet -- cloud accounts must no longer
+        # unconditionally report wizard_complete=True
+        with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
+            with patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False):
+                r = client.get("/api/config/app")
+        assert r.status_code == 200
+        assert r.json()["wizardComplete"] is False
+
+    def test_wizard_complete_true_for_cloud_when_set(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": True})
+        with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
+            with patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False):
+                r = client.get("/api/config/app")
+        assert r.json()["wizardComplete"] is True
+
     def test_is_demo_false_by_default(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": True})

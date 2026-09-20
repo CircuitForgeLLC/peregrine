@@ -6,51 +6,34 @@ vi.mock('../composables/useApi', () => ({ useApiFetch: vi.fn() }))
 import { useApiFetch } from '../composables/useApi'
 const mockFetch = vi.mocked(useApiFetch)
 
-describe('wizard store — loadStatus cloud auto-skip', () => {
+describe('wizard store — complete', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
   })
 
-  it('auto-skips hardware, inference, and tier for a fresh cloud instance, preconfigured for cf-orch', async () => {
-    mockFetch.mockResolvedValueOnce({
-      data: { wizard_complete: false, wizard_step: 0, saved_data: {} },
-      error: null,
-    } as never)
-    // saveStep(1), saveStep(2), saveStep(3) each POST /api/wizard/step
+  it('posts to /api/wizard/complete and returns true on success', async () => {
     mockFetch.mockResolvedValue({ data: { ok: true }, error: null } as never)
 
     const wizard = useWizardStore()
-    const route = await wizard.loadStatus(true)
+    const result = await wizard.complete()
 
-    expect(route).toBe('/setup/legacy/resume')
-    expect(wizard.currentStep).toBe(4)
-
-    // First saveStep call: hardware profile forced to cf-orch
-    expect(mockFetch).toHaveBeenNthCalledWith(2, '/api/wizard/step', expect.objectContaining({
-      body: JSON.stringify({ step: 1, data: { inference_profile: 'cf-orch' } }),
-    }))
-    // Second saveStep call: inference step advanced with no user-entered config
-    // (cloud already has GPU_SERVER_URL configured server-side)
-    expect(mockFetch).toHaveBeenNthCalledWith(3, '/api/wizard/step', expect.objectContaining({
-      body: JSON.stringify({ step: 2, data: {} }),
-    }))
-    // Third saveStep call: tier comes from the account's license, not user choice
-    expect(mockFetch).toHaveBeenNthCalledWith(4, '/api/wizard/step', expect.objectContaining({
-      body: JSON.stringify({ step: 3, data: { tier: 'free' } }),
-    }))
+    expect(result).toBe(true)
+    expect(wizard.saving).toBe(false)
+    expect(mockFetch).toHaveBeenCalledWith('/api/wizard/complete', { method: 'POST' })
   })
 
-  it('does not auto-skip for a self-hosted (non-cloud) instance', async () => {
-    mockFetch.mockResolvedValueOnce({
-      data: { wizard_complete: false, wizard_step: 0, saved_data: {} },
-      error: null,
+  it('returns false and records the error message on failure', async () => {
+    mockFetch.mockResolvedValue({
+      data: null,
+      error: { kind: 'http', status: 500, detail: 'boom' },
     } as never)
 
     const wizard = useWizardStore()
-    const route = await wizard.loadStatus(false)
+    const result = await wizard.complete()
 
-    expect(route).toBe('/setup/legacy/hardware')
-    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect(result).toBe(false)
+    expect(wizard.saving).toBe(false)
+    expect(wizard.errors).toEqual(['boom'])
   })
 })

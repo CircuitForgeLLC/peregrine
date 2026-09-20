@@ -38,9 +38,10 @@ export const router = createRouter({
         { path: 'developer',   component: () => import('../views/settings/DeveloperView.vue') },
       ],
     },
-    // AI profile assistant, reachable both during onboarding (linked from the
-    // resume step's "AI Assistant" tab) and afterward as a settings entry
-    // point, so it's exempt from the wizard-completion gate below.
+    // AI profile assistant, reachable both during onboarding (linked from
+    // SetupPathChoiceView.vue's "Set up with AI" option) and afterward as a
+    // settings entry point, so it's exempt from the wizard-completion gate
+    // below.
     { path: '/wizard/ai-profile', component: () => import('../views/wizard/WizardAIView.vue') },
     // Onboarding flow: full-page layout, no AppNav
     {

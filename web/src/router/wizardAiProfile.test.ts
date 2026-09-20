@@ -6,11 +6,11 @@ import { useAppConfigStore } from '../stores/appConfig'
 // Regression test for: "opening the AI assistant tab on the onboarding
 // dumps the user back to the first page."
 //
-// Root cause: /wizard/ai-profile is linked from WizardResumeStep.vue's "AI
-// Assistant" tab (usable mid-onboarding), but the global wizard-completion
-// guard treated it like any other main-app route and bounced it to bare
-// /setup — which itself has a static route redirect straight to
-// /setup/hardware (step 1), regardless of actual wizard progress.
+// Root cause: /wizard/ai-profile is linked from SetupPathChoiceView.vue's
+// "Set up with AI" option (usable mid-onboarding), but the global
+// wizard-completion guard treated it like any other main-app route and
+// bounced it to bare /setup — which itself has a static route redirect
+// straight to /setup/hardware (step 1), regardless of actual wizard progress.
 describe('wizard gate: /wizard/ai-profile', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
