@@ -70,6 +70,29 @@ def read_resume_text() -> str:
     return " ".join(page.extract_text() or "" for page in reader.pages)
 
 
+# Fitting TfidfVectorizer on just two documents (resume + one job posting)
+# gives IDF almost nothing to discriminate on -- with only 2 documents, every
+# term's IDF collapses to one of two near-identical values, so the ranking
+# degenerates to plain term frequency within the job posting. That surfaces
+# whichever generic words repeat most in JD boilerplate/section headers
+# (e.g. "Required Skills and Experience", "Job Description", "Additional
+# Information") as if they were meaningful ATS keywords. sklearn's
+# stop_words="english" doesn't catch these -- they're ordinary English words,
+# just JD-specific noise, not universal stopwords. Filtered explicitly here
+# rather than fixed by tuning the vectorizer, since no vectorizer setting
+# fixes a fundamentally single-document-sized corpus.
+_JD_BOILERPLATE_NOISE_WORDS: frozenset[str] = frozenset({
+    "job", "jobs", "description", "responsibilities", "requirements",
+    "required", "requires", "requiring", "qualifications", "qualified",
+    "skills", "skill", "experience", "experienced", "education", "training",
+    "information", "additional", "position", "positions", "role", "roles",
+    "candidate", "candidates", "employer", "employment", "employee",
+    "employees", "company", "team", "teams", "work", "working", "please",
+    "including", "include", "includes", "apply", "application",
+    "opportunity", "opportunities",
+})
+
+
 def match_score(resume_text: str, job_text: str) -> tuple[float, list[str]]:
     """
     Score resume against job description using TF-IDF cosine similarity.
@@ -88,7 +111,10 @@ def match_score(resume_text: str, job_text: str) -> tuple[float, list[str]]:
     job_tfidf = tfidf[1].toarray()[0]
     top_indices = np.argsort(job_tfidf)[::-1][:30]
     top_job_terms = [feature_names[i] for i in top_indices if job_tfidf[i] > 0]
-    gaps = [t for t in top_job_terms if t not in resume_terms and t == t][:10]  # t==t drops NaN
+    gaps = [
+        t for t in top_job_terms
+        if t not in resume_terms and t == t and t not in _JD_BOILERPLATE_NOISE_WORDS
+    ][:10]  # t==t drops NaN
 
     return round(score, 1), gaps
 
