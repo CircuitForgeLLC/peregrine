@@ -7,13 +7,13 @@ Peregrine has a test suite covering the core scripts layer, LLM router, integrat
 ## Running the Test Suite
 
 ```bash
-conda run -n job-seeker python -m pytest tests/ -v
+conda run -n cf python -m pytest tests/ -v
 ```
 
 Or using the direct binary (recommended to avoid runaway process spawning):
 
 ```bash
-/path/to/miniconda3/envs/job-seeker/bin/pytest tests/ -v
+/path/to/miniconda3/envs/cf/bin/pytest tests/ -v
 ```
 
 `pytest.ini` scopes test collection to `tests/` only:
@@ -23,7 +23,7 @@ Or using the direct binary (recommended to avoid runaway process spawning):
 testpaths = tests
 ```
 
-Do not widen this — the `aihawk/` subtree has its own test files that pull in GPU dependencies.
+Do not widen this without checking for GPU-dependency test files outside `tests/`.
 
 ---
 
@@ -42,7 +42,7 @@ The suite currently has approximately 219 tests covering:
 | `scripts/task_runner.py` | Task submission, dedup, status transitions |
 | `scripts/user_profile.py` | Accessor methods, defaults, YAML round-trip |
 | `scripts/integrations/` | Base class contract, per-driver `fields()` and `connect()` |
-| `app/wizard/tiers.py` | `can_use()`, `tier_label()`, edge cases |
+| `scripts/wizard/tiers.py` | `can_use()`, `tier_label()`, edge cases |
 | `scripts/custom_boards/` | Scraper return shape, HTTP error handling |
 
 ---

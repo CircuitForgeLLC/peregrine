@@ -10,7 +10,7 @@
 | Upload attachment | POST | `/repos/{owner}/{repo}/issues/{index}/assets` |
 | Post comment | POST | `/repos/{owner}/{repo}/issues/{index}/comments` |
 
-Base URL: `https://git.opensourcesolarpunk.com/api/v1`
+Base URL: `https://git.circuitforge.tech/api/v1`
 
 ---
 
@@ -29,7 +29,7 @@ Response (201):
 ```json
 {
   "number": 42,
-  "html_url": "https://git.opensourcesolarpunk.com/pyr0ball/peregrine/issues/42"
+  "html_url": "https://git.circuitforge.tech/Circuit-Forge/peregrine/issues/42"
 }
 ```
 
@@ -83,7 +83,7 @@ Screenshots are uploaded as issue assets, then embedded inline via a follow-up c
 ```markdown
 ### Screenshot
 
-![screenshot](https://git.opensourcesolarpunk.com/attachments/<uuid>)
+![screenshot](https://git.circuitforge.tech/attachments/<uuid>)
 ```
 
 This keeps the issue body clean and puts the screenshot in a distinct comment.
@@ -117,13 +117,13 @@ create a dedicated bot account so the token has limited scope and can be rotated
 
 ### Steps (requires Forgejo admin panel — API admin access not available on this token)
 
-1. **Create bot account** at `https://git.opensourcesolarpunk.com/-/admin/users/new`
+1. **Create bot account** at `https://git.circuitforge.tech/-/admin/users/new`
    - Username: `peregrine-bot` (or `cf-bugbot`)
    - Email: a real address you control (e.g. `bot+peregrine@circuitforge.tech`)
    - Set a strong password (store in your password manager)
    - Check "Prohibit login" if you want a pure API-only account
 
-2. **Add as collaborator** on `pyr0ball/peregrine`:
+2. **Add as collaborator** on `Circuit-Forge/peregrine`:
    - Settings → Collaborators → Add `peregrine-bot` with **Write** access
    - Write access is required to create labels; issue creation alone would need only Read+Comment
 
@@ -136,14 +136,14 @@ create a dedicated bot account so the token has limited scope and can be rotated
 4. **Update environment**:
    ```
    FORGEJO_API_TOKEN=<new bot token>
-   FORGEJO_REPO=pyr0ball/peregrine
-   FORGEJO_API_URL=https://git.opensourcesolarpunk.com/api/v1
+   FORGEJO_REPO=Circuit-Forge/peregrine
+   FORGEJO_API_URL=https://git.circuitforge.tech/api/v1
    ```
    Update both `.env` (dev machine) and any beta tester `.env` files.
 
 5. **Verify** the bot can create issues:
    ```bash
-   curl -s -X POST https://git.opensourcesolarpunk.com/api/v1/repos/pyr0ball/peregrine/issues \
+   curl -s -X POST https://git.circuitforge.tech/api/v1/repos/Circuit-Forge/peregrine/issues \
      -H "Authorization: token <bot-token>" \
      -H "Content-Type: application/json" \
      -d '{"title":"[TEST] bot token check","body":"safe to close","labels":[]}'

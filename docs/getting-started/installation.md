@@ -18,7 +18,7 @@ This page walks through a full Peregrine installation from scratch.
 ## Step 1 — Clone the repository
 
 ```bash
-git clone https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine
+git clone https://git.circuitforge.tech/Circuit-Forge/peregrine
 cd peregrine
 ```
 

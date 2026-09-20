@@ -2,8 +2,8 @@ site_name: Peregrine
 site_description: Job search pipeline — tailor your resume to clear ATS filters, discover jobs, draft cover letters, and track applications.
 site_author: Circuit Forge LLC
 site_url: https://docs.circuitforge.tech/peregrine
-repo_url: https://git.opensourcesolarpunk.com/pyr0ball/peregrine
-repo_name: pyr0ball/peregrine
+repo_url: https://git.circuitforge.tech/Circuit-Forge/peregrine
+repo_name: Circuit-Forge/peregrine
 
 theme:
   name: material

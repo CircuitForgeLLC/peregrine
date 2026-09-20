@@ -108,44 +108,59 @@ See [Integrations](integrations.md) for per-service setup instructions.
 
 ## System
 
-*Not available in cloud mode.*
+*Self-hosted only — cloud users see [Custom Model](#custom-model-cloud-premium) instead.*
 
-LLM backend configuration and service connection settings.
+LLM backend configuration, per-task model assignment, and service connection settings.
 
-### LLM Backends
+### Compute & AI Backend
 
 | Setting | Description |
 |---------|-------------|
-| Enabled toggle | Whether a backend is considered in the fallback chain |
-| Base URL | API endpoint for OpenAI-compatible backends |
-| Model | Model name or `__auto__` (vLLM auto-detects the loaded model) |
-| API key | Required for hosted APIs |
-| Test button | Sends a ping to verify the backend is reachable |
+| Hardware profile | Which local inference profile Peregrine targets (CPU, single-GPU, dual-GPU, or an Orchard-managed profile) |
+| Find Ollama / Find vLLM | Auto-detects a running instance on common docker/native hosts and ports, filling in the host/port fields below |
+| Ollama / vLLM host and port | Manual connection settings if auto-detect doesn't find your instance |
+| Anthropic API key / OpenAI-compatible endpoint | Optional cloud LLM backends, used like any other backend in the fallback chain |
 
-Three independent fallback chains:
+### Model Assignments
 
-| Chain | Used for |
-|-------|---------|
-| Cover letter chain | Cover letter generation and general tasks |
-| Research chain | Company research briefs |
-| Vision chain | Survey screenshot analysis |
+Assigns a specific provider (Ollama or vLLM) and model to each of three tasks, independently:
+
+| Task | Used for |
+|------|---------|
+| Primary | Cover letter generation |
+| Research | Company research briefs |
+| Chat | Interview prep Q&A, survey assistant |
+
+For each task, pick a provider, then a model from that provider's installed list. An empty assignment falls back to the install's configured fallback chain. A capability probe (an empirical test call) runs when you pick a model and shows a warning badge if the model doesn't reliably follow instructions for that task — this doesn't block the assignment, just flags it.
 
 ### Service Hosts and Ports
 
-Connection settings for Ollama, vLLM, and SearXNG. Each service has an SSL toggle and SSL-verify toggle for reverse-proxy setups.
+Connection settings for SearXNG. Has an SSL toggle and SSL-verify toggle for reverse-proxy setups.
+
+---
+
+## Custom Model (cloud, Premium)
+
+*Cloud only. Requires Premium tier — the field is visible but disabled with an upgrade note otherwise.*
+
+If CircuitForge has provisioned a fine-tuned model for your account, enter its alias here to use it for cover letter generation instead of the shared managed model. This is a coordination step, not self-service: CircuitForge decides which inference provider a fine-tuned model runs on when provisioning it, matching how the shared task assignments work — there's no provider choice to make here, just the alias your account manager gives you. Leave it blank to use the standard managed model.
 
 ---
 
 ## Fine-Tune
 
-*Tier: Premium only.*
+*Self-hosted: available on single-GPU or dual-GPU hardware profiles. Cloud: Premium tier.*
 
-Tools for fine-tuning a cover letter model on your personal writing style.
+Tools for fine-tuning a cover letter model on your personal writing style. The training-data export and opt-in are shared between self-hosted and cloud; what happens with the exported data differs:
+
+**Self-hosted:**
 
 1. **Export Training Data** — produces a JSONL file from your saved cover letters
 2. **Configure training** — rank, epochs, learning rate
 3. **Start fine-tune** — runs via the `ogma` conda environment with Unsloth
 4. **Register model** — adds the output to Ollama as `alex-cover-writer:latest`
+
+**Cloud (Premium):** click **Request Cloud Fine-Tune** to have CircuitForge fine-tune a model from your exported cover letters. Once it's provisioned, CircuitForge gives you an alias to enter in [Custom Model](#custom-model-cloud-premium) to actually use it.
 
 ---
 
