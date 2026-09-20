@@ -5306,55 +5306,20 @@ def wizard_save_step(payload: WizardStepPayload):
     step = payload.step
     data = payload.data
 
+    # Only steps 4 (Resume) and 7 (Search) still have server-side handling
+    # here -- their write targets (plain_text_resume.yaml,
+    # search_profiles.yaml) are shared with the live Resume/Search settings
+    # pages. Steps 1/2/3/5/6/8 (Hardware/Inference/Tier/Training/Identity/
+    # Integrations) belonged to the legacy linear wizard, now removed --
+    # those concerns are handled by the live Settings pages directly
+    # (System, My Profile, Fine-tune, Connections), not through this
+    # endpoint.
     if step < 1 or step > 8:
         raise HTTPException(status_code=400, detail="step must be 1–8")
 
     updates: dict = {"wizard_step": step}
 
-    # ── Step-specific field extraction ────────────────────────────────────────
-    # Step numbers below reflect the current onboarding order: Hardware(1),
-    # Inference(2), Tier(3), Resume(4), Training(5, no server-side save —
-    # posts directly to /api/settings/fine-tune/opt-in), Identity(6),
-    # Search(7), Integrations(8). Inference moved from 6 to 2 (right after
-    # Hardware — the two are directly related) as of the v1.0.0 reorder; the
-    # step-4-meant-identity legacy alias from the pre-training-step era is
-    # dropped here since nothing has sent step=4 in a long time and it would
-    # now collide with Resume's new number.
-    if step == 1:
-        profile = data.get("inference_profile", "remote")
-        if profile not in _WIZARD_PROFILES:
-            raise HTTPException(status_code=400, detail=f"Unknown profile: {profile}")
-        updates["inference_profile"] = profile
-
-    elif step == 2:
-        # Step 2 — inference: API keys + optional Orchard coordinator URL.
-        env_path = _env_path()
-        env_lines = env_path.read_text().splitlines() if env_path.exists() else []
-
-        if data.get("anthropic_key"):
-            env_lines = _set_env_key(env_lines, "ANTHROPIC_API_KEY", data["anthropic_key"])
-        if data.get("openai_url"):
-            env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_URL", data["openai_url"])
-        if data.get("openai_key"):
-            env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_KEY", data["openai_key"])
-        if data.get("orch_url"):
-            env_lines = _set_env_key(env_lines, "GPU_SERVER_URL", data["orch_url"])
-            updates["cf_orch_url"] = data["orch_url"]
-        if any(data.get(k) for k in ("anthropic_key", "openai_url", "openai_key", "orch_url")):
-            env_path.parent.mkdir(parents=True, exist_ok=True)
-            env_path.write_text("\n".join(env_lines) + "\n")
-            env_path.chmod(0o600)
-
-        if "services" in data:
-            updates["services"] = data["services"]
-
-    elif step == 3:
-        tier = data.get("tier", "free")
-        if tier not in _WIZARD_TIERS:
-            raise HTTPException(status_code=400, detail=f"Unknown tier: {tier}")
-        updates["tier"] = tier
-
-    elif step == 4:
+    if step == 4:
         # Resume data: merge into plain_text_resume.yaml.
         # The wizard's Resume step only ever has the fields the user actually
         # touched in this session (e.g. just `experience` when the incoming
@@ -5375,12 +5340,6 @@ def wizard_save_step(payload: WizardStepPayload):
             existing_resume.update(resume)
             with open(resume_path, "w") as f:
                 yaml.dump(existing_resume, f, allow_unicode=True, default_flow_style=False)
-
-    elif step == 6:
-        # Step 6 — identity fields.
-        for field in ("name", "email", "phone", "linkedin", "career_summary"):
-            if field in data:
-                updates[field] = data[field]
 
     elif step == 7:
         # Step 7 — search preferences.
@@ -5413,9 +5372,6 @@ def wizard_save_step(payload: WizardStepPayload):
         search_path.parent.mkdir(parents=True, exist_ok=True)
         with open(search_path, "w") as f:
             yaml.dump(existing_search, f, allow_unicode=True, default_flow_style=False)
-
-    # Step 8 (integrations) has no extra side effects here — connections are
-    # handled by the existing /api/settings/system/integrations/{id}/connect.
 
     try:
         _save_wizard_yaml(updates)

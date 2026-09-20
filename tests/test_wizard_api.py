@@ -275,51 +275,6 @@ class TestWizardHardware:
 # ── POST /api/wizard/step ─────────────────────────────────────────────────────
 
 class TestWizardStep:
-    def test_step1_saves_inference_profile(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step",
-                            json={"step": 1, "data": {"inference_profile": "single-gpu"}})
-        assert r.status_code == 200
-        saved = _read_user_yaml(yaml_path)
-        assert saved["inference_profile"] == "single-gpu"
-        assert saved["wizard_step"] == 1
-
-    def test_step1_rejects_unknown_profile(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step",
-                            json={"step": 1, "data": {"inference_profile": "turbo-gpu"}})
-        assert r.status_code == 400
-
-    def test_step2_writes_env_keys(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step",
-                            json={"step": 2, "data": {"services": {"ollama_host": "localhost"}}})
-        assert r.status_code == 200
-        assert _read_user_yaml(yaml_path)["services"] == {"ollama_host": "localhost"}
-
-    def test_step3_saves_tier(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step",
-                            json={"step": 3, "data": {"tier": "paid"}})
-        assert r.status_code == 200
-        assert _read_user_yaml(yaml_path)["tier"] == "paid"
-
-    def test_step3_rejects_unknown_tier(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step",
-                            json={"step": 3, "data": {"tier": "enterprise"}})
-        assert r.status_code == 400
-
     def test_step4_writes_resume_yaml(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
@@ -371,24 +326,6 @@ class TestWizardStep:
         assert saved_resume["education"] == [{"institution": "State U"}]
         assert saved_resume["skills"] == ["Python"]
         assert saved_resume["achievements"] == ["Shipped a thing"]
-
-    def test_step6_saves_identity_fields(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        identity = {
-            "name": "Alex Rivera",
-            "email": "alex@example.com",
-            "phone": "555-1234",
-            "linkedin": "https://linkedin.com/in/alex",
-            "career_summary": "Experienced engineer.",
-        }
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step", json={"step": 6, "data": identity})
-        assert r.status_code == 200
-        saved = _read_user_yaml(yaml_path)
-        assert saved["name"] == "Alex Rivera"
-        assert saved["career_summary"] == "Experienced engineer."
-        assert saved["wizard_step"] == 6
 
     def test_step7_writes_search_profiles(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
@@ -514,27 +451,6 @@ class TestWizardStep:
         with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
             r = client.post("/api/wizard/step", json={"step": 99, "data": {}})
         assert r.status_code == 400
-
-    def test_crash_recovery_round_trip(self, client, tmp_path):
-        """Save steps 1, 3, 6 sequentially, then verify status reflects step 6."""
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        steps = [
-            (1, {"inference_profile": "cpu"}),
-            (3, {"tier": "free"}),
-            (6, {"name": "Alex", "email": "a@b.com", "career_summary": "Eng."}),
-        ]
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            for step, data in steps:
-                r = client.post("/api/wizard/step", json={"step": step, "data": data})
-                assert r.status_code == 200
-
-            r = client.get("/api/wizard/status")
-
-        body = r.json()
-        assert body["wizard_step"] == 6
-        assert body["saved_data"]["name"] == "Alex"
-        assert body["saved_data"]["inference_profile"] == "cpu"
 
 
 # ── POST /api/wizard/inference/test ──────────────────────────────────────────
