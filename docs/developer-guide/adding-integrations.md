@@ -129,7 +129,7 @@ On next startup, `myservice` will appear in:
 
 ## Step 4 — Tier-gate new features (optional)
 
-If you want to gate a specific action (not just the integration itself) behind a tier, add an entry to `app/wizard/tiers.py`:
+If you want to gate a specific action (not just the integration itself) behind a tier, add an entry to `scripts/wizard/tiers.py`:
 
 ```python
 FEATURES: dict[str, str] = {

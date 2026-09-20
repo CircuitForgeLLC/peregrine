@@ -11,7 +11,7 @@ Thank you for your interest in contributing to Peregrine. This guide covers the 
 ## Fork and Clone
 
 ```bash
-git clone https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine
+git clone https://git.circuitforge.tech/Circuit-Forge/peregrine
 cd peregrine
 ```
 
@@ -25,14 +25,14 @@ git checkout -b feat/my-feature
 
 ## Dev Environment Setup
 
-Peregrine's Python dependencies are managed with conda. The same `job-seeker` environment is used for both the legacy personal app and Peregrine.
+Peregrine's Python dependencies are managed with conda, in the shared `cf` environment used across CircuitForge's Python tools.
 
 ```bash
 # Create the environment from the lockfile
 conda env create -f environment.yml
 
 # Activate
-conda activate job-seeker
+conda activate cf
 ```
 
 Alternatively, install from `requirements.txt` into an existing Python 3.12 environment:
@@ -42,20 +42,20 @@ pip install -r requirements.txt
 ```
 
 !!! warning "Keep the env lightweight"
-    Do not add `torch`, `sentence-transformers`, `bitsandbytes`, `transformers`, or any other CUDA/GPU package to the main environment. These live in separate conda environments (`job-seeker-vision` for the vision service, `ogma` for fine-tuning). Adding them to the main env causes out-of-memory failures during test runs.
+    Do not add `torch`, `sentence-transformers`, `bitsandbytes`, `transformers`, or any other CUDA/GPU package to the main environment. GPU-dependent services (vision, fine-tuning) run as separate processes in their own environments (`ogma` for fine-tuning) or separate Docker containers (the vision service). Adding GPU packages to the main env causes out-of-memory failures during test runs.
 
 ---
 
 ## Running Tests
 
 ```bash
-conda run -n job-seeker python -m pytest tests/ -v
+conda run -n cf python -m pytest tests/ -v
 ```
 
 Or with the direct binary (avoids runaway process spawning):
 
 ```bash
-/path/to/miniconda3/envs/job-seeker/bin/pytest tests/ -v
+/path/to/miniconda3/envs/cf/bin/pytest tests/ -v
 ```
 
 The `pytest.ini` file scopes collection to the `tests/` directory only — do not widen this.
@@ -92,13 +92,13 @@ Example: `feat/add-greenhouse-scraper`, `fix/email-imap-timeout`, `docs/add-inte
 
 Before opening a pull request:
 
-- [ ] All tests pass: `conda run -n job-seeker python -m pytest tests/ -v`
+- [ ] All tests pass: `conda run -n cf python -m pytest tests/ -v`
 - [ ] New behaviour is covered by at least one test
 - [ ] No new dependencies added to `environment.yml` or `requirements.txt` without a clear justification in the PR description
 - [ ] Documentation updated if the PR changes user-visible behaviour (update the relevant page in `docs/`)
 - [ ] Config file changes are reflected in the `.example` file
 - [ ] No secrets, tokens, or personal data in any committed file
-- [ ] Gitignored files (`config/*.yaml`, `staging.db`, `aihawk/`, `.env`) are not committed
+- [ ] Gitignored files (`config/*.yaml`, `staging.db`, `.env`) are not committed
 
 ---
 
