@@ -53,8 +53,13 @@ function onInterviewCardResearch(jobId: number) {
 }
 
 // ── Collapsible Applied section ────────────────────────────────────────────
+// Defaults OPEN: this section holds the only "Move to..." control for
+// advancing an application past Applied (e.g. to Phone Screen), so hiding
+// it by default made that action undiscoverable for anyone who hadn't
+// already found and toggled it once. Only an explicit prior collapse
+// (stored as the literal string 'false') keeps it closed on reload.
 const APPLIED_EXPANDED_KEY = 'peregrine.interviews.appliedExpanded'
-const appliedExpanded = ref(localStorage.getItem(APPLIED_EXPANDED_KEY) === 'true')
+const appliedExpanded = ref(localStorage.getItem(APPLIED_EXPANDED_KEY) !== 'false')
 watch(appliedExpanded, v => localStorage.setItem(APPLIED_EXPANDED_KEY, String(v)))
 
 const APPLIED_PAGE_SIZE = 10
