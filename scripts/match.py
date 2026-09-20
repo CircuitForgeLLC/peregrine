@@ -93,10 +93,18 @@ _JD_BOILERPLATE_NOISE_WORDS: frozenset[str] = frozenset({
 })
 
 
-def match_score(resume_text: str, job_text: str) -> tuple[float, list[str]]:
+def match_score(resume_text: str, job_text: str, company_name: str = "") -> tuple[float, list[str]]:
     """
     Score resume against job description using TF-IDF cosine similarity.
     Returns (score 0–100, list of high-value job keywords missing from resume).
+
+    company_name: the hiring company's name, e.g. "Intuitive Surgical". JDs
+    commonly repeat their own company's name throughout ("At Acme, we
+    believe...", "join Acme's team..."), which makes it look like a
+    high-frequency keyword under the same 2-document degenerate-IDF problem
+    _JD_BOILERPLATE_NOISE_WORDS addresses -- a company's own name is never a
+    real ATS skill keyword. Optional and backward compatible: omitted, gaps
+    are unaffected by this filter.
     """
     import numpy as np
     from sklearn.feature_extraction.text import TfidfVectorizer
@@ -107,13 +115,15 @@ def match_score(resume_text: str, job_text: str) -> tuple[float, list[str]]:
     score = float(cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]) * 100
 
     resume_terms = set(resume_text.lower().split())
+    company_words = {w for w in re.findall(r"[a-z0-9]+", company_name.lower())}
     feature_names = vectorizer.get_feature_names_out()
     job_tfidf = tfidf[1].toarray()[0]
     top_indices = np.argsort(job_tfidf)[::-1][:30]
     top_job_terms = [feature_names[i] for i in top_indices if job_tfidf[i] > 0]
     gaps = [
         t for t in top_job_terms
-        if t not in resume_terms and t == t and t not in _JD_BOILERPLATE_NOISE_WORDS
+        if t not in resume_terms and t == t
+        and t not in _JD_BOILERPLATE_NOISE_WORDS and t not in company_words
     ][:10]  # t==t drops NaN
 
     return round(score, 1), gaps
@@ -178,7 +188,7 @@ def score_pending_jobs(db_path: Path = None) -> int:
     for row in rows:
         job_id, title, company, description = row["id"], row["title"], row["company"], row["description"]
         try:
-            score, gaps = match_score(resume_text, description)
+            score, gaps = match_score(resume_text, description, company_name=company or "")
             write_match_scores(db_path, job_id, score, ", ".join(gaps))
             print(f"[match] {title} @ {company}: {score}/100  gaps: {', '.join(gaps) or 'none'}")
             scored += 1

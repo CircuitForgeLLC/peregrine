@@ -382,7 +382,7 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
             # Extract keyword gaps and build gap report (free tier)
             update_task_stage(db_path, task_id, "extracting keyword gaps")
-            gaps = extract_jd_signals(description, resume_text)
+            gaps = extract_jd_signals(description, resume_text, company_name=job.get("company", ""))
             prioritized = prioritize_gaps(gaps, resume_struct)
             gap_report = _json.dumps(prioritized, indent=2)
 
