@@ -2050,7 +2050,7 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
 
     from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        answer = LLMRouter().complete_task("chat", prompt)
+        answer = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt)
         return {"answer": answer.strip()}
     except TaskModelNotAssignedError:
         raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
@@ -3270,7 +3270,7 @@ def generate_career_summary():
     )
     from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        summary = LLMRouter().complete_task("research", prompt)
+        summary = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"summary": summary.strip()}
     except TaskModelNotAssignedError:
         raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
@@ -3293,7 +3293,7 @@ def generate_mission_preferences():
     )
     from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        raw = LLMRouter().complete_task("research", prompt)
+        raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
         raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
     except TaskModelUnreachableError as e:
@@ -3332,7 +3332,7 @@ def generate_candidate_voice():
     )
     from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        voice = LLMRouter().complete_task("research", prompt)
+        voice = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"voice": voice.strip()}
     except TaskModelNotAssignedError:
         raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
@@ -3787,7 +3787,7 @@ def suggest_resume_tags(payload: ResumeTagSuggestPayload):
 
     from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        raw = LLMRouter().complete_task("research", prompt)
+        raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
         raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
     except TaskModelUnreachableError as e:
@@ -3840,7 +3840,7 @@ def suggest_search(payload: SearchSuggestPayload):
 
     from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        raw = LLMRouter().complete_task("research", prompt)
+        raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
         raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
     except TaskModelUnreachableError as e:
@@ -3953,6 +3953,13 @@ def byok_ack(payload: ByokAckPayload):
 # in the Docker deployment), so it must be spelled out explicitly rather than
 # assumed to coincide.
 from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH  # noqa: E402
+
+# Imported at module scope (not per-call-site) so that `router_for_tenant` is
+# a patchable attribute of this module for tests -- a per-call-site local
+# `from scripts.llm_router import ... router_for_tenant` would re-bind a
+# fresh reference to the real function on every call, silently shadowing any
+# `patch("dev_api.router_for_tenant", ...)` applied in tests.
+from scripts.llm_router import router_for_tenant  # noqa: E402
 
 
 class TaskModelAssignment(BaseModel):
@@ -5714,7 +5721,7 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
 
     from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        response_text = LLMRouter().complete_task("chat", prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
+        response_text = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
     except TaskModelNotAssignedError:
         raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
     except TaskModelUnreachableError as e:
