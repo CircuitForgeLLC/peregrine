@@ -31,14 +31,31 @@ jobs:
           fetch-depth: 0
 
       # ── Changelog ────────────────────────────────────────────────────────────
+      # orhun/git-cliff-action isn't mirrored on data.forgejo.org (this runner's
+      # action registry), so every tag push failed at this exact step since
+      # v0.8.6 (11+ consecutive release-workflow failures, including v1.0.0's own
+      # tag) -- confirmed via `curl .../api/v1/repos/orhun/git-cliff-action` -> 404,
+      # vs actions/checkout and all docker/* actions used below, which resolve
+      # fine. Installing the git-cliff binary directly sidesteps the Action
+      # wrapper entirely and only needs outbound access to github.com release
+      # assets, which this runner already has (see mirror.yml's GitHub push).
       - name: Generate changelog
-        uses: orhun/git-cliff-action@v3
         id: cliff
-        with:
-          config: .cliff.toml
-          args: --latest --strip header
-        env:
-          OUTPUT: CHANGES.md
+        run: |
+          set -euo pipefail
+          GIT_CLIFF_VERSION="2.14.2"
+          ASSET="git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          BASE_URL="https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}"
+          curl -sSL -o "$ASSET" "${BASE_URL}/${ASSET}"
+          curl -sSL -o "${ASSET}.sha512" "${BASE_URL}/${ASSET}.sha512"
+          sha512sum -c "${ASSET}.sha512"
+          tar xzf "$ASSET"
+          "./git-cliff-${GIT_CLIFF_VERSION}/git-cliff" --config .cliff.toml --latest --strip header --output CHANGES.md
+          {
+            echo 'content<<GIT_CLIFF_EOF'
+            cat CHANGES.md
+            echo 'GIT_CLIFF_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       # ── Docker setup ─────────────────────────────────────────────────────────
       - name: Set up QEMU
@@ -100,7 +117,7 @@ jobs:
           NOTES: ${{ steps.cliff.outputs.content }}
         run: |
           curl -sS -X POST \
-            "https://git.opensourcesolarpunk.com/api/v1/repos/Circuit-Forge/${REPO}/releases" \
+            "https://git.circuitforge.tech/api/v1/repos/Circuit-Forge/${REPO}/releases" \
             -H "Authorization: token ${FORGEJO_TOKEN}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg tag "$TAG" --arg body "$NOTES" \
