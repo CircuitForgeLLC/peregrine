@@ -329,3 +329,109 @@ def test_complete_task_skips_chain_entry_naming_an_unknown_backend():
     with patch.object(router, "complete", return_value="result") as mock_complete:
         router.complete_task("research", "prompt")
     assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama"]
+
+
+# ── New tests for router_for_tenant() and _merged_cloud_llm_config() ────────
+
+
+def test_router_for_tenant_self_hosted_returns_bare_router():
+    """Self-hosted (cloud_mode=False): router_for_tenant must return exactly
+    what LLMRouter() with no arguments returns -- this path must be
+    completely unchanged by this feature."""
+    from scripts.llm_router import router_for_tenant, LLMRouter
+
+    router = router_for_tenant(Path("/irrelevant/for/self-hosted/staging.db"), cloud_mode=False)
+    assert isinstance(router, LLMRouter)
+    # Self-hosted ignores db_path entirely -- confirm by checking the router's
+    # config matches a bare LLMRouter()'s config exactly.
+    bare = LLMRouter()
+    assert router.config == bare.config
+
+
+def test_merged_cloud_llm_config_combines_shared_backends_and_tenant_task_models(tmp_path):
+    """Cloud mode: the merged config must contain the shared backends/
+    fallback_order from CONFIG_PATH, with task_models replaced by this
+    tenant's own file -- never the shared file's task_models (there isn't
+    one; task_models lives per-tenant only in cloud mode)."""
+    from scripts.llm_router import _merged_cloud_llm_config, CONFIG_PATH
+
+    shared_cfg = {
+        "backends": {"ollama": {"enabled": True, "model": "shared-model"}},
+        "fallback_order": ["ollama"],
+    }
+    fake_shared_path = tmp_path / "shared_llm.yaml"
+    fake_shared_path.write_text(yaml.dump(shared_cfg))
+
+    tenant_cfg_dir = tmp_path / "tenant-a" / "config"
+    tenant_cfg_dir.mkdir(parents=True)
+    (tenant_cfg_dir / "task_models.yaml").write_text(yaml.dump({
+        "task_models": {"primary": {"backend": "ollama", "model": "tenant-a-model"}}
+    }))
+    db_path = tmp_path / "tenant-a" / "staging.db"
+
+    with patch("scripts.llm_router.CONFIG_PATH", fake_shared_path):
+        merged = _merged_cloud_llm_config(db_path)
+
+    assert merged["backends"] == shared_cfg["backends"]
+    assert merged["fallback_order"] == shared_cfg["fallback_order"]
+    assert merged["task_models"] == {"primary": {"backend": "ollama", "model": "tenant-a-model"}}
+
+
+def test_merged_cloud_llm_config_empty_task_models_when_tenant_file_missing(tmp_path):
+    """A tenant who has never saved any assignment gets an empty task_models
+    dict, not a crash or the shared file's (nonexistent) task_models."""
+    from scripts.llm_router import _merged_cloud_llm_config, CONFIG_PATH
+
+    fake_shared_path = tmp_path / "shared_llm.yaml"
+    fake_shared_path.write_text(yaml.dump({"backends": {}, "fallback_order": []}))
+    db_path = tmp_path / "tenant-b" / "staging.db"  # tenant-b/config/task_models.yaml never created
+
+    with patch("scripts.llm_router.CONFIG_PATH", fake_shared_path):
+        merged = _merged_cloud_llm_config(db_path)
+
+    assert merged["task_models"] == {}
+
+
+def test_router_for_tenant_cloud_mode_builds_router_from_merged_dict(tmp_path):
+    """Cloud mode: router_for_tenant's returned router's .config must equal
+    what _merged_cloud_llm_config produces for that db_path -- proving the
+    router was actually constructed from the per-tenant merge, not a bare
+    LLMRouter()."""
+    from scripts.llm_router import router_for_tenant, _merged_cloud_llm_config, CONFIG_PATH
+
+    fake_shared_path = tmp_path / "shared_llm.yaml"
+    fake_shared_path.write_text(yaml.dump({"backends": {}, "fallback_order": []}))
+    db_path = tmp_path / "tenant-c" / "staging.db"
+
+    with patch("scripts.llm_router.CONFIG_PATH", fake_shared_path):
+        router = router_for_tenant(db_path, cloud_mode=True)
+        expected = _merged_cloud_llm_config(db_path)
+
+    assert router.config == expected
+
+
+def test_two_tenants_get_isolated_task_models(tmp_path):
+    """The core bug this whole plan exists to fix: two different tenants'
+    task_models must never leak into each other."""
+    from scripts.llm_router import router_for_tenant, CONFIG_PATH
+
+    fake_shared_path = tmp_path / "shared_llm.yaml"
+    fake_shared_path.write_text(yaml.dump({"backends": {}, "fallback_order": []}))
+
+    tenant_a_dir = tmp_path / "tenant-a" / "config"
+    tenant_a_dir.mkdir(parents=True)
+    (tenant_a_dir / "task_models.yaml").write_text(yaml.dump({
+        "task_models": {"primary": {"backend": "ollama", "model": "model-a"}}
+    }))
+    tenant_b_dir = tmp_path / "tenant-b" / "config"
+    tenant_b_dir.mkdir(parents=True)
+    (tenant_b_dir / "task_models.yaml").write_text(yaml.dump({
+        "task_models": {"primary": {"backend": "ollama", "model": "model-b"}}
+    }))
+
+    with patch("scripts.llm_router.CONFIG_PATH", fake_shared_path):
+        router_a = router_for_tenant(tmp_path / "tenant-a" / "staging.db", cloud_mode=True)
+        router_b = router_for_tenant(tmp_path / "tenant-b" / "staging.db", cloud_mode=True)
+
+    assert router_a.config["task_models"]["primary"]["model"] == "model-a"
+    assert router_b.config["task_models"]["primary"]["model"] == "model-b"
