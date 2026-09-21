@@ -25,14 +25,19 @@ import sys
 from datetime import datetime, timedelta
 from email.header import decode_header as _raw_decode_header
 from pathlib import Path
-from typing import Optional
 from urllib.parse import urlparse
 
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.db import DEFAULT_DB, init_db, get_interview_jobs, add_contact, get_contacts
+from scripts.db import (
+    DEFAULT_DB,
+    add_contact,
+    get_contacts,
+    get_interview_jobs,
+    init_db,
+)
 from scripts.llm_router import LLMRouter
 
 _CLASSIFIER_ROUTER = LLMRouter()
@@ -207,7 +212,7 @@ _JOB_BOARD_SLDS = {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _decode_str(value: Optional[str]) -> str:
+def _decode_str(value: str | None) -> str:
     """Decode an RFC2047-encoded header value to a plain Python string."""
     if not value:
         return ""
@@ -297,7 +302,7 @@ def _get_existing_message_ids(job_id: int, db_path: Path) -> set[str]:
     return {c.get("message_id", "") for c in contacts if c.get("message_id")}
 
 
-def classify_stage_signal(subject: str, body: str) -> Optional[str]:
+def classify_stage_signal(subject: str, body: str) -> str | None:
     """Classify an inbound email into a pipeline stage signal.
 
     Returns one of the 5 label strings, or None on failure.
@@ -338,7 +343,7 @@ _EXTRACT_SYSTEM = (
 
 
 def extract_lead_info(subject: str, body: str,
-                      from_addr: str) -> tuple[Optional[str], Optional[str]]:
+                      from_addr: str) -> tuple[str | None, str | None]:
     """Use LLM to extract (company, title) from an unmatched recruitment email.
 
     Returns (company, title) or (None, None) on failure / low confidence.
@@ -606,7 +611,8 @@ def _scan_unmatched_leads(conn: imaplib.IMAP4, cfg: dict,
     Calls LLM to extract company/title; inserts qualifying emails as pending jobs.
     Returns the count of new leads inserted.
     """
-    from scripts.db import get_existing_urls, insert_job, add_contact as _add_contact
+    from scripts.db import add_contact as _add_contact
+    from scripts.db import get_existing_urls, insert_job
 
     lookback = int(cfg.get("lookback_days", 90))
     since = (datetime.now() - timedelta(days=lookback)).strftime("%d-%b-%Y")
@@ -769,7 +775,7 @@ def _search_folder(conn: imaplib.IMAP4, folder: str, criteria: str,
         return []
 
 
-def _parse_message(conn: imaplib.IMAP4, uid: bytes) -> Optional[dict]:
+def _parse_message(conn: imaplib.IMAP4, uid: bytes) -> dict | None:
     """Fetch and parse one message.  Returns None on failure."""
     try:
         _, data = conn.fetch(uid, "(RFC822)")
@@ -808,9 +814,9 @@ def _parse_message(conn: imaplib.IMAP4, uid: bytes) -> Optional[dict]:
         if html_body:
             # Strip <head>…</head> (CSS, meta, title) and any stray <style> blocks.
             # Keeps <body> HTML intact so href attributes survive for digest extraction.
-            body = re.sub(r"<head[\s\S]*?</head>", "", html_body, flags=re.I)
-            body = re.sub(r"<style[\s\S]*?</style>", "", body, flags=re.I)
-            body = re.sub(r"<script[\s\S]*?</script>", "", body, flags=re.I)
+            body = re.sub(r"<head[\s\S]*?</head>", "", html_body, flags=re.IGNORECASE)
+            body = re.sub(r"<style[\s\S]*?</style>", "", body, flags=re.IGNORECASE)
+            body = re.sub(r"<script[\s\S]*?</script>", "", body, flags=re.IGNORECASE)
         else:
             body = plain_body
 
@@ -928,7 +934,7 @@ def sync_job_emails(job: dict, conn: imaplib.IMAP4, cfg: dict,
 
 def sync_all(db_path: Path = DEFAULT_DB,
              dry_run: bool = False,
-             job_ids: Optional[list[int]] = None,
+             job_ids: list[int] | None = None,
              on_stage=None) -> dict:
     """
     Sync emails for all active pipeline jobs (or a specific subset).

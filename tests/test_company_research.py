@@ -1,9 +1,13 @@
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.company_research import _score_experiences, _build_resume_context, _load_resume_and_keywords
-
+from scripts.company_research import (
+    _build_resume_context,
+    _load_resume_and_keywords,
+    _score_experiences,
+)
 
 RESUME = {
     "experience_details": [

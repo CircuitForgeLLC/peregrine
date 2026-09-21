@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
@@ -9,8 +10,9 @@ def test_base_class_is_importable():
 
 
 def test_base_class_is_abstract():
-    from scripts.integrations.base import IntegrationBase
     import inspect
+
+    from scripts.integrations.base import IntegrationBase
     assert inspect.isabstract(IntegrationBase)
 
 

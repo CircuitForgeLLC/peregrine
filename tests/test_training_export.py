@@ -1,8 +1,9 @@
 """Tests for cover letter training export helpers."""
 import json
 import sqlite3
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def _make_db(tmp_path: Path) -> Path:

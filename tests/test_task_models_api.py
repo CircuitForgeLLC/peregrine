@@ -164,10 +164,12 @@ def test_get_task_models_cloud_mode_does_not_touch_shared_readonly_file(tmp_path
     """Regression test for peregrine#173: in cloud mode, GET must never try
     to write to LLM_ROUTER_CONFIG_PATH (the shared file compose.cloud.yml
     mounts read-only) -- it must read/write a per-tenant file instead."""
-    from dev_api import app
-    from fastapi.testclient import TestClient
-    from unittest.mock import patch
     import os
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    from dev_api import app
 
     shared_llm_yaml = tmp_path / "shared" / "llm.yaml"
     shared_llm_yaml.parent.mkdir(parents=True)
@@ -192,10 +194,12 @@ def test_get_task_models_cloud_mode_does_not_touch_shared_readonly_file(tmp_path
 def test_save_and_get_task_models_cloud_mode_persists_per_tenant(tmp_path):
     """Round-trip: cloud mode PUT then GET must return what was saved, from
     a per-tenant file under this tenant's own config dir."""
-    from dev_api import app
-    from fastapi.testclient import TestClient
-    from unittest.mock import patch
     import os
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    from dev_api import app
 
     shared_llm_yaml = tmp_path / "shared" / "llm.yaml"
     shared_llm_yaml.parent.mkdir(parents=True)

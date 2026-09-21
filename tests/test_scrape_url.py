@@ -1,5 +1,5 @@
 """Tests for URL-based job scraping."""
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def _make_db(tmp_path, url="https://www.linkedin.com/jobs/view/99999/"):
@@ -157,7 +157,7 @@ def test_jobgether_slug_company_extraction():
 def test_scrape_jobgether_no_playwright(tmp_path):
     """When Playwright is unavailable, _scrape_jobgether falls back to URL slug for company."""
     import sys
-    import unittest.mock as mock
+    from unittest import mock
 
     url = "https://jobgether.com/offer/69b42d9d24d79271ee0618e8-customer-success-manager---resware"
     with mock.patch.dict(sys.modules, {"playwright": None, "playwright.sync_api": None}):

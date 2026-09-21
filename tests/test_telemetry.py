@@ -1,10 +1,11 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def test_no_op_in_local_mode(monkeypatch):
     """log_usage_event() is completely silent when CLOUD_MODE is not set."""
     monkeypatch.delenv("CLOUD_MODE", raising=False)
     import importlib
+
     import scripts.telemetry as tel
     importlib.reload(tel)
     # Should not raise, should not touch anything
@@ -15,6 +16,7 @@ def test_event_not_logged_when_all_disabled(monkeypatch):
     """No DB write when telemetry all_disabled is True."""
     monkeypatch.setenv("CLOUD_MODE", "true")
     import importlib
+
     import scripts.telemetry as tel
     importlib.reload(tel)
 
@@ -34,6 +36,7 @@ def test_event_not_logged_when_usage_events_disabled(monkeypatch):
     """No DB write when usage_events_enabled is False."""
     monkeypatch.setenv("CLOUD_MODE", "true")
     import importlib
+
     import scripts.telemetry as tel
     importlib.reload(tel)
 
@@ -53,6 +56,7 @@ def test_event_logged_when_consent_given(monkeypatch):
     """Usage event is written to usage_events table when consent is given."""
     monkeypatch.setenv("CLOUD_MODE", "true")
     import importlib
+
     import scripts.telemetry as tel
     importlib.reload(tel)
 
@@ -75,6 +79,7 @@ def test_telemetry_never_crashes_app(monkeypatch):
     """log_usage_event() swallows all exceptions — must never crash the app."""
     monkeypatch.setenv("CLOUD_MODE", "true")
     import importlib
+
     import scripts.telemetry as tel
     importlib.reload(tel)
 

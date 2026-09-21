@@ -1,10 +1,11 @@
 """Tests for AI interview wizard endpoints (POST /api/wizard/ai/*)."""
 import json
 import sys
-import yaml
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
+import pytest
+import yaml
 
 # ── Path bootstrap ────────────────────────────────────────────────────────────
 _REPO = Path(__file__).parent.parent
@@ -14,8 +15,9 @@ if str(_REPO) not in sys.path:
 
 @pytest.fixture(scope="module")
 def client():
-    from dev_api import app
     from fastapi.testclient import TestClient
+
+    from dev_api import app
     return TestClient(app)
 
 

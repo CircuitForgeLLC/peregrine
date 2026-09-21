@@ -57,14 +57,16 @@ def test_reset_running_tasks_returns_zero_when_nothing_running(tmp_db):
 
 
 from scripts.task_scheduler import (
-    TaskScheduler, LLM_TASK_TYPES, DEFAULT_VRAM_BUDGETS,
-    get_scheduler, reset_scheduler,
+    DEFAULT_VRAM_BUDGETS,
+    LLM_TASK_TYPES,
+    TaskScheduler,
+    get_scheduler,
+    reset_scheduler,
 )
 
 
 def _noop_run_task(*args, **kwargs):
     """Stand-in for _run_task that does nothing."""
-    pass
 
 
 @pytest.fixture(autouse=True)
@@ -114,7 +116,7 @@ def test_cpu_only_system_creates_scheduler(tmp_db, monkeypatch):
     LocalScheduler has no VRAM gating — it runs tasks regardless of GPU count.
     VRAM-aware scheduling is handled by circuitforge_orch's coordinator.
     """
-    monkeypatch.setattr("scripts.task_scheduler._get_gpus", lambda: [])
+    monkeypatch.setattr("scripts.task_scheduler._get_gpus", list)
     s = TaskScheduler(tmp_db, _noop_run_task)
     # Scheduler still has correct budgets configured; no VRAM attribute expected
     # Scheduler constructed successfully; budgets contain all LLM task types.
@@ -190,6 +192,7 @@ def test_max_queue_depth_marks_task_failed(tmp_db):
 def test_max_queue_depth_logs_warning(tmp_db, caplog):
     """Queue depth overflow logs a WARNING."""
     import logging
+
     from scripts.db import insert_task
 
     s = TaskScheduler(tmp_db, _noop_run_task)
@@ -454,7 +457,7 @@ def test_non_llm_tasks_bypass_scheduler(tmp_db):
     def recording_enqueue(task_id, task_type, job_id, params):
         enqueue_calls.append(task_type)
 
-    import unittest.mock as mock
+    from unittest import mock
     with mock.patch.object(task_runner, "_run_task", recording_run_task), \
          mock.patch.object(s, "enqueue", recording_enqueue):
         task_runner.submit_task(tmp_db, "discovery", 0)
@@ -474,7 +477,7 @@ def test_llm_tasks_routed_to_scheduler(tmp_db):
     enqueue_calls = []
     original_enqueue = s.enqueue
 
-    import unittest.mock as mock
+    from unittest import mock
     with mock.patch.object(s, "enqueue", side_effect=lambda *a, **kw: enqueue_calls.append(a[1]) or original_enqueue(*a, **kw)):
         task_runner.submit_task(tmp_db, "cover_letter", 1)
 

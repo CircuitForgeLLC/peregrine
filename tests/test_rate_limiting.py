@@ -9,7 +9,6 @@ Covers:
 """
 import json
 import sqlite3
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,7 +19,6 @@ from slowapi.wrappers import Limit as _LimitWrapper
 from starlette.requests import Request
 
 from scripts.rate_limit import _rate_key, rate_limit_exceeded_handler
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

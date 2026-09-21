@@ -11,6 +11,7 @@ Two modes:
 import re
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import requests
@@ -19,6 +20,7 @@ from bs4 import BeautifulSoup
 from notion_client import Client
 
 from scripts.user_profile import UserProfile
+
 _USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
 _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
 

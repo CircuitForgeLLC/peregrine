@@ -9,7 +9,7 @@ missing -- self-hosted installs never set custom_model_alias, so they are
 unaffected by default.
 """
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import yaml
 
@@ -111,8 +111,8 @@ class TestCoverLetterCfOrchRouting:
         assert "Default model output" in result
 
     def test_cf_orch_failure_raises_friendly_runtime_error(self, tmp_path):
-        from scripts.generate_cover_letter import generate
         from scripts.cf_orch_client import CfOrchTaskError
+        from scripts.generate_cover_letter import generate
 
         user_yaml = tmp_path / "user.yaml"
         _write_user_yaml(user_yaml, custom_model_alias="meghan-letter-writer-v2")

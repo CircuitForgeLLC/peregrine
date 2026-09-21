@@ -18,10 +18,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.imap_sync import (
-    load_config, connect, _search_folder, _parse_message,
-    _has_recruitment_keyword, _has_rejection_or_ats_signal,
-    _CLASSIFY_SYSTEM, _CLASSIFY_LABELS,
-    _REJECTION_PHRASES, _SPAM_PHRASES, _ATS_CONFIRM_SUBJECTS, _SPAM_SUBJECT_PREFIXES,
+    _ATS_CONFIRM_SUBJECTS,
+    _CLASSIFY_LABELS,
+    _CLASSIFY_SYSTEM,
+    _REJECTION_PHRASES,
+    _SPAM_PHRASES,
+    _SPAM_SUBJECT_PREFIXES,
+    _has_recruitment_keyword,
+    _has_rejection_or_ats_signal,
+    _parse_message,
+    _search_folder,
+    connect,
+    load_config,
 )
 from scripts.llm_router import LLMRouter
 

@@ -13,7 +13,7 @@ def test_labels_constant_has_nine_items():
 
 
 def test_compute_metrics_perfect_predictions():
-    from scripts.classifier_adapters import compute_metrics, LABELS
+    from scripts.classifier_adapters import LABELS, compute_metrics
     gold  = ["rejected", "interview_scheduled", "neutral"]
     preds = ["rejected", "interview_scheduled", "neutral"]
     m = compute_metrics(preds, gold, LABELS)
@@ -23,7 +23,7 @@ def test_compute_metrics_perfect_predictions():
 
 
 def test_compute_metrics_all_wrong():
-    from scripts.classifier_adapters import compute_metrics, LABELS
+    from scripts.classifier_adapters import LABELS, compute_metrics
     gold  = ["rejected",  "rejected"]
     preds = ["neutral",   "interview_scheduled"]
     m = compute_metrics(preds, gold, LABELS)
@@ -32,7 +32,7 @@ def test_compute_metrics_all_wrong():
 
 
 def test_compute_metrics_partial():
-    from scripts.classifier_adapters import compute_metrics, LABELS
+    from scripts.classifier_adapters import LABELS, compute_metrics
     gold  = ["rejected", "neutral", "rejected"]
     preds = ["rejected", "neutral", "interview_scheduled"]
     m = compute_metrics(preds, gold, LABELS)
@@ -43,7 +43,7 @@ def test_compute_metrics_partial():
 
 
 def test_compute_metrics_empty():
-    from scripts.classifier_adapters import compute_metrics, LABELS
+    from scripts.classifier_adapters import LABELS, compute_metrics
     m = compute_metrics([], [], LABELS)
     assert m["__accuracy__"] == pytest.approx(0.0)
 
@@ -58,6 +58,7 @@ def test_classifier_adapter_is_abstract():
 
 def test_zeroshot_adapter_classify_mocked():
     from unittest.mock import MagicMock, patch
+
     from scripts.classifier_adapters import ZeroShotAdapter
 
     # Two-level mock: factory call returns pipeline instance; instance call returns inference result.
@@ -81,6 +82,7 @@ def test_zeroshot_adapter_classify_mocked():
 
 def test_zeroshot_adapter_unload_clears_pipeline():
     from unittest.mock import MagicMock, patch
+
     from scripts.classifier_adapters import ZeroShotAdapter
 
     with patch("scripts.classifier_adapters.pipeline", MagicMock()):
@@ -93,6 +95,7 @@ def test_zeroshot_adapter_unload_clears_pipeline():
 
 def test_zeroshot_adapter_lazy_loads():
     from unittest.mock import MagicMock, patch
+
     from scripts.classifier_adapters import ZeroShotAdapter
 
     mock_pipe_factory = MagicMock()
@@ -111,6 +114,7 @@ def test_zeroshot_adapter_lazy_loads():
 
 def test_gliclass_adapter_classify_mocked():
     from unittest.mock import MagicMock, patch
+
     from scripts.classifier_adapters import GLiClassAdapter
 
     mock_pipeline_instance = MagicMock()
@@ -133,6 +137,7 @@ def test_gliclass_adapter_classify_mocked():
 
 def test_gliclass_adapter_returns_highest_score():
     from unittest.mock import MagicMock, patch
+
     from scripts.classifier_adapters import GLiClassAdapter
 
     mock_pipeline_instance = MagicMock()
@@ -157,7 +162,8 @@ def test_gliclass_adapter_returns_highest_score():
 
 def test_reranker_adapter_picks_highest_score():
     from unittest.mock import MagicMock, patch
-    from scripts.classifier_adapters import RerankerAdapter, LABELS
+
+    from scripts.classifier_adapters import LABELS, RerankerAdapter
 
     mock_reranker = MagicMock()
     mock_reranker.compute_score.return_value = [0.1, 0.05, 0.85, 0.05, 0.02, 0.03]

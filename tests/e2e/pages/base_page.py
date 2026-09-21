@@ -1,8 +1,9 @@
 """Base page object — navigation, error capture, interactable discovery."""
 from __future__ import annotations
+
+import fnmatch
 import logging
 import warnings
-import fnmatch
 from dataclasses import dataclass
 
 from playwright.sync_api import Page

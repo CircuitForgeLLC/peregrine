@@ -1,8 +1,11 @@
 # tests/test_user_profile.py
-import pytest
 from pathlib import Path
+
+import pytest
 import yaml
+
 from scripts.user_profile import UserProfile
+
 
 @pytest.fixture
 def profile_yaml(tmp_path):

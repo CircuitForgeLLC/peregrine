@@ -24,25 +24,25 @@ log = logging.getLogger(__name__)
 _BROWSER_ARTIFACT_RE = re.compile(
     r"^file:///"                                                      # file:// URL footer
     r"|^\d{1,2}/\d{1,2}/\d{2,4},\s+\d{1,2}:\d{2}\s+[AP]M\b",       # MM/DD/YY, H:MM AM/PM header
-    re.I,
+    re.IGNORECASE,
 )
 
 # ── Section header detection ──────────────────────────────────────────────────
 
 _SECTION_NAMES = {
-    "summary":    re.compile(r"^(summary|objective|profile|about me|professional summary|career summary|career objective|personal statement)\s*:?\s*$", re.I),
-    "experience": re.compile(r"^(experience|work experience|employment|work history|professional experience|career history|relevant experience|professional history|employment history|positions? held)\s*:?\s*$", re.I),
-    "education":  re.compile(r"^(education|academic|qualifications|degrees?|educational background|academic background)\s*:?\s*$", re.I),
-    "skills":     re.compile(r"^(skills?|technical skills?|core competencies|competencies|expertise|areas? of expertise|key skills?|proficiencies|tools? & technologies)\s*:?\s*$", re.I),
-    "achievements": re.compile(r"^(achievements?|accomplishments?|awards?|honors?|certifications?|publications?|volunteer)\s*:?\s*$", re.I),
-    "projects":     re.compile(r"^(projects?|independent development|independent projects?|side projects?|personal projects?|open.?source|portfolio)\s*:?\s*$", re.I),
-    "references": re.compile(r"^references?\s*:?\s*$", re.I),
+    "summary":    re.compile(r"^(summary|objective|profile|about me|professional summary|career summary|career objective|personal statement)\s*:?\s*$", re.IGNORECASE),
+    "experience": re.compile(r"^(experience|work experience|employment|work history|professional experience|career history|relevant experience|professional history|employment history|positions? held)\s*:?\s*$", re.IGNORECASE),
+    "education":  re.compile(r"^(education|academic|qualifications|degrees?|educational background|academic background)\s*:?\s*$", re.IGNORECASE),
+    "skills":     re.compile(r"^(skills?|technical skills?|core competencies|competencies|expertise|areas? of expertise|key skills?|proficiencies|tools? & technologies)\s*:?\s*$", re.IGNORECASE),
+    "achievements": re.compile(r"^(achievements?|accomplishments?|awards?|honors?|certifications?|publications?|volunteer)\s*:?\s*$", re.IGNORECASE),
+    "projects":     re.compile(r"^(projects?|independent development|independent projects?|side projects?|personal projects?|open.?source|portfolio)\s*:?\s*$", re.IGNORECASE),
+    "references": re.compile(r"^references?\s*:?\s*$", re.IGNORECASE),
 }
 
 # Degrees — used to detect education lines
 _DEGREE_RE = re.compile(
     r"\b(b\.?s\.?|b\.?a\.?|m\.?s\.?|m\.?b\.?a\.?|ph\.?d\.?|bachelor|master|associate|doctorate|diploma)\b",
-    re.I,
+    re.IGNORECASE,
 )
 
 # Date patterns for experience entries: "Jan 2020", "2020", "01/2020", "2019 - 2022"
@@ -50,7 +50,7 @@ _DATE_RE = re.compile(
     r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|"
     r"july|august|september|october|november|december)?\s*\d{4}\b"
     r"|\b\d{1,2}/\d{4}\b",
-    re.I,
+    re.IGNORECASE,
 )
 _DATE_RANGE_RE = re.compile(
     r"("
@@ -65,13 +65,13 @@ _DATE_RANGE_RE = re.compile(
     r"|\d{4}"
     r"|present|current|now"
     r")",
-    re.I,
+    re.IGNORECASE,
 )
 
 # Contact info
 _EMAIL_RE    = re.compile(r"[\w.+\-]+@[\w\-]+\.[\w.\-]+")
 _PHONE_RE    = re.compile(r"(?:\+1[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}")
-_LINKEDIN_RE = re.compile(r"linkedin\.com/in/[\w\-]+", re.I)
+_LINKEDIN_RE = re.compile(r"linkedin\.com/in/[\w\-]+", re.IGNORECASE)
 
 
 # ── Text extraction ───────────────────────────────────────────────────────────
@@ -149,9 +149,8 @@ def extract_text_from_odt(file_bytes: bytes) -> str:
     # ODT is a ZIP archive; content.xml holds the document body
     _NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
     lines: list[str] = []
-    with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
-        with zf.open("content.xml") as f:
-            tree = ET.parse(f)
+    with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf, zf.open("content.xml") as f:
+        tree = ET.parse(f)
     # Walk all text:p and text:h elements in document order
     for elem in tree.iter():
         tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
@@ -218,7 +217,7 @@ def _parse_header(lines: list[str]) -> dict:
         # Skip phone/URL/city lines
         if re.match(r"^\d", stripped):
             continue
-        if re.search(r"\b[A-Z]{2}\b\s*\d{5}", stripped) or re.search(r"https?://|linkedin|github", stripped, re.I):
+        if re.search(r"\b[A-Z]{2}\b\s*\d{5}", stripped) or re.search(r"https?://|linkedin|github", stripped, re.IGNORECASE):
             continue
         # Layout A: plain name line
         candidate = re.sub(r"[|•·,]+", " ", stripped).strip()
@@ -339,7 +338,7 @@ def _parse_experience(lines: list[str]) -> list[dict]:
 
 # ── Education ─────────────────────────────────────────────────────────────────
 
-_INSTITUTION_RE = re.compile(r"\b(university|college|institute|school|academy)\b", re.I)
+_INSTITUTION_RE = re.compile(r"\b(university|college|institute|school|academy)\b", re.IGNORECASE)
 
 
 def _parse_education(lines: list[str]) -> list[dict]:

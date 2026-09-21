@@ -7,21 +7,23 @@ Usage:
 """
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import yaml
 from datetime import datetime
 
 import pandas as pd
+import yaml
 from jobspy import scrape_jobs
 from notion_client import Client
 
-from scripts.db import DEFAULT_DB, init_db, insert_job, get_existing_urls as db_existing_urls
 from scripts.custom_boards import adzuna as _adzuna
-from scripts.custom_boards import theladders as _theladders
 from scripts.custom_boards import craigslist as _craigslist
 from scripts.custom_boards import remoteok as _remoteok
+from scripts.custom_boards import theladders as _theladders
 from scripts.custom_boards import weworkremotely as _weworkremotely
+from scripts.db import DEFAULT_DB, init_db, insert_job
+from scripts.db import get_existing_urls as db_existing_urls
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 NOTION_CFG = CONFIG_DIR / "notion.yaml"

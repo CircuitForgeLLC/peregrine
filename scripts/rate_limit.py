@@ -10,7 +10,7 @@ from starlette.responses import JSONResponse
 
 def _rate_key(request: Request) -> str:
     """Cloud mode: user_id from DB path. Local mode: client IP. Demo: unique key (no rate limit)."""
-    from dev_api import IS_DEMO, _CLOUD_MODE, _request_db  # lazy import avoids circular
+    from dev_api import _CLOUD_MODE, IS_DEMO, _request_db  # lazy import avoids circular
     if IS_DEMO:
         return f"demo-{id(request)}"  # unique per request — effectively no rate limiting
     db_path = _request_db.get()

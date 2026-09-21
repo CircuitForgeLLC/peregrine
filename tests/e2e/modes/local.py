@@ -1,5 +1,6 @@
 """Local mode config — port 8502, full features, no auth."""
 from pathlib import Path
+
 from tests.e2e.models import ModeConfig
 
 _BASE_SETTINGS_TABS = [

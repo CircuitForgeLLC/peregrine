@@ -1,7 +1,8 @@
-import yaml
 from unittest.mock import patch
+
+import yaml
 from fastapi.testclient import TestClient
-import dev_api
+
 from dev_api import app
 
 client = TestClient(app)

@@ -26,8 +26,9 @@ def test_registry_entries_have_required_keys():
 
 
 def test_load_scoring_jsonl(tmp_path):
-    from scripts.benchmark_classifier import load_scoring_jsonl
     import json
+
+    from scripts.benchmark_classifier import load_scoring_jsonl
     f = tmp_path / "score.jsonl"
     rows = [
         {"subject": "Hi", "body": "Body text", "label": "neutral"},
@@ -49,6 +50,7 @@ def test_run_scoring_with_mock_adapters(tmp_path):
     """run_scoring() returns per-model metrics using mock adapters."""
     import json
     from unittest.mock import MagicMock
+
     from scripts.benchmark_classifier import run_scoring
 
     score_file = tmp_path / "score.jsonl"
@@ -81,6 +83,7 @@ def test_run_scoring_handles_classify_error(tmp_path):
     """run_scoring() falls back to 'neutral' on exception and continues."""
     import json
     from unittest.mock import MagicMock
+
     from scripts.benchmark_classifier import run_scoring
 
     score_file = tmp_path / "score.jsonl"

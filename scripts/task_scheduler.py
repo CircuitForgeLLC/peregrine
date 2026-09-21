@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from circuitforge_core.tasks.scheduler import (
     LocalScheduler as _CoreTaskScheduler,
+)
+from circuitforge_core.tasks.scheduler import (
     TaskSpec,  # noqa: F401 — re-exported as part of public API; tests import from here
 )
 
@@ -51,7 +53,7 @@ DEFAULT_VRAM_BUDGETS: dict[str, float] = {
 _DEFAULT_MAX_QUEUE_DEPTH = 500
 
 
-def _load_config_overrides(db_path: Optional[Path]) -> tuple[dict[str, float], int]:
+def _load_config_overrides(db_path: Path | None) -> tuple[dict[str, float], int]:
     """Load VRAM budget overrides and max_queue_depth from config/llm.yaml.
 
     db_path=None (cloud mode, scheduler constructed with no bootstrap tenant)
@@ -88,7 +90,7 @@ def _load_config_overrides(db_path: Optional[Path]) -> tuple[dict[str, float], i
 try:
     from scripts.preflight import get_gpus as _get_gpus
 except Exception:
-    _get_gpus = lambda: []  # noqa: E731
+    _get_gpus = list
 
 
 class TaskScheduler(_CoreTaskScheduler):
@@ -106,7 +108,7 @@ class TaskScheduler(_CoreTaskScheduler):
     use get_scheduler() instead.
     """
 
-    def __init__(self, db_path: Optional[Path], run_task_fn: Callable) -> None:
+    def __init__(self, db_path: Path | None, run_task_fn: Callable) -> None:
         budgets, max_depth = _load_config_overrides(db_path)
 
         # Warn under this module's logger for any task types with no VRAM budget
@@ -132,7 +134,7 @@ class TaskScheduler(_CoreTaskScheduler):
         task_id: int,
         task_type: str,
         job_id: int,
-        params: Optional[str],
+        params: str | None,
         db_path: Path,
     ) -> bool:
         """Add an LLM task to the scheduler queue.
@@ -161,13 +163,13 @@ class TaskScheduler(_CoreTaskScheduler):
 # We manage our own singleton (not the core one) so the process-level instance
 # is always a Peregrine TaskScheduler (with the enqueue() override).
 
-_scheduler: Optional[TaskScheduler] = None
+_scheduler: TaskScheduler | None = None
 _scheduler_lock = threading.Lock()
 
 
 def get_scheduler(
-    db_path: Optional[Path] = None,
-    run_task_fn: Optional[Callable] = None,
+    db_path: Path | None = None,
+    run_task_fn: Callable | None = None,
 ) -> TaskScheduler:
     """Return the process-level Peregrine TaskScheduler singleton.
 

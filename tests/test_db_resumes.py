@@ -50,7 +50,7 @@ def test_delete_resume(db):
 
 
 def test_set_default_resume(db):
-    from scripts.db import create_resume, set_default_resume, list_resumes
+    from scripts.db import create_resume, list_resumes, set_default_resume
     a = create_resume(db, name="A", text="text a")
     b = create_resume(db, name="B", text="text b")
     set_default_resume(db, a["id"])
@@ -61,7 +61,7 @@ def test_set_default_resume(db):
 
 
 def test_get_job_resume_default_fallback(db):
-    from scripts.db import create_resume, set_default_resume, get_job_resume
+    from scripts.db import create_resume, get_job_resume, set_default_resume
     # Insert a minimal job row
     conn = sqlite3.connect(db)
     conn.execute("INSERT INTO jobs (id, title, company, source) VALUES (1, 'Eng', 'Co', 'test')")
@@ -74,7 +74,12 @@ def test_get_job_resume_default_fallback(db):
 
 
 def test_get_job_resume_job_specific_override(db):
-    from scripts.db import create_resume, set_default_resume, get_job_resume, set_job_resume
+    from scripts.db import (
+        create_resume,
+        get_job_resume,
+        set_default_resume,
+        set_job_resume,
+    )
     conn = sqlite3.connect(db)
     conn.execute("INSERT INTO jobs (id, title, company, source) VALUES (1, 'Eng', 'Co', 'test')")
     conn.commit()

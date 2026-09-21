@@ -1,6 +1,7 @@
 """Tests for interview prep endpoints: research GET/generate/task, contacts GET."""
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 

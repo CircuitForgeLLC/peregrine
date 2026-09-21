@@ -1,6 +1,5 @@
 """Tests for the feedback API backend."""
-from unittest.mock import patch, MagicMock
-
+from unittest.mock import MagicMock, patch
 
 # ── mask_pii ──────────────────────────────────────────────────────────────────
 
@@ -246,8 +245,9 @@ def test_upload_attachment_returns_url(mock_post, monkeypatch):
 
 def test_screenshot_page_returns_none_on_failure(monkeypatch):
     """screenshot_page returns None gracefully when capture fails."""
-    from scripts.feedback_api import screenshot_page
     import playwright.sync_api as pw_api
+
+    from scripts.feedback_api import screenshot_page
     original = pw_api.sync_playwright
     def bad_playwright():
         raise RuntimeError("browser unavailable")
