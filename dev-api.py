@@ -3368,6 +3368,13 @@ def _config_dir() -> Path:
     """Resolve per-user config directory. Always co-located with user.yaml."""
     return Path(_user_yaml_path()).parent
 
+def _task_models_path() -> Path:
+    """Per-tenant task_models storage, cloud mode only. Self-hosted keeps
+    using LLM_ROUTER_CONFIG_PATH (see get_task_models/save_task_models) --
+    the shared cloud llm.yaml is centrally CF-managed and mounted
+    read-only, so per-tenant assignments must live somewhere else."""
+    return _config_dir() / "task_models.yaml"
+
 def _resume_path() -> Path:
     """Resolve plain_text_resume.yaml co-located with user.yaml (user-isolated)."""
     return _config_dir() / "plain_text_resume.yaml"
@@ -3966,9 +3973,10 @@ def get_task_models():
     One-time migration: a pre-existing backends.cover_letter.model (from
     the now-removed single-purpose cover-letter-model picker) becomes
     task_models.primary the first time this is read, so an existing
-    user's customization isn't silently dropped.
+    user's customization isn't silently dropped. Self-hosted only --
+    cloud tenants have no legacy backends.cover_letter.model to migrate.
     """
-    cfg_path = LLM_ROUTER_CONFIG_PATH
+    cfg_path = _task_models_path() if _CLOUD_MODE else LLM_ROUTER_CONFIG_PATH
     data: dict = {}
     if cfg_path.exists():
         with open(cfg_path) as f:
@@ -3977,9 +3985,10 @@ def get_task_models():
     task_models = data.get("task_models")
     if task_models is None:
         task_models = {"primary": None, "research": None, "chat": None}
-        legacy_model = (data.get("backends", {}).get("cover_letter") or {}).get("model")
-        if legacy_model:
-            task_models["primary"] = {"backend": "ollama", "model": legacy_model}
+        if not _CLOUD_MODE:
+            legacy_model = (data.get("backends", {}).get("cover_letter") or {}).get("model")
+            if legacy_model:
+                task_models["primary"] = {"backend": "ollama", "model": legacy_model}
         data["task_models"] = task_models
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         with open(cfg_path, "w") as f:
@@ -4024,7 +4033,7 @@ def _probes_for_assignments(task_models: dict) -> dict:
 
 @app.put("/api/settings/system/task-models")
 def save_task_models(payload: TaskModelsPayload):
-    cfg_path = LLM_ROUTER_CONFIG_PATH
+    cfg_path = _task_models_path() if _CLOUD_MODE else LLM_ROUTER_CONFIG_PATH
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     data: dict = {}
     if cfg_path.exists():
