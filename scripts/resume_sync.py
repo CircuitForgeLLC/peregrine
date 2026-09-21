@@ -197,7 +197,7 @@ def make_auto_backup_name(source_name: str) -> str:
 
     Example: "Auto-backup before Senior Engineer Resume — 2026-04-16"
     """
-    today = date.today().isoformat()
+    today = date.today().isoformat()  # noqa: DTZ011 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     return f"Auto-backup before {source_name} \u2014 {today}"
 
 

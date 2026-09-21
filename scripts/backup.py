@@ -212,7 +212,7 @@ def create_backup(
 
         # Manifest
         manifest = {
-            "created_at": datetime.now().isoformat(),
+            "created_at": datetime.now().isoformat(),  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
             "source": source_label or _detect_source_label(base_dir),
             "source_path": str(base_dir.resolve()),
             "peregrine_version": "1.0",
