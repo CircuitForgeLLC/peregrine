@@ -44,11 +44,14 @@ def collect_context(page: str) -> dict:
     try:
         user = yaml.safe_load((_ROOT / "config" / "user.yaml").read_text()) or {}
         tier = user.get("tier", "unknown")
-    except (OSError, yaml.YAMLError):
+    except (OSError, yaml.YAMLError, UnicodeDecodeError, AttributeError):
         # config/user.yaml is legitimately absent for many installs (defaults haven't
         # been written yet) — this is an expected, common path, not a real failure, so
         # we deliberately don't log it on every feedback submission; the "unknown"
-        # default is already informative in the collected context.
+        # default is already informative in the collected context. UnicodeDecodeError
+        # covers a non-UTF-8 file (read_text() isn't caught by OSError), AttributeError
+        # covers a malformed non-dict YAML top-level (.get() on a list/scalar) --
+        # same reasoning as the llm_backend lookup below.
         pass
 
     # LLM backend from llm.yaml — report first entry in fallback_order that's enabled
@@ -60,12 +63,14 @@ def collect_context(page: str) -> dict:
             if backends.get(name, {}).get("enabled", False):
                 llm_backend = name
                 break
-    except (OSError, yaml.YAMLError, AttributeError):
+    except (OSError, yaml.YAMLError, UnicodeDecodeError, AttributeError, TypeError):
         # Same reasoning as the tier lookup above: config/llm.yaml missing/malformed is
-        # expected for many installs, and AttributeError covers a non-dict `backends`
-        # entry from a malformed YAML shape (`.get` called on something that isn't a
-        # dict). Not logged on every submission for the same "expected, not a real
-        # failure" reason.
+        # expected for many installs. UnicodeDecodeError covers a non-UTF-8 file
+        # (read_text() isn't caught by OSError). AttributeError covers a non-dict
+        # `backends` entry (`.get` called on something that isn't a dict). TypeError
+        # covers a non-iterable `fallback_order` (e.g. malformed YAML gives an int
+        # instead of a list). Not logged on every submission for the same "expected,
+        # not a real failure" reason.
         pass
 
     return {
