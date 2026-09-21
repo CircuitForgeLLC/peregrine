@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 import os
 from datetime import datetime
+
 from scripts.integrations.base import IntegrationBase
 
 

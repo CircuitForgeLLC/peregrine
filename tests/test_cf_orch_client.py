@@ -6,12 +6,12 @@ circuitforge-orch package, which bundles the full coordinator server
 (fastapi, typer, mcp, psutil) -- far more than a single round trip needs.
 See circuitforge-plans/peregrine/superpowers/plans/2026-09-18-cloud-custom-model-cforch-followup.md.
 """
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
-from scripts.cf_orch_client import complete_via_cf_orch, CfOrchTaskError
+from scripts.cf_orch_client import CfOrchTaskError, complete_via_cf_orch
 
 
 def _resp(status_code=200, json_data=None, text=""):

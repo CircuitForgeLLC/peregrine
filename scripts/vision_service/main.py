@@ -80,8 +80,8 @@ def health():
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 def analyze(req: AnalyzeRequest):
-    from PIL import Image
     import torch
+    from PIL import Image
 
     _load_model()
 

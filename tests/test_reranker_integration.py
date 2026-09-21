@@ -208,8 +208,9 @@ def test_rewrite_for_ats_preserves_unrewritten_sections(monkeypatch):
 
 def test_rewrite_for_ats_reranker_fallback_on_error(monkeypatch):
     """rewrite_for_ats completes even if reranker raises an exception."""
-    from scripts.resume_optimizer import rewrite_for_ats
     from circuitforge_core.reranker import reset_reranker
+
+    from scripts.resume_optimizer import rewrite_for_ats
 
     # Patch rerank to raise so we test the fallback path
     with patch("circuitforge_core.reranker.rerank", side_effect=RuntimeError("boom")):

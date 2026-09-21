@@ -1,9 +1,10 @@
 """Tests for all settings API endpoints added in Tasks 1–8."""
 import os
-import yaml
-import pytest
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 # credential_store.py was merged to main repo — no worktree path manipulation needed

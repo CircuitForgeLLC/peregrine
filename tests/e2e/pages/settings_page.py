@@ -1,5 +1,6 @@
 """Settings page — tab-aware page object."""
 from __future__ import annotations
+
 import logging
 
 from tests.e2e.pages.base_page import BasePage, InteractableElement

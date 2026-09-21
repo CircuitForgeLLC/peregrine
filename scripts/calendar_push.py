@@ -5,12 +5,12 @@ push updates the existing event rather than creating a duplicate.
 """
 from __future__ import annotations
 
-import yaml
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 
-from scripts.db import get_job_by_id, get_research, set_calendar_event_id, DEFAULT_DB
+import yaml
+
+from scripts.db import DEFAULT_DB, get_job_by_id, get_research, set_calendar_event_id
 
 _CALENDAR_INTEGRATIONS = ("apple_calendar", "google_calendar")
 
@@ -41,7 +41,7 @@ def _load_integration(name: str, config_dir: Path):
     return integration
 
 
-def _build_event_details(job: dict, research: Optional[dict]) -> tuple[str, str]:
+def _build_event_details(job: dict, research: dict | None) -> tuple[str, str]:
     """Return (title, description) for the calendar event."""
     stage_label = _STAGE_LABELS.get(job.get("status", ""), "Interview")
     title = f"{stage_label}: {job.get('title', 'Interview')} @ {job.get('company', '')}"

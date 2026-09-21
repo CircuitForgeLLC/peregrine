@@ -3,7 +3,6 @@
 import json
 from unittest.mock import patch
 
-
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
 SAMPLE_RESUME = {
@@ -252,7 +251,7 @@ def test_render_resume_text_omits_empty_sections():
 
 def test_save_and_get_optimized_resume(tmp_path):
     """save_optimized_resume persists and get_optimized_resume retrieves the data."""
-    from scripts.db import init_db, save_optimized_resume, get_optimized_resume
+    from scripts.db import get_optimized_resume, init_db, save_optimized_resume
 
     db_path = tmp_path / "test.db"
     init_db(db_path)
@@ -277,7 +276,7 @@ def test_save_and_get_optimized_resume(tmp_path):
 
 def test_get_optimized_resume_returns_empty_for_missing(tmp_path):
     """get_optimized_resume returns empty strings when no record exists."""
-    from scripts.db import init_db, get_optimized_resume
+    from scripts.db import get_optimized_resume, init_db
 
     db_path = tmp_path / "test.db"
     init_db(db_path)

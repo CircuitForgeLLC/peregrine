@@ -5,6 +5,7 @@ Integration modules are imported here; only successfully imported ones
 appear in the registry.
 """
 from __future__ import annotations
+
 from scripts.integrations.base import IntegrationBase
 
 # Import all integration modules to register their subclasses.

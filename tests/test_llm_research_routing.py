@@ -16,7 +16,6 @@ helper this file used to test was removed once its last caller was migrated.
 The _extract_json_array() parsing helper below is unaffected and still used
 by every one of those endpoints.
 """
-from unittest.mock import MagicMock, patch
 
 
 def test_extract_json_array_parses_array_with_surrounding_prose():

@@ -7,7 +7,6 @@ import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from circuitforge_core.db import get_connection as _cf_get_connection
 
@@ -241,7 +240,7 @@ def init_db(db_path: Path = DEFAULT_DB) -> None:
     _migrate_db(db_path)
 
 
-def insert_job(db_path: Path = DEFAULT_DB, job: dict = None) -> Optional[int]:
+def insert_job(db_path: Path = DEFAULT_DB, job: dict = None) -> int | None:
     """Insert a job. Returns row id, or None if URL already exists."""
     if job is None:
         return None
@@ -274,7 +273,7 @@ def insert_job(db_path: Path = DEFAULT_DB, job: dict = None) -> Optional[int]:
         conn.close()
 
 
-def get_job_by_id(db_path: Path = DEFAULT_DB, job_id: int = None) -> Optional[dict]:
+def get_job_by_id(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict | None:
     """Return a single job by ID, or None if not found."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -816,7 +815,7 @@ def save_research(db_path: Path = DEFAULT_DB, job_id: int = None,
     conn.close()
 
 
-def get_research(db_path: Path = DEFAULT_DB, job_id: int = None) -> Optional[dict]:
+def get_research(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict | None:
     """Return the company research record for a job, or None if absent."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -875,7 +874,7 @@ def get_survey_responses(db_path: Path = DEFAULT_DB, job_id: int = None) -> list
 
 def insert_task(db_path: Path = DEFAULT_DB, task_type: str = "",
                 job_id: int = None,
-                params: Optional[str] = None) -> tuple[int, bool]:
+                params: str | None = None) -> tuple[int, bool]:
     """Insert a new background task.
 
     Returns (task_id, True) if inserted, or (existing_id, False) if a
@@ -911,7 +910,7 @@ def insert_task(db_path: Path = DEFAULT_DB, task_type: str = "",
 
 
 def update_task_status(db_path: Path = DEFAULT_DB, task_id: int = None,
-                       status: str = "", error: Optional[str] = None) -> None:
+                       status: str = "", error: str | None = None) -> None:
     """Update a task's status and set the appropriate timestamp."""
     now = datetime.now().isoformat()[:16]
     conn = sqlite3.connect(db_path)
@@ -959,7 +958,7 @@ def get_active_tasks(db_path: Path = DEFAULT_DB) -> list[dict]:
 
 
 def get_task_for_job(db_path: Path = DEFAULT_DB, task_type: str = "",
-                     job_id: int = None) -> Optional[dict]:
+                     job_id: int = None) -> dict | None:
     """Return the most recent task row for a (task_type, job_id) pair, or None."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row

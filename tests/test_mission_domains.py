@@ -74,7 +74,7 @@ def test_detect_is_case_insensitive() -> None:
 
 def test_detect_uses_default_mission_notes_when_none_passed() -> None:
     """detect_mission_alignment uses module-level _MISSION_NOTES when notes=None."""
-    from scripts.generate_cover_letter import detect_mission_alignment, _MISSION_DOMAINS
+    from scripts.generate_cover_letter import _MISSION_DOMAINS, detect_mission_alignment
     if "music" not in _MISSION_DOMAINS:
         pytest.skip("music domain not present in loaded config")
     result = detect_mission_alignment("Spotify", "We build music streaming products.")
@@ -98,8 +98,8 @@ def test_build_mission_notes_uses_default_when_no_custom(tmp_path: Path) -> None
         name = "Test User"
         mission_preferences: dict = {}
 
-    from scripts.generate_cover_letter import load_mission_domains, _build_mission_notes
     import scripts.generate_cover_letter as gcl
+    from scripts.generate_cover_letter import _build_mission_notes, load_mission_domains
     domains_orig = gcl._MISSION_DOMAINS
     signals_orig = gcl._MISSION_SIGNALS
     try:
@@ -126,8 +126,8 @@ def test_build_mission_notes_uses_custom_note_when_provided(tmp_path: Path) -> N
         name = "Alex"
         mission_preferences = {"music": "I played guitar for 10 years."}
 
-    from scripts.generate_cover_letter import load_mission_domains, _build_mission_notes
     import scripts.generate_cover_letter as gcl
+    from scripts.generate_cover_letter import _build_mission_notes, load_mission_domains
     domains_orig = gcl._MISSION_DOMAINS
     signals_orig = gcl._MISSION_SIGNALS
     try:

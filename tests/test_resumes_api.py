@@ -211,6 +211,7 @@ def test_apply_suggestion_409_when_no_struct_json(client):
 
 def test_score_persists_struct_json_when_missing_and_unblocks_apply(client):
     from pathlib import Path as _Path
+
     from scripts.task_runner import _run_task
     c, db = client
     resume_text = 'Jane Doe\njane@example.com\n\nExperience\nSoftware Engineer | Acme Corp\nJan 2020 - Dec 2023\n\u2022 Built things\n\nSkills\nPython, SQL'

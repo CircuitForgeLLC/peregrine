@@ -1,5 +1,5 @@
 """Tests for imap_sync helpers (no live IMAP connection required)."""
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def test_classify_stage_signal_interview():
@@ -93,6 +93,7 @@ def test_classify_labels_includes_survey_received():
 def test_classify_stage_signal_returns_survey_received():
     """classify_stage_signal returns 'survey_received' when LLM outputs that label."""
     from unittest.mock import patch
+
     from scripts.imap_sync import classify_stage_signal
 
     with patch("scripts.imap_sync._CLASSIFIER_ROUTER") as mock_router:
@@ -103,7 +104,7 @@ def test_classify_stage_signal_returns_survey_received():
 
 def test_sync_job_emails_classifies_inbound(tmp_path):
     """sync_job_emails classifies inbound emails and stores the stage_signal."""
-    from scripts.db import init_db, insert_job, get_contacts
+    from scripts.db import get_contacts, init_db, insert_job
     from scripts.imap_sync import sync_job_emails
 
     db_path = tmp_path / "test.db"
@@ -303,7 +304,8 @@ _ALERT_EMAIL = {
 def test_scan_unmatched_leads_linkedin_alert_inserts_jobs(tmp_path):
     """_scan_unmatched_leads detects a LinkedIn alert and inserts each job card."""
     import sqlite3
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
+
     from scripts.db import init_db
 
     db_path = tmp_path / "test.db"
@@ -346,7 +348,8 @@ def test_scan_unmatched_leads_linkedin_alert_inserts_jobs(tmp_path):
 
 def test_scan_unmatched_leads_linkedin_alert_skips_duplicates(tmp_path):
     """URLs already in the DB are not re-inserted."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
+
     from scripts.db import init_db, insert_job
 
     db_path = tmp_path / "test.db"
@@ -376,7 +379,8 @@ def test_scan_unmatched_leads_linkedin_alert_skips_duplicates(tmp_path):
 
 def test_scan_unmatched_leads_linkedin_alert_skips_llm_path(tmp_path):
     """After a LinkedIn alert email, the LLM extraction path is never reached."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
+
     from scripts.db import init_db
 
     db_path = tmp_path / "test.db"
@@ -509,6 +513,7 @@ def test_search_folder_special_gmail_name():
 def test_get_existing_message_ids_excludes_null(tmp_path):
     """NULL message_id rows are excluded from the returned set."""
     import sqlite3
+
     from scripts.db import init_db, insert_job
     from scripts.imap_sync import _get_existing_message_ids
 
@@ -537,6 +542,7 @@ def test_get_existing_message_ids_excludes_null(tmp_path):
 def test_get_existing_message_ids_excludes_empty_string(tmp_path):
     """Empty-string message_id rows are excluded."""
     import sqlite3
+
     from scripts.db import init_db, insert_job
     from scripts.imap_sync import _get_existing_message_ids
 
@@ -722,6 +728,7 @@ def test_scan_unmatched_leads_rejection_phrase_blocks_llm(tmp_path):
 def test_scan_unmatched_leads_genuine_lead_has_synthetic_url(tmp_path):
     """A genuine lead is inserted with a synthetic email:// URL."""
     import sqlite3
+
     from scripts.db import init_db
     from scripts.imap_sync import _scan_unmatched_leads
 
@@ -772,6 +779,7 @@ def test_scan_unmatched_leads_no_reinsert_on_second_run(tmp_path):
 def test_scan_unmatched_leads_extract_none_no_insert(tmp_path):
     """When extract_lead_info returns (None, None), no job is inserted."""
     import sqlite3
+
     from scripts.db import init_db
     from scripts.imap_sync import _scan_unmatched_leads
 
@@ -948,6 +956,7 @@ def test_scan_todo_label_duplicate_message_id_not_reinserted(tmp_path):
 def test_scan_todo_label_stage_signal_set_for_non_neutral(tmp_path):
     """Non-neutral classifier signal is written to the contact row."""
     import sqlite3
+
     from scripts.imap_sync import _scan_todo_label
 
     db_path = tmp_path / "test.db"
@@ -1107,10 +1116,11 @@ def test_parse_message_large_body_not_truncated():
 
 def test_parse_message_binary_attachment_no_crash():
     """Email with binary attachment returns a valid dict without crashing."""
-    from scripts.imap_sync import _parse_message
+    from email.mime.application import MIMEApplication
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
-    from email.mime.application import MIMEApplication
+
+    from scripts.imap_sync import _parse_message
 
     msg = MIMEMultipart()
     msg["From"] = "r@acme.com"
@@ -1128,9 +1138,10 @@ def test_parse_message_binary_attachment_no_crash():
 
 def test_parse_message_multiple_text_parts_takes_first():
     """Email with multiple text/plain MIME parts uses only the first."""
-    from scripts.imap_sync import _parse_message
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
+
+    from scripts.imap_sync import _parse_message
 
     msg = MIMEMultipart()
     msg["From"] = "r@acme.com"
@@ -1151,8 +1162,8 @@ def test_get_all_message_ids_performance(tmp_path):
     """get_all_message_ids with 1000 rows completes quickly (smoke test for scale)."""
     import sqlite3
     import time
-    from scripts.db import init_db, insert_job
-    from scripts.db import get_all_message_ids
+
+    from scripts.db import get_all_message_ids, init_db, insert_job
 
     db_path = tmp_path / "test.db"
     init_db(db_path)

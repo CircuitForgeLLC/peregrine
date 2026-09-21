@@ -25,6 +25,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.user_profile import UserProfile
+
 _USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
 _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
 
@@ -38,7 +39,8 @@ for _scraper_candidate in [
     if _scraper_candidate.exists():
         sys.path.insert(0, str(_scraper_candidate))
         try:
-            from companyScraper import EnhancedCompanyScraper, Config as _ScraperConfig
+            from companyScraper import Config as _ScraperConfig
+            from companyScraper import EnhancedCompanyScraper
             _SCRAPER_AVAILABLE = True
         except (ImportError, SystemExit):
             pass
@@ -374,7 +376,7 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None,
     accessibility_focus = _profile.candidate_accessibility_focus if _profile else False
     lgbtq_focus = _profile.candidate_lgbtq_focus if _profile else False
     _section_count = 7 + (1 if accessibility_focus else 0) + (1 if lgbtq_focus else 0)
-    _accessibility_section = """
+    _accessibility_section = f"""
 ## Inclusion & Accessibility
 Assess {company}'s commitment to disability inclusion and accessibility. Cover:
 - ADA accommodation language in job postings or company policy
@@ -384,8 +386,8 @@ Assess {company}'s commitment to disability inclusion and accessibility. Cover:
 - Glassdoor or press signals about how employees with disabilities experience the company
 If no specific signals are found, say so clearly — absence of public commitment is itself signal.
 This section is for the candidate's personal decision-making only and will not appear in any application.
-""".format(company=company) if accessibility_focus else ""
-    _lgbtq_section = """
+""" if accessibility_focus else ""
+    _lgbtq_section = f"""
 ## LGBTQIA+ Inclusion
 Assess {company}'s culture and policies around LGBTQIA+ inclusion. Cover:
 - Non-discrimination policies that explicitly include sexual orientation and gender identity
@@ -395,7 +397,7 @@ Assess {company}'s culture and policies around LGBTQIA+ inclusion. Cover:
 - Glassdoor or press signals about how LGBTQIA+ employees experience the company day-to-day
 If no specific signals are found, say so clearly — absence of public commitment is itself signal.
 This section is for the candidate's personal decision-making only and will not appear in any application.
-""".format(company=company) if lgbtq_focus else ""
+""" if lgbtq_focus else ""
     prompt = f"""You are preparing {name} for a job interview.
 {f"Candidate background: {career_summary}" if career_summary else ""}
 
@@ -474,8 +476,9 @@ if __name__ == "__main__":
     parser.add_argument("--no-scrape", action="store_true", help="Skip SearXNG live scrape")
     args = parser.parse_args()
 
-    from scripts.db import DEFAULT_DB, init_db, save_research
     import sqlite3
+
+    from scripts.db import DEFAULT_DB, init_db, save_research
 
     init_db(DEFAULT_DB)
     conn = sqlite3.connect(DEFAULT_DB)

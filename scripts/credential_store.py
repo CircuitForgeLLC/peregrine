@@ -12,12 +12,11 @@ Env var references:
   as the actual secret — only the env var it points to is used.
 """
 
-import os
-import re
 import json
 import logging
+import os
+import re
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ CRED_DIR = _PROJECT_ROOT / "config" / "credentials"
 KEY_PATH = _PROJECT_ROOT / "config" / ".credential_key"
 
 
-def _resolve_env_ref(value: str) -> Optional[str]:
+def _resolve_env_ref(value: str) -> str | None:
     """If value is ${VAR_NAME}, return os.environ[VAR_NAME]; otherwise return None."""
     m = _ENV_REF.match(value)
     if m:
@@ -120,13 +119,13 @@ def _file_write(service: str, data: dict) -> None:
             f.write(content)
 
 
-def get_credential(service: str, key: str) -> Optional[str]:
+def get_credential(service: str, key: str) -> str | None:
     """
     Retrieve a credential. If the stored value is an env var reference (${VAR}),
     resolves it from os.environ at call time.
     """
     backend = _get_backend()
-    raw: Optional[str] = None
+    raw: str | None = None
 
     if backend == "keyring":
         try:

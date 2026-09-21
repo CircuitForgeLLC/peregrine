@@ -1,7 +1,8 @@
-import time
-import pytest
-from unittest.mock import patch
 import sqlite3
+import time
+from unittest.mock import patch
+
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +49,7 @@ def test_submit_task_deduplicates(tmp_path):
 def test_run_task_cover_letter_success(tmp_path):
     """_run_task marks running→completed and saves cover letter to DB."""
     db, job_id = _make_db(tmp_path)
-    from scripts.db import insert_task, get_task_for_job
+    from scripts.db import get_task_for_job, insert_task
     task_id, _ = insert_task(db, "cover_letter", job_id)
 
     with patch("scripts.generate_cover_letter.generate", return_value="Dear Hiring Manager,\nGreat fit!"):
@@ -120,7 +121,7 @@ def test_run_task_cover_letter_cloud_mode_uses_tenant_task_models(tmp_path):
 def test_run_task_company_research_success(tmp_path):
     """_run_task marks running→completed and saves research to DB."""
     db, job_id = _make_db(tmp_path)
-    from scripts.db import insert_task, get_task_for_job, get_research
+    from scripts.db import get_research, get_task_for_job, insert_task
 
     task_id, _ = insert_task(db, "company_research", job_id)
     fake_result = {
@@ -141,7 +142,7 @@ def test_run_task_company_research_success(tmp_path):
 def test_run_task_marks_failed_on_exception(tmp_path):
     """_run_task marks status=failed and stores error when generator raises."""
     db, job_id = _make_db(tmp_path)
-    from scripts.db import insert_task, get_task_for_job
+    from scripts.db import get_task_for_job, insert_task
     task_id, _ = insert_task(db, "cover_letter", job_id)
 
     with patch("scripts.generate_cover_letter.generate", side_effect=RuntimeError("LLM timeout")):
@@ -155,7 +156,7 @@ def test_run_task_marks_failed_on_exception(tmp_path):
 
 def test_run_task_discovery_success(tmp_path):
     """_run_task with task_type=discovery calls run_discovery and stores count in error field."""
-    from scripts.db import init_db, insert_task, get_task_for_job
+    from scripts.db import get_task_for_job, init_db, insert_task
     db = tmp_path / "test.db"
     init_db(db)
     task_id, _ = insert_task(db, "discovery", 0)
@@ -172,7 +173,7 @@ def test_run_task_discovery_success(tmp_path):
 def test_run_task_email_sync_success(tmp_path):
     """email_sync task calls sync_all and marks completed with summary."""
     db, _ = _make_db(tmp_path)
-    from scripts.db import insert_task, get_task_for_job
+    from scripts.db import get_task_for_job, insert_task
     task_id, _ = insert_task(db, "email_sync", 0)
 
     summary = {"synced": 3, "inbound": 5, "outbound": 2, "new_leads": 1, "errors": []}
@@ -188,7 +189,7 @@ def test_run_task_email_sync_success(tmp_path):
 def test_run_task_email_sync_file_not_found(tmp_path):
     """email_sync marks failed with helpful message when config is missing."""
     db, _ = _make_db(tmp_path)
-    from scripts.db import insert_task, get_task_for_job
+    from scripts.db import get_task_for_job, insert_task
     task_id, _ = insert_task(db, "email_sync", 0)
 
     with patch("scripts.imap_sync.sync_all", side_effect=FileNotFoundError("config/email.yaml")):
@@ -204,8 +205,8 @@ def test_submit_task_actually_completes(tmp_path):
     """Integration: submit_task routes LLM tasks through the scheduler and they complete."""
     db, job_id = _make_db(tmp_path)
     from scripts.db import get_task_for_job
-    from scripts.task_scheduler import get_scheduler
     from scripts.task_runner import _run_task
+    from scripts.task_scheduler import get_scheduler
 
     # Prime the singleton with the correct db_path before submit_task runs.
     # get_scheduler() already calls start() internally.
@@ -227,7 +228,7 @@ def test_submit_task_actually_completes(tmp_path):
 
 def test_run_task_enrich_craigslist_success(tmp_path):
     """enrich_craigslist task calls enrich_craigslist_fields and marks completed."""
-    from scripts.db import init_db, insert_job, insert_task, get_task_for_job
+    from scripts.db import get_task_for_job, init_db, insert_job, insert_task
     db = tmp_path / "test.db"
     init_db(db)
     job_id = insert_job(db, {
@@ -274,6 +275,7 @@ def test_scrape_url_submits_enrich_craigslist_for_craigslist_job(tmp_path):
 
 
 import json as _json
+
 
 def test_wizard_generate_unknown_section_fails(tmp_path):
     """wizard_generate with unknown section marks task failed."""
@@ -424,7 +426,6 @@ def test_submit_task_passes_db_path_to_enqueue_in_cloud_mode(tmp_path, monkeypat
     (no single-tenant bootstrap db), but enqueue() must still receive the
     task's own real db_path -- this is what actually fixes the cross-tenant
     leak from the caller's side."""
-    from scripts.db import insert_task
     db, job_id = _make_db(tmp_path)  # reuse this file's existing db-setup helper
 
     fake_scheduler = __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock()
@@ -448,7 +449,6 @@ def test_submit_task_passes_db_path_to_enqueue_in_cloud_mode(tmp_path, monkeypat
 def test_submit_task_passes_real_db_path_to_get_scheduler_self_hosted(tmp_path, monkeypatch):
     """Self-hosted (CLOUD_MODE unset) must be completely unchanged: get_scheduler()
     still receives the real db_path."""
-    from scripts.db import insert_task
     db, job_id = _make_db(tmp_path)
 
     fake_scheduler = __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock()

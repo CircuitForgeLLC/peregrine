@@ -1,9 +1,11 @@
 """Unit tests for E2E harness models and helper utilities."""
-import pytest
-from unittest.mock import patch, MagicMock
 import time
-from tests.e2e.models import ErrorRecord, ModeConfig, diff_errors
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 import tests.e2e.modes.cloud as cloud_mod  # imported early so load_dotenv runs before any monkeypatch
+from tests.e2e.models import ErrorRecord, ModeConfig, diff_errors
 
 
 def test_error_record_equality():

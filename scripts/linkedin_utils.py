@@ -21,13 +21,15 @@ When LinkedIn changes their markup, update the selector lists here only.
 Each section uses ordered fallbacks — first matching selector wins.
 """
 from __future__ import annotations
+
 import re
+
 from bs4 import BeautifulSoup
 
 # Noise phrases injected by LinkedIn's login wall — stripped from summary text
 _LOGIN_NOISE = re.compile(
     r"see more.*$|welcome back.*$|sign in.*$|by clicking.*$|new to linkedin.*$",
-    re.I | re.S,
+    re.IGNORECASE | re.DOTALL,
 )
 
 # ── Selector fallback lists ────────────────────────────────────────────────────

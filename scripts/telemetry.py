@@ -12,8 +12,8 @@ THE HARD RULE: if telemetry_consent.all_disabled is True for a user,
 nothing is written, no exceptions. This function is the ONLY path to
 usage_events — no feature may write there directly.
 """
-import os
 import json
+import os
 from typing import Any
 
 CLOUD_MODE: bool = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true", "yes")

@@ -20,7 +20,6 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-
 _CONTENT_FIELDS = frozenset({
     "name", "surname", "email", "phone", "career_summary",
     "experience", "skills", "education", "achievements",

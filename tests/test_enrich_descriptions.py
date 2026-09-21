@@ -1,7 +1,7 @@
 # tests/test_enrich_descriptions.py
 """Tests for scripts/enrich_descriptions.py — enrich_craigslist_fields()."""
-from unittest.mock import patch, MagicMock
 import sqlite3
+from unittest.mock import MagicMock, patch
 
 
 def test_enrich_craigslist_fields_skips_non_craigslist(tmp_path):

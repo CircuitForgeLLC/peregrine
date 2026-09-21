@@ -1,6 +1,7 @@
-from unittest.mock import patch, MagicMock
-from fastapi.testclient import TestClient
+from unittest.mock import MagicMock, patch
+
 import yaml
+from fastapi.testclient import TestClient
 
 import dev_api
 

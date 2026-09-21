@@ -1,6 +1,7 @@
-import pytest
-from unittest.mock import patch, MagicMock
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 import yaml
 
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "llm.yaml"
@@ -49,8 +50,9 @@ def test_router_raises_when_all_backends_fail():
 
 def test_is_reachable_returns_false_on_connection_error():
     """_is_reachable returns False when the health endpoint is unreachable."""
-    from scripts.llm_router import LLMRouter
     import requests
+
+    from scripts.llm_router import LLMRouter
 
     router = LLMRouter(CONFIG_PATH)
 
@@ -63,6 +65,7 @@ def test_is_reachable_returns_false_on_connection_error():
 def test_complete_skips_backend_without_image_support(tmp_path):
     """When images= is passed, backends without supports_images are skipped."""
     import yaml
+
     from scripts.llm_router import LLMRouter
 
     cfg = {
@@ -87,7 +90,7 @@ def test_complete_skips_backend_without_image_support(tmp_path):
     cfg_file = tmp_path / "llm.yaml"
     cfg_file.write_text(yaml.dump(cfg))
 
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"text": "B — collaborative"}
@@ -108,9 +111,11 @@ def test_complete_skips_backend_without_image_support(tmp_path):
 
 def test_complete_without_images_skips_vision_service(tmp_path):
     """When images=None, vision_service backend is skipped."""
-    import yaml
-    from scripts.llm_router import LLMRouter
     from unittest.mock import patch
+
+    import yaml
+
+    from scripts.llm_router import LLMRouter
 
     cfg = {
         "fallback_order": ["vision_service"],
@@ -136,7 +141,11 @@ def test_complete_without_images_skips_vision_service(tmp_path):
 
 
 # Tests for complete_task() and task-model exceptions
-from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
+from scripts.llm_router import (
+    LLMRouter,
+    TaskModelNotAssignedError,
+    TaskModelUnreachableError,
+)
 
 
 def _router_with_task_models(task_models: dict, backends: dict, extra_config: dict | None = None):
@@ -191,7 +200,7 @@ def test_complete_task_raises_unreachable_when_backend_disabled():
 
 
 def test_complete_task_calls_complete_with_backend_and_model_pinned():
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
     router = _router_with_task_models(
         task_models={"research": {"backend": "ollama", "model": "llama3.1:8b"}},
         backends={"ollama": {"type": "openai_compat", "base_url": "http://x", "model": "meghan-cover-writer", "enabled": True}},
@@ -338,7 +347,7 @@ def test_router_for_tenant_self_hosted_returns_bare_router():
     """Self-hosted (cloud_mode=False): router_for_tenant must return exactly
     what LLMRouter() with no arguments returns -- this path must be
     completely unchanged by this feature."""
-    from scripts.llm_router import router_for_tenant, LLMRouter
+    from scripts.llm_router import LLMRouter, router_for_tenant
 
     router = router_for_tenant(Path("/irrelevant/for/self-hosted/staging.db"), cloud_mode=False)
     assert isinstance(router, LLMRouter)
@@ -353,7 +362,7 @@ def test_merged_cloud_llm_config_combines_shared_backends_and_tenant_task_models
     fallback_order from CONFIG_PATH, with task_models replaced by this
     tenant's own file -- never the shared file's task_models (there isn't
     one; task_models lives per-tenant only in cloud mode)."""
-    from scripts.llm_router import _merged_cloud_llm_config, CONFIG_PATH
+    from scripts.llm_router import _merged_cloud_llm_config
 
     shared_cfg = {
         "backends": {"ollama": {"enabled": True, "model": "shared-model"}},
@@ -380,7 +389,7 @@ def test_merged_cloud_llm_config_combines_shared_backends_and_tenant_task_models
 def test_merged_cloud_llm_config_empty_task_models_when_tenant_file_missing(tmp_path):
     """A tenant who has never saved any assignment gets an empty task_models
     dict, not a crash or the shared file's (nonexistent) task_models."""
-    from scripts.llm_router import _merged_cloud_llm_config, CONFIG_PATH
+    from scripts.llm_router import _merged_cloud_llm_config
 
     fake_shared_path = tmp_path / "shared_llm.yaml"
     fake_shared_path.write_text(yaml.dump({"backends": {}, "fallback_order": []}))
@@ -397,7 +406,10 @@ def test_router_for_tenant_cloud_mode_builds_router_from_merged_dict(tmp_path):
     what _merged_cloud_llm_config produces for that db_path -- proving the
     router was actually constructed from the per-tenant merge, not a bare
     LLMRouter()."""
-    from scripts.llm_router import router_for_tenant, _merged_cloud_llm_config, CONFIG_PATH
+    from scripts.llm_router import (
+        _merged_cloud_llm_config,
+        router_for_tenant,
+    )
 
     fake_shared_path = tmp_path / "shared_llm.yaml"
     fake_shared_path.write_text(yaml.dump({"backends": {}, "fallback_order": []}))
@@ -413,7 +425,7 @@ def test_router_for_tenant_cloud_mode_builds_router_from_merged_dict(tmp_path):
 def test_two_tenants_get_isolated_task_models(tmp_path):
     """The core bug this whole plan exists to fix: two different tenants'
     task_models must never leak into each other."""
-    from scripts.llm_router import router_for_tenant, CONFIG_PATH
+    from scripts.llm_router import router_for_tenant
 
     fake_shared_path = tmp_path / "shared_llm.yaml"
     fake_shared_path.write_text(yaml.dump({"backends": {}, "fallback_order": []}))
