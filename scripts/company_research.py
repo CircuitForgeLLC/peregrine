@@ -353,13 +353,17 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None,
                     + "\n".join(f"- {p}" for p in parts)
                     + "\n\nIncorporate these facts where relevant."
                 )
-        except Exception as e:  # noqa: BLE001 -- narrowed from `BaseException` (which
-            # wrongly swallowed KeyboardInterrupt/SystemExit) to `Exception`. This block
-            # drives the third-party companyScraper module through several stages
-            # (SearXNG HTTP requests, bs4/regex extraction, dict access) with failure
-            # types that vary by stage; the surrounding contract is "live scrape is
-            # optional, always fall back to noting the failure and continuing with
-            # LLM-only research," so a blind catch is intentional here.
+        except (Exception, SystemExit) as e:  # noqa: BLE001 -- this block drives the
+            # third-party companyScraper module through several stages (SearXNG HTTP
+            # requests, bs4/regex extraction, dict access) with failure types that vary
+            # by stage, so a blind Exception catch is intentional. SystemExit is
+            # included deliberately (not just "not excluded"): EnhancedCompanyScraper's
+            # __init__ calls sys.exit(1) when its own check_searxng() probe fails, which
+            # can race the _searxng_running() gate above (a separate, earlier probe) --
+            # a SearXNG blip in that window raises SystemExit here. The contract is
+            # "live scrape is optional, always fall back to noting the failure and
+            # continuing with LLM-only research," so this must not escape as a hard
+            # task failure. KeyboardInterrupt is deliberately NOT caught.
             scrape_note = f"\n\n_(Live scrape attempted but failed: {e})_"
 
     # ── Phase 1b: parallel search queries ────────────────────────────────────

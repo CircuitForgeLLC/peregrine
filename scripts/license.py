@@ -193,13 +193,15 @@ def refresh_if_needed(
     except pyjwt.exceptions.ExpiredSignatureError:
         # Already expired — try to refresh anyway, set grace if unreachable
         pass
-    except (pyjwt.exceptions.PyJWTError, OSError, KeyError, ValueError, OverflowError):
+    except (pyjwt.exceptions.PyJWTError, OSError, KeyError, ValueError, OverflowError, TypeError):
         # Any other JWT decode failure (bad signature, malformed token, ...), a
         # public-key file read failure, a token missing the `exp` claim (KeyError --
         # PyJWT doesn't require it unless `require=["exp"]` is passed, which we don't),
-        # or a malformed/out-of-range exp value (ValueError/OverflowError from
-        # datetime.fromtimestamp): all mean we can't trust the local JWT, so bail out
-        # without attempting a refresh.
+        # or a malformed/out-of-range exp value: ValueError/OverflowError from
+        # datetime.fromtimestamp on a bad numeric, TypeError if exp decoded to a
+        # non-numeric (e.g. a string -- PyJWT's own exp validation only does an
+        # int() comparison and doesn't reject a numeric-looking string claim).
+        # All mean we can't trust the local JWT, so bail out without refreshing.
         return
 
     try:
