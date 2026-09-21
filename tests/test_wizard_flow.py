@@ -4,7 +4,9 @@ Tests validate() chain, yaml persistence helpers, and wizard state inference.
 """
 import sys
 from pathlib import Path
+
 import yaml
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
@@ -13,11 +15,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def test_all_mandatory_steps_accept_minimal_valid_data():
     """Each step's validate() accepts the minimum required input."""
     from scripts.wizard.step_hardware import validate as hw
-    from scripts.wizard.step_tier import validate as tier
     from scripts.wizard.step_identity import validate as ident
-    from scripts.wizard.step_resume import validate as resume
     from scripts.wizard.step_inference import validate as inf
+    from scripts.wizard.step_resume import validate as resume
     from scripts.wizard.step_search import validate as search
+    from scripts.wizard.step_tier import validate as tier
 
     assert hw({"inference_profile": "remote"}) == []
     assert tier({"tier": "free"}) == []
@@ -30,11 +32,11 @@ def test_all_mandatory_steps_accept_minimal_valid_data():
 def test_mandatory_steps_reject_empty_data():
     """Each step's validate() rejects completely empty input."""
     from scripts.wizard.step_hardware import validate as hw
-    from scripts.wizard.step_tier import validate as tier
     from scripts.wizard.step_identity import validate as ident
-    from scripts.wizard.step_resume import validate as resume
     from scripts.wizard.step_inference import validate as inf
+    from scripts.wizard.step_resume import validate as resume
     from scripts.wizard.step_search import validate as search
+    from scripts.wizard.step_tier import validate as tier
 
     assert hw({}) != []
     assert tier({}) != []

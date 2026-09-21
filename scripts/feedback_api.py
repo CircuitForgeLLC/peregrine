@@ -79,6 +79,7 @@ def collect_logs(n: int = 100, log_path: Path | None = None) -> str:
 def collect_listings(db_path: Path | None = None, n: int = 5) -> list[dict]:
     """Return the n most-recent job listings — title, company, url only."""
     import sqlite3
+
     from scripts.db import DEFAULT_DB
     path = db_path or DEFAULT_DB
     with sqlite3.connect(path) as conn:

@@ -13,8 +13,6 @@ Conventions (match scripts/db.py):
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -38,16 +36,16 @@ def _now_utc() -> str:
 def create_message(
     db_path: Path,
     *,
-    job_id: Optional[int],
-    job_contact_id: Optional[int],
+    job_id: int | None,
+    job_contact_id: int | None,
     type: str,
     direction: str,
-    subject: Optional[str],
-    body: Optional[str],
-    from_addr: Optional[str],
-    to_addr: Optional[str],
-    template_id: Optional[int],
-    logged_at: Optional[str] = None,
+    subject: str | None,
+    body: str | None,
+    from_addr: str | None,
+    to_addr: str | None,
+    template_id: int | None,
+    logged_at: str | None = None,
 ) -> dict:
     """Insert a new message row and return it as a dict."""
     con = _connect(db_path)
@@ -75,9 +73,9 @@ def create_message(
 def list_messages(
     db_path: Path,
     *,
-    job_id: Optional[int] = None,
-    type: Optional[str] = None,
-    direction: Optional[str] = None,
+    job_id: int | None = None,
+    type: str | None = None,
+    direction: str | None = None,
     limit: int = 100,
 ) -> list[dict]:
     """Return messages, optionally filtered. Ordered by logged_at DESC."""
@@ -166,7 +164,7 @@ def create_template(
     *,
     title: str,
     category: str = "custom",
-    subject_template: Optional[str] = None,
+    subject_template: str | None = None,
     body_template: str,
 ) -> dict:
     """Insert a new user-defined template and return it as a dict."""

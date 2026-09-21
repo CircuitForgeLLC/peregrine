@@ -1,6 +1,7 @@
 import yaml
-from scripts.user_profile import UserProfile
+
 from scripts.generate_llm_config import apply_service_urls
+from scripts.user_profile import UserProfile
 
 
 def test_urls_applied_to_llm_yaml(tmp_path):

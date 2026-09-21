@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -51,10 +50,10 @@ def build_image_prompt(mode: str) -> str:
 
 
 def run_survey_analyze(
-    text: Optional[str],
-    image_b64: Optional[str],
+    text: str | None,
+    image_b64: str | None,
     mode: str,
-    config_path: Optional[Path] = None,
+    config_path: Path | None = None,
 ) -> dict:
     """Run LLM inference for survey analysis.
 

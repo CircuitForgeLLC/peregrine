@@ -90,11 +90,11 @@ def _normalize_aihawk_resume(raw: dict) -> dict:
 from scripts.db import (
     DEFAULT_DB,
     insert_task,
-    update_task_status,
-    update_task_stage,
-    update_cover_letter,
-    save_research,
     save_optimized_resume,
+    save_research,
+    update_cover_letter,
+    update_task_stage,
+    update_task_status,
 )
 
 
@@ -112,7 +112,7 @@ def submit_task(db_path: Path = DEFAULT_DB, task_type: str = "",
     """
     task_id, is_new = insert_task(db_path, task_type, job_id or 0, params=params)
     if is_new:
-        from scripts.task_scheduler import get_scheduler, LLM_TASK_TYPES
+        from scripts.task_scheduler import LLM_TASK_TYPES, get_scheduler
         if task_type in LLM_TASK_TYPES:
             import os as _os
             _cloud_mode = _os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
@@ -239,8 +239,9 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                     error="Discovery is disabled in the public demo. Run your own instance to use this feature.",
                 )
                 return
-            from scripts.discover import run_discovery
             from pathlib import Path as _Path
+
+            from scripts.discover import run_discovery
             new_count = run_discovery(db_path, config_dir=_Path(db_path).parent / "config")
             n = new_count or 0
             update_task_status(
@@ -254,7 +255,8 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             import os as _os
             p = _json.loads(params or "{}")
             from scripts.generate_cover_letter import generate
-            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH, _merged_cloud_llm_config
+            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
+            from scripts.llm_router import _merged_cloud_llm_config
             _cfg_dir = Path(db_path).parent / "config"
             _user_yaml = _cfg_dir / "user.yaml"
             _cloud_mode = _os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
@@ -357,13 +359,14 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
         elif task_type == "resume_optimize":
             import json as _json
-            from scripts.resume_parser import structure_resume
+
             from scripts.resume_optimizer import (
                 extract_jd_signals,
+                hallucination_check,
                 prioritize_gaps,
                 rewrite_for_ats,
-                hallucination_check,
             )
+            from scripts.resume_parser import structure_resume
             from scripts.user_profile import load_user_profile
 
             _user_yaml = Path(db_path).parent / "config" / "user.yaml"
@@ -403,8 +406,8 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 candidate_voice = load_user_profile(str(_user_yaml)).get("candidate_voice", "")
                 rewritten = rewrite_for_ats(resume_struct, prioritized, job, candidate_voice)
                 if hallucination_check(resume_struct, rewritten):
-                    from scripts.resume_optimizer import build_review_diff
                     from scripts.db import save_resume_draft
+                    from scripts.resume_optimizer import build_review_diff
                     draft = build_review_diff(resume_struct, rewritten)
                     # Attach gap report to draft for reference in the review UI
                     draft["gap_report"] = prioritized
@@ -427,8 +430,9 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
         elif task_type == "resume_score":
             import json as _json
+
             from scripts.db import get_resume as _get_resume
-            from scripts.resume_scorer import score_resume, score_ats_hygiene
+            from scripts.resume_scorer import score_ats_hygiene, score_resume
 
             p = _json.loads(params or "{}")
             resume_id = p.get("resume_id")
@@ -485,8 +489,9 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
         elif task_type == "survey_analyze":
             import json as _json
-            from scripts.survey_assistant import run_survey_analyze
+
             from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
+            from scripts.survey_assistant import run_survey_analyze
             p = _json.loads(params or "{}")
             update_task_stage(db_path, task_id, "analyzing survey")
             result = run_survey_analyze(
@@ -502,7 +507,11 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             return
 
         elif task_type == "prepare_training":
-            from scripts.prepare_training_data import build_records, write_jsonl, DEFAULT_OUTPUT
+            from scripts.prepare_training_data import (
+                DEFAULT_OUTPUT,
+                build_records,
+                write_jsonl,
+            )
             records = build_records()
             write_jsonl(records, DEFAULT_OUTPUT)
             n = len(records)

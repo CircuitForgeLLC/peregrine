@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 _SYSTEM = (
     "You are drafting a professional email reply on behalf of a job seeker. "
@@ -32,7 +31,7 @@ def generate_draft_reply(
     body: str,
     user_name: str,
     target_role: str,
-    config_path: Optional[Path] = None,
+    config_path: Path | None = None,
 ) -> str:
     """Return a draft reply body string."""
     from scripts.llm_router import LLMRouter

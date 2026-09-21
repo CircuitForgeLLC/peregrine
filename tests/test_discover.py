@@ -1,5 +1,6 @@
 # tests/test_discover.py
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pandas as pd
 
 SAMPLE_JOB = {
@@ -76,8 +77,8 @@ def test_normalize_profiles_does_not_override_existing_boards_when_already_profi
 
 def test_discover_writes_to_sqlite(tmp_path):
     """run_discovery inserts new jobs into SQLite staging db."""
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     db_path = tmp_path / "test.db"
     with patch("scripts.discover.load_config", return_value=(SAMPLE_PROFILES_CFG, SAMPLE_NOTION_CFG)), \
@@ -92,8 +93,8 @@ def test_discover_writes_to_sqlite(tmp_path):
 
 def test_discover_skips_duplicate_urls(tmp_path):
     """run_discovery does not insert a job whose URL is already in SQLite."""
+    from scripts.db import get_jobs_by_status, init_db, insert_job
     from scripts.discover import run_discovery
-    from scripts.db import init_db, insert_job, get_jobs_by_status
 
     db_path = tmp_path / "test.db"
     init_db(db_path)
@@ -160,8 +161,8 @@ _ADZUNA_JOB = {
 
 def test_discover_custom_board_inserts_jobs(tmp_path):
     """run_discovery dispatches custom_boards scrapers and inserts returned jobs."""
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     db_path = tmp_path / "test.db"
     with patch("scripts.discover.load_config", return_value=(_PROFILE_WITH_CUSTOM, SAMPLE_NOTION_CFG)), \
@@ -200,8 +201,8 @@ def test_discover_custom_board_skips_unknown(tmp_path, capsys):
 
 def test_discover_custom_board_deduplicates(tmp_path):
     """Custom board results are deduplicated by URL against pre-existing jobs."""
+    from scripts.db import get_jobs_by_status, init_db, insert_job
     from scripts.discover import run_discovery
-    from scripts.db import init_db, insert_job, get_jobs_by_status
 
     db_path = tmp_path / "test.db"
     init_db(db_path)
@@ -240,8 +241,8 @@ _PROFILE_HYBRID = {
 
 
 def test_discover_hybrid_preference_keeps_jobs_matching_hybrid_phrases(tmp_path):
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/111",
                   "description": "This is a hybrid role, 3 days in office per week."}
@@ -256,8 +257,8 @@ def test_discover_hybrid_preference_keeps_jobs_matching_hybrid_phrases(tmp_path)
 
 
 def test_discover_hybrid_preference_drops_jobs_without_hybrid_phrases(tmp_path):
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     plain_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/222",
                  "description": "Fully remote customer success role."}
@@ -303,8 +304,8 @@ def _profile_with_remote_pref(selection):
 
 
 def test_discover_list_remote_only_sets_is_remote_true_and_excludes_hybrid(tmp_path):
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/401",
                   "description": "Hybrid role, 3 days in office per week."}
@@ -334,8 +335,8 @@ def test_discover_list_onsite_only_sets_is_remote_false(tmp_path):
 
 
 def test_discover_list_hybrid_only_matches_old_string_hybrid_behavior(tmp_path):
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/403",
                   "description": "This is a hybrid role, 3 days in office per week."}
@@ -352,8 +353,8 @@ def test_discover_list_hybrid_only_matches_old_string_hybrid_behavior(tmp_path):
 
 def test_discover_all_three_selected_behaves_like_old_both(tmp_path):
     """No is_remote filter, no hybrid include/exclude -- matches the old 'both'."""
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/404",
                   "company": "Hybrid Co", "description": "Hybrid role, 3 days in office."}
@@ -375,8 +376,8 @@ def test_discover_remote_and_hybrid_selected_keeps_both_excludes_neither(tmp_pat
     """Partial multi-select (not all three, not a single value): no is_remote
     filter, and since hybrid IS selected, hybrid-phrase jobs are not excluded
     -- but since it's not hybrid-only, hybrid phrasing isn't required either."""
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/406",
                   "company": "Hybrid Co", "description": "Hybrid role, 2 days onsite."}
@@ -397,8 +398,8 @@ def test_discover_remote_and_hybrid_selected_keeps_both_excludes_neither(tmp_pat
 def test_discover_empty_remote_preference_list_defaults_to_all_three(tmp_path):
     """An empty list (shouldn't normally happen from the UI, but is a valid
     edge case) falls back to the same behavior as selecting all three."""
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/408",
                   "description": "Hybrid role, 3 days in office."}

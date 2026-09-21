@@ -42,7 +42,7 @@ def test_insert_job_skips_duplicate_url(tmp_path):
 
 def test_get_jobs_by_status(tmp_path):
     """get_jobs_by_status returns only jobs with matching status."""
-    from scripts.db import init_db, insert_job, get_jobs_by_status, update_job_status
+    from scripts.db import get_jobs_by_status, init_db, insert_job, update_job_status
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job = {"title": "CSM", "company": "Acme", "url": "https://example.com/1",
@@ -58,7 +58,7 @@ def test_get_jobs_by_status(tmp_path):
 
 def test_update_job_status_batch(tmp_path):
     """update_job_status updates multiple rows at once."""
-    from scripts.db import init_db, insert_job, update_job_status, get_jobs_by_status
+    from scripts.db import get_jobs_by_status, init_db, insert_job, update_job_status
     db_path = tmp_path / "test.db"
     init_db(db_path)
     ids = []
@@ -74,6 +74,7 @@ def test_update_job_status_batch(tmp_path):
 def test_migrate_db_adds_columns_to_existing_db(tmp_path):
     """_migrate_db adds cover_letter and applied_at to a db created without them."""
     import sqlite3
+
     from scripts.db import _migrate_db
     db_path = tmp_path / "legacy.db"
     # Create old-style table without the new columns
@@ -94,7 +95,7 @@ def test_migrate_db_adds_columns_to_existing_db(tmp_path):
 
 def test_update_cover_letter(tmp_path):
     """update_cover_letter persists text to the DB."""
-    from scripts.db import init_db, insert_job, update_cover_letter, get_jobs_by_status
+    from scripts.db import get_jobs_by_status, init_db, insert_job, update_cover_letter
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -109,7 +110,7 @@ def test_update_cover_letter(tmp_path):
 
 def test_mark_applied_sets_status_and_date(tmp_path):
     """mark_applied sets status='applied' and populates applied_at."""
-    from scripts.db import init_db, insert_job, mark_applied, get_jobs_by_status
+    from scripts.db import get_jobs_by_status, init_db, insert_job, mark_applied
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -189,8 +190,9 @@ def test_insert_task_allows_different_types_same_job(tmp_path):
 
 def test_update_task_status_running(tmp_path):
     """update_task_status('running') sets started_at."""
-    from scripts.db import init_db, insert_job, insert_task, update_task_status
     import sqlite3
+
+    from scripts.db import init_db, insert_job, insert_task, update_task_status
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -209,8 +211,9 @@ def test_update_task_status_running(tmp_path):
 
 def test_update_task_status_completed(tmp_path):
     """update_task_status('completed') sets finished_at."""
-    from scripts.db import init_db, insert_job, insert_task, update_task_status
     import sqlite3
+
+    from scripts.db import init_db, insert_job, insert_task, update_task_status
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -229,8 +232,9 @@ def test_update_task_status_completed(tmp_path):
 
 def test_update_task_status_failed_stores_error(tmp_path):
     """update_task_status('failed') stores error message and sets finished_at."""
-    from scripts.db import init_db, insert_job, insert_task, update_task_status
     import sqlite3
+
+    from scripts.db import init_db, insert_job, insert_task, update_task_status
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -250,7 +254,13 @@ def test_update_task_status_failed_stores_error(tmp_path):
 
 def test_get_active_tasks_returns_only_active(tmp_path):
     """get_active_tasks returns only queued/running tasks with job info joined."""
-    from scripts.db import init_db, insert_job, insert_task, update_task_status, get_active_tasks
+    from scripts.db import (
+        get_active_tasks,
+        init_db,
+        insert_job,
+        insert_task,
+        update_task_status,
+    )
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -271,7 +281,13 @@ def test_get_active_tasks_returns_only_active(tmp_path):
 
 def test_get_task_for_job_returns_latest(tmp_path):
     """get_task_for_job returns the most recent task for the given type+job."""
-    from scripts.db import init_db, insert_job, insert_task, update_task_status, get_task_for_job
+    from scripts.db import (
+        get_task_for_job,
+        init_db,
+        insert_job,
+        insert_task,
+        update_task_status,
+    )
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -290,7 +306,7 @@ def test_get_task_for_job_returns_latest(tmp_path):
 
 def test_get_task_for_job_returns_none_when_absent(tmp_path):
     """get_task_for_job returns None when no task exists for that job+type."""
-    from scripts.db import init_db, insert_job, get_task_for_job
+    from scripts.db import get_task_for_job, init_db, insert_job
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -318,7 +334,7 @@ def test_company_research_has_new_columns(tmp_path):
 
 def test_save_and_get_research_new_fields(tmp_path):
     """save_research persists and get_research returns the four new brief fields."""
-    from scripts.db import init_db, insert_job, save_research, get_research
+    from scripts.db import get_research, init_db, insert_job, save_research
     db = tmp_path / "test.db"
     init_db(db)
     job_id = insert_job(db, {
@@ -355,7 +371,7 @@ def test_stage_signal_columns_exist(tmp_path):
 
 def test_add_contact_with_stage_signal(tmp_path):
     """add_contact stores stage_signal when provided."""
-    from scripts.db import init_db, insert_job, add_contact, get_contacts
+    from scripts.db import add_contact, get_contacts, init_db, insert_job
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -371,8 +387,13 @@ def test_add_contact_with_stage_signal(tmp_path):
 
 def test_get_unread_stage_signals(tmp_path):
     """get_unread_stage_signals returns only non-neutral, non-dismissed signals."""
-    from scripts.db import (init_db, insert_job, add_contact,
-                            get_unread_stage_signals, dismiss_stage_signal)
+    from scripts.db import (
+        add_contact,
+        dismiss_stage_signal,
+        get_unread_stage_signals,
+        init_db,
+        insert_job,
+    )
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -394,7 +415,7 @@ def test_get_unread_stage_signals(tmp_path):
 
 def test_get_email_leads(tmp_path):
     """get_email_leads returns only source='email' pending jobs."""
-    from scripts.db import init_db, insert_job, get_email_leads
+    from scripts.db import get_email_leads, init_db, insert_job
     db_path = tmp_path / "test.db"
     init_db(db_path)
     insert_job(db_path, {
@@ -415,7 +436,7 @@ def test_get_email_leads(tmp_path):
 
 def test_get_all_message_ids(tmp_path):
     """get_all_message_ids returns all message IDs across jobs."""
-    from scripts.db import init_db, insert_job, add_contact, get_all_message_ids
+    from scripts.db import add_contact, get_all_message_ids, init_db, insert_job
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -460,7 +481,12 @@ def test_survey_at_column_exists(tmp_path):
 
 def test_insert_and_get_survey_response(tmp_path):
     """insert_survey_response inserts a row; get_survey_responses returns it."""
-    from scripts.db import init_db, insert_job, insert_survey_response, get_survey_responses
+    from scripts.db import (
+        get_survey_responses,
+        init_db,
+        insert_job,
+        insert_survey_response,
+    )
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -482,7 +508,7 @@ def test_insert_and_get_survey_response(tmp_path):
 
 def test_get_interview_jobs_includes_survey(tmp_path):
     """get_interview_jobs returns survey-stage jobs."""
-    from scripts.db import init_db, insert_job, update_job_status, get_interview_jobs
+    from scripts.db import get_interview_jobs, init_db, insert_job, update_job_status
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {
@@ -497,7 +523,13 @@ def test_get_interview_jobs_includes_survey(tmp_path):
 
 def test_advance_to_survey_sets_survey_at(tmp_path):
     """advance_to_stage('survey') sets survey_at timestamp."""
-    from scripts.db import init_db, insert_job, update_job_status, advance_to_stage, get_job_by_id
+    from scripts.db import (
+        advance_to_stage,
+        get_job_by_id,
+        init_db,
+        insert_job,
+        update_job_status,
+    )
     db_path = tmp_path / "test.db"
     init_db(db_path)
     job_id = insert_job(db_path, {

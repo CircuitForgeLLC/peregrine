@@ -1,4 +1,5 @@
 from unittest.mock import patch
+
 import yaml
 
 
@@ -57,6 +58,7 @@ def test_get_cached_probe_returns_prior_result(tmp_path, monkeypatch):
 
 def test_probe_model_endpoint_returns_error_when_backend_unreachable(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
+
     import dev_api
     cfg = _cfg_dir(tmp_path)
     monkeypatch.setattr(dev_api, "_config_dir", lambda: cfg)
@@ -74,6 +76,7 @@ def test_probe_model_endpoint_raises_on_yaml_write_error(tmp_path, monkeypatch):
     """Non-connectivity errors (like YAML write failure) should NOT return
     {"error": "unreachable"} -- they should propagate as real errors."""
     from fastapi.testclient import TestClient
+
     import dev_api
     cfg = _cfg_dir(tmp_path)
     monkeypatch.setattr(dev_api, "_config_dir", lambda: cfg)
@@ -93,6 +96,7 @@ def test_probe_model_endpoint_raises_on_extract_json_array_error(tmp_path, monke
     """Non-connectivity errors (like extract_json_array failure) should NOT
     return {"error": "unreachable"} -- they should propagate as real errors."""
     from fastapi.testclient import TestClient
+
     import dev_api
     cfg = _cfg_dir(tmp_path)
     monkeypatch.setattr(dev_api, "_config_dir", lambda: cfg)

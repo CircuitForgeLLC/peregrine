@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 
 from scripts.user_profile import UserProfile
+
 _USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
 _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
 
@@ -116,8 +117,8 @@ if USE_UNSLOTH:
         use_gradient_checkpointing = "unsloth",
     )
 else:
+    from peft import LoraConfig, TaskType, get_peft_model
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-    from peft import LoraConfig, get_peft_model, TaskType
 
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -167,7 +168,7 @@ def formatting_func(example):
     return [_apply_template(m) for m in msgs_field]
 
 # ── Train ─────────────────────────────────────────────────────────────────────
-from trl import SFTTrainer, SFTConfig
+from trl import SFTConfig, SFTTrainer
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -239,6 +240,7 @@ def _auto_register_ollama(gguf_path: Path, model_name: str, system_prompt: str) 
       Local         — gguf_path is an absolute path Ollama can read directly.
     """
     import shutil
+
     import requests
 
     ollama_url        = os.environ.get("OLLAMA_URL", "http://localhost:11434")

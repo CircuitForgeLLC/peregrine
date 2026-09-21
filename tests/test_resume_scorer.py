@@ -1,5 +1,6 @@
 from unittest.mock import patch
-from scripts.resume_scorer import score_resume, score_ats_hygiene, apply_suggestion
+
+from scripts.resume_scorer import apply_suggestion, score_ats_hygiene, score_resume
 
 SAMPLE_STRUCT = {
     "name": "Jane Doe",

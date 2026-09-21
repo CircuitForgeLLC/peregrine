@@ -1,5 +1,6 @@
 """Demo mode config — port 8504, DEMO_MODE=true, LLM/scraping neutered."""
 from pathlib import Path
+
 from tests.e2e.models import ModeConfig
 
 _BASE_SETTINGS_TABS = [

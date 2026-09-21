@@ -1,7 +1,7 @@
 """Tests for Peregrine's LLMRouter shim — priority fallback logic."""
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def _import_fresh():
     """Import scripts.llm_router fresh (bypass module cache)."""
     import importlib
+
     import scripts.llm_router as mod
     importlib.reload(mod)
     return mod
@@ -20,8 +21,9 @@ def _import_fresh():
 
 def test_uses_local_yaml_when_present():
     """When config/llm.yaml exists locally, super().__init__ is called with that path."""
-    import scripts.llm_router as shim_mod
     from circuitforge_core.llm import LLMRouter as _CoreLLMRouter
+
+    import scripts.llm_router as shim_mod
 
     local_path = Path(shim_mod.__file__).parent.parent / "config" / "llm.yaml"
     user_path = Path.home() / ".config" / "circuitforge" / "llm.yaml"
@@ -38,6 +40,7 @@ def test_uses_local_yaml_when_present():
     with patch.object(Path, "exists", fake_exists), \
          patch.object(_CoreLLMRouter, "__init__", fake_core_init):
         import importlib
+
         import scripts.llm_router as mod
         importlib.reload(mod)
         mod.LLMRouter()
@@ -70,6 +73,7 @@ def test_falls_through_to_env_when_no_yamls():
     with patch.object(Path, "exists", fake_exists), \
          patch.object(_CoreLLMRouter, "__init__", fake_core_init):
         import importlib
+
         import scripts.llm_router as mod
         importlib.reload(mod)
         mod.LLMRouter()
@@ -90,6 +94,7 @@ def test_falls_through_to_env_when_no_yamls():
 def test_complete_singleton_is_reused():
     """complete() reuses the same LLMRouter instance across multiple calls."""
     import importlib
+
     import scripts.llm_router as mod
     importlib.reload(mod)
 

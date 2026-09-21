@@ -5,10 +5,11 @@ user_id threading on the task_allocate path and no self-service registration
 API; this just persists the setting so it's ready once that lands. See
 circuitforge-plans/peregrine/superpowers/plans/2026-09-18-cloud-custom-model-cforch-followup.md.
 """
-import yaml
 from unittest.mock import patch
+
+import yaml
 from fastapi.testclient import TestClient
-import dev_api
+
 from dev_api import app
 
 client = TestClient(app)

@@ -1,8 +1,9 @@
 """Tests for survey endpoints: vision health, async analyze task queue, save response, history."""
 import json
 import sqlite3
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from scripts.db_migrate import migrate_db

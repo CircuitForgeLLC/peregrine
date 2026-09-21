@@ -1,6 +1,7 @@
 # tests/test_linkedin_utils.py
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 FIXTURE = (Path(__file__).parent / "fixtures" / "linkedin_profile.html").read_text()

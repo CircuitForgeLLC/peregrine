@@ -776,12 +776,12 @@ def export_pdf(resume: dict[str, Any], output_path: str) -> None:
         resume: Structured resume dict (same format as resume_parser output).
         output_path: Absolute path for the output .pdf file.
     """
-    from reportlab.lib.pagesizes import LETTER
-    from reportlab.lib.units import inch
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
     from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.pagesizes import LETTER
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
 
     MARGIN = 0.75 * inch
 

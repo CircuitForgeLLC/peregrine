@@ -12,11 +12,11 @@ from typing import Any
 __all__ = [
     "LABELS",
     "LABEL_DESCRIPTIONS",
-    "compute_metrics",
     "ClassifierAdapter",
-    "ZeroShotAdapter",
     "GLiClassAdapter",
     "RerankerAdapter",
+    "ZeroShotAdapter",
+    "compute_metrics",
 ]
 
 LABELS: list[str] = [
@@ -168,7 +168,7 @@ class ZeroShotAdapter(ClassifierAdapter):
         return self._model_id
 
     def load(self) -> None:
-        import scripts.classifier_adapters as _mod  # noqa: PLC0415
+        import scripts.classifier_adapters as _mod
         _pipe_fn = _mod.pipeline
         if _pipe_fn is None:
             raise ImportError("transformers not installed — run: pip install transformers")

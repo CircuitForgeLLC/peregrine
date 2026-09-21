@@ -1,11 +1,10 @@
 """Tests for Craigslist RSS scraper."""
-from datetime import datetime, timezone, timedelta
-from email.utils import format_datetime
-from unittest.mock import patch, MagicMock
 import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
+from unittest.mock import MagicMock, patch
 
 import requests
-
 
 # ── RSS fixture helpers ────────────────────────────────────────────────────────
 

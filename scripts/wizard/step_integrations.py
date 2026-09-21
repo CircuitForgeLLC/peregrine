@@ -4,6 +4,7 @@ This step is never mandatory — validate() always returns [].
 Helper functions support the wizard UI for tier-filtered integration cards.
 """
 from __future__ import annotations
+
 from pathlib import Path
 
 

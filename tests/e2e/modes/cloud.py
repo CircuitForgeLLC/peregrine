@@ -1,8 +1,9 @@
 """Cloud mode config — port 8505, CLOUD_MODE=true, Directus JWT auth."""
 from __future__ import annotations
+
+import logging
 import os
 import time
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +64,7 @@ def _get_jwt() -> str:
 
 def _cloud_auth_setup(context: Any) -> None:
     """Placeholder — actual JWT injection done via context.route() in conftest."""
-    pass  # Route-based injection set up in conftest.py mode_contexts fixture
+    # Route-based injection set up in conftest.py mode_contexts fixture
 
 
 CLOUD = ModeConfig(

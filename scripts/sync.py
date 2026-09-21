@@ -7,11 +7,12 @@ Usage:
 """
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import yaml
 from datetime import datetime
 
+import yaml
 from notion_client import Client
 
 from scripts.db import DEFAULT_DB, get_jobs_by_status, update_job_status

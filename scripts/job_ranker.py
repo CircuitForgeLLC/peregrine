@@ -220,9 +220,7 @@ def _parse_salary_range(text: str | None) -> tuple[int | None, int | None]:
     values = []
     for n, full in zip(raw_nums, re.finditer(r"(\d+(?:\.\d+)?)(k?)", normalized)):
         val = float(full.group(1))
-        if full.group(2):   # ends with 'k'
-            val *= 1000
-        elif val < 1000:    # bare numbers < 1000 are likely thousands (e.g., "80" in "80-120k")
+        if full.group(2) or val < 1000:   # ends with 'k'
             val *= 1000
         if val >= 10_000:   # sanity: ignore clearly wrong values
             values.append(int(val))
