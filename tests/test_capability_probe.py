@@ -82,9 +82,14 @@ def test_probe_model_endpoint_raises_on_yaml_write_error(tmp_path, monkeypatch):
     monkeypatch.setattr(dev_api, "_config_dir", lambda: cfg)
     client = TestClient(dev_api.app, raise_server_exceptions=False)
     # Mock successful LLM response but YAML dump fails
-    with patch("scripts.llm_router.LLMRouter.complete", return_value='["a", "b"]'):
-        with patch("yaml.dump", side_effect=OSError("disk full")):
-            resp = client.post("/api/settings/system/probe-model", json={"backend": "ollama", "model": "llama3.1:8b"})
+    with (
+        patch("scripts.llm_router.LLMRouter.complete", return_value='["a", "b"]'),
+        patch("yaml.dump", side_effect=OSError("disk full")),
+    ):
+        resp = client.post(
+            "/api/settings/system/probe-model",
+            json={"backend": "ollama", "model": "llama3.1:8b"},
+        )
     # Should return 500 error, not 200 with {"error": "unreachable"}
     assert resp.status_code == 500
     # Verify it's not the "unreachable" error response (which is 200 status)
@@ -102,9 +107,14 @@ def test_probe_model_endpoint_raises_on_extract_json_array_error(tmp_path, monke
     monkeypatch.setattr(dev_api, "_config_dir", lambda: cfg)
     client = TestClient(dev_api.app, raise_server_exceptions=False)
     # Mock successful LLM response but _extract_json_array fails
-    with patch("scripts.llm_router.LLMRouter.complete", return_value='["a", "b"]'):
-        with patch("dev_api._extract_json_array", side_effect=ValueError("parse error")):
-            resp = client.post("/api/settings/system/probe-model", json={"backend": "ollama", "model": "llama3.1:8b"})
+    with (
+        patch("scripts.llm_router.LLMRouter.complete", return_value='["a", "b"]'),
+        patch("dev_api._extract_json_array", side_effect=ValueError("parse error")),
+    ):
+        resp = client.post(
+            "/api/settings/system/probe-model",
+            json={"backend": "ollama", "model": "llama3.1:8b"},
+        )
     # Should return 500 error, not 200 with {"error": "unreachable"}
     assert resp.status_code == 500
     # Verify it's not the "unreachable" error response (which is 200 status)

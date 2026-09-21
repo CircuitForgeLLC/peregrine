@@ -56,34 +56,42 @@ class TestAppConfigWizardFields:
         yaml_path = tmp_path / "config" / "user.yaml"
         # user.yaml does not exist yet -- cloud accounts must no longer
         # unconditionally report wizard_complete=True
-        with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
-            with patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False):
-                r = client.get("/api/config/app")
+        with (
+            patch("dev_api._user_yaml_path", return_value=str(yaml_path)),
+            patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False),
+        ):
+            r = client.get("/api/config/app")
         assert r.status_code == 200
         assert r.json()["wizardComplete"] is False
 
     def test_wizard_complete_true_for_cloud_when_set(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": True})
-        with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
-            with patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False):
-                r = client.get("/api/config/app")
+        with (
+            patch("dev_api._user_yaml_path", return_value=str(yaml_path)),
+            patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False),
+        ):
+            r = client.get("/api/config/app")
         assert r.json()["wizardComplete"] is True
 
     def test_is_demo_false_by_default(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": True})
-        with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
-            with patch.dict(os.environ, {"DEMO_MODE": ""}, clear=False):
-                r = client.get("/api/config/app")
+        with (
+            patch("dev_api._user_yaml_path", return_value=str(yaml_path)),
+            patch.dict(os.environ, {"DEMO_MODE": ""}, clear=False),
+        ):
+            r = client.get("/api/config/app")
         assert r.json()["isDemo"] is False
 
     def test_is_demo_true_when_env_set(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": True})
-        with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
-            with patch.dict(os.environ, {"DEMO_MODE": "true"}, clear=False):
-                r = client.get("/api/config/app")
+        with (
+            patch("dev_api._user_yaml_path", return_value=str(yaml_path)),
+            patch.dict(os.environ, {"DEMO_MODE": "true"}, clear=False),
+        ):
+            r = client.get("/api/config/app")
         assert r.json()["isDemo"] is True
 
 
@@ -181,9 +189,11 @@ class TestWizardStatus:
         search_path.write_text(yaml.safe_dump({
             "profiles": [{"name": "default", "job_titles": ["Software Engineer"], "locations": []}]
         }))
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._search_prefs_path", return_value=search_path):
-                r = client.get("/api/wizard/status")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._search_prefs_path", return_value=search_path),
+        ):
+            r = client.get("/api/wizard/status")
         assert r.json()["sections"]["search"] is True
 
     def test_sections_search_false_when_default_profile_has_no_titles(self, client, tmp_path):
@@ -193,9 +203,11 @@ class TestWizardStatus:
         search_path.write_text(yaml.safe_dump({
             "profiles": [{"name": "default", "job_titles": [], "locations": []}]
         }))
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._search_prefs_path", return_value=search_path):
-                r = client.get("/api/wizard/status")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._search_prefs_path", return_value=search_path),
+        ):
+            r = client.get("/api/wizard/status")
         assert r.json()["sections"]["search"] is False
 
     def test_sections_search_true_after_put_settings_search(self, client, tmp_path):
@@ -206,13 +218,15 @@ class TestWizardStatus:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         search_path = yaml_path.parent / "search_profiles.yaml"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._search_prefs_path", return_value=search_path):
-                save_r = client.put("/api/settings/search", json={
-                    "job_titles": ["Software Engineer"],
-                })
-                assert save_r.status_code == 200
-                status_r = client.get("/api/wizard/status")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._search_prefs_path", return_value=search_path),
+        ):
+            save_r = client.put("/api/settings/search", json={
+                "job_titles": ["Software Engineer"],
+            })
+            assert save_r.status_code == 200
+            status_r = client.get("/api/wizard/status")
         assert status_r.json()["sections"]["search"] is True
 
     def test_sections_compute_backend_true_when_inference_profile_set(self, client, tmp_path):
@@ -270,16 +284,20 @@ class TestWizardHardware:
         assert body["suggested_profile"] == "dual-gpu"
 
     def test_single_gpu_suggests_single(self, client):
-        with patch.dict(os.environ, {"PEREGRINE_GPU_NAMES": "RTX 4090"}, clear=False):
-            with patch.dict(os.environ, {"RECOMMENDED_PROFILE": ""}, clear=False):
-                r = client.get("/api/wizard/hardware")
+        with (
+            patch.dict(os.environ, {"PEREGRINE_GPU_NAMES": "RTX 4090"}, clear=False),
+            patch.dict(os.environ, {"RECOMMENDED_PROFILE": ""}, clear=False),
+        ):
+            r = client.get("/api/wizard/hardware")
         assert r.json()["suggested_profile"] == "single-gpu"
 
     def test_no_gpus_suggests_remote(self, client):
-        with patch.dict(os.environ, {"PEREGRINE_GPU_NAMES": ""}, clear=False):
-            with patch.dict(os.environ, {"RECOMMENDED_PROFILE": ""}, clear=False):
-                with patch("subprocess.check_output", side_effect=FileNotFoundError):
-                    r = client.get("/api/wizard/hardware")
+        with (
+            patch.dict(os.environ, {"PEREGRINE_GPU_NAMES": ""}, clear=False),
+            patch.dict(os.environ, {"RECOMMENDED_PROFILE": ""}, clear=False),
+            patch("subprocess.check_output", side_effect=FileNotFoundError),
+        ):
+            r = client.get("/api/wizard/hardware")
         assert r.json()["suggested_profile"] == "remote"
         assert r.json()["gpus"] == []
 
@@ -350,13 +368,15 @@ class TestWizardStep:
         yaml_path = tmp_path / "config" / "user.yaml"
         search_path = tmp_path / "config" / "search_profiles.yaml"
         _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._search_prefs_path", return_value=search_path):
-                r = client.post("/api/wizard/step",
-                                json={"step": 7, "data": {
-                                    "titles": ["Software Engineer", "Backend Developer"],
-                                    "locations": ["Remote", "Austin, TX"],
-                                }})
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._search_prefs_path", return_value=search_path),
+        ):
+            r = client.post("/api/wizard/step",
+                            json={"step": 7, "data": {
+                                "titles": ["Software Engineer", "Backend Developer"],
+                                "locations": ["Remote", "Austin, TX"],
+                            }})
         assert r.status_code == 200
         assert search_path.exists()
         prefs = yaml.safe_load(search_path.read_text())
@@ -425,13 +445,15 @@ class TestWizardStep:
         yaml_path = tmp_path / "config" / "user.yaml"
         search_path = tmp_path / "config" / "search_profiles.yaml"
         _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._search_prefs_path", return_value=search_path):
-                r = client.post("/api/wizard/step",
-                                json={"step": 7, "data": {
-                                    "titles": ["Software Engineer"],
-                                    "locations": ["Bangalore, India"],
-                                }})
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._search_prefs_path", return_value=search_path),
+        ):
+            r = client.post("/api/wizard/step",
+                            json={"step": 7, "data": {
+                                "titles": ["Software Engineer"],
+                                "locations": ["Bangalore, India"],
+                            }})
         assert r.status_code == 200
         prefs = yaml.safe_load(search_path.read_text())
         default = next(p for p in prefs["profiles"] if p["name"] == "default")
@@ -450,13 +472,15 @@ class TestWizardStep:
                 "boards": ["indeed"],
             }]
         }))
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._search_prefs_path", return_value=search_path):
-                r = client.post("/api/wizard/step",
-                                json={"step": 7, "data": {
-                                    "titles": ["New Title"],
-                                    "locations": ["New Location"],
-                                }})
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._search_prefs_path", return_value=search_path),
+        ):
+            r = client.post("/api/wizard/step",
+                            json={"step": 7, "data": {
+                                "titles": ["New Title"],
+                                "locations": ["New Location"],
+                            }})
         assert r.status_code == 200
         prefs = yaml.safe_load(search_path.read_text())
         default = next(p for p in prefs["profiles"] if p["name"] == "default")
@@ -519,21 +543,25 @@ class TestWizardInferenceTest:
     def test_local_profile_allows_localhost_when_self_hosted(self, client):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        with patch("dev_api._CLOUD_MODE", False):
-            with patch("dev_api.requests.get", return_value=mock_resp) as mock_get:
-                r = client.post("/api/wizard/inference/test",
-                                json={"profile": "cpu", "ollama_host": "localhost",
-                                      "ollama_port": 11434})
+        with (
+            patch("dev_api._CLOUD_MODE", False),
+            patch("dev_api.requests.get", return_value=mock_resp) as mock_get,
+        ):
+            r = client.post("/api/wizard/inference/test",
+                            json={"profile": "cpu", "ollama_host": "localhost",
+                                  "ollama_port": 11434})
         assert r.status_code == 200
         assert r.json()["ok"] is True
         assert mock_get.call_args.kwargs["allow_redirects"] is False
 
     def test_local_profile_blocks_private_host_in_cloud_mode(self, client):
-        with patch("dev_api._CLOUD_MODE", True):
-            with patch("dev_api.requests.get") as mock_get:
-                r = client.post("/api/wizard/inference/test",
-                                json={"profile": "cpu", "ollama_host": "169.254.169.254",
-                                      "ollama_port": 11434})
+        with (
+            patch("dev_api._CLOUD_MODE", True),
+            patch("dev_api.requests.get") as mock_get,
+        ):
+            r = client.post("/api/wizard/inference/test",
+                            json={"profile": "cpu", "ollama_host": "169.254.169.254",
+                                  "ollama_port": 11434})
         assert r.status_code == 200
         body = r.json()
         assert body["ok"] is False
@@ -541,11 +569,13 @@ class TestWizardInferenceTest:
         mock_get.assert_not_called()
 
     def test_cf_orch_blocks_private_host_in_cloud_mode(self, client):
-        with patch("dev_api._CLOUD_MODE", True):
-            with patch("dev_api.requests.get") as mock_get:
-                r = client.post("/api/wizard/inference/test",
-                                json={"profile": "cf-orch",
-                                      "orch_url": "http://169.254.169.254:8000"})
+        with (
+            patch("dev_api._CLOUD_MODE", True),
+            patch("dev_api.requests.get") as mock_get,
+        ):
+            r = client.post("/api/wizard/inference/test",
+                            json={"profile": "cf-orch",
+                                  "orch_url": "http://169.254.169.254:8000"})
         assert r.status_code == 200
         body = r.json()
         assert body["ok"] is False
@@ -556,11 +586,13 @@ class TestWizardInferenceTest:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"nodes": []}
-        with patch("dev_api._CLOUD_MODE", False):
-            with patch("dev_api.requests.get", return_value=mock_resp) as mock_get:
-                r = client.post("/api/wizard/inference/test",
-                                json={"profile": "cf-orch",
-                                      "orch_url": "http://10.1.10.5:8000"})
+        with (
+            patch("dev_api._CLOUD_MODE", False),
+            patch("dev_api.requests.get", return_value=mock_resp) as mock_get,
+        ):
+            r = client.post("/api/wizard/inference/test",
+                            json={"profile": "cf-orch",
+                                  "orch_url": "http://10.1.10.5:8000"})
         assert r.status_code == 200
         assert r.json()["ok"] is True
         assert mock_get.call_args.kwargs["allow_redirects"] is False
@@ -573,10 +605,12 @@ class TestWizardComplete:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_step": 6, "name": "Alex"})
         # apply_service_urls is a local import inside wizard_complete — patch source module
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("scripts.generate_llm_config.apply_service_urls",
-                       side_effect=Exception("no llm.yaml")):
-                r = client.post("/api/wizard/complete")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("scripts.generate_llm_config.apply_service_urls",
+                  side_effect=Exception("no llm.yaml")),
+        ):
+            r = client.post("/api/wizard/complete")
         assert r.status_code == 200
         assert r.json()["ok"] is True
         saved = _read_user_yaml(yaml_path)
@@ -587,9 +621,11 @@ class TestWizardComplete:
     def test_complete_removes_wizard_step(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_step": 7, "tier": "paid"})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("scripts.generate_llm_config.apply_service_urls", return_value=None):
-                client.post("/api/wizard/complete")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("scripts.generate_llm_config.apply_service_urls", return_value=None),
+        ):
+            client.post("/api/wizard/complete")
         saved = _read_user_yaml(yaml_path)
         assert "wizard_step" not in saved
         assert saved["tier"] == "paid"
@@ -668,19 +704,23 @@ class TestAiWizardCloudTrial:
         # has_configured_llm patched False so this dev worktree's real
         # config/llm.yaml (which has a backend enabled) can't short-circuit
         # can_use() via BYOK_UNLOCKABLE and mask the cloud-trial branch.
-        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
-            with patch("dev_api._CLOUD_MODE", True):
-                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-                    assert _can_use_ai_wizard("free") is True
+        with (
+            patch("scripts.wizard.tiers.has_configured_llm", return_value=False),
+            patch("dev_api._CLOUD_MODE", True),
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+        ):
+            assert _can_use_ai_wizard("free") is True
 
     def test_free_tier_cloud_completed_wizard_cannot_use_ai_wizard(self, tmp_path):
         from dev_api import _can_use_ai_wizard
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": True})
-        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
-            with patch("dev_api._CLOUD_MODE", True):
-                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-                    assert _can_use_ai_wizard("free") is False
+        with (
+            patch("scripts.wizard.tiers.has_configured_llm", return_value=False),
+            patch("dev_api._CLOUD_MODE", True),
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+        ):
+            assert _can_use_ai_wizard("free") is False
 
     def test_free_tier_self_hosted_incomplete_wizard_cannot_use_ai_wizard(self, tmp_path):
         # The trial is cloud-only -- self-hosted installs get no exception,
@@ -688,19 +728,23 @@ class TestAiWizardCloudTrial:
         from dev_api import _can_use_ai_wizard
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": False})
-        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
-            with patch("dev_api._CLOUD_MODE", False):
-                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-                    assert _can_use_ai_wizard("free") is False
+        with (
+            patch("scripts.wizard.tiers.has_configured_llm", return_value=False),
+            patch("dev_api._CLOUD_MODE", False),
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+        ):
+            assert _can_use_ai_wizard("free") is False
 
     def test_paid_tier_can_use_ai_wizard_regardless_of_cloud_or_wizard_state(self, tmp_path):
         from dev_api import _can_use_ai_wizard
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": True})
-        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
-            with patch("dev_api._CLOUD_MODE", True):
-                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-                    assert _can_use_ai_wizard("paid") is True
+        with (
+            patch("scripts.wizard.tiers.has_configured_llm", return_value=False),
+            patch("dev_api._CLOUD_MODE", True),
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+        ):
+            assert _can_use_ai_wizard("paid") is True
 
     def test_ai_interview_endpoint_allows_free_cloud_incomplete_wizard(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"

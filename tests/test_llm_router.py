@@ -43,9 +43,11 @@ def test_router_raises_when_all_backends_fail():
 
     router = LLMRouter(CONFIG_PATH)
 
-    with patch.object(router, "_is_reachable", return_value=False):
-        with pytest.raises(RuntimeError, match="All LLM backends exhausted"):
-            router.complete("say hello")
+    with (
+        patch.object(router, "_is_reachable", return_value=False),
+        pytest.raises(RuntimeError, match="All LLM backends exhausted"),
+    ):
+        router.complete("say hello")
 
 
 def test_is_reachable_returns_false_on_connection_error():

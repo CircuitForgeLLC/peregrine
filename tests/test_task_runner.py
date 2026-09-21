@@ -260,12 +260,17 @@ def test_scrape_url_submits_enrich_craigslist_for_craigslist_job(tmp_path):
     })
     task_id, _ = insert_task(db, "scrape_url", job_id)
 
-    with patch("scripts.scrape_url.scrape_job_url", return_value={"title": "CSM", "company": ""}):
-        with patch("scripts.task_runner.submit_task", wraps=None) as mock_submit:
-            # Use wraps=None so we can capture calls without actually spawning threads
-            mock_submit.return_value = (99, True)
-            from scripts.task_runner import _run_task
-            _run_task(db, task_id, "scrape_url", job_id)
+    with (
+        patch(
+            "scripts.scrape_url.scrape_job_url",
+            return_value={"title": "CSM", "company": ""},
+        ),
+        patch("scripts.task_runner.submit_task", wraps=None) as mock_submit,
+    ):
+        # Use wraps=None so we can capture calls without actually spawning threads
+        mock_submit.return_value = (99, True)
+        from scripts.task_runner import _run_task
+        _run_task(db, task_id, "scrape_url", job_id)
 
     # submit_task should have been called with enrich_craigslist
     assert mock_submit.called

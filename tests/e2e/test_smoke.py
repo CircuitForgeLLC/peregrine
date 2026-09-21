@@ -32,7 +32,7 @@ def test_smoke_all_pages(active_modes, mode_contexts, playwright):
         ctx = mode_contexts[mode.name]
         page = ctx.new_page()
         console_msgs: list = []
-        page.on("console", lambda msg: console_msgs.append(msg))
+        page.on("console", lambda msg, cm=console_msgs: cm.append(msg))
 
         page.goto(mode.base_url)
         wait_for_streamlit(page)

@@ -2,6 +2,7 @@
 """Tests for YAML-driven mission domain configuration."""
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -96,7 +97,7 @@ def test_build_mission_notes_uses_default_when_no_custom(tmp_path: Path) -> None
 
     class EmptyProfile:
         name = "Test User"
-        mission_preferences: dict = {}
+        mission_preferences: ClassVar[dict] = {}
 
     import scripts.generate_cover_letter as gcl
     from scripts.generate_cover_letter import _build_mission_notes, load_mission_domains
@@ -124,7 +125,7 @@ def test_build_mission_notes_uses_custom_note_when_provided(tmp_path: Path) -> N
 
     class FakeProfile:
         name = "Alex"
-        mission_preferences = {"music": "I played guitar for 10 years."}
+        mission_preferences: ClassVar[dict] = {"music": "I played guitar for 10 years."}
 
     import scripts.generate_cover_letter as gcl
     from scripts.generate_cover_letter import _build_mission_notes, load_mission_domains

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # scripts/finetune_local.py
 """
 Local LoRA fine-tune on the candidate's cover letter corpus.
