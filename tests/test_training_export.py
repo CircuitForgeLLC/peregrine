@@ -164,7 +164,7 @@ def api_client(tmp_path, monkeypatch):
 
 
 def test_opt_in_toggle(api_client):
-    client, db, yaml_path = api_client
+    client, _db, yaml_path = api_client
     resp = client.patch("/api/settings/fine-tune/opt-in", json={"enabled": True})
     assert resp.status_code == 200
     assert resp.json()["enabled"] is True
@@ -174,13 +174,13 @@ def test_opt_in_toggle(api_client):
 
 
 def test_db_pairs_blocked_without_opt_in(api_client):
-    client, db, yaml_path = api_client
+    client, _db, _yaml_path = api_client
     resp = client.get("/api/settings/fine-tune/db-pairs")
     assert resp.status_code == 403
 
 
 def test_db_pairs_returns_jobs_when_opted_in(api_client):
-    client, db, yaml_path = api_client
+    client, db, _yaml_path = api_client
     _insert_job(db, title="Engineer", company="Acme")
     client.patch("/api/settings/fine-tune/opt-in", json={"enabled": True})
     resp = client.get("/api/settings/fine-tune/db-pairs")
@@ -191,7 +191,7 @@ def test_db_pairs_returns_jobs_when_opted_in(api_client):
 
 
 def test_exclude_and_restore(api_client):
-    client, db, yaml_path = api_client
+    client, db, _yaml_path = api_client
     job_id = _insert_job(db)
     client.patch("/api/settings/fine-tune/opt-in", json={"enabled": True})
     resp = client.patch(f"/api/settings/fine-tune/db-pairs/{job_id}/exclude")
@@ -204,13 +204,13 @@ def test_exclude_and_restore(api_client):
 
 
 def test_export_jsonl_blocked_without_opt_in(api_client):
-    client, db, yaml_path = api_client
+    client, _db, _yaml_path = api_client
     resp = client.get("/api/settings/fine-tune/export")
     assert resp.status_code == 403
 
 
 def test_export_jsonl_streams_valid_records(api_client):
-    client, db, yaml_path = api_client
+    client, db, _yaml_path = api_client
     _insert_job(db, cover_letter="Dear Sir,\n\nGreat role body.", description="Build things.")
     client.patch("/api/settings/fine-tune/opt-in", json={"enabled": True})
     resp = client.get("/api/settings/fine-tune/export")

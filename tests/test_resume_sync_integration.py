@@ -119,7 +119,7 @@ def test_save_resume_syncs_to_default_library_entry(fresh_db, monkeypatch):
 
 
 def test_save_resume_no_default_no_crash(fresh_db, monkeypatch):
-    db, cfg = fresh_db
+    _db, cfg = fresh_db
     user_yaml = cfg / "user.yaml"
     user_yaml.write_text(yaml.dump({"wizard_complete": True}))
     import dev_api

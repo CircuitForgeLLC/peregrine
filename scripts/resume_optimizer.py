@@ -707,8 +707,8 @@ def build_review_diff(
     sections = []
 
     # ── Skills diff ────────────────────────────────────────────────────────
-    orig_skills = set(s.strip() for s in (original.get("skills") or []))
-    new_skills  = set(s.strip() for s in (rewritten.get("skills") or []))
+    orig_skills = {s.strip() for s in (original.get("skills") or [])}
+    new_skills  = {s.strip() for s in (rewritten.get("skills") or [])}
 
     added   = sorted(new_skills - orig_skills)
     removed = sorted(orig_skills - new_skills)

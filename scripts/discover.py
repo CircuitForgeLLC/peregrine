@@ -112,9 +112,7 @@ def _is_blocklisted(job_row: dict, blocklist: dict) -> bool:
         return True
     if any(bl in content_lower for bl in blocklist["industries"]):
         return True
-    if any(bl in location_lower for bl in blocklist["locations"]):
-        return True
-    return False
+    return bool(any(bl in location_lower for bl in blocklist["locations"]))
 
 
 def get_existing_urls(notion: Client, db_id: str, url_field: str) -> set[str]:
@@ -317,14 +315,14 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                     continue
                 print(f"  [jobspy] {location} — boards: {', '.join(_filtered)}")
                 try:
-                    jobspy_kwargs: dict = dict(
-                        site_name=_filtered,
-                        search_term=" OR ".join(f'"{t}"' for t in (profile.get("titles") or profile.get("job_titles", []))),
-                        location=location,
-                        results_wanted=results_per_board,
-                        hours_old=profile.get("hours_old", 72),
-                        linkedin_fetch_description=True,
-                    )
+                    jobspy_kwargs: dict = {
+                        "site_name": _filtered,
+                        "search_term": " OR ".join(f'"{t}"' for t in (profile.get("titles") or profile.get("job_titles", []))),
+                        "location": location,
+                        "results_wanted": results_per_board,
+                        "hours_old": profile.get("hours_old", 72),
+                        "linkedin_fetch_description": True,
+                    }
                     if _is_remote is not None:
                         jobspy_kwargs["is_remote"] = _is_remote
                     jobs: pd.DataFrame = scrape_jobs(**jobspy_kwargs)

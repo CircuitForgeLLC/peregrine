@@ -261,7 +261,7 @@ def main() -> None:
         print("Next: bash scripts/manage-ui.sh start")
     else:
         print("Dry run complete. Re-run with --apply to write files.")
-        if args.copy_db or True:
+        if True:
             print("Add --copy-db to also migrate staging.db.")
 
 
