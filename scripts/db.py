@@ -485,8 +485,13 @@ def get_resume_archive(db_path: Path = DEFAULT_DB, job_id: int | None = None) ->
         # resume_archive_json is a TEXT column already checked truthy above.
         # json.loads can fail with malformed JSON; reversed() can fail with
         # TypeError if the stored value decodes to a non-sequence (e.g. an
-        # int or bool) rather than the expected list.
+        # int or bool) rather than the expected list. A decoded dict or str
+        # wouldn't raise here (both support reversed()) but also isn't the
+        # expected shape, so it's explicitly rejected rather than silently
+        # returned as reversed dict keys / reversed characters.
         entries = json.loads(row["resume_archive_json"])
+        if not isinstance(entries, list):
+            return []
         return list(reversed(entries))  # newest first
     except (json.JSONDecodeError, TypeError):
         return []
