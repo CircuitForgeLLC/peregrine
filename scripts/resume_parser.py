@@ -477,7 +477,10 @@ def parse_resume(raw_text: str) -> tuple[dict, str]:
             "achievements":   sections.get("achievements", []),
         }
         return result, ""
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - section-splitting + regex/dict parsing of
+        # untrusted, arbitrarily-formatted resume text has many independent failure
+        # modes (regex, KeyError/AttributeError on missing sections, encoding quirks);
+        # already logged with full traceback and surfaced to the caller as an error string.
         import traceback
         log.error("[resume_parser] parse_resume error:\n%s", traceback.format_exc())
         return {}, str(e)
@@ -495,7 +498,10 @@ def _llm_career_summary(raw_text: str) -> str:
             f"Resume:\n{raw_text[:1500]}"
         )
         return LLMRouter().complete(prompt)
-    except Exception:
+    except Exception:  # noqa: BLE001 - LLM router call can fail via network errors,
+        # provider/API exceptions, or router config issues; this is a best-effort
+        # optional enhancement so any failure should fall back to no summary.
+        log.warning("[resume_parser] LLM career summary generation failed", exc_info=True)
         return ""
 
 
@@ -514,7 +520,10 @@ def structure_resume(raw_text: str) -> tuple[dict, str]:
     if not result.get("career_summary"):
         try:
             summary = _llm_career_summary(raw_text)
-        except Exception:
+        except Exception:  # noqa: BLE001 - defense-in-depth around an optional LLM
+            # enhancement; _llm_career_summary already catches and logs its own
+            # failures internally, but this outer guard ensures a future change to
+            # that function can never turn a missing summary into a hard failure here.
             summary = ""
         if summary:
             result["career_summary"] = summary.strip()

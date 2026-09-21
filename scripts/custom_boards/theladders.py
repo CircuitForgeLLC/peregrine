@@ -128,13 +128,19 @@ def scrape(profile: dict, location: str, results_wanted: int = 50) -> list[dict]
             try:
                 page.goto(url, timeout=30_000)
                 page.wait_for_load_state("networkidle", timeout=20_000)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - Playwright navigation against a
+                # live third-party site (TheLadders) can fail in many ways (timeout,
+                # DNS/network error, navigation aborted, page crash); logged and this
+                # title is skipped so the rest of the search list still runs.
                 print(f"    [theladders] Page load error for '{title}': {exc}")
                 continue
 
             try:
                 raw_jobs: list[dict[str, Any]] = page.evaluate(_extract_jobs_js())
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - page.evaluate() runs untrusted
+                # JS against a live, unversioned third-party DOM; failures range from
+                # Playwright errors to arbitrary JS exceptions if the site's markup
+                # changed, none of which should abort scraping of remaining titles.
                 print(f"    [theladders] JS extract error for '{title}': {exc}")
                 continue
 
