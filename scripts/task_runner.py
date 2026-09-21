@@ -114,8 +114,11 @@ def submit_task(db_path: Path = DEFAULT_DB, task_type: str = "",
     if is_new:
         from scripts.task_scheduler import get_scheduler, LLM_TASK_TYPES
         if task_type in LLM_TASK_TYPES:
-            enqueued = get_scheduler(db_path, run_task_fn=_run_task).enqueue(
-                task_id, task_type, job_id or 0, params
+            import os as _os
+            _cloud_mode = _os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
+            scheduler_db_path = None if _cloud_mode else db_path
+            enqueued = get_scheduler(scheduler_db_path, run_task_fn=_run_task).enqueue(
+                task_id, task_type, job_id or 0, params, db_path
             )
             if not enqueued:
                 update_task_status(
