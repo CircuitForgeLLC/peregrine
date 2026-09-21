@@ -51,11 +51,23 @@ DEFAULT_VRAM_BUDGETS: dict[str, float] = {
 _DEFAULT_MAX_QUEUE_DEPTH = 500
 
 
-def _load_config_overrides(db_path: Path) -> tuple[dict[str, float], int]:
-    """Load VRAM budget overrides and max_queue_depth from config/llm.yaml."""
+def _load_config_overrides(db_path: Optional[Path]) -> tuple[dict[str, float], int]:
+    """Load VRAM budget overrides and max_queue_depth from config/llm.yaml.
+
+    db_path=None (cloud mode, scheduler constructed with no bootstrap tenant)
+    falls back to the shared cloud LLM config file -- the same file
+    _merged_cloud_llm_config() reads from in scripts/llm_router.py -- since
+    there is no per-tenant path to derive a config location from.
+    """
     budgets = dict(DEFAULT_VRAM_BUDGETS)
     max_depth = _DEFAULT_MAX_QUEUE_DEPTH
-    config_path = db_path.parent.parent / "config" / "llm.yaml"
+
+    if db_path is None:
+        from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
+        config_path = LLM_ROUTER_CONFIG_PATH
+    else:
+        config_path = db_path.parent.parent / "config" / "llm.yaml"
+
     if config_path.exists():
         try:
             import yaml
@@ -94,7 +106,7 @@ class TaskScheduler(_CoreTaskScheduler):
     use get_scheduler() instead.
     """
 
-    def __init__(self, db_path: Path, run_task_fn: Callable) -> None:
+    def __init__(self, db_path: Optional[Path], run_task_fn: Callable) -> None:
         budgets, max_depth = _load_config_overrides(db_path)
 
         # Warn under this module's logger for any task types with no VRAM budget
@@ -121,6 +133,7 @@ class TaskScheduler(_CoreTaskScheduler):
         task_type: str,
         job_id: int,
         params: Optional[str],
+        db_path: Path,
     ) -> bool:
         """Add an LLM task to the scheduler queue.
 
@@ -130,7 +143,7 @@ class TaskScheduler(_CoreTaskScheduler):
 
         Returns True if enqueued, False if the queue was full.
         """
-        enqueued = super().enqueue(task_id, task_type, job_id, params)
+        enqueued = super().enqueue(task_id, task_type, job_id, params, db_path)
         if not enqueued:
             # Log under this module's logger so existing caplog tests pass
             logger.warning(
@@ -139,7 +152,7 @@ class TaskScheduler(_CoreTaskScheduler):
             )
             from scripts.db import update_task_status
             update_task_status(
-                self._db_path, task_id, "failed", error="Queue depth limit reached"
+                db_path, task_id, "failed", error="Queue depth limit reached"
             )
         return enqueued
 
@@ -153,7 +166,7 @@ _scheduler_lock = threading.Lock()
 
 
 def get_scheduler(
-    db_path: Path,
+    db_path: Optional[Path] = None,
     run_task_fn: Optional[Callable] = None,
 ) -> TaskScheduler:
     """Return the process-level Peregrine TaskScheduler singleton.

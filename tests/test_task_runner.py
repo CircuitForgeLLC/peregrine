@@ -417,3 +417,53 @@ def test_wizard_generate_no_feedback_no_revision_block(tmp_path):
 
     assert "Please revise accordingly." not in captured_prompts[0]
     assert "Previous output:" not in captured_prompts[0]
+
+
+def test_submit_task_passes_db_path_to_enqueue_in_cloud_mode(tmp_path, monkeypatch):
+    """In cloud mode, get_scheduler() must be called with db_path=None
+    (no single-tenant bootstrap db), but enqueue() must still receive the
+    task's own real db_path -- this is what actually fixes the cross-tenant
+    leak from the caller's side."""
+    from scripts.db import insert_task
+    db, job_id = _make_db(tmp_path)  # reuse this file's existing db-setup helper
+
+    fake_scheduler = __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock()
+    fake_scheduler.enqueue.return_value = True
+    get_scheduler_calls = []
+
+    def fake_get_scheduler(db_path=None, run_task_fn=None):
+        get_scheduler_calls.append(db_path)
+        return fake_scheduler
+
+    monkeypatch.setattr("scripts.task_scheduler.get_scheduler", fake_get_scheduler)
+    monkeypatch.setattr("os.environ", {**__import__("os").environ, "CLOUD_MODE": "true"})
+
+    from scripts.task_runner import submit_task
+    task_id, is_new = submit_task(db, "cover_letter", job_id, None)
+
+    assert get_scheduler_calls == [None], "cloud mode must call get_scheduler with db_path=None"
+    fake_scheduler.enqueue.assert_called_once_with(task_id, "cover_letter", job_id, None, db)
+
+
+def test_submit_task_passes_real_db_path_to_get_scheduler_self_hosted(tmp_path, monkeypatch):
+    """Self-hosted (CLOUD_MODE unset) must be completely unchanged: get_scheduler()
+    still receives the real db_path."""
+    from scripts.db import insert_task
+    db, job_id = _make_db(tmp_path)
+
+    fake_scheduler = __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock()
+    fake_scheduler.enqueue.return_value = True
+    get_scheduler_calls = []
+
+    def fake_get_scheduler(db_path=None, run_task_fn=None):
+        get_scheduler_calls.append(db_path)
+        return fake_scheduler
+
+    monkeypatch.setattr("scripts.task_scheduler.get_scheduler", fake_get_scheduler)
+    monkeypatch.delenv("CLOUD_MODE", raising=False)
+
+    from scripts.task_runner import submit_task
+    task_id, is_new = submit_task(db, "cover_letter", job_id, None)
+
+    assert get_scheduler_calls == [db], "self-hosted must still pass the real db_path to get_scheduler"
+    fake_scheduler.enqueue.assert_called_once_with(task_id, "cover_letter", job_id, None, db)
