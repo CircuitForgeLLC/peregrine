@@ -538,7 +538,7 @@ def _scan_todo_label(conn: imaplib.IMAP4, cfg: dict, db_path: Path,
         return 0
 
     lookback = int(cfg.get("lookback_days", 90))
-    since = (datetime.now() - timedelta(days=lookback)).strftime("%d-%b-%Y")
+    since = (datetime.now() - timedelta(days=lookback)).strftime("%d-%b-%Y")  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
 
     # Search the label folder for any emails (no keyword pre-filter — it's curated)
     uids = _search_folder(conn, label, "ALL", since)
@@ -615,7 +615,7 @@ def _scan_unmatched_leads(conn: imaplib.IMAP4, cfg: dict,
     from scripts.db import get_existing_urls, insert_job
 
     lookback = int(cfg.get("lookback_days", 90))
-    since = (datetime.now() - timedelta(days=lookback)).strftime("%d-%b-%Y")
+    since = (datetime.now() - timedelta(days=lookback)).strftime("%d-%b-%Y")  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
 
     broad_terms = ["interview", "opportunity", "offer letter", "job offer", "application", "recruiting"]
     all_uids: set = set()
@@ -658,7 +658,7 @@ def _scan_unmatched_leads(conn: imaplib.IMAP4, cfg: dict,
                     "is_remote":  0,
                     "salary":     card.get("salary", ""),
                     "description": "",
-                    "date_found": datetime.now().isoformat()[:10],
+                    "date_found": datetime.now().isoformat()[:10],  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
                 })
                 if job_id:
                     from scripts.task_runner import submit_task
@@ -703,7 +703,7 @@ def _scan_unmatched_leads(conn: imaplib.IMAP4, cfg: dict,
             "is_remote": 0,
             "salary": "",
             "description": parsed["body"][:2000],
-            "date_found": datetime.now().isoformat()[:10],
+            "date_found": datetime.now().isoformat()[:10],  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
         })
         if job_id:
             _add_contact(db_path, job_id=job_id, direction="inbound",
@@ -865,7 +865,7 @@ def sync_job_emails(job: dict, conn: imaplib.IMAP4, cfg: dict,
         return 0, 0
 
     lookback = int(cfg.get("lookback_days", 90))
-    since = (datetime.now() - timedelta(days=lookback)).strftime("%d-%b-%Y")
+    since = (datetime.now() - timedelta(days=lookback)).strftime("%d-%b-%Y")  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     existing_ids = _get_existing_message_ids(job["id"], db_path)
 
     inbound = outbound = 0

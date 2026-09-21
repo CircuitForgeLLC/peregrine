@@ -836,7 +836,7 @@ class EnhancedCompanyScraper:
             log_file = os.path.join(Config.DEBUG_DIR, log_type, f"{clean_company}.log")
             
             with open(log_file, 'a', encoding='utf-8') as f:
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
                 f.write(f"[{timestamp}] {message}\n")
             
             if self.args.verbose:
@@ -957,7 +957,7 @@ def parse_args():
     parser.add_argument('-i', '--input', dest='input_file',
                         help='Input file with company names (one per line)')
     parser.add_argument('-o', '--output', dest='output_file',
-                        default=f"company_data_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv",
+                        default=f"company_data_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv",  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
                         help='Output CSV file (default: company_data_<timestamp>.csv)')
     
     # Scraping mode options
