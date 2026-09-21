@@ -139,7 +139,12 @@ def run_scoring(
         for row in rows:
             try:
                 pred = adapter.classify(row["subject"], row["body"])
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- adapter.classify() runs arbitrary
+                # HuggingFace model inference (tokenization, forward pass, GPU/CPU
+                # tensor ops); different adapters (zero-shot, GLiClass, reranker) can
+                # each raise different library-specific exceptions, and this benchmark's
+                # whole point is to keep scoring the rest of the dataset rather than
+                # abort the run when one model chokes on one row.
                 print(f"  [{adapter.name}] ERROR on '{row['subject'][:40]}': {exc}", flush=True)
                 pred = "neutral"
             preds.append(pred)
@@ -179,7 +184,10 @@ def _decode_part(part: Any) -> str:
     charset = part.get_content_charset() or "utf-8"
     try:
         return part.get_payload(decode=True).decode(charset, errors="replace")
-    except Exception:
+    except (AttributeError, LookupError):
+        # AttributeError: get_payload(decode=True) returns None for a part with no
+        # payload; LookupError: charset is an unrecognized/bogus codec name taken
+        # from an untrusted email header (errors="replace" already covers bad bytes).
         return ""
 
 
@@ -198,7 +206,13 @@ def _parse_uid(conn: imaplib.IMAP4_SSL, uid: bytes) -> dict[str, str] | None:
         else:
             body = _decode_part(msg)
         return {"subject": subject, "body": body}
-    except Exception:
+    except Exception:  # noqa: BLE001 -- this block spans an IMAP network fetch
+        # (`conn.uid("fetch", ...)`, which can raise `imaplib.IMAP4.error`/abort on
+        # connection issues), indexing into the IMAP response tuple (IndexError/TypeError
+        # if the server returns an unexpected shape), and parsing arbitrary/untrusted
+        # email bytes via `email.message_from_bytes` (can raise various email-package
+        # errors on malformed messages). One bad UID must be skipped, not abort the
+        # whole sample fetch.
         return None
 
 
@@ -222,8 +236,11 @@ def _fetch_imap_sample(limit: int, days: int) -> list[dict[str, str]]:
             emails.append(parsed)
     try:
         conn.logout()
-    except Exception:
-        pass
+    except (imaplib.IMAP4.error, OSError) as exc:
+        # Best-effort cleanup: the connection may already be closed/half-broken by the
+        # time we get here, and a logout failure shouldn't affect the emails already
+        # fetched — but it's worth a warning rather than a silent pass.
+        print(f"[benchmark_classifier] IMAP logout failed (non-fatal): {exc}", flush=True)
     return emails
 
 
@@ -303,7 +320,10 @@ def cmd_compare(args: argparse.Namespace) -> None:
         for adapter in adapters:
             try:
                 label = adapter.classify(row["subject"], row["body"])
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- same reasoning as run_scoring
+                # above: adapter.classify() runs arbitrary model inference and this
+                # visual-comparison table must keep going across all rows/models even
+                # if one model errors on one email.
                 label = f"ERR:{str(exc)[:8]}"
             line += f"{label:<{col}}"
         print(line, flush=True)
