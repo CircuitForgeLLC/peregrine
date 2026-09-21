@@ -6,6 +6,7 @@ Config lookup order:
   3. env-var auto-config (ANTHROPIC_API_KEY, OPENAI_API_KEY, OLLAMA_HOST, …)
 """
 from pathlib import Path
+from typing import ClassVar
 
 from circuitforge_core.llm import LLMRouter as _CoreLLMRouter
 
@@ -62,7 +63,7 @@ class LLMRouter(_CoreLLMRouter):
 
     # Which config fallback chain a task falls back to when nothing is
     # explicitly assigned to it, most-specific chain first.
-    _TASK_FALLBACK_CHAINS: dict[str, tuple[str, ...]] = {
+    _TASK_FALLBACK_CHAINS: ClassVar[dict[str, tuple[str, ...]]] = {
         "research": ("research_fallback_order", "fallback_order"),
         "chat": ("research_fallback_order", "fallback_order"),
         "primary": ("fallback_order",),

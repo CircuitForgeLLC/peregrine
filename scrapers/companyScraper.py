@@ -20,6 +20,7 @@ import re
 import sys
 import time
 from datetime import datetime
+from typing import ClassVar
 from urllib.parse import quote_plus, urlencode
 
 try:
@@ -43,7 +44,7 @@ class Config:
     SEARXNG_URL = "http://localhost:8888/"
     
     # Search engines to use with SearXNG
-    SEARCH_ENGINES = [
+    SEARCH_ENGINES: ClassVar[list[str]] = [
         "google",
         "duckduckgo",
         "bing"
@@ -59,7 +60,7 @@ class Config:
     RETRY_DELAY = (2, 5)  # Can be lower with SearXNG
     
     # Available search types
-    SEARCH_TYPES = {
+    SEARCH_TYPES: ClassVar[dict[str, str]] = {
         "ceo": "CEO information",
         "hq": "Headquarters address",
         "phone": "Phone numbers",
@@ -71,10 +72,10 @@ class Config:
     }
     
     # Minimal mode search types
-    MINIMAL_SEARCH_TYPES = ["ceo", "hq"]
-    
+    MINIMAL_SEARCH_TYPES: ClassVar[list[str]] = ["ceo", "hq"]
+
     # Default comprehensive search types (everything)
-    COMPREHENSIVE_SEARCH_TYPES = list(SEARCH_TYPES.keys())
+    COMPREHENSIVE_SEARCH_TYPES: ClassVar[list[str]] = list(SEARCH_TYPES.keys())
 
 class EnhancedCompanyScraper:
     def __init__(self, args):
@@ -742,11 +743,12 @@ class EnhancedCompanyScraper:
                     match = re.search(pattern, snippet, re.IGNORECASE)
                     if match:
                         email = match.group(1).strip().lower()
-                        if email:
-                            # Basic validation to avoid false positives
-                            if '.' in email.split('@')[1] and '@' in email:
-                                self.debug_log(f"Extracted email from snippet: {email}", company, "extraction")
-                                return email
+                        # Basic validation to avoid false positives. '@' is checked
+                        # first: email.split('@')[1] raises IndexError if '@' is
+                        # absent, which the order below previously risked.
+                        if email and '@' in email and '.' in email.split('@')[1]:
+                            self.debug_log(f"Extracted email from snippet: {email}", company, "extraction")
+                            return email
         
         except Exception as e:  # noqa: BLE001 -- same reasoning as extract_ceo above:
             # regex/bs4 extraction over arbitrary scraped HTML, degrade-to-"Not found"

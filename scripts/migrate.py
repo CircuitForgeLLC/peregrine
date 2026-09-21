@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Peregrine migration tool — import config and data from a legacy job-seeker repo.
 
