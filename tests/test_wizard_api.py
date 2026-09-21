@@ -51,6 +51,24 @@ class TestAppConfigWizardFields:
             r = client.get("/api/config/app")
         assert r.json()["wizardComplete"] is True
 
+    def test_wizard_complete_false_for_cloud_when_missing(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        # user.yaml does not exist yet -- cloud accounts must no longer
+        # unconditionally report wizard_complete=True
+        with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
+            with patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False):
+                r = client.get("/api/config/app")
+        assert r.status_code == 200
+        assert r.json()["wizardComplete"] is False
+
+    def test_wizard_complete_true_for_cloud_when_set(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": True})
+        with patch("dev_api._user_yaml_path", return_value=str(yaml_path)):
+            with patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False):
+                r = client.get("/api/config/app")
+        assert r.json()["wizardComplete"] is True
+
     def test_is_demo_false_by_default(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"wizard_complete": True})
@@ -96,6 +114,141 @@ class TestWizardStatus:
             r = client.get("/api/wizard/status")
         assert r.json()["wizard_complete"] is True
 
+    def test_sections_all_false_when_nothing_saved(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.status_code == 200
+        sections = r.json()["sections"]
+        assert sections == {
+            "profile": False,
+            "resume": False,
+            "search": False,
+            "compute_backend": False,
+        }
+
+    def test_sections_profile_true_when_name_email_summary_present(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {
+            "name": "Alex Rivera",
+            "email": "alex@example.com",
+            "career_summary": "Backend engineer.",
+        })
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["profile"] is True
+
+    def test_sections_profile_false_when_only_some_fields_present(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"name": "Alex Rivera", "email": "alex@example.com"})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["profile"] is False
+
+    def test_sections_resume_true_when_experience_present(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        resume_path = yaml_path.parent / "plain_text_resume.yaml"
+        resume_path.write_text(yaml.safe_dump({
+            "experience": [{"title": "Engineer", "company": "Acme"}]
+        }))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["resume"] is True
+
+    def test_sections_resume_false_when_file_missing(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["resume"] is False
+
+    def test_sections_resume_false_when_experience_empty_list(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        resume_path = yaml_path.parent / "plain_text_resume.yaml"
+        resume_path.write_text(yaml.safe_dump({"experience": []}))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["resume"] is False
+
+    def test_sections_search_true_when_default_profile_has_titles(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        search_path = yaml_path.parent / "search_profiles.yaml"
+        search_path.write_text(yaml.safe_dump({
+            "profiles": [{"name": "default", "job_titles": ["Software Engineer"], "locations": []}]
+        }))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["search"] is True
+
+    def test_sections_search_false_when_default_profile_has_no_titles(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        search_path = yaml_path.parent / "search_profiles.yaml"
+        search_path.write_text(yaml.safe_dump({
+            "profiles": [{"name": "default", "job_titles": [], "locations": []}]
+        }))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["search"] is False
+
+    def test_sections_search_true_after_put_settings_search(self, client, tmp_path):
+        """Integration-shaped regression test for C1: PUT /api/settings/search writes
+        the flat legacy `default: {...}` format, not the `profiles: [...]` list. The
+        section-status check must normalize before looking for the default profile.
+        """
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        search_path = yaml_path.parent / "search_profiles.yaml"
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                save_r = client.put("/api/settings/search", json={
+                    "job_titles": ["Software Engineer"],
+                })
+                assert save_r.status_code == 200
+                status_r = client.get("/api/wizard/status")
+        assert status_r.json()["sections"]["search"] is True
+
+    def test_sections_compute_backend_true_when_inference_profile_set(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"inference_profile": "single-gpu"})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["sections"]["compute_backend"] is True
+
+    def test_connections_acknowledged_false_by_default(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["connections_acknowledged"] is False
+
+    def test_connections_acknowledged_true_when_saved(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"connections_acknowledged": True})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["connections_acknowledged"] is True
+
+    def test_setup_path_none_by_default(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["setup_path"] is None
+
+    def test_setup_path_returns_saved_value(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"setup_path": "manual"})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.get("/api/wizard/status")
+        assert r.json()["setup_path"] == "manual"
+
 
 # ── GET /api/wizard/hardware ──────────────────────────────────────────────────
 
@@ -140,96 +293,57 @@ class TestWizardHardware:
 # ── POST /api/wizard/step ─────────────────────────────────────────────────────
 
 class TestWizardStep:
-    def test_step1_saves_inference_profile(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step",
-                            json={"step": 1, "data": {"inference_profile": "single-gpu"}})
-        assert r.status_code == 200
-        saved = _read_user_yaml(yaml_path)
-        assert saved["inference_profile"] == "single-gpu"
-        assert saved["wizard_step"] == 1
-
-    def test_step1_rejects_unknown_profile(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step",
-                            json={"step": 1, "data": {"inference_profile": "turbo-gpu"}})
-        assert r.status_code == 400
-
-    def test_step2_saves_tier(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step",
-                            json={"step": 2, "data": {"tier": "paid"}})
-        assert r.status_code == 200
-        assert _read_user_yaml(yaml_path)["tier"] == "paid"
-
-    def test_step2_rejects_unknown_tier(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step",
-                            json={"step": 2, "data": {"tier": "enterprise"}})
-        assert r.status_code == 400
-
-    def test_step3_writes_resume_yaml(self, client, tmp_path):
+    def test_step4_writes_resume_yaml(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         resume = {"experience": [{"title": "Engineer", "company": "Acme"}]}
         with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
             r = client.post("/api/wizard/step",
-                            json={"step": 3, "data": {"resume": resume}})
+                            json={"step": 4, "data": {"resume": resume}})
         assert r.status_code == 200
         resume_path = yaml_path.parent / "plain_text_resume.yaml"
         assert resume_path.exists()
         saved_resume = yaml.safe_load(resume_path.read_text())
         assert saved_resume["experience"][0]["title"] == "Engineer"
 
-    def test_step4_saves_identity_fields(self, client, tmp_path):
+    def test_step4_merges_onto_existing_resume_yaml_instead_of_overwriting(self, client, tmp_path):
+        # Regression: /api/settings/resume/upload writes the full parsed
+        # resume (name/email/career_summary/education/skills/achievements)
+        # directly to plain_text_resume.yaml. If the wizard's Resume step
+        # then sends a step-3 payload with only `experience` (e.g. the
+        # "Build Manually" tab, which never populates parsedData), a blind
+        # overwrite here would silently wipe everything else the upload had
+        # already saved. Confirms the merge instead.
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
-        identity = {
-            "name": "Alex Rivera",
+        resume_path = yaml_path.parent / "plain_text_resume.yaml"
+        resume_path.parent.mkdir(parents=True, exist_ok=True)
+        resume_path.write_text(yaml.dump({
+            "name": "Alex Doe",
             "email": "alex@example.com",
-            "phone": "555-1234",
-            "linkedin": "https://linkedin.com/in/alex",
             "career_summary": "Experienced engineer.",
-        }
+            "experience": [{"title": "Old Title", "company": "Old Co"}],
+            "education": [{"institution": "State U"}],
+            "skills": ["Python"],
+            "achievements": ["Shipped a thing"],
+        }, allow_unicode=True, default_flow_style=False))
+
+        minimal_resume = {"experience": [{"title": "Engineer", "company": "Acme"}]}
         with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            r = client.post("/api/wizard/step", json={"step": 4, "data": identity})
+            r = client.post("/api/wizard/step",
+                            json={"step": 4, "data": {"resume": minimal_resume}})
         assert r.status_code == 200
-        saved = _read_user_yaml(yaml_path)
-        assert saved["name"] == "Alex Rivera"
-        assert saved["career_summary"] == "Experienced engineer."
-        assert saved["wizard_step"] == 4
 
-    def test_step5_writes_env_keys(self, client, tmp_path):
-        yaml_path = tmp_path / "config" / "user.yaml"
-        env_path = tmp_path / ".env"
-        env_path.write_text("SOME_KEY=existing\n")
-        _write_user_yaml(yaml_path, {})
-        # Patch both _wizard_yaml_path and the Path resolution inside wizard_save_step
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api.Path") as mock_path_cls:
-                # Only intercept the .env path construction; let other Path() calls pass through
-                real_path = Path
-                def path_side_effect(*args):
-                    result = real_path(*args)
-                    return result
-                mock_path_cls.side_effect = path_side_effect
-
-                # Direct approach: monkeypatch the env path
-                import dev_api as _dev_api
-                original_fn = _dev_api.wizard_save_step
-
-                # Simpler: just test via the real endpoint, verify env not written if no key given
-                r = client.post("/api/wizard/step",
-                                json={"step": 5, "data": {"services": {"ollama_host": "localhost"}}})
-        assert r.status_code == 200
+        saved_resume = yaml.safe_load(resume_path.read_text())
+        # The new experience list wins (that's the field this step actually sent)...
+        assert saved_resume["experience"][0]["title"] == "Engineer"
+        # ...but everything else from the earlier upload survives.
+        assert saved_resume["name"] == "Alex Doe"
+        assert saved_resume["email"] == "alex@example.com"
+        assert saved_resume["career_summary"] == "Experienced engineer."
+        assert saved_resume["education"] == [{"institution": "State U"}]
+        assert saved_resume["skills"] == ["Python"]
+        assert saved_resume["achievements"] == ["Shipped a thing"]
 
     def test_step7_writes_search_profiles(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
@@ -258,33 +372,103 @@ class TestWizardStep:
         assert r.status_code == 200
         assert _read_user_yaml(yaml_path)["wizard_step"] == 7
 
+    def test_default_boards_for_locations_common_set_only(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["San Francisco, CA", "Remote"])
+        assert boards == ["linkedin", "indeed", "zip_recruiter", "glassdoor"]
+
+    def test_default_boards_for_locations_adds_naukri_for_india(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Bangalore, India"])
+        assert "naukri" in boards
+        assert "linkedin" in boards
+
+    def test_default_boards_for_locations_adds_bayt_for_gulf(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Dubai, UAE"])
+        assert "bayt" in boards
+
+    def test_default_boards_for_locations_adds_bdjobs_for_bangladesh(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Dhaka, Bangladesh"])
+        assert "bdjobs" in boards
+
+    def test_default_boards_for_locations_no_false_positive_indianapolis(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Indianapolis, Indiana"])
+        assert "naukri" not in boards
+
+    def test_default_boards_for_locations_no_false_positive_romania(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Bucharest, Romania"])
+        assert "bayt" not in boards
+
+    def test_default_boards_for_locations_multiple_regions_at_once(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["Mumbai, India", "Dubai, UAE"])
+        assert "naukri" in boards
+        assert "bayt" in boards
+        assert "bdjobs" not in boards
+
+    def test_default_boards_for_locations_case_insensitive(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations(["BANGALORE"])
+        assert "naukri" in boards
+
+    def test_default_boards_for_locations_empty_list(self):
+        from dev_api import _default_boards_for_locations
+        boards = _default_boards_for_locations([])
+        assert boards == ["linkedin", "indeed", "zip_recruiter", "glassdoor"]
+
+    def test_step7_seeds_boards_on_brand_new_profile(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        search_path = tmp_path / "config" / "search_profiles.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                r = client.post("/api/wizard/step",
+                                json={"step": 7, "data": {
+                                    "titles": ["Software Engineer"],
+                                    "locations": ["Bangalore, India"],
+                                }})
+        assert r.status_code == 200
+        prefs = yaml.safe_load(search_path.read_text())
+        default = next(p for p in prefs["profiles"] if p["name"] == "default")
+        assert default["boards"] == ["linkedin", "indeed", "zip_recruiter", "glassdoor", "naukri"]
+
+    def test_step7_does_not_touch_boards_on_existing_profile(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        search_path = tmp_path / "config" / "search_profiles.yaml"
+        _write_user_yaml(yaml_path, {})
+        search_path.parent.mkdir(parents=True, exist_ok=True)
+        search_path.write_text(yaml.dump({
+            "profiles": [{
+                "name": "default",
+                "job_titles": ["Old Title"],
+                "locations": ["Old Location"],
+                "boards": ["indeed"],
+            }]
+        }))
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            with patch("dev_api._search_prefs_path", return_value=search_path):
+                r = client.post("/api/wizard/step",
+                                json={"step": 7, "data": {
+                                    "titles": ["New Title"],
+                                    "locations": ["New Location"],
+                                }})
+        assert r.status_code == 200
+        prefs = yaml.safe_load(search_path.read_text())
+        default = next(p for p in prefs["profiles"] if p["name"] == "default")
+        assert default["job_titles"] == ["New Title"]
+        # boards must be completely untouched -- still exactly what it was before
+        assert default["boards"] == ["indeed"]
+
     def test_invalid_step_number(self, client, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
             r = client.post("/api/wizard/step", json={"step": 99, "data": {}})
         assert r.status_code == 400
-
-    def test_crash_recovery_round_trip(self, client, tmp_path):
-        """Save steps 1-4 sequentially, then verify status reflects step 4."""
-        yaml_path = tmp_path / "config" / "user.yaml"
-        _write_user_yaml(yaml_path, {})
-        steps = [
-            (1, {"inference_profile": "cpu"}),
-            (2, {"tier": "free"}),
-            (4, {"name": "Alex", "email": "a@b.com", "career_summary": "Eng."}),
-        ]
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            for step, data in steps:
-                r = client.post("/api/wizard/step", json={"step": step, "data": data})
-                assert r.status_code == 200
-
-            r = client.get("/api/wizard/status")
-
-        body = r.json()
-        assert body["wizard_step"] == 4
-        assert body["saved_data"]["name"] == "Alex"
-        assert body["saved_data"]["inference_profile"] == "cpu"
 
 
 # ── POST /api/wizard/inference/test ──────────────────────────────────────────
@@ -417,3 +601,160 @@ class TestWizardComplete:
             r = client.post("/api/wizard/complete")
         assert r.status_code == 200
         assert r.json()["ok"] is True
+
+
+# ── POST /api/wizard/connections/acknowledge ─────────────────────────────────
+
+class TestWizardConnectionsAcknowledge:
+    def test_sets_connections_acknowledged_true(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/connections/acknowledge")
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+        saved = _read_user_yaml(yaml_path)
+        assert saved["connections_acknowledged"] is True
+
+    def test_idempotent_when_already_true(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"connections_acknowledged": True, "name": "Alex"})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/connections/acknowledge")
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["connections_acknowledged"] is True
+        assert saved["name"] == "Alex"  # unrelated fields untouched
+
+
+# ── POST /api/wizard/setup-path ───────────────────────────────────────────────
+
+class TestWizardSetupPath:
+    def test_sets_setup_path_ai(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/setup-path", json={"path": "ai"})
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+        saved = _read_user_yaml(yaml_path)
+        assert saved["setup_path"] == "ai"
+
+    def test_sets_setup_path_manual(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/setup-path", json={"path": "manual"})
+        assert r.status_code == 200
+        saved = _read_user_yaml(yaml_path)
+        assert saved["setup_path"] == "manual"
+
+    def test_rejects_invalid_path_value(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {})
+        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+            r = client.post("/api/wizard/setup-path", json={"path": "banana"})
+        assert r.status_code == 422
+
+
+# ── Cloud free-tier onboarding LLM trial (server-side enforcement) ───────────
+
+class TestAiWizardCloudTrial:
+    def test_free_tier_cloud_incomplete_wizard_can_use_ai_wizard(self, tmp_path):
+        from dev_api import _can_use_ai_wizard
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": False})
+        # has_configured_llm patched False so this dev worktree's real
+        # config/llm.yaml (which has a backend enabled) can't short-circuit
+        # can_use() via BYOK_UNLOCKABLE and mask the cloud-trial branch.
+        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("dev_api._CLOUD_MODE", True):
+                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+                    assert _can_use_ai_wizard("free") is True
+
+    def test_free_tier_cloud_completed_wizard_cannot_use_ai_wizard(self, tmp_path):
+        from dev_api import _can_use_ai_wizard
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": True})
+        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("dev_api._CLOUD_MODE", True):
+                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+                    assert _can_use_ai_wizard("free") is False
+
+    def test_free_tier_self_hosted_incomplete_wizard_cannot_use_ai_wizard(self, tmp_path):
+        # The trial is cloud-only -- self-hosted installs get no exception,
+        # even mid-onboarding.
+        from dev_api import _can_use_ai_wizard
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": False})
+        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("dev_api._CLOUD_MODE", False):
+                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+                    assert _can_use_ai_wizard("free") is False
+
+    def test_paid_tier_can_use_ai_wizard_regardless_of_cloud_or_wizard_state(self, tmp_path):
+        from dev_api import _can_use_ai_wizard
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": True})
+        with patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            with patch("dev_api._CLOUD_MODE", True):
+                with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
+                    assert _can_use_ai_wizard("paid") is True
+
+    def test_ai_interview_endpoint_allows_free_cloud_incomplete_wizard(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": False})
+        with patch("dev_api._CLOUD_MODE", True), \
+             patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)), \
+             patch("dev_api._get_effective_tier", return_value="free"), \
+             patch("scripts.wizard.tiers.has_configured_llm", return_value=False), \
+             patch("scripts.llm_router.LLMRouter") as mock_router:
+            mock_router.return_value.complete_task.return_value = (
+                '{"reply": "hi", "extracted_fields": {}, "complete": false, "asking_about": "name"}'
+            )
+            r = client.post("/api/wizard/ai/interview", json={"history": [], "profile_so_far": {}})
+        assert r.status_code == 200
+
+    def test_ai_interview_endpoint_denies_free_cloud_completed_wizard(self, client, tmp_path):
+        yaml_path = tmp_path / "config" / "user.yaml"
+        _write_user_yaml(yaml_path, {"wizard_complete": True})
+        with patch("dev_api._CLOUD_MODE", True), \
+             patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)), \
+             patch("dev_api._get_effective_tier", return_value="free"), \
+             patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
+            r = client.post("/api/wizard/ai/interview", json={"history": [], "profile_so_far": {}})
+        assert r.status_code == 402
+
+    def test_wizard_ai_interview_cloud_mode_calls_router_for_tenant(self, tmp_path):
+        """wizard_ai_interview must build its LLMRouter via router_for_tenant()
+        in cloud mode, not a bare LLMRouter() -- otherwise a tenant's saved
+        task_models assignment is silently ignored."""
+        from dev_api import app
+        from fastapi.testclient import TestClient
+        from unittest.mock import patch, MagicMock
+        import os
+
+        tenant_db = tmp_path / "tenant" / "staging.db"
+        tenant_db.parent.mkdir(parents=True)
+        _write_user_yaml(tenant_db.parent / "config" / "user.yaml", {"wizard_complete": False})
+
+        client = TestClient(app)
+        fake_router = MagicMock()
+        fake_router.complete_task.return_value = '{"reply": "hi", "extracted_fields": {}, "complete": false, "asking_about": "name"}'
+
+        with patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False), \
+             patch("dev_api._CLOUD_MODE", True), \
+             patch("dev_api._request_db") as mock_ctx, \
+             patch("dev_api.DB_PATH", str(tenant_db)), \
+             patch("dev_api._wizard_yaml_path", return_value=str(tenant_db.parent / "config" / "user.yaml")), \
+             patch("scripts.wizard.tiers.has_configured_llm", return_value=False), \
+             patch("dev_api._get_effective_tier", return_value="free"), \
+             patch("dev_api.router_for_tenant", return_value=fake_router) as mock_router_for_tenant:
+            mock_ctx.get.return_value = str(tenant_db)
+            r = client.post("/api/wizard/ai/interview", json={"history": [], "profile_so_far": {}})
+
+        assert r.status_code == 200
+        mock_router_for_tenant.assert_called_once()
+        call_args = mock_router_for_tenant.call_args
+        assert call_args.args[1] is True or call_args.kwargs.get("cloud_mode") is True
+        fake_router.complete_task.assert_called_once()

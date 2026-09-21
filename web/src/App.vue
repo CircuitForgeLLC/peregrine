@@ -44,7 +44,13 @@ const toast = useToast()
 const config = useAppConfigStore()
 const digestStore = useDigestStore()
 
-const isWizard = computed(() => route.path.startsWith('/setup'))
+// /wizard/ai-profile is a focused, no-AppNav view too — it's reachable both
+// from the "Set up with AI" option on the onboarding choice step
+// (SetupPathChoiceView.vue) and afterward as a standalone settings entry
+// point, and its own copy promises "opens in a focused view" either way.
+const isWizard = computed(() =>
+  route.path.startsWith('/setup') || route.path === '/wizard/ai-profile',
+)
 
 useKonamiCode(toggle)
 

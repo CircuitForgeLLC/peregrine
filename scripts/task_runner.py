@@ -10,11 +10,27 @@ Deduplication: only one queued/running task per (task_type, job_id) is allowed.
 Different task types for the same job run concurrently (e.g. cover letter + research).
 """
 import logging
+import re
 import sqlite3
 import threading
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+_VALID_USER_ID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+
+def _resolve_cloud_user_id(db_path) -> str | None:
+    """Extract the cloud tenant's user_id from a db_path shaped like
+    <CLOUD_DATA_ROOT>/<user_id>/peregrine/staging.db. Returns None for a
+    self-hosted db_path (no matching UUID segment) -- callers already treat
+    a missing user_id as "use local routing", so this degrades safely.
+    """
+    try:
+        candidate = Path(db_path).parts[-3]
+    except IndexError:
+        return None
+    return candidate if _VALID_USER_ID_RE.match(candidate) else None
 
 
 def _normalize_aihawk_resume(raw: dict) -> dict:
@@ -232,11 +248,14 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
         elif task_type == "cover_letter":
             import json as _json
+            import os as _os
             p = _json.loads(params or "{}")
             from scripts.generate_cover_letter import generate
+            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH, _merged_cloud_llm_config
             _cfg_dir = Path(db_path).parent / "config"
-            _user_llm_cfg = _cfg_dir / "llm.yaml"
             _user_yaml = _cfg_dir / "user.yaml"
+            _cloud_mode = _os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
+            _llm_config_path = _merged_cloud_llm_config(db_path) if _cloud_mode else LLM_ROUTER_CONFIG_PATH
             result = generate(
                 job.get("title", ""),
                 job.get("company", ""),
@@ -244,19 +263,19 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 previous_result=p.get("previous_result", ""),
                 feedback=p.get("feedback", ""),
                 is_jobgether=job.get("source") == "jobgether",
-                config_path=_user_llm_cfg,
+                config_path=_llm_config_path,
                 user_yaml_path=_user_yaml,
+                user_id=_resolve_cloud_user_id(db_path),
             )
             update_cover_letter(db_path, job_id, result)
 
         elif task_type == "company_research":
             from scripts.company_research import research_company
-            _cfg_dir = Path(db_path).parent / "config"
-            _user_llm_cfg = _cfg_dir / "llm.yaml"
+            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
             result = research_company(
                 job,
                 on_stage=lambda s: update_task_stage(db_path, task_id, s),
-                config_path=_user_llm_cfg if _user_llm_cfg.exists() else None,
+                config_path=LLM_ROUTER_CONFIG_PATH,
             )
             save_research(db_path, job_id=job_id, **result)
 
@@ -366,7 +385,7 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
             # Extract keyword gaps and build gap report (free tier)
             update_task_stage(db_path, task_id, "extracting keyword gaps")
-            gaps = extract_jd_signals(description, resume_text)
+            gaps = extract_jd_signals(description, resume_text, company_name=job.get("company", ""))
             prioritized = prioritize_gaps(gaps, resume_struct)
             gap_report = _json.dumps(prioritized, indent=2)
 
@@ -403,17 +422,75 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 save_optimized_resume(db_path, job_id=job_id,
                                       text="", gap_report=gap_report)
 
+        elif task_type == "resume_score":
+            import json as _json
+            from scripts.db import get_resume as _get_resume
+            from scripts.resume_scorer import score_resume, score_ats_hygiene
+
+            p = _json.loads(params or "{}")
+            resume_id = p.get("resume_id")
+            resume_row = _get_resume(db_path, resume_id)
+            if not resume_row:
+                update_task_status(db_path, task_id, "failed", error=f"Resume {resume_id} not found")
+                return
+
+            struct = _json.loads(resume_row["struct_json"]) if resume_row.get("struct_json") else {}
+            needs_struct_persist = False
+            if not struct:
+                from scripts.resume_parser import parse_resume
+                struct, _err = parse_resume(resume_row.get("text", ""))
+                needs_struct_persist = True
+
+            update_task_stage(db_path, task_id, "scoring resume")
+            holistic = score_resume(struct)
+
+            update_task_stage(db_path, task_id, "checking ATS hygiene")
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            recent_rows = conn.execute(
+                "SELECT description FROM jobs WHERE description IS NOT NULL AND description != '' "
+                "ORDER BY date_found DESC LIMIT 10"
+            ).fetchall()
+            conn.close()
+            recent_descriptions = [r["description"] for r in recent_rows]
+            ats = score_ats_hygiene(struct, recent_descriptions)
+
+            feedback = dict(holistic)
+            feedback.update(ats)
+            conn = sqlite3.connect(db_path)
+            if needs_struct_persist:
+                # struct_json was empty on this row (e.g. non-YAML imports never
+                # populate it) — we had to fall back to parse_resume() above to
+                # score it at all. Persist that parsed struct now so downstream
+                # apply-suggestion calls have structured data to edit instead of
+                # permanently 409ing on a resume that was just scored fine.
+                conn.execute(
+                    "UPDATE resumes SET score=?, ats_score=?, feedback_json=?, "
+                    "struct_json=?, scored_at=datetime('now') WHERE id=?",
+                    (holistic.get("overall_score"), ats.get("ats_score"),
+                     _json.dumps(feedback), _json.dumps(struct), resume_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE resumes SET score=?, ats_score=?, feedback_json=?, "
+                    "scored_at=datetime('now') WHERE id=?",
+                    (holistic.get("overall_score"), ats.get("ats_score"),
+                     _json.dumps(feedback), resume_id),
+                )
+            conn.commit()
+            conn.close()
+
         elif task_type == "survey_analyze":
             import json as _json
             from scripts.survey_assistant import run_survey_analyze
+            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
             p = _json.loads(params or "{}")
-            _cfg_path = Path(db_path).parent / "config" / "llm.yaml"
             update_task_stage(db_path, task_id, "analyzing survey")
             result = run_survey_analyze(
                 text=p.get("text"),
                 image_b64=p.get("image_b64"),
                 mode=p.get("mode", "quick"),
-                config_path=_cfg_path if _cfg_path.exists() else None,
+                config_path=LLM_ROUTER_CONFIG_PATH,
             )
             update_task_status(
                 db_path, task_id, "completed",

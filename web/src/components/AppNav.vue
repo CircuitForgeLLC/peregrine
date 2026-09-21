@@ -50,7 +50,7 @@
       </select>
     </div>
 
-    <!-- Background task queue (desktop: inline list; mobile: fixed pill above tab bar) -->
+    <!-- Background task queue (desktop: inline list here in the sidebar) -->
     <TaskIndicator />
 
     <!-- Settings at bottom -->
@@ -78,6 +78,15 @@
       </li>
     </ul>
   </nav>
+
+  <!-- Background task queue (mobile: fixed pill above the tab bar). A
+       separate component, not a second TaskIndicator instance -- that pill
+       markup used to live inside TaskIndicator, nested in .app-sidebar
+       above, but a display:none ancestor hides descendants regardless of
+       their own position/display, so it could never actually render on
+       mobile. Reads the same shared task store; TaskIndicator (in the
+       sidebar) already owns starting/stopping the poll. -->
+  <MobileTaskPill />
 </template>
 
 <script setup lang="ts">
@@ -100,6 +109,7 @@ import {
 import { useDigestStore } from '../stores/digest'
 import { useTheme, THEME_OPTIONS, type Theme } from '../composables/useTheme'
 import TaskIndicator from './TaskIndicator.vue'
+import MobileTaskPill from './MobileTaskPill.vue'
 
 const digestStore = useDigestStore()
 const { currentTheme, setTheme, restoreTheme } = useTheme()

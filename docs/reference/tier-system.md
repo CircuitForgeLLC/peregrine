@@ -1,6 +1,6 @@
 # Tier System
 
-Peregrine uses a three-tier feature gate system defined in `app/wizard/tiers.py`.
+Peregrine uses a three-tier feature gate system defined in `scripts/wizard/tiers.py`.
 
 ---
 
@@ -87,10 +87,10 @@ The following integrations are free for all tiers and are not in the `FEATURES` 
 
 ### `can_use(tier, feature, has_byok=False) -> bool`
 
-Returns `True` if the given tier has access to the feature. Pass `has_byok=has_configured_llm()` to apply BYOK unlock logic.
+Returns `True` if the given tier has access to the feature. Pass `has_byok=has_configured_llm()` to apply BYOK unlock logic. Called from `dev-api.py` route handlers, e.g. `can_use(_get_effective_tier(), "model_fine_tuning")` on the cloud custom-model endpoint.
 
 ```python
-from app.wizard.tiers import can_use, has_configured_llm
+from scripts.wizard.tiers import can_use, has_configured_llm
 
 byok = has_configured_llm()
 
@@ -108,7 +108,7 @@ can_use("invalid", "company_research")            # False — invalid tier strin
 Returns `True` if at least one non-vision LLM backend is enabled in `config/llm.yaml`. Local backends (ollama, vllm) and external API keys both count.
 
 ```python
-from app.wizard.tiers import has_configured_llm
+from scripts.wizard.tiers import has_configured_llm
 
 has_configured_llm()  # True if any backend is enabled and not vision_service
 ```
@@ -118,7 +118,7 @@ has_configured_llm()  # True if any backend is enabled and not vision_service
 Returns a display badge string for locked features, or `""` if the feature is free, unlocked, or BYOK-accessible.
 
 ```python
-from app.wizard.tiers import tier_label
+from scripts.wizard.tiers import tier_label
 
 tier_label("company_research")                    # "🔒 Paid"
 tier_label("company_research", has_byok=True)     # ""  (BYOK unlocks, no label shown)
@@ -147,7 +147,7 @@ dev_tier_override: premium    # overrides tier locally for testing
 
 ## Adding a New Feature Gate
 
-1. Add the feature to `FEATURES` in `app/wizard/tiers.py`. If it's a pure LLM call that should unlock with BYOK, also add it to `BYOK_UNLOCKABLE`:
+1. Add the feature to `FEATURES` in `scripts/wizard/tiers.py`. If it's a pure LLM call that should unlock with BYOK, also add it to `BYOK_UNLOCKABLE`:
 
 ```python
 FEATURES: dict[str, str] = {
@@ -161,20 +161,18 @@ BYOK_UNLOCKABLE: frozenset[str] = frozenset({
 })
 ```
 
-2. Guard the feature in the UI, passing `has_byok`:
+2. Guard the feature server-side in the relevant `dev-api.py` route, passing `has_byok` where the feature is a pure LLM call:
 
 ```python
-from app.wizard.tiers import can_use, tier_label, has_configured_llm
+from scripts.wizard.tiers import can_use, has_configured_llm
 
-_byok = has_configured_llm()
-if can_use(user.tier, "my_new_llm_feature", has_byok=_byok):
-    # show the feature
-    pass
-else:
-    st.info(f"Requires a paid plan or a configured LLM backend.")
+if not can_use(_get_effective_tier(), "my_new_llm_feature", has_byok=has_configured_llm()):
+    raise HTTPException(402, detail={"error": "tier_required", "min_tier": "paid"})
 ```
 
-3. Add tests in `tests/test_wizard_tiers.py` covering both the tier gate and BYOK unlock:
+3. Guard the feature in the Vue UI too (`config.tier` from `useAppConfigStore()`), so it's disabled/hidden before the user ever hits the tier-gated endpoint — see the Custom Model field in [Settings — Custom Model](../user-guide/settings.md#custom-model-cloud-premium) for the current visible-but-disabled pattern.
+
+4. Add tests in `tests/test_wizard_tiers.py` covering both the tier gate and BYOK unlock:
 
 ```python
 def test_my_new_feature_requires_paid_without_byok():
@@ -184,9 +182,3 @@ def test_my_new_feature_requires_paid_without_byok():
 def test_my_new_feature_byok_unlocks():
     assert can_use("free", "my_new_llm_feature", has_byok=True) is True
 ```
-
----
-
-## Future: Ultra Tier
-
-An `ultra` tier is reserved for future use (e.g. enterprise SLA, dedicated inference). The tier ordering in `TIERS = ["free", "paid", "premium"]` can be extended without breaking `can_use()`, since it uses `list.index()` for comparison.

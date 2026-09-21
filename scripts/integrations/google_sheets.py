@@ -29,6 +29,21 @@ class GoogleSheetsIntegration(IntegrationBase):
         return bool(config.get("spreadsheet_id") and config.get("credentials_json"))
 
     def test(self) -> bool:
-        # TODO: use gspread to open_by_key()
-        creds = os.path.expanduser(self._config.get("credentials_json", ""))
-        return os.path.exists(creds)
+        try:
+            service = self._build_service()
+            service.spreadsheets().get(
+                spreadsheetId=self._config["spreadsheet_id"]
+            ).execute()
+            return True
+        except Exception:
+            return False
+
+    def _build_service(self):
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        creds_path = os.path.expanduser(self._config["credentials_json"])
+        creds = service_account.Credentials.from_service_account_file(
+            creds_path,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        )
+        return build("sheets", "v4", credentials=creds)

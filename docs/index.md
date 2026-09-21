@@ -13,7 +13,7 @@ Peregrine automates the full job search lifecycle: discovery, matching, cover le
 
 ```bash
 # 1. Clone and install dependencies
-git clone https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine
+git clone https://git.circuitforge.tech/Circuit-Forge/peregrine
 cd peregrine
 bash install.sh
 
@@ -64,8 +64,8 @@ See [Tier System](reference/tier-system.md) for the full feature gate table.
 
 ## License
 
-Core discovery pipeline: [MIT](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/src/branch/main/LICENSE-MIT)
+Core discovery pipeline: [MIT](https://git.circuitforge.tech/Circuit-Forge/peregrine/src/branch/main/LICENSE-MIT)
 
-AI features (cover letter generation, company research, interview prep, UI): [BSL 1.1](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/src/branch/main/LICENSE-BSL)
+AI features (cover letter generation, company research, interview prep, UI): [BSL 1.1](https://git.circuitforge.tech/Circuit-Forge/peregrine/src/branch/main/LICENSE-BSL)
 
 © 2026 Circuit Forge LLC

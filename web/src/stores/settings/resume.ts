@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
+import { genId } from '../../utils/id'
 
 export interface WorkEntry {
   id: string
@@ -20,6 +21,10 @@ export const useResumeStore = defineStore('settings/resume', () => {
   const saving = ref(false)
   const saveError = ref<string | null>(null)
   const loadError = ref<string | null>(null)
+  // Set true only after a successful load — lets callers (e.g. dashboard
+  // cards) avoid re-fetching on every mount, without masking a failed load
+  // as "already loaded" (a failure leaves this false so a retry can happen).
+  const loaded = ref(false)
 
   // Identity (synced from profile store)
   const name = ref(''); const email = ref(''); const phone = ref(''); const linkedin_url = ref('')
@@ -47,6 +52,9 @@ export const useResumeStore = defineStore('settings/resume', () => {
   const domainSuggestions = ref<string[]>([])
   const keywordSuggestions = ref<string[]>([])
   const suggestingField = ref<'skills' | 'domains' | 'keywords' | null>(null)
+  const suggestErrors = ref<{ skills: string | null; domains: string | null; keywords: string | null }>({
+    skills: null, domains: null, keywords: null,
+  })
 
   function syncFromProfile(p: { name: string; email: string; phone: string; linkedin_url: string }) {
     name.value = p.name; email.value = p.email
@@ -62,6 +70,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
       loadError.value = error.kind === 'network' ? error.message : (error.detail || 'Failed to load resume')
       return
     }
+    loaded.value = true
     if (!data || !data.exists) { hasResume.value = false; return }
     hasResume.value = true
     name.value = String(data.name ?? ''); email.value = String(data.email ?? '')
@@ -69,7 +78,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
     surname.value = String(data.surname ?? ''); address.value = String(data.address ?? '')
     city.value = String(data.city ?? ''); zip_code.value = String(data.zip_code ?? '')
     date_of_birth.value = String(data.date_of_birth ?? '')
-    experience.value = (data.experience as Omit<WorkEntry, 'id'>[]).map(e => ({ ...e, id: crypto.randomUUID() })) ?? []
+    experience.value = ((data.experience as Omit<WorkEntry, 'id'>[]) ?? []).map(e => ({ ...e, id: genId() }))
     salary_min.value = Number(data.salary_min ?? 0); salary_max.value = Number(data.salary_max ?? 0)
     notice_period.value = String(data.notice_period ?? '')
     remote.value = Boolean(data.remote); relocation.value = Boolean(data.relocation)
@@ -81,7 +90,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
     domains.value = (data.domains as string[]) ?? []
     keywords.value = (data.keywords as string[]) ?? []
     career_summary.value = String(data.career_summary ?? '')
-    education.value = ((data.education as Omit<EducationEntry, 'id'>[]) ?? []).map(e => ({ ...e, id: crypto.randomUUID() }))
+    education.value = ((data.education as Omit<EducationEntry, 'id'>[]) ?? []).map(e => ({ ...e, id: genId() }))
     achievements.value = (data.achievements as string[]) ?? []
   }
 
@@ -119,7 +128,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
   }
 
   function addExperience() {
-    experience.value.push({ id: crypto.randomUUID(), title: '', company: '', period: '', location: '', industry: '', responsibilities: '', skills: [] })
+    experience.value.push({ id: genId(), title: '', company: '', period: '', location: '', industry: '', responsibilities: '', skills: [] })
   }
 
   function removeExperience(idx: number) {
@@ -128,7 +137,7 @@ export const useResumeStore = defineStore('settings/resume', () => {
 
   function addEducation() {
     education.value.push({
-      id: crypto.randomUUID(), institution: '', degree: '', field: '', start_date: '', end_date: ''
+      id: genId(), institution: '', degree: '', field: '', start_date: '', end_date: ''
     })
   }
 
@@ -138,19 +147,26 @@ export const useResumeStore = defineStore('settings/resume', () => {
 
   async function suggestTags(field: 'skills' | 'domains' | 'keywords') {
     suggestingField.value = field
+    suggestErrors.value[field] = null
     const current = field === 'skills' ? skills.value : field === 'domains' ? domains.value : keywords.value
-    const { data } = await useApiFetch<{ suggestions: string[] }>('/api/settings/resume/suggest-tags', {
+    const { data, error } = await useApiFetch<{ suggestions: string[] }>('/api/settings/resume/suggest-tags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: field, current }),
     })
     suggestingField.value = null
-    if (!data?.suggestions) return
+    if (error || !data?.suggestions) {
+      suggestErrors.value[field] = 'Could not generate suggestions — please try again.'
+      return
+    }
     const existing = field === 'skills' ? skills.value : field === 'domains' ? domains.value : keywords.value
     const fresh = data.suggestions.filter(s => !existing.includes(s))
     if (field === 'skills') skillSuggestions.value = fresh
     else if (field === 'domains') domainSuggestions.value = fresh
     else keywordSuggestions.value = fresh
+    if (fresh.length === 0) {
+      suggestErrors.value[field] = 'No new suggestions right now — try again in a moment.'
+    }
   }
 
   function acceptTagSuggestion(field: 'skills' | 'domains' | 'keywords', value: string) {
@@ -174,12 +190,12 @@ export const useResumeStore = defineStore('settings/resume', () => {
   }
 
   return {
-    hasResume, loading, saving, saveError, loadError,
+    hasResume, loading, saving, saveError, loadError, loaded,
     name, email, phone, linkedin_url, surname, address, city, zip_code, date_of_birth,
     experience, salary_min, salary_max, notice_period, remote, relocation, assessment, background_check,
     gender, pronouns, ethnicity, veteran_status, disability,
     skills, domains, keywords,
-    skillSuggestions, domainSuggestions, keywordSuggestions, suggestingField,
+    skillSuggestions, domainSuggestions, keywordSuggestions, suggestingField, suggestErrors,
     career_summary, education, achievements, lastSynced,
     syncFromProfile, load, save, createBlank,
     addExperience, removeExperience, addEducation, removeEducation, addTag, removeTag, suggestTags, acceptTagSuggestion,

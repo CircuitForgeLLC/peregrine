@@ -26,6 +26,21 @@ class GoogleDriveIntegration(IntegrationBase):
         return bool(config.get("folder_id") and config.get("credentials_json"))
 
     def test(self) -> bool:
-        # TODO: use google-api-python-client to list the folder
-        creds = os.path.expanduser(self._config.get("credentials_json", ""))
-        return os.path.exists(creds)
+        try:
+            service = self._build_service()
+            service.files().get(
+                fileId=self._config["folder_id"], fields="id,name,mimeType"
+            ).execute()
+            return True
+        except Exception:
+            return False
+
+    def _build_service(self):
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        creds_path = os.path.expanduser(self._config["credentials_json"])
+        creds = service_account.Credentials.from_service_account_file(
+            creds_path,
+            scopes=["https://www.googleapis.com/auth/drive"],
+        )
+        return build("drive", "v3", credentials=creds)

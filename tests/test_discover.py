@@ -35,6 +35,45 @@ def make_jobs_df(jobs=None):
     return pd.DataFrame(jobs or [SAMPLE_JOB])
 
 
+def test_normalize_profiles_converts_job_boards_to_boards_even_when_already_profiles_format():
+    """save_search_prefs (dev-api.py) writes job_boards (Settings/API schema)
+    into an entry inside an already-`profiles`-format file. The short-circuit
+    `if "profiles" in raw: return raw` must not skip the job_boards -> boards
+    conversion for those entries, or run_discovery's `profile.get("boards")`
+    silently sees nothing and searches zero boards."""
+    from scripts.discover import _normalize_profiles
+    raw = {
+        "profiles": [{
+            "name": "default",
+            "job_titles": ["Engineer"],
+            "job_boards": [
+                {"name": "linkedin", "enabled": True},
+                {"name": "indeed", "enabled": False},
+            ],
+        }]
+    }
+    normalized = _normalize_profiles(raw)
+    default = next(p for p in normalized["profiles"] if p["name"] == "default")
+    assert default["boards"] == ["linkedin"]
+
+
+def test_normalize_profiles_does_not_override_existing_boards_when_already_profiles_format():
+    """If a profile entry already has both `boards` and `job_boards` (e.g.
+    written by the wizard's own boards-seeding, then later re-saved by
+    Settings), the existing `boards` list must not be silently replaced."""
+    from scripts.discover import _normalize_profiles
+    raw = {
+        "profiles": [{
+            "name": "default",
+            "boards": ["custom_already_set"],
+            "job_boards": [{"name": "linkedin", "enabled": True}],
+        }]
+    }
+    normalized = _normalize_profiles(raw)
+    default = next(p for p in normalized["profiles"] if p["name"] == "default")
+    assert default["boards"] == ["custom_already_set"]
+
+
 def test_discover_writes_to_sqlite(tmp_path):
     """run_discovery inserts new jobs into SQLite staging db."""
     from scripts.discover import run_discovery
@@ -180,6 +219,197 @@ def test_discover_custom_board_deduplicates(tmp_path):
         count = run_discovery(db_path=db_path)
 
     assert count == 0  # duplicate skipped
+    assert len(get_jobs_by_status(db_path, "pending")) == 1
+
+
+# ── Hybrid remote_preference ─────────────────────────────────────────────────
+# Board-side is_remote tagging is unreliable for hybrid roles (LinkedIn tags
+# many hybrid listings is_remote=True), so 'hybrid' preference doesn't filter
+# on JobSpy's is_remote param at all -- instead it requires the description
+# to match one of the same hybrid-arrangement phrases already used to
+# *exclude* hybrid roles under 'remote' preference, inverted into a
+# *require* filter.
+
+_PROFILE_HYBRID = {
+    "profiles": [{
+        "name": "cs", "titles": ["Customer Success Manager"], "locations": ["Remote"],
+        "boards": ["linkedin"], "results_per_board": 5, "hours_old": 72,
+        "remote_preference": "hybrid",
+    }]
+}
+
+
+def test_discover_hybrid_preference_keeps_jobs_matching_hybrid_phrases(tmp_path):
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/111",
+                  "description": "This is a hybrid role, 3 days in office per week."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_PROFILE_HYBRID, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([hybrid_job])), \
+         patch("scripts.discover.Client"):
+        count = run_discovery(db_path=db_path)
+
+    assert count == 1
+    assert len(get_jobs_by_status(db_path, "pending")) == 1
+
+
+def test_discover_hybrid_preference_drops_jobs_without_hybrid_phrases(tmp_path):
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    plain_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/222",
+                 "description": "Fully remote customer success role."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_PROFILE_HYBRID, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([plain_job])), \
+         patch("scripts.discover.Client"):
+        count = run_discovery(db_path=db_path)
+
+    assert count == 0
+    assert len(get_jobs_by_status(db_path, "pending")) == 0
+
+
+def test_discover_hybrid_preference_does_not_set_jobspy_is_remote_kwarg(tmp_path):
+    """Board-side is_remote tagging is unreliable for hybrid -- 'hybrid' must
+    not pass is_remote=True/False to JobSpy at all (unlike 'remote'/'onsite')."""
+    from scripts.discover import run_discovery
+
+    hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/333",
+                  "description": "Hybrid schedule, 2 days onsite."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_PROFILE_HYBRID, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([hybrid_job])) as mock_scrape, \
+         patch("scripts.discover.Client"):
+        run_discovery(db_path=db_path)
+
+    assert "is_remote" not in mock_scrape.call_args.kwargs
+
+
+# ── remote_preference as a multi-select ─────────────────────────────────────
+# Replaced the old single-value 'both' with a genuine multi-select: any
+# subset of {onsite, remote, hybrid}. Old string-shaped profiles (including
+# the retired 'both') are still handled above -- these cover the new list shape.
+
+def _profile_with_remote_pref(selection):
+    return {
+        "profiles": [{
+            "name": "cs", "titles": ["Customer Success Manager"], "locations": ["Remote"],
+            "boards": ["linkedin"], "results_per_board": 5, "hours_old": 72,
+            "remote_preference": selection,
+        }]
+    }
+
+
+def test_discover_list_remote_only_sets_is_remote_true_and_excludes_hybrid(tmp_path):
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/401",
+                  "description": "Hybrid role, 3 days in office per week."}
+    plain_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/402",
+                 "description": "Fully remote customer success role."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_profile_with_remote_pref(["remote"]), SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([hybrid_job, plain_job])) as mock_scrape, \
+         patch("scripts.discover.Client"):
+        count = run_discovery(db_path=db_path)
+
+    assert mock_scrape.call_args.kwargs.get("is_remote") is True
+    assert count == 1
+    assert len(get_jobs_by_status(db_path, "pending")) == 1
+
+
+def test_discover_list_onsite_only_sets_is_remote_false(tmp_path):
+    from scripts.discover import run_discovery
+
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_profile_with_remote_pref(["onsite"]), SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([SAMPLE_JOB])) as mock_scrape, \
+         patch("scripts.discover.Client"):
+        run_discovery(db_path=db_path)
+
+    assert mock_scrape.call_args.kwargs.get("is_remote") is False
+
+
+def test_discover_list_hybrid_only_matches_old_string_hybrid_behavior(tmp_path):
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/403",
+                  "description": "This is a hybrid role, 3 days in office per week."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_profile_with_remote_pref(["hybrid"]), SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([hybrid_job])) as mock_scrape, \
+         patch("scripts.discover.Client"):
+        count = run_discovery(db_path=db_path)
+
+    assert "is_remote" not in mock_scrape.call_args.kwargs
+    assert count == 1
+    assert len(get_jobs_by_status(db_path, "pending")) == 1
+
+
+def test_discover_all_three_selected_behaves_like_old_both(tmp_path):
+    """No is_remote filter, no hybrid include/exclude -- matches the old 'both'."""
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/404",
+                  "company": "Hybrid Co", "description": "Hybrid role, 3 days in office."}
+    plain_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/405",
+                 "company": "Remote Co", "description": "Fully remote role."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config",
+               return_value=(_profile_with_remote_pref(["onsite", "remote", "hybrid"]), SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([hybrid_job, plain_job])) as mock_scrape, \
+         patch("scripts.discover.Client"):
+        count = run_discovery(db_path=db_path)
+
+    assert "is_remote" not in mock_scrape.call_args.kwargs
+    assert count == 2
+    assert len(get_jobs_by_status(db_path, "pending")) == 2
+
+
+def test_discover_remote_and_hybrid_selected_keeps_both_excludes_neither(tmp_path):
+    """Partial multi-select (not all three, not a single value): no is_remote
+    filter, and since hybrid IS selected, hybrid-phrase jobs are not excluded
+    -- but since it's not hybrid-only, hybrid phrasing isn't required either."""
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/406",
+                  "company": "Hybrid Co", "description": "Hybrid role, 2 days onsite."}
+    plain_remote_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/407",
+                        "company": "Remote Co", "description": "Fully remote role, no office."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config",
+               return_value=(_profile_with_remote_pref(["remote", "hybrid"]), SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([hybrid_job, plain_remote_job])) as mock_scrape, \
+         patch("scripts.discover.Client"):
+        count = run_discovery(db_path=db_path)
+
+    assert "is_remote" not in mock_scrape.call_args.kwargs
+    assert count == 2
+    assert len(get_jobs_by_status(db_path, "pending")) == 2
+
+
+def test_discover_empty_remote_preference_list_defaults_to_all_three(tmp_path):
+    """An empty list (shouldn't normally happen from the UI, but is a valid
+    edge case) falls back to the same behavior as selecting all three."""
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    hybrid_job = {**SAMPLE_JOB, "job_url": "https://linkedin.com/jobs/view/408",
+                  "description": "Hybrid role, 3 days in office."}
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(_profile_with_remote_pref([]), SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([hybrid_job])) as mock_scrape, \
+         patch("scripts.discover.Client"):
+        count = run_discovery(db_path=db_path)
+
+    assert "is_remote" not in mock_scrape.call_args.kwargs
+    assert count == 1
     assert len(get_jobs_by_status(db_path, "pending")) == 1
 
 

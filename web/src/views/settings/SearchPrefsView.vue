@@ -9,12 +9,14 @@
     <!-- Remote Preference -->
     <section class="form-section">
       <h3>Remote Preference</h3>
-      <div class="remote-options">
+      <div class="remote-options" role="group" aria-label="Remote preference (select any that apply)">
         <button
           v-for="opt in remoteOptions"
           :key="opt.value"
-          :class="['remote-btn', { active: store.remote_preference === opt.value }]"
-          @click="store.remote_preference = opt.value"
+          type="button"
+          :class="['remote-btn', { active: store.remote_preference.includes(opt.value) }]"
+          :aria-pressed="store.remote_preference.includes(opt.value)"
+          @click="store.toggleRemotePreference(opt.value)"
         >{{ opt.label }}</button>
       </div>
       <p class="section-note">This filter runs at scrape time — listings that don't match are excluded before they count against per-board quotas.</p>
@@ -30,7 +32,9 @@
       </div>
       <div class="tag-input-row">
         <input v-model="titleInput" @keydown.enter.prevent="addTitle" placeholder="Add title, press Enter" />
-        <button @click="store.suggestTitles()" class="btn-suggest">Suggest</button>
+        <button @click="store.suggestTitles()" :disabled="store.suggestingField === 'titles'" class="btn-suggest">
+          {{ store.suggestingField === 'titles' ? 'Thinking…' : 'Suggest' }}
+        </button>
       </div>
       <div v-if="store.titleSuggestions.length > 0" class="suggestions">
         <span
@@ -40,6 +44,7 @@
           @click="store.acceptSuggestion('title', s)"
         >+ {{ s }}</span>
       </div>
+      <p v-if="store.suggestErrors.titles" class="error">{{ store.suggestErrors.titles }}</p>
     </section>
 
     <!-- Locations -->
@@ -52,7 +57,9 @@
       </div>
       <div class="tag-input-row">
         <input v-model="locationInput" @keydown.enter.prevent="addLocation" placeholder="Add location, press Enter" />
-        <button @click="store.suggestLocations()" class="btn-suggest">Suggest</button>
+        <button @click="store.suggestLocations()" :disabled="store.suggestingField === 'locations'" class="btn-suggest">
+          {{ store.suggestingField === 'locations' ? 'Thinking…' : 'Suggest' }}
+        </button>
       </div>
       <div v-if="store.locationSuggestions.length > 0" class="suggestions">
         <span
@@ -62,6 +69,7 @@
           @click="store.acceptSuggestion('location', s)"
         >+ {{ s }}</span>
       </div>
+      <p v-if="store.suggestErrors.locations" class="error">{{ store.suggestErrors.locations }}</p>
     </section>
 
     <!-- Exclude Keywords -->
@@ -74,7 +82,9 @@
       </div>
       <div class="tag-input-row">
         <input v-model="excludeInput" @keydown.enter.prevent="store.addTag('exclude_keywords', excludeInput); excludeInput = ''" placeholder="Add keyword, press Enter" />
-        <button @click="store.suggestExcludeKeywords()" class="btn-suggest">Suggest</button>
+        <button @click="store.suggestExcludeKeywords()" :disabled="store.suggestingField === 'exclude'" class="btn-suggest">
+          {{ store.suggestingField === 'exclude' ? 'Thinking…' : 'Suggest' }}
+        </button>
       </div>
       <div v-if="store.excludeSuggestions.length > 0" class="suggestions">
         <span
@@ -84,6 +94,7 @@
           @click="store.acceptSuggestion('exclude', s)"
         >+ {{ s }}</span>
       </div>
+      <p v-if="store.suggestErrors.exclude" class="error">{{ store.suggestErrors.exclude }}</p>
     </section>
 
     <!-- Job Boards -->
@@ -163,9 +174,9 @@ const store = useSearchStore()
 const docsUrl = useDocsUrl('user-guide/settings/#search-prefs')
 
 const remoteOptions = [
-  { value: 'remote' as const, label: 'Remote only' },
-  { value: 'onsite' as const, label: 'On-site only' },
-  { value: 'both' as const, label: 'Both' },
+  { value: 'onsite' as const, label: 'On-site' },
+  { value: 'remote' as const, label: 'Remote' },
+  { value: 'hybrid' as const, label: 'Hybrid' },
 ]
 
 const titleInput = ref('')
@@ -198,7 +209,7 @@ onMounted(() => store.load())
 h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: var(--space-6); }
 h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .form-section { margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--color-border); }
-.remote-options { display: flex; gap: 8px; margin-bottom: 10px; }
+.remote-options { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .remote-btn { padding: 8px 18px; border-radius: 6px; border: 1px solid var(--color-border); background: transparent; color: var(--color-text-muted); cursor: pointer; font-size: 0.88rem; transition: all 0.15s; }
 .remote-btn.active { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-inverse); }
 .section-note { font-size: 0.78rem; color: var(--color-text-muted); margin-top: 8px; }

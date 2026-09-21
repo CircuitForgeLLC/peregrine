@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # ── Hardware ───────────────────────────────────────────────────────────────────
-from app.wizard.step_hardware import validate as hw_validate, PROFILES
+from scripts.wizard.step_hardware import validate as hw_validate, PROFILES
 
 def test_hw_valid():
     assert hw_validate({"inference_profile": "remote"}) == []
@@ -19,7 +19,7 @@ def test_hw_all_profiles():
         assert hw_validate({"inference_profile": p}) == []
 
 # ── Tier ───────────────────────────────────────────────────────────────────────
-from app.wizard.step_tier import validate as tier_validate
+from scripts.wizard.step_tier import validate as tier_validate
 
 def test_tier_valid():
     assert tier_validate({"tier": "free"}) == []
@@ -31,7 +31,7 @@ def test_tier_invalid():
     assert tier_validate({"tier": "enterprise"}) != []
 
 # ── Identity ───────────────────────────────────────────────────────────────────
-from app.wizard.step_identity import validate as id_validate
+from scripts.wizard.step_identity import validate as id_validate
 
 def test_id_all_required_fields():
     d = {"name": "Alice", "email": "a@b.com", "career_summary": "10 years of stuff."}
@@ -60,7 +60,7 @@ def test_id_whitespace_only_name():
     assert id_validate(d) != []
 
 # ── Resume ─────────────────────────────────────────────────────────────────────
-from app.wizard.step_resume import validate as resume_validate
+from scripts.wizard.step_resume import validate as resume_validate
 
 def test_resume_no_experience():
     assert resume_validate({"experience": []}) != []
@@ -73,7 +73,7 @@ def test_resume_missing_experience_key():
     assert resume_validate({}) != []
 
 # ── Inference ──────────────────────────────────────────────────────────────────
-from app.wizard.step_inference import validate as inf_validate
+from scripts.wizard.step_inference import validate as inf_validate
 
 def test_inference_not_confirmed():
     assert inf_validate({"endpoint_confirmed": False}) != []
@@ -85,7 +85,7 @@ def test_inference_missing():
     assert inf_validate({}) != []
 
 # ── Search ─────────────────────────────────────────────────────────────────────
-from app.wizard.step_search import validate as search_validate
+from scripts.wizard.step_search import validate as search_validate
 
 def test_search_valid():
     d = {"job_titles": ["Software Engineer"], "locations": ["Remote"]}
@@ -112,7 +112,7 @@ def test_search_none_values():
     assert search_validate(d) != []
 
 # ── Step Integrations ──────────────────────────────────────────────────────────
-from app.wizard.step_integrations import validate as int_validate, get_available, is_connected
+from scripts.wizard.step_integrations import validate as int_validate, get_available, is_connected
 
 def test_integrations_always_passes():
     assert int_validate({}) == []

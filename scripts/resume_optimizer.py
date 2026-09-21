@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 # ── Signal extraction ─────────────────────────────────────────────────────────
 
-def extract_jd_signals(description: str, resume_text: str = "") -> list[str]:
+def extract_jd_signals(description: str, resume_text: str = "", company_name: str = "") -> list[str]:
     """Return ATS keyword signals from a job description.
 
     Combines two sources:
@@ -38,6 +38,9 @@ def extract_jd_signals(description: str, resume_text: str = "") -> list[str]:
     Args:
         description: Raw job description text.
         resume_text: Candidate's resume text (used to compute gap vs. already present).
+        company_name: Hiring company's name, so match_score() can exclude it
+            from gaps (JDs commonly repeat their own company name throughout,
+            which otherwise looks like a high-frequency "keyword").
 
     Returns:
         Deduplicated list of ATS keyword signals, most impactful first.
@@ -47,7 +50,7 @@ def extract_jd_signals(description: str, resume_text: str = "") -> list[str]:
     if resume_text:
         try:
             from scripts.match import match_score
-            _, tfidf_gaps = match_score(resume_text, description)
+            _, tfidf_gaps = match_score(resume_text, description, company_name=company_name)
         except Exception:
             log.warning("[resume_optimizer] TF-IDF gap extraction failed", exc_info=True)
 

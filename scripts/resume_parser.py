@@ -228,10 +228,24 @@ def _parse_header(lines: list[str]) -> dict:
             name = candidate
             break
 
+    # Split into first/last name -- the Resume Profile page has separate
+    # First Name / Last Name fields (many job application forms do too), but
+    # this parser only ever extracted a single combined name, so "surname"
+    # was always blank downstream. First token is the first name; everything
+    # else (middle names, suffixes) goes into surname, matching how the rest
+    # of a multi-word name is conventionally treated as the "last name" for
+    # form-filling purposes.
+    first_name, surname = "", ""
+    if name:
+        parts = name.split(" ", 1)
+        first_name = parts[0]
+        surname = parts[1] if len(parts) > 1 else ""
+
     return {
-        "name":  name,
-        "email": email_m.group(0) if email_m else "",
-        "phone": phone_m.group(0) if phone_m else "",
+        "name":    first_name,
+        "surname": surname,
+        "email":   email_m.group(0) if email_m else "",
+        "phone":   phone_m.group(0) if phone_m else "",
     }
 
 

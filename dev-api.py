@@ -18,7 +18,7 @@ import sys
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Literal
 from urllib.parse import urlparse
 
 import requests
@@ -26,7 +26,7 @@ import yaml
 from bs4 import BeautifulSoup
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -506,6 +506,51 @@ def job_counts():
     }
 
 
+# ── GET /api/salary-stats ──────────────────────────────────────────────────────
+
+@app.get("/api/salary-stats")
+def salary_stats(titles: str | None = None, location: str | None = None):
+    """Salary range across the user's own scraped job listings.
+
+    `titles`/`location` are optional query params. They fall back to the
+    saved search profile's `job_titles`/`locations` (same read path as
+    GET /api/settings/search) only when OMITTED from the request entirely
+    — not when present-but-empty. A deliberately-cleared field (e.g.
+    `location=`) must mean "no filter", not "use my saved profile".
+    """
+    from scripts.salary_stats import get_salary_stats
+
+    title_list = [t.strip() for t in titles.split(",") if t.strip()] if titles is not None else []
+    location_val = location.strip() if location is not None else ""
+
+    if titles is None or location is None:
+        try:
+            p = _search_prefs_path()
+            if p.exists():
+                with open(p) as f:
+                    data = yaml.safe_load(f) or {}
+                from scripts.discover import _normalize_profiles
+                normalized = _normalize_profiles(data)
+                profiles = normalized.get("profiles", [])
+                profile = next((pr for pr in profiles if pr.get("name") == "default"), None)
+                if profile is None:
+                    profile = data.get("default", {})
+                if titles is None:
+                    title_list = profile.get("job_titles") or profile.get("titles") or []
+                if location is None:
+                    locations = profile.get("locations") or []
+                    location_val = locations[0] if locations else ""
+        except Exception:
+            pass
+
+    db = _get_db()
+    try:
+        result = get_salary_stats(db, title_list, location_val or None)
+    finally:
+        db.close()
+    return result
+
+
 # ── POST /api/jobs/{id}/approve ───────────────────────────────────────────────
 
 @app.post("/api/jobs/{job_id}/approve")
@@ -866,8 +911,18 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
         job = {"title": job_row[0], "company": job_row[1]} if job_row else {}
 
         from scripts.user_profile import UserProfile
-        from app.cloud_session import get_config_dir
-        _user_yaml = get_config_dir() / "user.yaml"
+        # Config dir: cloud mode is per-user (sibling of the request-scoped db),
+        # local mode is the repo-level config/ dir. Was previously routed through
+        # app.cloud_session.get_config_dir(), which read st.session_state — that
+        # never reflected this request's user under FastAPI (no Streamlit runtime),
+        # so cloud-mode candidate_voice silently fell back to empty. Use the same
+        # _request_db contextvar every other per-request path in this file uses.
+        _config_dir = (
+            Path(_request_db.get() or DB_PATH).parent / "config"
+            if _CLOUD_MODE
+            else Path(__file__).parent / "config"
+        )
+        _user_yaml = _config_dir / "user.yaml"
         candidate_voice = UserProfile(_user_yaml).candidate_voice if UserProfile.exists(_user_yaml) else ""
 
         struct = frame_skill_gaps(struct, framings, job, candidate_voice)
@@ -1082,6 +1137,107 @@ def get_resume_endpoint(resume_id: int):
     if not r:
         raise HTTPException(404, "Resume not found")
     return r
+
+
+@app.post("/api/resumes/{resume_id}/score")
+def score_resume_endpoint(resume_id: int):
+    from scripts.db import get_resume as _get
+    from scripts.task_runner import submit_task
+    db_path = Path(_request_db.get() or DB_PATH)
+    if not _get(db_path, resume_id):
+        raise HTTPException(404, "Resume not found")
+    import json as _json
+    task_id, is_new = submit_task(
+        db_path=db_path,
+        task_type="resume_score",
+        job_id=0,
+        params=_json.dumps(dict(resume_id=resume_id)),
+    )
+    return dict(task_id=task_id, is_new=is_new)
+
+
+@app.get("/api/resumes/{resume_id}/score/task")
+def resume_score_task_status(resume_id: int):
+    """Poll the latest resume_score task status for this resume.
+
+    task_id/job_id are not scoped to resume_id in the background_tasks schema
+    (resume_score tasks are submitted with job_id=0, matching the "global task"
+    convention used by discovery), so this filters on the resume_id embedded in
+    the task's params JSON via SQLite's json_extract (confirmed available in
+    this repo's sqlite3 build).
+    """
+    db = _get_db()
+    row = db.execute(
+        "SELECT status, stage, error FROM background_tasks "
+        "WHERE task_type = 'resume_score' AND json_extract(params, '$.resume_id') = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (resume_id,),
+    ).fetchone()
+    db.close()
+    if not row:
+        return dict(status="none", stage=None, message=None)
+    return dict(status=row["status"], stage=row["stage"], message=row["error"])
+
+
+@app.get("/api/resumes/{resume_id}/score")
+def get_resume_score_endpoint(resume_id: int):
+    from scripts.db import get_resume as _get
+    import json as _json
+    db_path = Path(_request_db.get() or DB_PATH)
+    r = _get(db_path, resume_id)
+    if not r:
+        raise HTTPException(404, "Resume not found")
+    feedback = _json.loads(r["feedback_json"]) if r.get("feedback_json") else None
+    return dict(score=feedback, scored_at=r.get("scored_at"))
+
+
+class ApplySuggestionBody(BaseModel):
+    suggestion: dict
+
+
+@app.post("/api/resumes/{resume_id}/score/apply-suggestion")
+def apply_resume_suggestion(resume_id: int, body: ApplySuggestionBody):
+    import json as _json
+    from scripts.db import get_resume as _get, update_resume_struct as _update_struct, create_resume as _create
+    from scripts.resume_optimizer import hallucination_check, render_resume_text
+    from scripts.resume_scorer import apply_suggestion
+    from scripts.resume_sync import make_auto_backup_name
+
+    db_path = Path(_request_db.get() or DB_PATH)
+    r = _get(db_path, resume_id)
+    if not r:
+        raise HTTPException(404, "Resume not found")
+
+    struct = _json.loads(r["struct_json"]) if r.get("struct_json") else {}
+    if not struct:
+        raise HTTPException(409, "Resume has no structured data to edit — re-import it.")
+
+    rewritten = apply_suggestion(struct, body.suggestion)
+    if rewritten == struct:
+        raise HTTPException(
+            422,
+            "Couldn't find the original text to replace — the resume may have "
+            "changed since it was scored. Re-score to refresh.",
+        )
+    # hallucination_check() only verifies company/title/dates/institution anchors,
+    # not bullet-text content -- see issue #160 for the known gap.
+    if not hallucination_check(struct, rewritten):
+        raise HTTPException(409, "This suggestion could not be safely applied — it introduces new facts.")
+
+    # Back up the resume's current content before overwriting it in place, same
+    # pattern as apply_resume_to_profile()'s backup-before-overwrite below.
+    _create(
+        db_path,
+        name=make_auto_backup_name(r["name"]),
+        text=r.get("text", ""),
+        source="pre-apply-backup",
+        struct_json=r.get("struct_json"),
+    )
+
+    final_text = render_resume_text(rewritten)
+    _update_struct(db_path, resume_id=resume_id, text=final_text, struct_json=_json.dumps(rewritten))
+    updated = _get(db_path, resume_id)
+    return {"ok": True, "resume": updated}
 
 
 @app.patch("/api/resumes/{resume_id}")
@@ -1892,13 +2048,14 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
         "Be specific and genuine. Do not use hollow filler phrases."
     )
 
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        from scripts.llm_router import LLMRouter
-        router = LLMRouter()
-        answer = router.complete(prompt)
+        answer = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt)
         return {"answer": answer.strip()}
-    except Exception as e:
-        raise HTTPException(500, f"LLM generation failed: {e}")
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Chat model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
 
 
 # ── POST /api/jobs/:id/hired-feedback ─────────────────────────────────────────
@@ -2798,16 +2955,13 @@ def get_app_config():
         raw_tier = _resolve_cloud_tier()
     else:
         raw_tier = os.environ.get("APP_TIER", "free")
-    if is_cloud:
-        wizard_complete = True
-    else:
-        try:
-            cfg = load_user_profile(_user_yaml_path())
-            wizard_complete = bool(cfg.get("wizard_complete", False))
-        except Exception:
-            wizard_complete = False
+    try:
+        cfg = load_user_profile(_user_yaml_path())
+        wizard_complete = bool(cfg.get("wizard_complete", False))
+    except Exception:
+        wizard_complete = False
 
-    from app.wizard.tiers import has_configured_llm
+    from scripts.wizard.tiers import has_configured_llm
     byok_unlocked = has_configured_llm()
 
     return {
@@ -3017,6 +3171,90 @@ def _resume_context_snippet() -> str:
         return ""
 
 
+def _extract_json_array(raw: str, *, log_context: str = "") -> list | None:
+    """Extract a JSON array from LLM output that may include surrounding
+    prose despite being asked for "only JSON". Returns None (never raises)
+    if no array is found or it doesn't parse, logging what came back so a
+    consistently-empty result is diagnosable instead of silently mysterious.
+    """
+    import json as _json
+    start = raw.find("[")
+    end = raw.rfind("]") + 1
+    if start == -1 or end == 0:
+        _log.warning("[%s] LLM response had no JSON array: %r", log_context, raw[:200])
+        return None
+    try:
+        return _json.loads(raw[start:end])
+    except Exception:
+        _log.warning("[%s] LLM response had an unparsable JSON array: %r", log_context, raw[:200])
+        return None
+
+
+_CAPABILITY_PROBE_PROMPT = 'Return only this exact JSON array, nothing else: ["a", "b"]'
+
+
+def _get_cached_probe(backend_id: str, model: str) -> dict | None:
+    cfg_path = _config_dir() / "llm.yaml"
+    if not cfg_path.exists():
+        return None
+    with open(cfg_path) as f:
+        data = yaml.safe_load(f) or {}
+    key = f"{backend_id}:{model}"
+    probes = (data.get("model_capability_probes") or {}).get(key, {})
+    return probes.get("structured_output")
+
+
+def _probe_model_capability(backend_id: str, model: str) -> dict:
+    """Run the empirical structured-output canary against backend_id/model
+    and cache the pass/fail result. Raises on a genuine connectivity
+    failure (probe couldn't run) -- callers must distinguish that from a
+    probe that ran and failed, per the spec's error table."""
+    from scripts.llm_router import LLMRouter
+    router = LLMRouter()
+    raw = router.complete(_CAPABILITY_PROBE_PROMPT, fallback_order=[backend_id], model_override=model)
+    parsed = _extract_json_array(raw, log_context=f"capability-probe:{backend_id}:{model}")
+    passed = parsed is not None and parsed == ["a", "b"]
+
+    result = {"passed": passed, "checked_at": datetime.now(timezone.utc).isoformat()}
+
+    cfg_path = _config_dir() / "llm.yaml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict = {}
+    if cfg_path.exists():
+        with open(cfg_path) as f:
+            data = yaml.safe_load(f) or {}
+    probes = data.setdefault("model_capability_probes", {})
+    key = f"{backend_id}:{model}"
+    probes.setdefault(key, {})["structured_output"] = result
+    with open(cfg_path, "w") as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+
+    return result
+
+
+class ProbeModelPayload(BaseModel):
+    backend: str
+    model: str
+
+
+@app.post("/api/settings/system/probe-model")
+def probe_model(payload: ProbeModelPayload):
+    """Run (or re-run) the capability probe for a specific backend+model.
+    Never raises for an unreachable backend -- the frontend needs to tell
+    'model failed the probe' apart from 'couldn't test it at all'."""
+    try:
+        return _probe_model_capability(payload.backend, payload.model)
+    except RuntimeError as e:
+        # Connectivity failure from router.complete() -- backend is unreachable
+        _log.warning("[probe-model] %s/%s unreachable: %s", payload.backend, payload.model, e)
+        return {"error": "unreachable"}
+    except Exception as e:
+        # Unexpected error (e.g. YAML write failure, etc.) -- log and re-raise
+        # so caller can see it's not a model-unavailability issue
+        _log.error("[probe-model] %s/%s unexpected failure: %s", payload.backend, payload.model, e)
+        raise
+
+
 @app.post("/api/settings/profile/generate-summary")
 def generate_career_summary():
     """LLM-generate a career summary from the candidate's resume profile."""
@@ -3030,12 +3268,14 @@ def generate_career_summary():
         "Be specific, highlight key strengths, and avoid hollow filler phrases like "
         "'results-driven' or 'passionate self-starter'."
     )
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        from scripts.llm_router import LLMRouter
-        summary = LLMRouter().complete(prompt)
+        summary = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"summary": summary.strip()}
-    except Exception as e:
-        raise HTTPException(500, f"LLM generation failed: {e}")
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
 
 
 @app.post("/api/settings/profile/generate-missions")
@@ -3051,24 +3291,29 @@ def generate_mission_preferences():
         "'label' (human-readable name), and 'note' (one sentence on why it fits). "
         "Only output the JSON array, no other text."
     )
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        from scripts.llm_router import LLMRouter
-        import json as _json
-        raw = LLMRouter().complete(prompt)
-        # Extract JSON array from the response
-        start = raw.find("[")
-        end = raw.rfind("]") + 1
-        if start == -1 or end == 0:
-            raise ValueError("LLM did not return a JSON array")
-        items = _json.loads(raw[start:end])
-        # Normalise to {industry, note} — LLM may return {tag, label, note}
-        missions = [
-            {"industry": m.get("label") or m.get("tag") or str(m), "note": m.get("note", "")}
-            for m in items if isinstance(m, dict)
-        ]
-        return {"mission_preferences": missions}
-    except Exception as e:
-        raise HTTPException(500, f"LLM generation failed: {e}")
+        raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+    items = _extract_json_array(raw, log_context="generate-missions")
+    if items is None:
+        # The assigned Research model answered, but not with usable structured
+        # output -- exactly the failure this feature exists to name specifically
+        # instead of hiding behind a generic "LLM generation failed".
+        raise HTTPException(
+            502,
+            "The model assigned to Research didn't return usable output — try a different model, "
+            "or re-run its capability check in Settings → System → Model Assignments.",
+        )
+    # Normalise to {industry, note} — LLM may return {tag, label, note}
+    missions = [
+        {"industry": m.get("label") or m.get("tag") or str(m), "note": m.get("note", "")}
+        for m in items if isinstance(m, dict)
+    ]
+    return {"mission_preferences": missions}
 
 
 @app.post("/api/settings/profile/generate-voice")
@@ -3085,12 +3330,14 @@ def generate_candidate_voice():
         "values that come through in their writing, and any standout personality. "
         "Write it in third person as a style directive (e.g. 'Writes in a clear, direct tone...')."
     )
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        from scripts.llm_router import LLMRouter
-        voice = LLMRouter().complete(prompt)
+        voice = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"voice": voice.strip()}
-    except Exception as e:
-        raise HTTPException(500, f"LLM generation failed: {e}")
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
 
 
 # ── Settings: Resume Profile endpoints ───────────────────────────────────────
@@ -3120,6 +3367,13 @@ class ResumePayload(BaseModel):
 def _config_dir() -> Path:
     """Resolve per-user config directory. Always co-located with user.yaml."""
     return Path(_user_yaml_path()).parent
+
+def _task_models_path() -> Path:
+    """Per-tenant task_models storage, cloud mode only. Self-hosted keeps
+    using LLM_ROUTER_CONFIG_PATH (see get_task_models/save_task_models) --
+    the shared cloud llm.yaml is centrally CF-managed and mounted
+    read-only, so per-tenant assignments must live somewhere else."""
+    return _config_dir() / "task_models.yaml"
 
 def _resume_path() -> Path:
     """Resolve plain_text_resume.yaml co-located with user.yaml (user-isolated)."""
@@ -3298,6 +3552,29 @@ async def upload_resume(file: UploadFile):
         with open(resume_path, "w") as f:
             yaml.dump(result, f, allow_unicode=True, default_flow_style=False)
 
+        # Backfill empty My Profile fields from the parsed resume -- never
+        # overwrites a value the user already entered, only fills gaps.
+        try:
+            profile = load_user_profile(_user_yaml_path())
+            parsed_name = " ".join(
+                part for part in (result.get("name", ""), result.get("surname", "")) if part
+            )
+            backfill = {
+                "name": parsed_name,
+                "email": result.get("email", ""),
+                "phone": result.get("phone", ""),
+                "career_summary": result.get("career_summary", ""),
+            }
+            changed = False
+            for field, value in backfill.items():
+                if value and not profile.get(field):
+                    profile[field] = value
+                    changed = True
+            if changed:
+                save_user_profile(_user_yaml_path(), profile)
+        except Exception:
+            pass  # profile backfill is best-effort; never block the upload on it
+
         # Also add to resume library and mark as default
         import json as _json
         from scripts.db import create_resume as _create_r, set_default_resume as _set_default
@@ -3322,7 +3599,7 @@ async def upload_resume(file: UploadFile):
 # ── Settings: Search Preferences endpoints ────────────────────────────────────
 
 class SearchPrefsPayload(BaseModel):
-    remote_preference: str = "both"
+    remote_preference: List[str] = ["onsite", "remote", "hybrid"]
     job_titles: List[str] = []
     locations: List[str] = []
     exclude_keywords: List[str] = []
@@ -3331,6 +3608,38 @@ class SearchPrefsPayload(BaseModel):
     blocklist_companies: List[str] = []
     blocklist_industries: List[str] = []
     blocklist_locations: List[str] = []
+
+def _default_boards_for_locations(locations: list[str]) -> list[str]:
+    """Sensible default job boards, expanded with regional boards when a
+    user's entered locations suggest they're relevant. Pure keyword
+    matching against location strings already collected by the wizard's
+    search step -- no external geocoding call, deterministic.
+    """
+    boards = ["linkedin", "indeed", "zip_recruiter", "glassdoor"]
+    joined = " ".join(locations).lower()
+
+    def _matches(keywords: list[str]) -> bool:
+        return any(re.search(rf"\b{re.escape(kw)}\b", joined) for kw in keywords)
+
+    india_keywords = [
+        "india", "bangalore", "bengaluru", "mumbai", "delhi", "hyderabad",
+        "pune", "chennai", "gurgaon", "gurugram", "noida",
+    ]
+    if _matches(india_keywords):
+        boards.append("naukri")
+
+    gulf_keywords = [
+        "uae", "dubai", "abu dhabi", "saudi arabia", "riyadh", "jeddah",
+        "qatar", "doha", "kuwait", "bahrain", "oman",
+    ]
+    if _matches(gulf_keywords):
+        boards.append("bayt")
+
+    bangladesh_keywords = ["bangladesh", "dhaka", "chittagong", "chattogram"]
+    if _matches(bangladesh_keywords):
+        boards.append("bdjobs")
+
+    return boards
 
 def _get_valid_jobspy_boards() -> set[str]:
     """Return the set of board names supported by the installed JobSpy version."""
@@ -3376,6 +3685,16 @@ def get_search_prefs():
                 for b in boards
             ]
 
+        # Still nothing? Fall back to the full valid-board catalog, all
+        # unchecked, so the Settings checklist is never a dead end with
+        # nothing to click (covers pre-fix accounts and direct API usage
+        # that bypassed the wizard's board-seeding entirely).
+        if not profile.get("job_boards"):
+            profile["job_boards"] = [
+                {"name": b, "enabled": False, "supported": b in valid}
+                for b in sorted(valid)
+            ]
+
         # Normalize title key — wizard saved "titles", settings canonical is "job_titles"
         if "titles" in profile and "job_titles" not in profile:
             profile["job_titles"] = profile.pop("titles")
@@ -3392,7 +3711,23 @@ def save_search_prefs(payload: SearchPrefsPayload):
         if p.exists():
             with open(p) as f:
                 data = yaml.safe_load(f) or {}
-        data["default"] = payload.model_dump()
+
+        # Normalize on load so we merge into the canonical `profiles` list
+        # rather than a separate top-level "default" key that
+        # _normalize_profiles never reads once a `profiles` key exists
+        # (same pattern as wizard_save_step's step==7 handler).
+        from scripts.discover import _normalize_profiles as _norm
+        data = _norm(data)
+
+        profiles_list = data.get("profiles", [])
+        default_profile = next((pr for pr in profiles_list if pr.get("name") == "default"), None)
+        payload_dict = payload.model_dump()
+        if default_profile is None:
+            default_profile = {"name": "default"}
+            profiles_list.append(default_profile)
+        default_profile.update(payload_dict)
+        data["profiles"] = profiles_list
+
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
@@ -3450,15 +3785,17 @@ def suggest_resume_tags(payload: ResumeTagSuggestPayload):
     else:
         raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
 
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        import json as _json
-        from scripts.llm_router import LLMRouter
-        raw = LLMRouter().complete(prompt)
-        start = raw.find("[")
-        end   = raw.rfind("]") + 1
-        if start == -1 or end == 0:
+        raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+    try:
+        suggestions = _extract_json_array(raw, log_context=f"suggest-tags:{payload.type}")
+        if suggestions is None:
             return {"suggestions": []}
-        suggestions = _json.loads(raw[start:end])
         return {"suggestions": [str(s) for s in suggestions if s]}
     except Exception as e:
         raise HTTPException(500, f"LLM generation failed: {e}")
@@ -3501,15 +3838,17 @@ def suggest_search(payload: SearchSuggestPayload):
     else:
         raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
 
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        import json as _json
-        from scripts.llm_router import LLMRouter
-        raw = LLMRouter().complete(prompt)
-        start = raw.find("[")
-        end   = raw.rfind("]") + 1
-        if start == -1 or end == 0:
+        raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+    try:
+        suggestions = _extract_json_array(raw, log_context=f"suggest-search:{payload.type}")
+        if suggestions is None:
             return {"suggestions": []}
-        suggestions = _json.loads(raw[start:end])
         return {"suggestions": [str(s) for s in suggestions if s]}
     except Exception as e:
         raise HTTPException(500, f"LLM generation failed: {e}")
@@ -3527,25 +3866,63 @@ LLM_CONFIG_PATH = Path("config/llm.yaml")
 
 @app.get("/api/settings/system/llm")
 def get_llm_config():
+    """Report backends as a reorderable {id, enabled, priority} list for the
+    drag-and-drop UI. config/llm.yaml itself stores backends as a dict keyed
+    by id (with base_url/model/type/etc per entry) -- this derives the list
+    view from that dict plus fallback_order, it never returns the dict
+    as-is (the frontend calls .filter()/.map() on this, which crashed on
+    every page load when backends was returned as a raw dict)."""
     try:
         user = load_user_profile(_user_yaml_path())
-        backends = []
+        backend_defs = {}
+        fallback_order: list[str] = []
         if LLM_CONFIG_PATH.exists():
             with open(LLM_CONFIG_PATH) as f:
                 data = yaml.safe_load(f) or {}
-            backends = data.get("backends", [])
+            backend_defs = data.get("backends") or {}
+            fallback_order = data.get("fallback_order") or []
+
+        ordered_ids = [bid for bid in fallback_order if bid in backend_defs]
+        ordered_ids += [bid for bid in backend_defs if bid not in ordered_ids]
+
+        backends = [
+            {
+                "id": bid,
+                "enabled": bool(backend_defs[bid].get("enabled", True)),
+                "priority": i + 1,
+            }
+            for i, bid in enumerate(ordered_ids)
+        ]
         return {"backends": backends, "byok_acknowledged": user.get("byok_acknowledged_backends", [])}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/settings/system/llm")
 def save_llm_config(payload: LlmConfigPayload):
+    """Apply the reordered {id, enabled, priority} list onto the existing
+    per-backend config dict: updates each backend's `enabled` flag and
+    reorders fallback_order to match, without touching base_url/model/type/
+    or any other field. The previous handler replaced the whole backends
+    dict with this flat list, destroying every backend's configuration on
+    every save."""
     try:
         data = {}
         if LLM_CONFIG_PATH.exists():
             with open(LLM_CONFIG_PATH) as f:
                 data = yaml.safe_load(f) or {}
-        data["backends"] = payload.backends
+        backend_defs = data.get("backends") or {}
+
+        ordered = sorted(payload.backends, key=lambda b: b.get("priority", 0))
+        new_fallback_order = []
+        for entry in ordered:
+            bid = entry.get("id")
+            if bid not in backend_defs:
+                continue
+            backend_defs[bid]["enabled"] = bool(entry.get("enabled", True))
+            new_fallback_order.append(bid)
+
+        data["backends"] = backend_defs
+        data["fallback_order"] = new_fallback_order
         LLM_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(LLM_CONFIG_PATH, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
@@ -3565,71 +3942,264 @@ def byok_ack(payload: ByokAckPayload):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Settings: per-user cover-letter model ────────────────────────────────────
+# ── Settings: per-task model assignments ─────────────────────────────────────
 
-@app.get("/api/settings/llm/cover-letter-model")
-def get_cover_letter_model():
-    """Return the user's custom cover letter model (from per-user llm.yaml if set)."""
-    cfg_path = _config_dir() / "llm.yaml"
-    if cfg_path.exists():
-        with open(cfg_path) as f:
-            data = yaml.safe_load(f) or {}
-        # Convention: the first backend in fallback_order that targets cover letters
-        # is stored under backends.cover_letter.model
-        model = (data.get("backends", {}).get("cover_letter") or {}).get("model", "")
-        return {"model": model}
-    return {"model": ""}
+# `task_models` must live in the SAME file `LLMRouter()` itself reads, or the
+# assignments saved here would never reach complete_task(). LLMRouter()'s
+# no-argument default resolves <repo>/config/llm.yaml first (that is
+# scripts.llm_router.CONFIG_PATH) -- which is also the file that already holds
+# `backends` / `fallback_order` / `research_fallback_order`. This is a
+# different path from `_config_dir()` (per-user data directory, /app/data/config
+# in the Docker deployment), so it must be spelled out explicitly rather than
+# assumed to coincide.
+#
+# Cloud mode is a deliberate exception to this co-location invariant:
+# per-tenant `task_models` live in a separate file and are merged with the
+# shared backend config in memory at call time by `router_for_tenant()` in
+# scripts/llm_router.py, rather than by writing into this same file. Do not
+# "fix" the cloud branch back to file co-location -- that reintroduces the
+# bug this file's fix resolved (peregrine#173).
+from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH  # noqa: E402
+
+# Imported at module scope (not per-call-site) so that `router_for_tenant` is
+# a patchable attribute of this module for tests -- a per-call-site local
+# `from scripts.llm_router import ... router_for_tenant` would re-bind a
+# fresh reference to the real function on every call, silently shadowing any
+# `patch("dev_api.router_for_tenant", ...)` applied in tests.
+from scripts.llm_router import router_for_tenant  # noqa: E402
 
 
-class CoverLetterModelPayload(BaseModel):
+class TaskModelAssignment(BaseModel):
+    backend: str
     model: str
 
 
-@app.put("/api/settings/llm/cover-letter-model")
-def set_cover_letter_model(payload: CoverLetterModelPayload):
-    """Write the custom cover letter model into the per-user llm.yaml."""
-    cfg_path = _config_dir() / "llm.yaml"
+class TaskModelsPayload(BaseModel):
+    primary: TaskModelAssignment | None = None
+    research: TaskModelAssignment | None = None
+    chat: TaskModelAssignment | None = None
+
+
+@app.get("/api/settings/system/task-models")
+def get_task_models():
+    """Return the current Primary/Research/Chat model assignments.
+
+    One-time migration: a pre-existing backends.cover_letter.model (from
+    the now-removed single-purpose cover-letter-model picker) becomes
+    task_models.primary the first time this is read, so an existing
+    user's customization isn't silently dropped. Self-hosted only --
+    cloud tenants have no legacy backends.cover_letter.model to migrate.
+    """
+    cfg_path = _task_models_path() if _CLOUD_MODE else LLM_ROUTER_CONFIG_PATH
+    data: dict = {}
+    if cfg_path.exists():
+        with open(cfg_path) as f:
+            data = yaml.safe_load(f) or {}
+
+    task_models = data.get("task_models")
+    if task_models is None:
+        task_models = {"primary": None, "research": None, "chat": None}
+        if not _CLOUD_MODE:
+            legacy_model = (data.get("backends", {}).get("cover_letter") or {}).get("model")
+            if legacy_model:
+                task_models["primary"] = {"backend": "ollama", "model": legacy_model}
+        data["task_models"] = task_models
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cfg_path, "w") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+
+    ollama_resp = get_ollama_models()
+    return {
+        "primary": task_models.get("primary"),
+        "research": task_models.get("research"),
+        "chat": task_models.get("chat"),
+        "ollama_models": ollama_resp.get("models", []),
+        "probes": _probes_for_assignments(task_models),
+    }
+
+
+def _probes_for_assignments(task_models: dict) -> dict:
+    """Cached capability-probe state for whichever models are currently
+    assigned, keyed "<backend>:<model>" -- so the frontend can hydrate its
+    warning badges on page load instead of losing them on every reload
+    (a probe only re-runs when the user changes a dropdown)."""
+    probes: dict = {}
+    for task in ("primary", "research", "chat"):
+        assignment = task_models.get(task)
+        if not assignment:
+            continue
+        backend_id = assignment.get("backend")
+        model = assignment.get("model")
+        if not backend_id or not model:
+            continue
+        key = f"{backend_id}:{model}"
+        if key in probes:
+            continue
+        try:
+            cached = _get_cached_probe(backend_id, model)
+        except Exception as e:  # cache is advisory -- never fail the GET over it
+            _log.warning("[task-models] could not read cached probe for %s: %s", key, e)
+            continue
+        if cached is not None and "passed" in cached:
+            probes[key] = {"passed": bool(cached["passed"])}
+    return probes
+
+
+@app.put("/api/settings/system/task-models")
+def save_task_models(payload: TaskModelsPayload):
+    cfg_path = _task_models_path() if _CLOUD_MODE else LLM_ROUTER_CONFIG_PATH
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     data: dict = {}
     if cfg_path.exists():
         with open(cfg_path) as f:
             data = yaml.safe_load(f) or {}
-    backends = data.setdefault("backends", {})
-    if payload.model:
-        backends["cover_letter"] = {
-            "type": "openai_compat",
-            "enabled": True,
-            "base_url": "http://localhost:11434/v1",
-            "model": payload.model,
-            "api_key": "any",
-            "supports_images": False,
-        }
-        order = data.setdefault("fallback_order", [])
-        if "cover_letter" not in order:
-            order.insert(0, "cover_letter")
-    else:
-        # Clear custom model — remove the backend and drop from fallback order
-        backends.pop("cover_letter", None)
-        data["fallback_order"] = [b for b in data.get("fallback_order", []) if b != "cover_letter"]
+    data["task_models"] = {
+        "primary": payload.primary.model_dump() if payload.primary else None,
+        "research": payload.research.model_dump() if payload.research else None,
+        "chat": payload.chat.model_dump() if payload.chat else None,
+    }
     with open(cfg_path, "w") as f:
         yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
     return {"ok": True}
 
 
-@app.get("/api/settings/llm/ollama-models")
-def get_ollama_models():
-    """Return available Ollama models by querying the local Ollama API."""
+def _running_in_docker() -> bool:
+    """True when this Peregrine process itself is running inside a Docker
+    container. Standard, cheap check -- Docker always creates /.dockerenv.
+
+    This is the fact that decides whether a saved "localhost" value should
+    be trusted or rewritten: "localhost" is correct when Peregrine itself
+    is bare-metal (Ollama on the same real machine), and wrong when
+    Peregrine is dockerized (its own "localhost" is the container, not the
+    host machine).
+    """
+    return os.path.exists("/.dockerenv")
+
+
+def _configured_ollama_base_url() -> str:
+    """Resolve the Ollama base URL from the user's configured services map,
+    falling back to the OLLAMA_HOST env var when nothing is configured yet.
+
+    "localhost"/"127.0.0.1" saved into services.ollama_host is treated as
+    unset: it's the old wizard field's stale placeholder value, and it's
+    never actually reachable from inside this app's own Docker container --
+    Ollama on the host machine (or an adopted external instance) must be
+    reached via OLLAMA_HOST, typically host.docker.internal.
+    """
     try:
-        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-        if not ollama_host.startswith("http"):
-            ollama_host = f"http://{ollama_host}"
-        resp = requests.get(f"{ollama_host.rstrip('/')}/api/tags", timeout=3)
+        cfg = _load_wizard_yaml()
+        services = cfg.get("services", {})
+        host = services.get("ollama_host")
+        port = services.get("ollama_port")
+        if host and not (_running_in_docker() and host in ("localhost", "127.0.0.1")):
+            return f"http://{host}:{port or 11434}"
+    except Exception:
+        pass
+    ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    if not ollama_host.startswith("http"):
+        ollama_host = f"http://{ollama_host}"
+    return ollama_host.rstrip("/")
+
+
+@app.get("/api/settings/llm/ollama-models")
+def get_ollama_models(host: Optional[str] = None, port: Optional[int] = None):
+    """Return available Ollama models by querying the configured Ollama host,
+    or an explicit host/port override -- lets the frontend show a just-detected
+    host's models immediately, before the user has saved it."""
+    try:
+        base_url = f"http://{host}:{port or 11434}" if host else _configured_ollama_base_url()
+        resp = requests.get(f"{base_url}/api/tags", timeout=3)
         if resp.status_code == 200:
             models = [m["name"] for m in resp.json().get("models", [])]
             return {"models": models}
     except Exception:
         pass
     return {"models": []}
+
+
+def _configured_vllm_base_url() -> str:
+    """Resolve the vLLM base URL from the user's configured services map.
+    Mirrors _configured_ollama_base_url()'s "localhost is never reachable
+    from inside this app's own Docker container" handling."""
+    try:
+        cfg = _load_wizard_yaml()
+        services = cfg.get("services", {})
+        host = services.get("vllm_host")
+        port = services.get("vllm_port")
+        if host and not (_running_in_docker() and host in ("localhost", "127.0.0.1")):
+            return f"http://{host}:{port or 8000}"
+    except Exception:
+        pass
+    return "http://localhost:8000"
+
+
+@app.get("/api/settings/llm/vllm-models")
+def get_vllm_models(host: Optional[str] = None, port: Optional[int] = None):
+    """Return models currently served by vLLM's OpenAI-compatible /v1/models
+    endpoint, from the configured host or an explicit override."""
+    try:
+        base_url = f"http://{host}:{port or 8000}" if host else _configured_vllm_base_url()
+        resp = requests.get(f"{base_url}/v1/models", timeout=3)
+        if resp.status_code == 200:
+            models = [m["id"] for m in resp.json().get("data", [])]
+            return {"models": models}
+    except Exception:
+        pass
+    return {"models": []}
+
+
+class OllamaDetectPayload(BaseModel):
+    port: int = 11434
+
+
+@app.post("/api/settings/system/ollama-detect")
+def ollama_detect(payload: OllamaDetectPayload):
+    """Try candidate Ollama host addresses in the order appropriate to
+    whether Peregrine itself is dockerized, and report which one (if any)
+    actually responds. See _running_in_docker()."""
+    if _running_in_docker():
+        candidates = ["host.docker.internal", "ollama", "localhost"]
+    else:
+        candidates = ["localhost", "127.0.0.1"]
+
+    tried = []
+    for host in candidates:
+        url = f"http://{host}:{payload.port}/api/tags"
+        tried.append(host)
+        try:
+            resp = requests.get(url, timeout=3)
+            if resp.status_code == 200:
+                return {"found": True, "host": host, "port": payload.port}
+        except Exception:
+            continue
+    return {"found": False, "tried": tried}
+
+
+class VllmDetectPayload(BaseModel):
+    port: int = 8000
+
+
+@app.post("/api/settings/system/vllm-detect")
+def vllm_detect(payload: VllmDetectPayload):
+    """Same docker/native-aware candidate probing as ollama_detect(), but
+    against vLLM's OpenAI-compatible /v1/models endpoint (not Ollama's
+    /api/tags -- a different API shape)."""
+    if _running_in_docker():
+        candidates = ["host.docker.internal", "vllm", "localhost"]
+    else:
+        candidates = ["localhost", "127.0.0.1"]
+
+    tried = []
+    for host in candidates:
+        url = f"http://{host}:{payload.port}/v1/models"
+        tried.append(host)
+        try:
+            resp = requests.get(url, timeout=3)
+            if resp.status_code == 200:
+                return {"found": True, "host": host, "port": payload.port}
+        except Exception:
+            continue
+    return {"found": False, "tried": tried}
 
 
 # ── Settings: System — Services ───────────────────────────────────────────────
@@ -3902,6 +4472,223 @@ def save_orch_url(payload: OrchUrlPayload):
     cfg["cf_orch_url"] = payload.orch_url.strip()
     _save_wizard_yaml(cfg)
     return {"ok": True}
+
+
+class CustomModelPayload(BaseModel):
+    custom_model_alias: str = ""
+
+
+@app.get("/api/settings/system/custom-model")
+def get_custom_model():
+    """Return the cloud managed user's custom fine-tuned model alias, if set.
+
+    Not yet routed to cf-orch (task_allocate has no user_id threading, and
+    there's no self-service registration API) -- see
+    circuitforge-plans/peregrine/superpowers/plans/2026-09-18-cloud-custom-model-cforch-followup.md.
+    This just persists the setting so it's ready once that lands.
+    """
+    cfg = _load_wizard_yaml()
+    return {"custom_model_alias": cfg.get("custom_model_alias", "")}
+
+
+@app.put("/api/settings/system/custom-model")
+def save_custom_model(payload: CustomModelPayload):
+    """Persist the custom fine-tuned model alias to user.yaml. Setting a
+    non-empty alias requires Premium tier; clearing it (empty string) is
+    always allowed so a downgraded user isn't stuck unable to follow the
+    app's own "clear the alias" error guidance."""
+    from scripts.wizard.tiers import can_use
+    alias = payload.custom_model_alias.strip()
+    if alias and not can_use(_get_effective_tier(), "model_fine_tuning"):
+        raise HTTPException(402, detail={"error": "tier_required", "min_tier": "premium"})
+    cfg = _load_wizard_yaml()
+    cfg["custom_model_alias"] = alias
+    _save_wizard_yaml(cfg)
+    return {"ok": True}
+
+
+def _env_path() -> Path:
+    """Resolve the .env file path, same directory as user.yaml's grandparent."""
+    return Path(_wizard_yaml_path()).parent.parent / ".env"
+
+
+def _set_env_key(lines: list[str], key: str, val: str) -> list[str]:
+    """Set key=val in a list of .env lines, replacing an existing entry.
+
+    Rejects values containing a newline or carriage return, since either
+    would inject an arbitrary extra line into the written .env file.
+    """
+    if "\n" in val or "\r" in val:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{key} value must not contain newline characters",
+        )
+    for i, line in enumerate(lines):
+        if line.startswith(f"{key}="):
+            lines[i] = f"{key}={val}"
+            return lines
+    lines.append(f"{key}={val}")
+    return lines
+
+
+def _env_key_is_set(key: str) -> bool:
+    env_path = _env_path()
+    if not env_path.exists():
+        return False
+    for line in env_path.read_text().splitlines():
+        if line.startswith(f"{key}=") and line.split("=", 1)[1].strip():
+            return True
+    return False
+
+
+class LlmBackendPayload(BaseModel):
+    anthropic_key: str = ""
+    openai_url: str = ""
+    openai_key: str = ""
+    ollama_host: str = ""
+    ollama_port: Optional[int] = None
+    vllm_host: str = ""
+    vllm_port: Optional[int] = None
+    searxng_host: str = ""
+    searxng_port: Optional[int] = None
+    inference_profile: str = ""
+    ollama_model: str = ""
+
+
+def _read_llm_config() -> dict:
+    if LLM_CONFIG_PATH.exists():
+        with open(LLM_CONFIG_PATH) as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+
+def _write_llm_config(data: dict) -> None:
+    LLM_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LLM_CONFIG_PATH, "w") as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+
+
+@app.get("/api/settings/system/llm-backend")
+def get_llm_backend_settings():
+    """Report LLM backend configuration. API keys report presence only,
+    never plaintext -- matches the existing BYOK acknowledgment flow's
+    stance of never round-tripping a raw key to the client."""
+    cfg = _load_wizard_yaml()
+    services = cfg.get("services", {})
+    env_path = _env_path()
+    openai_url = ""
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("OPENAI_COMPAT_URL="):
+                openai_url = line.split("=", 1)[1]
+    llm_cfg = _read_llm_config()
+    ollama_model = (llm_cfg.get("backends", {}).get("ollama") or {}).get("model", "")
+
+    return {
+        "anthropic_key_set": _env_key_is_set("ANTHROPIC_API_KEY"),
+        "openai_url": openai_url,
+        "openai_key_set": _env_key_is_set("OPENAI_COMPAT_KEY"),
+        "ollama_host": services.get("ollama_host", ""),
+        "ollama_port": services.get("ollama_port", 11434),
+        "vllm_host": services.get("vllm_host", ""),
+        "vllm_port": services.get("vllm_port", 8000),
+        "searxng_host": services.get("searxng_host", ""),
+        "searxng_port": services.get("searxng_port", 8080),
+        "inference_profile": cfg.get("inference_profile", ""),
+        "ollama_model": ollama_model,
+    }
+
+
+@app.post("/api/settings/system/llm-backend")
+def save_llm_backend_settings(payload: LlmBackendPayload):
+    """Persist LLM backend configuration: API keys/URL to .env, host/port
+    to user.yaml's services map. A blank key field means "leave unchanged",
+    not "clear it" -- same semantics as the wizard's inference step."""
+    for field_name, value in (
+        ("anthropic_key", payload.anthropic_key),
+        ("openai_url", payload.openai_url),
+        ("openai_key", payload.openai_key),
+    ):
+        if "\n" in value or "\r" in value:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} must not contain newline characters",
+            )
+
+    env_path = _env_path()
+    env_lines = env_path.read_text().splitlines() if env_path.exists() else []
+
+    if payload.anthropic_key:
+        env_lines = _set_env_key(env_lines, "ANTHROPIC_API_KEY", payload.anthropic_key)
+    if payload.openai_url:
+        env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_URL", payload.openai_url)
+    if payload.openai_key:
+        env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_KEY", payload.openai_key)
+    if payload.anthropic_key or payload.openai_url or payload.openai_key:
+        env_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        env_path.write_text("\n".join(env_lines) + "\n")
+        env_path.chmod(0o600)
+
+    cfg = _load_wizard_yaml()
+    svc = dict(cfg.get("services", {}))
+    # A blank/omitted field means "leave unchanged", not "clear it" -- same
+    # semantics already used for the API key fields above. A partial payload
+    # (e.g. only ollama_model) must not silently wipe a previously configured
+    # host/port back to empty.
+    if payload.ollama_host:
+        svc["ollama_host"] = payload.ollama_host
+    if payload.ollama_port is not None:
+        svc["ollama_port"] = payload.ollama_port
+    if payload.vllm_host:
+        svc["vllm_host"] = payload.vllm_host
+    if payload.vllm_port is not None:
+        svc["vllm_port"] = payload.vllm_port
+    if payload.searxng_host:
+        svc["searxng_host"] = payload.searxng_host
+    if payload.searxng_port is not None:
+        svc["searxng_port"] = payload.searxng_port
+    updates: dict = {"services": svc}
+    if payload.inference_profile:
+        updates["inference_profile"] = payload.inference_profile
+    _save_wizard_yaml(updates)
+
+    if payload.ollama_model:
+        llm_cfg = _read_llm_config()
+        backends = llm_cfg.setdefault("backends", {})
+        ollama_backend = dict(backends.get("ollama") or {})
+        ollama_backend["model"] = payload.ollama_model
+        backends["ollama"] = ollama_backend
+        _write_llm_config(llm_cfg)
+
+    return {"ok": True}
+
+
+class OllamaPullPayload(BaseModel):
+    model: str = ""
+
+
+@app.post("/api/settings/system/ollama-pull")
+def pull_ollama_model(payload: OllamaPullPayload, background_tasks: BackgroundTasks):
+    """Kick off `ollama pull <model>` in the background and return immediately.
+
+    Pulls can take several minutes for multi-GB models, so this doesn't block
+    the request -- the frontend polls GET /api/settings/llm/ollama-models
+    until the model shows up in the installed list.
+    """
+    model = payload.model.strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="model is required")
+
+    base_url = _configured_ollama_base_url()
+
+    def _do_pull():
+        try:
+            requests.post(f"{base_url}/api/pull", json={"name": model, "stream": False}, timeout=1800)
+        except Exception:
+            pass  # best-effort -- frontend polling detects success/failure by presence, not by this call
+
+    background_tasks.add_task(_do_pull)
+    return {"ok": True, "status": "pulling"}
 
 
 # ── Settings: Fine-Tune ───────────────────────────────────────────────────────
@@ -4416,6 +5203,52 @@ def _suggest_profile(gpus: list[str]) -> str:
     return "cpu"
 
 
+def _wizard_section_status(cfg: dict) -> dict:
+    """Compute which onboarding sections have real data, for the non-linear
+    Onboarding Hub. A section is complete when its required fields have
+    meaningful values: a value counts unless it's None, "", [], or {}.
+    """
+    def _has_value(v) -> bool:
+        return v not in (None, "", [], {})
+
+    profile_complete = all(
+        _has_value(cfg.get(f)) for f in ("name", "email", "career_summary")
+    )
+
+    resume_path = Path(_wizard_yaml_path()).parent / "plain_text_resume.yaml"
+    resume_complete = False
+    if resume_path.exists():
+        try:
+            with open(resume_path) as f:
+                resume_cfg = yaml.safe_load(f) or {}
+            resume_complete = _has_value(resume_cfg.get("experience"))
+        except Exception:
+            resume_complete = False
+
+    search_path = _search_prefs_path()
+    search_complete = False
+    if search_path.exists():
+        try:
+            with open(search_path) as f:
+                search_cfg = yaml.safe_load(f) or {}
+            from scripts.discover import _normalize_profiles
+            normalized_search = _normalize_profiles(search_cfg)
+            default_profile = next(
+                (p for p in normalized_search.get("profiles", []) if p.get("name") == "default"),
+                None,
+            )
+            search_complete = bool(default_profile) and _has_value(default_profile.get("job_titles"))
+        except Exception:
+            search_complete = False
+
+    return {
+        "profile": profile_complete,
+        "resume": resume_complete,
+        "search": search_complete,
+        "compute_backend": _has_value(cfg.get("inference_profile")),
+    }
+
+
 @app.get("/api/wizard/status")
 def wizard_status():
     """Return current wizard state for resume-after-refresh.
@@ -4423,6 +5256,11 @@ def wizard_status():
     wizard_complete=True means the wizard has been finished and the app
     should not redirect to /setup.  wizard_step is the last completed step
     (0 = not started); the SPA advances to step+1 on load.
+
+    sections reports per-section completion for the non-linear Onboarding
+    Hub (profile / resume / search / compute_backend), independent of the
+    step-counter-driven fields above which remain for the legacy linear
+    wizard's own resume-at-step logic.
     """
     cfg = _load_wizard_yaml()
     return {
@@ -4439,7 +5277,36 @@ def wizard_status():
             "services": cfg.get("services", {}),
             "cf_orch_url": cfg.get("cf_orch_url", ""),
         },
+        "sections": _wizard_section_status(cfg),
+        "connections_acknowledged": bool(cfg.get("connections_acknowledged", False)),
+        "setup_path": cfg.get("setup_path"),
     }
+
+
+@app.post("/api/wizard/connections/acknowledge")
+def wizard_connections_acknowledge():
+    """Mark the onboarding Connections step as acknowledged (seen), unlocking
+    the next step in the gated flow. No required fields on this step, so
+    this is a pure acknowledgment, not a data save."""
+    try:
+        _save_wizard_yaml({"connections_acknowledged": True})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
+
+
+class WizardSetupPathPayload(BaseModel):
+    path: Literal["ai", "manual"]
+
+
+@app.post("/api/wizard/setup-path")
+def wizard_setup_path(payload: WizardSetupPathPayload):
+    """Persist the user's onboarding setup-path choice (AI-assisted vs manual)."""
+    try:
+        _save_wizard_yaml({"setup_path": payload.path})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
 
 
 class WizardStepPayload(BaseModel):
@@ -4452,76 +5319,46 @@ def wizard_save_step(payload: WizardStepPayload):
     """Persist a single wizard step and advance the step counter.
 
     Side effects by step number:
-    - Step 3 (Resume): writes config/plain_text_resume.yaml
-    - Step 6 (Inference): writes API keys / Orchard URL into .env
+    - Step 4 (Resume): merges into config/plain_text_resume.yaml
     - Step 7 (Search): writes config/search_profiles.yaml
     """
     step = payload.step
     data = payload.data
 
+    # Only steps 4 (Resume) and 7 (Search) still have server-side handling
+    # here -- their write targets (plain_text_resume.yaml,
+    # search_profiles.yaml) are shared with the live Resume/Search settings
+    # pages. Steps 1/2/3/5/6/8 (Hardware/Inference/Tier/Training/Identity/
+    # Integrations) belonged to the legacy linear wizard, now removed --
+    # those concerns are handled by the live Settings pages directly
+    # (System, My Profile, Fine-tune, Connections), not through this
+    # endpoint.
     if step < 1 or step > 8:
         raise HTTPException(status_code=400, detail="step must be 1–8")
 
     updates: dict = {"wizard_step": step}
 
-    # ── Step-specific field extraction ────────────────────────────────────────
-    if step == 1:
-        profile = data.get("inference_profile", "remote")
-        if profile not in _WIZARD_PROFILES:
-            raise HTTPException(status_code=400, detail=f"Unknown profile: {profile}")
-        updates["inference_profile"] = profile
-
-    elif step == 2:
-        tier = data.get("tier", "free")
-        if tier not in _WIZARD_TIERS:
-            raise HTTPException(status_code=400, detail=f"Unknown tier: {tier}")
-        updates["tier"] = tier
-
-    elif step == 3:
-        # Resume data: persist to plain_text_resume.yaml
+    if step == 4:
+        # Resume data: merge into plain_text_resume.yaml.
+        # The wizard's Resume step only ever has the fields the user actually
+        # touched in this session (e.g. just `experience` when the incoming
+        # payload's parsedData wasn't set — Build Manually tab, a re-upload
+        # that raced, etc). A blind overwrite here would silently wipe
+        # name/email/career_summary/education/skills/achievements that
+        # /api/settings/resume/upload already wrote directly to this same
+        # file moments earlier. Merge onto the existing file instead, same
+        # pattern as step 7 (search preferences) below.
         resume = data.get("resume", {})
         if resume:
             resume_path = Path(_wizard_yaml_path()).parent / "plain_text_resume.yaml"
             resume_path.parent.mkdir(parents=True, exist_ok=True)
+            existing_resume: dict = {}
+            if resume_path.exists():
+                with open(resume_path) as f:
+                    existing_resume = yaml.safe_load(f) or {}
+            existing_resume.update(resume)
             with open(resume_path, "w") as f:
-                yaml.dump(resume, f, allow_unicode=True, default_flow_style=False)
-
-    elif step in (4, 5):
-        # Step 4 (legacy) or step 5 (current) — identity fields.
-        # Step 4 was the original numbering before the training step was inserted
-        # between resume and identity; both are accepted for backward compat.
-        for field in ("name", "email", "phone", "linkedin", "career_summary"):
-            if field in data:
-                updates[field] = data[field]
-
-    elif step == 6:
-        # Step 6 — inference: API keys + optional Orchard coordinator URL.
-        env_path = Path(_wizard_yaml_path()).parent.parent / ".env"
-        env_lines = env_path.read_text().splitlines() if env_path.exists() else []
-
-        def _set_env_key(lines: list[str], key: str, val: str) -> list[str]:
-            for i, line in enumerate(lines):
-                if line.startswith(f"{key}="):
-                    lines[i] = f"{key}={val}"
-                    return lines
-            lines.append(f"{key}={val}")
-            return lines
-
-        if data.get("anthropic_key"):
-            env_lines = _set_env_key(env_lines, "ANTHROPIC_API_KEY", data["anthropic_key"])
-        if data.get("openai_url"):
-            env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_URL", data["openai_url"])
-        if data.get("openai_key"):
-            env_lines = _set_env_key(env_lines, "OPENAI_COMPAT_KEY", data["openai_key"])
-        if data.get("orch_url"):
-            env_lines = _set_env_key(env_lines, "GPU_SERVER_URL", data["orch_url"])
-            updates["cf_orch_url"] = data["orch_url"]
-        if any(data.get(k) for k in ("anthropic_key", "openai_url", "openai_key", "orch_url")):
-            env_path.parent.mkdir(parents=True, exist_ok=True)
-            env_path.write_text("\n".join(env_lines) + "\n")
-
-        if "services" in data:
-            updates["services"] = data["services"]
+                yaml.dump(existing_resume, f, allow_unicode=True, default_flow_style=False)
 
     elif step == 7:
         # Step 7 — search preferences.
@@ -4545,7 +5382,7 @@ def wizard_save_step(payload: WizardStepPayload):
         profiles_list = existing_search.get("profiles", [])
         default_profile = next((p for p in profiles_list if p.get("name") == "default"), None)
         if default_profile is None:
-            default_profile = {"name": "default"}
+            default_profile = {"name": "default", "boards": _default_boards_for_locations(locations)}
             profiles_list.append(default_profile)
         default_profile["job_titles"] = titles
         default_profile["locations"] = locations
@@ -4554,9 +5391,6 @@ def wizard_save_step(payload: WizardStepPayload):
         search_path.parent.mkdir(parents=True, exist_ok=True)
         with open(search_path, "w") as f:
             yaml.dump(existing_search, f, allow_unicode=True, default_flow_style=False)
-
-    # Step 8 (integrations) has no extra side effects here — connections are
-    # handled by the existing /api/settings/system/integrations/{id}/connect.
 
     try:
         _save_wizard_yaml(updates)
@@ -4652,7 +5486,11 @@ def wizard_hardware():
 
 
 def _container_safe_url(url: str) -> str:
-    """Replace localhost/127.0.0.1 with host.docker.internal so tests reach the host."""
+    """Replace localhost/127.0.0.1 with host.docker.internal so this
+    process can reach a host-machine service -- but only when this process
+    is itself running inside Docker. See _running_in_docker()."""
+    if not _running_in_docker():
+        return url
     import re as _re
     return _re.sub(r"(https?://)(?:localhost|127\.0\.0\.1)\b", r"\1host.docker.internal", url)
 
@@ -4799,9 +5637,12 @@ Rules:
 3. For candidate_voice, offer these options if they struggle: "professional and direct", "warm and conversational", "concise and clear", "enthusiastic and personable"
 4. For candidate_accessibility_focus and candidate_lgbtq_focus, use plain language: "Would you like me to look into whether companies actively support employees with disabilities or neurodivergent needs?" and "Would you like me to check whether companies have strong LGBTQIA+ inclusion policies?"
 5. When you have gathered enough information or the user says they are done, set complete to true
+6. Some fields may already be filled in — a message below may say "[Already gathered: ...]". NEVER ask about, re-ask about, or re-confirm a field listed there, even if the user brings it up again or you feel unsure — it is already settled. Do not say things like "just to confirm" or "you mentioned this earlier, but..." about a gathered field; treat it as closed and move straight to the next missing field. Skip straight to the first field that's still missing. If your very first reply is being generated and fields are already gathered, briefly acknowledge what you already have (e.g. "I've got your name and background from your resume") before asking about what's missing.
+7. Set asking_about to the exact field name your reply's question is primarily about — it MUST match what you are actually asking, not a leftover from an earlier turn. Use exactly one of: "name", "email", "career_summary", "candidate_voice", "mission_preferences", "candidate_accessibility_focus", "candidate_lgbtq_focus", "linkedin". A question about accessibility culture must use "candidate_accessibility_focus", never "candidate_voice" — asking_about names the field the CURRENT question is collecting, not a topic mentioned in passing. Set it to null if your reply isn't asking about a specific field (e.g. a greeting, an acknowledgment, or the closing message).
+8. Once every field listed above (including the optional ones) appears in "[Already gathered: ...]", stop asking anything else and set complete to true immediately — do not add "one more thing" or circle back to summarize and ask again.
 
 You must ALWAYS respond with valid JSON in this exact format:
-{"reply": "your conversational message here", "extracted_fields": {"name": "...", ...}, "complete": false}
+{"reply": "your conversational message here", "extracted_fields": {"name": "...", ...}, "complete": false, "asking_about": "candidate_voice"}
 
 Only include fields in extracted_fields that you are confident about from the conversation. Do not include fields the user hasn't mentioned. Infer complete=true when all required fields (name, email, career_summary) are gathered or when user explicitly says done."""
 
@@ -4831,15 +5672,34 @@ _WIZARD_ALLOWED_FIELDS: frozenset[str] = frozenset({
     "linkedin",
 })
 
+# linkedin is explicitly optional (see _AI_WIZARD_SYSTEM_PROMPT) and may never
+# get a value if the user skips it — excluded from the auto-complete backstop
+# below so a skipped linkedin can't block the conversation from ever ending.
+_WIZARD_REQUIRED_FOR_AI_COMPLETE: frozenset[str] = _WIZARD_ALLOWED_FIELDS - {"linkedin"}
+
+
+def _can_use_ai_wizard(tier: str) -> bool:
+    """Gate for the onboarding AI setup chat, scoped narrowly to this one
+    feature. Adds a cloud-only exception on top of the normal tier/BYOK
+    gate: CircuitForge-hosted free-tier users get a one-time trial of the
+    setup LLM during initial onboarding, reverting to the normal gate the
+    moment wizard_complete flips true. Self-hosted installs get no
+    exception -- the trial only makes sense where CF is providing compute.
+    """
+    from scripts.wizard.tiers import can_use, has_configured_llm
+    if can_use(tier, "llm_ai_wizard", has_byok=has_configured_llm()):
+        return True
+    if _CLOUD_MODE and not bool(_load_wizard_yaml().get("wizard_complete", False)):
+        return True
+    return False
+
 
 @app.post("/api/wizard/ai/interview")
 @limiter.limit(_RL_WIZARD)
 def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
     """Conduct one turn of the AI-guided profile interview. Tier-gated (BYOK-unlockable)."""
-    from app.wizard.tiers import can_use, has_configured_llm
-
     tier = _get_effective_tier()
-    if not can_use(tier, "llm_ai_wizard", has_byok=has_configured_llm()):
+    if not _can_use_ai_wizard(tier):
         raise HTTPException(402, detail={"error": "tier_required"})
 
     # Build conversation prompt from history
@@ -4855,33 +5715,59 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
     history_block = "\n".join(conversation_lines) if conversation_lines else "User: (starting conversation)"
 
     # Build profile summary to give LLM context about what's already known
-    if body.profile_so_far:
-        gathered = ", ".join(
-            f"{k}={repr(v)}"
-            for k, v in body.profile_so_far.items()
-            if v not in (None, "", [], {})
-        )
-        profile_context = f"\n\n[Already gathered: {gathered}]" if gathered else ""
+    gathered_so_far = {
+        k: v for k, v in body.profile_so_far.items() if v not in (None, "", [], {})
+    }
+    if gathered_so_far:
+        gathered = ", ".join(f"{k}={repr(v)}" for k, v in gathered_so_far.items())
+        profile_context = f"\n\n[Already gathered: {gathered}]"
     else:
         profile_context = ""
 
     prompt = history_block + profile_context
 
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
-        from scripts.llm_router import LLMRouter
-        response_text = LLMRouter().complete(prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
-    except Exception as exc:
-        raise HTTPException(503, detail={"error": "llm_error", "message": str(exc)})
+        response_text = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
+    except TaskModelNotAssignedError:
+        raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
+    except TaskModelUnreachableError as e:
+        raise HTTPException(502, f"Can't reach the Chat model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
 
     try:
         parsed = json.loads(response_text)
+        # .get(key, default) only falls back when the key is *absent* — a
+        # model that emits `"reply": null` still slips a None through, which
+        # then fails Pydantic's `content: str` validation on the *next* turn
+        # (that None gets echoed back in `history`), 422ing every message
+        # after it until the client clears its draft. `or` catches null too.
+        asking_about = parsed.get("asking_about")
+        if asking_about not in _WIZARD_ALLOWED_FIELDS:
+            # Defensive: a hallucinated/misspelled field name would otherwise
+            # make the frontend confidently show the wrong contextual help
+            # (e.g. tone-of-voice chips) for a question that isn't about tone.
+            asking_about = None
+
+        extracted_fields = parsed.get("extracted_fields") or {}
+        merged_known = {
+            **gathered_so_far,
+            **{k: v for k, v in extracted_fields.items() if v not in (None, "", [], {})},
+        }
+        # Deterministic backstop: a small local model doesn't reliably notice
+        # when every field is already gathered and can loop indefinitely
+        # ("just confirming", "one more thing", re-summarizing) instead of
+        # setting complete itself. Once every field actually has a value,
+        # force completion rather than depend on the model recognizing that.
+        complete = bool(parsed.get("complete", False)) or _WIZARD_REQUIRED_FOR_AI_COMPLETE.issubset(merged_known)
+
         return {
-            "reply": parsed.get("reply", ""),
-            "extracted_fields": parsed.get("extracted_fields", {}),
-            "complete": bool(parsed.get("complete", False)),
+            "reply": parsed.get("reply") or "",
+            "extracted_fields": extracted_fields,
+            "complete": complete,
+            "asking_about": asking_about,
         }
     except (json.JSONDecodeError, AttributeError):
-        return {"reply": response_text, "extracted_fields": {}, "complete": False}
+        return {"reply": response_text, "extracted_fields": {}, "complete": False, "asking_about": None}
 
 
 @app.post("/api/wizard/ai/finalize")
@@ -5018,14 +5904,14 @@ def _get_effective_tier() -> str:
     """Resolve effective tier: Heimdall in cloud mode, APP_TIER env var in single-tenant."""
     if _CLOUD_MODE:
         return _resolve_cloud_tier()
-    from app.wizard.tiers import effective_tier
+    from scripts.wizard.tiers import effective_tier
     return effective_tier()
 
 
 @app.post("/api/contacts/{contact_id}/draft-reply")
 def draft_reply(contact_id: int):
     """Generate an LLM draft reply for an inbound job_contacts row. Tier-gated."""
-    from app.wizard.tiers import can_use, has_configured_llm
+    from scripts.wizard.tiers import can_use, has_configured_llm
     from scripts.messaging import create_message
     from scripts.llm_reply_draft import generate_draft_reply
 

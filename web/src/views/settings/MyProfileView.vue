@@ -6,7 +6,10 @@
     </header>
 
     <!-- ── AI wizard entry point ──────────────────────────── -->
-    <div class="wizard-cta" :class="hasWizardAccess ? 'wizard-cta--unlocked' : 'wizard-cta--locked'">
+    <!-- Only shown before setup is finished -- afterward the per-field
+         Suggest buttons throughout this page are the ongoing AI assist
+         entry point, not this big banner. -->
+    <div v-if="!config.wizardComplete" class="wizard-cta" :class="hasWizardAccess ? 'wizard-cta--unlocked' : 'wizard-cta--locked'">
       <div class="wizard-cta__body">
         <span class="wizard-cta__icon" aria-hidden="true">✦</span>
         <div>
@@ -71,6 +74,7 @@
             @click="generateSummary"
             :disabled="generatingSummary"
           >{{ generatingSummary ? 'Generating…' : 'Generate ✦' }}</button>
+          <p v-if="generateSummaryError" class="error-msg">{{ generateSummaryError }}</p>
         </div>
 
         <div class="field-row field-row--stacked">
@@ -89,6 +93,7 @@
             @click="generateVoice"
             :disabled="generatingVoice"
           >{{ generatingVoice ? 'Generating…' : 'Generate ✦' }}</button>
+          <p v-if="generateVoiceError" class="error-msg">{{ generateVoiceError }}</p>
         </div>
 
         <div v-if="!config.isCloud" class="field-row">
@@ -146,6 +151,7 @@
             :disabled="generatingMissions"
           >{{ generatingMissions ? 'Generating…' : 'Generate ✦' }}</button>
         </div>
+        <p v-if="generateMissionsError" class="error-msg">{{ generateMissionsError }}</p>
 
         <div class="save-row">
           <button class="btn-save" type="button" @click="store.save()" :disabled="store.saving">
@@ -224,29 +230,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useProfileStore } from '../../stores/settings/profile'
 import { useAppConfigStore } from '../../stores/appConfig'
 import { useApiFetch } from '../../composables/useApi'
+import { useAiSetupAccess } from '../../composables/useAiSetupAccess'
+import { genId } from '../../utils/id'
 
 const store = useProfileStore()
 const { loadError } = storeToRefs(store)
 const config = useAppConfigStore()
 
-const hasWizardAccess = computed(() => config.tier !== 'free' || config.byokUnlocked)
+const { hasAccess: hasWizardAccess } = useAiSetupAccess()
 
 const newNdaCompany = ref('')
 const generatingSummary = ref(false)
 const generatingMissions = ref(false)
 const generatingVoice = ref(false)
+const generateSummaryError = ref<string | null>(null)
+const generateMissionsError = ref<string | null>(null)
+const generateVoiceError = ref<string | null>(null)
 
 onMounted(() => { store.load() })
 
 // ── Mission helpers ──────────────────────────────────────
 function addMission() {
-  store.mission_preferences = [...store.mission_preferences, { id: crypto.randomUUID(), industry: '', note: '' }]
+  store.mission_preferences = [...store.mission_preferences, { id: genId(), industry: '', note: '' }]
 }
 
 function removeMission(idx: number) {
@@ -277,33 +288,46 @@ function autosave() {
 // ── AI generation (paid tier) ────────────────────────────
 async function generateSummary() {
   generatingSummary.value = true
+  generateSummaryError.value = null
   const { data, error } = await useApiFetch<{ summary?: string }>(
     '/api/settings/profile/generate-summary', { method: 'POST' }
   )
   generatingSummary.value = false
-  if (!error && data?.summary) store.career_summary = data.summary
+  if (!error && data?.summary) {
+    store.career_summary = data.summary
+  } else {
+    generateSummaryError.value = 'Could not generate a summary — please try again.'
+  }
 }
 
 async function generateMissions() {
   generatingMissions.value = true
+  generateMissionsError.value = null
   const { data, error } = await useApiFetch<{ mission_preferences?: Array<{ industry: string; note: string }> }>(
     '/api/settings/profile/generate-missions', { method: 'POST' }
   )
   generatingMissions.value = false
-  if (!error && data?.mission_preferences) {
+  if (!error && data?.mission_preferences?.length) {
     store.mission_preferences = data.mission_preferences.map((m) => ({
-      id: crypto.randomUUID(), industry: m.industry ?? '', note: m.note ?? '',
+      id: genId(), industry: m.industry ?? '', note: m.note ?? '',
     }))
+  } else {
+    generateMissionsError.value = 'Could not generate suggestions — please try again.'
   }
 }
 
 async function generateVoice() {
   generatingVoice.value = true
+  generateVoiceError.value = null
   const { data, error } = await useApiFetch<{ voice?: string }>(
     '/api/settings/profile/generate-voice', { method: 'POST' }
   )
   generatingVoice.value = false
-  if (!error && data?.voice) store.candidate_voice = data.voice
+  if (!error && data?.voice) {
+    store.candidate_voice = data.voice
+  } else {
+    generateVoiceError.value = 'Could not generate a voice note — please try again.'
+  }
 }
 </script>
 

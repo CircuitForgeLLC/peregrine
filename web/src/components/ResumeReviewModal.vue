@@ -400,7 +400,11 @@ onUnmounted(() => document.removeEventListener('keydown', trapFocus))
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 200;
+  /* Opened from within ResumeOptimizerModal (z-index: 500) as well as
+     standalone -- must outrank every other modal in the app (highest
+     existing value is 1000) so it always renders cleanly on top instead
+     of bleeding through a parent modal's translucent backdrop. */
+  z-index: 1100;
   padding: var(--space-4, 1rem);
 }
 

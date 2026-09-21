@@ -11,103 +11,118 @@
 
     <template v-else>
       <!-- Two-panel layout: job details | cover letter + resume optimizer -->
-      <div class="workspace__panels">
+      <div class="workspace__panels" :class="{ 'workspace__panels--collapsed': jobPanelCollapsed }">
 
         <!-- ── Left: Job details ──────────────────────────────────────── -->
-        <aside class="workspace__job-panel">
+        <aside class="workspace__job-panel" :class="{ 'workspace__job-panel--collapsed': jobPanelCollapsed }">
           <div class="job-details">
-            <!-- Badges -->
-            <div class="job-details__badges">
-              <span
-                v-if="job.match_score !== null"
-                class="score-badge"
-                :class="[scoreBadgeClass, { 'score-badge--shimmer': shimmeringBadge }]"
-              >
-                {{ job.match_score }}%
-              </span>
-              <span v-if="job.is_remote" class="remote-badge">Remote</span>
-            </div>
-
-            <h2 class="job-details__title">{{ job.title }}</h2>
-            <div class="job-details__company">
-              {{ job.company }}
-              <span v-if="job.location" aria-hidden="true"> · </span>
-              <span v-if="job.location" class="job-details__location">{{ job.location }}</span>
-            </div>
-            <div v-if="job.salary" class="job-details__salary">{{ job.salary }}</div>
-
-            <!-- Description -->
-            <div class="job-details__desc" :class="{ 'job-details__desc--clamped': !descExpanded }">
-              <MarkdownView :content="job.description ?? 'No description available.'" />
-            </div>
+            <!-- Collapse toggle — reclaims width for the Cover Letter / Resume Optimizer column -->
             <button
-              v-if="(job.description?.length ?? 0) > 300"
-              class="expand-btn"
-              :aria-expanded="descExpanded"
-              @click="descExpanded = !descExpanded"
+              class="job-panel-toggle"
+              :aria-expanded="!jobPanelCollapsed"
+              aria-label="Toggle job details panel"
+              @click="jobPanelCollapsed = !jobPanelCollapsed"
             >
-              {{ descExpanded ? 'Show less ▲' : 'Show more ▼' }}
+              <span aria-hidden="true">{{ jobPanelCollapsed ? '▶' : '◀' }}</span>
             </button>
 
-            <!-- Keyword gaps -->
-            <div v-if="gaps.length > 0" class="job-details__gaps">
-              <span class="gaps-label">Missing keywords:</span>
-              <span v-for="kw in gaps.slice(0, 6)" :key="kw" class="gap-pill">{{ kw }}</span>
-              <span v-if="gaps.length > 6" class="gaps-more">+{{ gaps.length - 6 }}</span>
-            </div>
+            <template v-if="!jobPanelCollapsed">
+              <!-- Badges -->
+              <div class="job-details__badges">
+                <span
+                  v-if="job.match_score !== null"
+                  class="score-badge"
+                  :class="[scoreBadgeClass, { 'score-badge--shimmer': shimmeringBadge }]"
+                >
+                  {{ job.match_score }}%
+                </span>
+                <span v-if="job.is_remote" class="remote-badge">Remote</span>
+              </div>
 
-            <!-- Resume Highlights -->
-            <div
-              v-if="resumeSkills.length || resumeDomains.length || resumeKeywords.length"
-              class="resume-highlights"
-            >
-              <button class="section-toggle" @click="highlightsExpanded = !highlightsExpanded">
-                <span class="section-toggle__label">My Resume Highlights</span>
-                <span class="section-toggle__icon" aria-hidden="true">{{ highlightsExpanded ? '▲' : '▼' }}</span>
+              <div class="job-details__company">
+                {{ job.company }}
+                <span v-if="job.location" aria-hidden="true"> · </span>
+                <span v-if="job.location" class="job-details__location">{{ job.location }}</span>
+              </div>
+              <div v-if="job.salary" class="job-details__salary">{{ job.salary }}</div>
+            </template>
+
+            <h2 class="job-details__title">{{ job.title }}</h2>
+
+            <template v-if="!jobPanelCollapsed">
+              <!-- Description -->
+              <div class="job-details__desc" :class="{ 'job-details__desc--clamped': !descExpanded }">
+                <MarkdownView :content="job.description ?? 'No description available.'" />
+              </div>
+              <button
+                v-if="(job.description?.length ?? 0) > 300"
+                class="expand-btn"
+                :aria-expanded="descExpanded"
+                @click="descExpanded = !descExpanded"
+              >
+                {{ descExpanded ? 'Show less ▲' : 'Show more ▼' }}
               </button>
-              <div v-if="highlightsExpanded" class="highlights-body">
-                <div v-if="resumeSkills.length" class="chips-group">
-                  <span class="chips-group__label">Skills</span>
-                  <div class="chips-wrap">
-                    <span
-                      v-for="s in resumeSkills" :key="s"
-                      class="hl-chip"
-                      :class="{ 'hl-chip--match': jobMatchSet.has(s.toLowerCase()) }"
-                    >{{ s }}</span>
+
+              <!-- Keyword gaps -->
+              <div v-if="gaps.length > 0" class="job-details__gaps">
+                <span class="gaps-label">Missing keywords:</span>
+                <span v-for="kw in gaps.slice(0, 6)" :key="kw" class="gap-pill">{{ kw }}</span>
+                <span v-if="gaps.length > 6" class="gaps-more">+{{ gaps.length - 6 }}</span>
+              </div>
+
+              <!-- Resume Highlights -->
+              <div
+                v-if="resumeSkills.length || resumeDomains.length || resumeKeywords.length"
+                class="resume-highlights"
+              >
+                <button class="section-toggle" @click="highlightsExpanded = !highlightsExpanded">
+                  <span class="section-toggle__label">My Resume Highlights</span>
+                  <span class="section-toggle__icon" aria-hidden="true">{{ highlightsExpanded ? '▲' : '▼' }}</span>
+                </button>
+                <div v-if="highlightsExpanded" class="highlights-body">
+                  <div v-if="resumeSkills.length" class="chips-group">
+                    <span class="chips-group__label">Skills</span>
+                    <div class="chips-wrap">
+                      <span
+                        v-for="s in resumeSkills" :key="s"
+                        class="hl-chip"
+                        :class="{ 'hl-chip--match': jobMatchSet.has(s.toLowerCase()) }"
+                      >{{ s }}</span>
+                    </div>
                   </div>
-                </div>
-                <div v-if="resumeDomains.length" class="chips-group">
-                  <span class="chips-group__label">Domains</span>
-                  <div class="chips-wrap">
-                    <span
-                      v-for="d in resumeDomains" :key="d"
-                      class="hl-chip"
-                      :class="{ 'hl-chip--match': jobMatchSet.has(d.toLowerCase()) }"
-                    >{{ d }}</span>
+                  <div v-if="resumeDomains.length" class="chips-group">
+                    <span class="chips-group__label">Domains</span>
+                    <div class="chips-wrap">
+                      <span
+                        v-for="d in resumeDomains" :key="d"
+                        class="hl-chip"
+                        :class="{ 'hl-chip--match': jobMatchSet.has(d.toLowerCase()) }"
+                      >{{ d }}</span>
+                    </div>
                   </div>
-                </div>
-                <div v-if="resumeKeywords.length" class="chips-group">
-                  <span class="chips-group__label">Keywords</span>
-                  <div class="chips-wrap">
-                    <span
-                      v-for="k in resumeKeywords" :key="k"
-                      class="hl-chip"
-                      :class="{ 'hl-chip--match': jobMatchSet.has(k.toLowerCase()) }"
-                    >{{ k }}</span>
+                  <div v-if="resumeKeywords.length" class="chips-group">
+                    <span class="chips-group__label">Keywords</span>
+                    <div class="chips-wrap">
+                      <span
+                        v-for="k in resumeKeywords" :key="k"
+                        class="hl-chip"
+                        :class="{ 'hl-chip--match': jobMatchSet.has(k.toLowerCase()) }"
+                      >{{ k }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <a v-if="job.url" :href="job.url" target="_blank" rel="noopener noreferrer" class="job-details__link">
-              View listing ↗
-            </a>
+              <a v-if="job.url" :href="job.url" target="_blank" rel="noopener noreferrer" class="job-details__link">
+                View listing ↗
+              </a>
+            </template>
           </div>
         </aside>
 
         <!-- ── Right: Cover letter ────────────────────────────────────── -->
         <main class="workspace__cl-panel">
-          <h2 class="cl-heading">Cover Letter</h2>
+        <CollapsibleSection title="Cover Letter" persist-id="peregrine_apply_cl_collapsed" :default-expanded="true">
 
           <!-- State: none — no draft yet -->
           <template v-if="clState === 'none'">
@@ -190,22 +205,30 @@
           >
             ↺ Regenerate
           </button>
+        </CollapsibleSection>
 
           <!-- ── Resume Library Card ──────────────────────────────── -->
-          <ResumeLibraryCard :job-id="props.jobId" class="apply__resume-card" />
+          <CollapsibleSection title="Resume" persist-id="peregrine_apply_resume_collapsed">
+            <ResumeLibraryCard :job-id="props.jobId" class="apply__resume-card" />
 
-          <!-- ── ATS Resume Optimizer ──────────────────────────────── -->
-          <ResumeOptimizerPanel :job-id="props.jobId" />
+            <!-- ── ATS Resume Optimizer ──────────────────────────────── -->
+            <button class="btn-ghost optimizer-trigger" @click="showOptimizer = true">
+              <span aria-hidden="true">🎯</span> Optimize for ATS
+            </button>
+            <ResumeOptimizerModal
+              v-if="showOptimizer"
+              :job-id="props.jobId"
+              @close="showOptimizer = false"
+            />
+          </CollapsibleSection>
 
           <!-- ── Application Q&A ───────────────────────────────────── -->
-          <div class="qa-section">
-            <button class="section-toggle" :aria-expanded="qaExpanded" @click="qaExpanded = !qaExpanded">
-              <span class="section-toggle__label">Application Q&amp;A</span>
-              <span v-if="qaItems.length" class="qa-count">{{ qaItems.length }}</span>
-              <span class="section-toggle__icon" aria-hidden="true">{{ qaExpanded ? '▲' : '▼' }}</span>
-            </button>
-
-            <div v-if="qaExpanded" class="qa-body">
+          <CollapsibleSection
+            title="Application Q&amp;A"
+            :badge="qaItems.length || null"
+            :model-value="qaExpanded"
+            @update:model-value="qaExpanded = $event"
+          >
               <p v-if="!qaItems.length" class="qa-empty">
                 No questions yet — add one below to get LLM-suggested answers.
               </p>
@@ -249,8 +272,7 @@
               >
                 {{ qaSaving ? 'Saving…' : (qaSaved ? '✓ Saved' : 'Save All') }}
               </button>
-            </div>
-          </div>
+          </CollapsibleSection>
 
           <!-- ── Bottom action bar ──────────────────────────────────── -->
           <div class="workspace__actions">
@@ -285,12 +307,15 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useStorage } from '@vueuse/core'
 import { useApiFetch } from '../composables/useApi'
+import { genId } from '../utils/id'
 import { useAppConfigStore } from '../stores/appConfig'
 import type { Job } from '../stores/review'
-import ResumeOptimizerPanel from './ResumeOptimizerPanel.vue'
+import ResumeOptimizerModal from './ResumeOptimizerModal.vue'
 import ResumeLibraryCard from './ResumeLibraryCard.vue'
 import MarkdownView from './MarkdownView.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
 
 const config = useAppConfigStore()
 
@@ -310,6 +335,16 @@ const shimmeringBadge = ref(false)
 const job        = ref<Job | null>(null)
 const loadingJob = ref(true)
 const descExpanded = ref(false)
+
+// ─── Layout: job-details collapse + optimizer modal ────────────────────────────
+
+// Collapse is a desktop space-reclaiming affordance. On a single-column mobile
+// layout there's no width to reclaim, but the toggle stays reachable there too
+// (see .job-panel-toggle) so a state left collapsed from a desktop session is
+// always one tap away from expanding again.
+const jobPanelCollapsed = useStorage('peregrine_apply_jobpanel_collapsed', false)
+
+const showOptimizer = ref(false)
 
 const gaps = computed<string[]>(() => {
   if (!job.value?.keyword_gaps) return []
@@ -511,7 +546,7 @@ const suggesting  = ref<string | null>(null)
 function addQA() {
   const q = newQuestion.value.trim()
   if (!q) return
-  qaItems.value = [...qaItems.value, { id: crypto.randomUUID(), question: q, answer: '' }]
+  qaItems.value = [...qaItems.value, { id: genId(), question: q, answer: '' }]
   newQuestion.value = ''
   qaSaved.value = false
   qaExpanded.value = true
@@ -665,6 +700,11 @@ declare module '../stores/review' {
   grid-template-columns: 1fr 1.3fr;
   gap: var(--space-6);
   align-items: start;
+  transition: grid-template-columns var(--transition-slow);
+}
+
+.workspace__panels--collapsed {
+  grid-template-columns: auto 1fr;
 }
 
 /* ── Job details panel ───────────────────────────────────────────────── */
@@ -672,6 +712,41 @@ declare module '../stores/review' {
 .workspace__job-panel {
   position: sticky;
   top: var(--space-4);
+}
+
+.workspace__job-panel--collapsed .job-details {
+  padding: var(--space-3);
+  gap: var(--space-2);
+  width: 3.5rem;
+  align-items: center;
+}
+
+.workspace__job-panel--collapsed .job-details__title {
+  writing-mode: vertical-rl;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.job-panel-toggle {
+  align-self: flex-end;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  transition: var(--transition);
+}
+
+.job-panel-toggle:hover,
+.job-panel-toggle:focus-visible {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.workspace__job-panel--collapsed .job-panel-toggle {
+  align-self: center;
 }
 
 .job-details {
@@ -760,12 +835,6 @@ declare module '../stores/review' {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-.cl-heading {
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  color: var(--color-text);
 }
 
 /* Empty state */
@@ -869,6 +938,11 @@ declare module '../stores/review' {
 .cl-regen {
   align-self: flex-end;
   color: var(--color-text-muted);
+}
+
+.optimizer-trigger {
+  align-self: flex-start;
+  margin-top: var(--space-2);
 }
 
 /* Download button */
@@ -1116,41 +1190,6 @@ declare module '../stores/review' {
 }
 
 /* ── Application Q&A ─────────────────────────────────────────────────── */
-
-.qa-section {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.qa-section > .section-toggle {
-  padding: var(--space-3) var(--space-4);
-  color: var(--color-text);
-}
-
-.qa-section > .section-toggle:hover { background: var(--color-surface-alt); }
-
-.qa-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--app-primary-light);
-  color: var(--app-primary);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.qa-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-top: 1px solid var(--color-border-light);
-}
 
 .qa-empty {
   font-size: var(--text-xs);
