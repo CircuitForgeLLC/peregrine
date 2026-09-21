@@ -81,7 +81,7 @@ def _is_ssrf_host(host: str) -> bool:
     try:
         addr = ipaddress.ip_address(socket.gethostbyname(host))
         return any(addr in net for net in _PRIVATE_NETS)
-    except Exception:
+    except Exception:  # noqa: BLE001 - SSRF guard must fail closed on ANY resolution error
         return True  # fail closed on resolution errors
 IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
@@ -168,7 +168,7 @@ async def lifespan(app: FastAPI):
                 migrate_db(user_db)
                 _migrated_db_paths.add(str(user_db))
                 _sweep_log.info("Migrated user DB: %s", user_db)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one bad user DB must not abort the startup sweep
                 _sweep_log.warning("Migration failed for %s: %s", user_db, exc)
 
     if IS_DEMO and (seed_file := os.environ.get("DEMO_SEED_FILE")):
@@ -286,13 +286,14 @@ def _resolve_cf_user_id(cookie_str: str) -> str | None:
         return None
     token = m.group(1).strip()
     import base64
+    import binascii
 
     import jwt  # PyJWT
     secrets_to_try: list[str | bytes] = [_DIRECTUS_SECRET]
     try:
         secrets_to_try.append(base64.b64decode(_DIRECTUS_SECRET))
-    except Exception:
-        pass
+    except (binascii.Error, ValueError) as exc:
+        _log.debug("_resolve_cf_user_id: base64 decode of DIRECTUS_JWT_SECRET failed: %s", exc)
     # Skip exp verification — we use the token for routing only, not auth.
     # Directus manages actual auth; Caddy gates on cookie presence.
     decode_opts = {"verify_exp": False}
@@ -303,7 +304,7 @@ def _resolve_cf_user_id(cookie_str: str) -> str | None:
             if user_id:
                 _log.debug("_resolve_cf_user_id: resolved user_id=%s", user_id)
                 return user_id
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - jwt.decode raises varied error types per secret tried; any failure just means try the next secret
             _log.debug("_resolve_cf_user_id: decode failed (%s): %s", type(exc).__name__, exc)
             continue
     _log.warning("_resolve_cf_user_id: all secrets failed for token prefix %s…", token[:20])
@@ -551,8 +552,8 @@ def salary_stats(titles: str | None = None, location: str | None = None):
                 if location is None:
                     locations = profile.get("locations") or []
                     location_val = locations[0] if locations else ""
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort default-profile fallback; keep the already-computed defaults on any failure
+            _log.debug("salary_stats: failed to load default search profile: %s", exc)
 
     db = _get_db()
     try:
@@ -678,7 +679,7 @@ def generate_cover_letter(job_id: int, request: Request):
             job_id=job_id,
         )
         return {"task_id": task_id, "is_new": is_new}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(500, str(e))
 
 
@@ -728,7 +729,7 @@ def generate_research(job_id: int, request: Request):
         from scripts.task_runner import submit_task
         task_id, is_new = submit_task(db_path=Path(_request_db.get() or DB_PATH), task_type="company_research", job_id=job_id)
         return {"task_id": task_id, "is_new": is_new}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(500, str(e))
 
 
@@ -759,7 +760,7 @@ def get_optimized_resume(job_id: int):
     gap_report = result.get("ats_gap_report", "")
     try:
         gap_report_parsed = json.loads(gap_report) if gap_report else []
-    except Exception:
+    except json.JSONDecodeError:
         gap_report_parsed = []
     return {
         "optimized_resume": result.get("optimized_resume", ""),
@@ -789,7 +790,7 @@ def generate_optimized_resume(job_id: int, body: ResumeOptimizeBody):
             params=params,
         )
         return {"task_id": task_id, "is_new": is_new}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(500, str(e))
 
 
@@ -1344,7 +1345,7 @@ def apply_resume_to_profile(resume_id: int):
     if entry.get("struct_json"):
         try:
             struct_json = _json.loads(entry["struct_json"])
-        except Exception:
+        except _json.JSONDecodeError:
             raise HTTPException(422, "Library entry has malformed struct_json — re-import the resume to repair it.")
 
     resume_path = _resume_path()
@@ -1462,7 +1463,8 @@ def _imitate_load_profile():
         from scripts.user_profile import UserProfile
         _yaml = PEREGRINE_ROOT / "config" / "user.yaml"
         return UserProfile(_yaml) if UserProfile.exists(_yaml) else None
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort profile load for the Imitate tab; missing/broken profile just means no profile
+        _log.debug("_imitate_load_profile: failed to load user profile: %s", exc)
         return None
 
 
@@ -1485,7 +1487,8 @@ def _imitate_cover_letter(db, profile, limit: int) -> dict:
     system_ctx = _build_system_context(profile)
     try:
         corpus = load_corpus()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort example corpus for the Imitate tab preview; fall back to no examples
+        _log.debug("_imitate_cover_letter: failed to load corpus: %s", exc)
         corpus = []
 
     if not rows:
@@ -1544,8 +1547,8 @@ def _imitate_company_research(db, profile, limit: int) -> dict:
                 if val:
                     parts.append(f"### {section.title()}\n{val if isinstance(val, str) else str(val)}")
             resume_ctx = "\n\n".join(parts)[:2000]
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort resume context for the Imitate tab preview; fall back to no resume context
+        _log.debug("_imitate_company_research: failed to load resume context: %s", exc)
 
     if not rows:
         rows = [_SYNTHETIC_JOB]
@@ -1661,8 +1664,8 @@ def _imitate_ats_resume(db, profile, limit: int) -> dict:
         _rpath = PEREGRINE_ROOT / "config" / "plain_text_resume.yaml"
         if _rpath.exists():
             resume_text = _rpath.read_text(encoding="utf-8")[:3000]
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort resume text for the Imitate tab preview; fall back to no resume text
+        _log.debug("_imitate_ats_resume: failed to load resume text: %s", exc)
     resume_block = f"\n## Current Resume\n{resume_text}" if resume_text else ""
 
     if not rows:
@@ -1814,7 +1817,7 @@ def vision_health():
     try:
         r = requests.get("http://localhost:8002/health", timeout=2)
         return {"available": r.status_code == 200}
-    except Exception:
+    except Exception:  # noqa: BLE001 - health check must report unavailable on ANY error (network, timeout, or otherwise); covered by test_vision_health_unavailable
         return {"available": False}
 
 
@@ -1845,7 +1848,7 @@ def survey_analyze(job_id: int, body: SurveyAnalyzeBody, request: Request):
             params=params,
         )
         return {"task_id": task_id, "is_new": is_new}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(500, str(e))
 
 
@@ -1911,7 +1914,7 @@ def save_survey_response(job_id: int, body: SurveySaveBody):
             img_path = screenshots_dir / f"{timestamp}.png"
             img_path.write_bytes(base64.b64decode(body.image_b64))
             image_path = str(img_path)
-        except Exception:
+        except Exception:  # noqa: BLE001 - covers base64 decode errors and filesystem write failures alike; both surface as a generic 400 to the client
             raise HTTPException(400, "Invalid image data")
     row_id = insert_survey_response(
         db_path=Path(_request_db.get() or DB_PATH),
@@ -1992,7 +1995,7 @@ def _ensure_qa_column(db) -> None:
     try:
         db.execute("ALTER TABLE jobs ADD COLUMN application_qa TEXT")
         db.commit()
-    except Exception:
+    except sqlite3.OperationalError:
         pass  # Column already exists
 
 
@@ -2020,7 +2023,7 @@ def get_qa(job_id: int):
         raise HTTPException(404, "Job not found")
     try:
         items = json.loads(row["application_qa"] or "[]")
-    except Exception:
+    except json.JSONDecodeError:
         items = []
     return {"items": items}
 
@@ -2076,7 +2079,7 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
             if resume_data.get("career_summary"):
                 parts.append(f"Summary: {resume_data['career_summary'][:400]}")
             resume_context = "\n".join(parts)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort resume context for the QA suggestion prompt; already logged below
         _log.warning("suggest_qa_answer: failed to load resume context", exc_info=True)
 
     prompt = (
@@ -2266,7 +2269,7 @@ def link_reference_to_job(ref_id: int, body: PrepEmailPayload):
             (body.job_id, ref_id),
         )
         db.commit()
-    except Exception:
+    except sqlite3.IntegrityError:
         pass  # already linked
     db.close()
     return {"ok": True}
@@ -2322,7 +2325,7 @@ Return only the email body (no subject line)."""
         from scripts.llm_router import LLMRouter
         router = LLMRouter()
         email_text = router.complete(prompt)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any LLM/router failure into a clean 500 response
         raise HTTPException(500, f"LLM generation failed: {e}")
 
     # Persist to job_references
@@ -2373,7 +2376,7 @@ Return only the letter body."""
         from scripts.llm_router import LLMRouter
         router = LLMRouter()
         letter_text = router.complete(prompt)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any LLM/router failure into a clean 500 response
         raise HTTPException(500, f"LLM generation failed: {e}")
 
     db = _get_db()
@@ -2551,7 +2554,7 @@ def trigger_score():
         raise HTTPException(status_code=500, detail=result.stderr)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any subprocess/scoring failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2561,7 +2564,7 @@ def trigger_notion_sync():
         from scripts.sync import sync_to_notion
         count = sync_to_notion(_db_path())
         return {"ok": True, "count": count}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any sync failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2633,7 +2636,7 @@ def add_jobs_by_url(body: AddJobsBody):
                 submit_task(db_path, "scrape_url", job_id)
                 queued += 1
         return {"queued": queued}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2671,7 +2674,7 @@ async def upload_jobs_csv(file: UploadFile):
                 submit_task(db_path, "scrape_url", job_id)
                 queued += 1
         return {"queued": queued, "total": len(urls)}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2702,7 +2705,8 @@ def get_setup_banners():
             return []
         dismissed = set(cfg.get("dismissed_banners", []))
         return [b for b in _SETUP_BANNERS if b["key"] not in dismissed]
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - non-critical UI banner list; any config load failure just hides the banners
+        _log.debug("get_setup_banners: failed to load config: %s", exc)
         return []
 
 
@@ -2716,7 +2720,7 @@ def dismiss_setup_banner(key: str):
             cfg["dismissed_banners"] = dismissed
             _save_user_config(cfg)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any config-save failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2978,7 +2982,7 @@ def _resolve_cloud_tier() -> str:
         if resp.status_code == 404:
             return "free"
         _log.warning("Heimdall resolve returned %s for user %s", resp.status_code, user_id)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - must degrade gracefully to "free" on ANY resolution failure (network, JSON, etc.); already logged
         _log.warning("Heimdall tier resolve failed for user %s: %s", user_id, exc)
     return "free"
 
@@ -3001,7 +3005,8 @@ def get_app_config():
     try:
         cfg = load_user_profile(_user_yaml_path())
         wizard_complete = bool(cfg.get("wizard_complete", False))
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - app config endpoint must not 500 on a broken user.yaml; treat as not-yet-onboarded
+        _log.debug("get_app_config: failed to load user profile: %s", exc)
         wizard_complete = False
 
     from scripts.wizard.tiers import has_configured_llm
@@ -3030,7 +3035,8 @@ def config_user():
         with open(cfg_path) as f:
             cfg = yaml.safe_load(f)
         return {"name": cfg.get("name", "")}
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort name read for header display; missing/broken user.yaml just means no name yet
+        _log.debug("config_user: failed to load user.yaml: %s", exc)
         return {"name": ""}
 
 
@@ -3084,7 +3090,7 @@ def get_profile():
             "accessibility_focus": cfg.get("candidate_accessibility_focus", False),
             "lgbtq_focus":        cfg.get("candidate_lgbtq_focus", False),
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any profile-read failure into a clean 500 response
         raise HTTPException(500, f"Could not read profile: {e}")
 
 
@@ -3128,7 +3134,7 @@ def set_theme(payload: ThemePayload):
         data["theme"] = payload.theme
         save_user_profile(_user_yaml_path(), data)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any theme-save failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3145,7 +3151,7 @@ def set_ui_preference(payload: UIPrefPayload):
         data["ui_preference"] = payload.preference
         save_user_profile(_user_yaml_path(), data)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any UI-preference-save failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3160,7 +3166,7 @@ def sync_identity(payload: IdentitySyncPayload):
         data["linkedin"] = payload.linkedin_url  # yaml key is 'linkedin', not 'linkedin_url'
         save_user_profile(_user_yaml_path(), data)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any identity-sync failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3184,7 +3190,7 @@ def save_profile(payload: UserProfilePayload):
         cfg["candidate_lgbtq_focus"] = payload.lgbtq_focus
         save_user_profile(yaml_path, cfg)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any profile-save failure into a clean 500 response
         raise HTTPException(500, f"Could not save profile: {e}")
 
 
@@ -3210,7 +3216,8 @@ def _resume_context_snippet() -> str:
                 if titles:
                     parts.append(f"Recent roles: {', '.join(titles)}")
         return "\n".join(parts)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort resume context for LLM prompts; fall back to no context
+        _log.debug("_resume_context_snippet: failed to load resume: %s", exc)
         return ""
 
 
@@ -3228,7 +3235,7 @@ def _extract_json_array(raw: str, *, log_context: str = "") -> list | None:
         return None
     try:
         return _json.loads(raw[start:end])
-    except Exception:
+    except _json.JSONDecodeError:
         _log.warning("[%s] LLM response had an unparsable JSON array: %r", log_context, raw[:200])
         return None
 
@@ -3519,7 +3526,7 @@ def get_resume():
                 uy = yaml.safe_load(_uy.read_text(encoding="utf-8")) or {}
                 data["career_summary"] = uy.get("career_summary", "")
         return data
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/settings/resume")
@@ -3555,7 +3562,7 @@ def save_resume(payload: ResumePayload):
                     synced_id = int(default_id)
 
         return {"ok": True, "synced_library_entry_id": synced_id}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/settings/resume/blank")
@@ -3567,7 +3574,7 @@ def create_blank_resume():
             with open(resume_path, "w") as f:
                 yaml.dump({}, f)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/settings/resume/upload")
@@ -3618,8 +3625,8 @@ async def upload_resume(file: UploadFile):
                     changed = True
             if changed:
                 save_user_profile(_user_yaml_path(), profile)
-        except Exception:
-            pass  # profile backfill is best-effort; never block the upload on it
+        except Exception as exc:  # noqa: BLE001 - profile backfill is best-effort; never block the upload on it
+            _log.debug("upload_resume: profile backfill failed: %s", exc)
 
         # Also add to resume library and mark as default
         import json as _json
@@ -3640,7 +3647,7 @@ async def upload_resume(file: UploadFile):
         result["exists"] = True
         result["library_id"] = library_entry["id"]
         return {"ok": True, "data": result}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3694,7 +3701,8 @@ def _get_valid_jobspy_boards() -> set[str]:
     try:
         from jobspy import Site
         return {s.value for s in Site}
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort board list; fall back to the known-stable defaults on any import/attribute issue
+        _log.debug("_get_valid_jobspy_boards: failed to introspect jobspy.Site: %s", exc)
         return {"linkedin", "indeed", "zip_recruiter", "glassdoor", "google"}
 
 
@@ -3748,7 +3756,7 @@ def get_search_prefs():
             profile["job_titles"] = profile.pop("titles")
 
         return profile
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/settings/search")
@@ -3780,7 +3788,7 @@ def save_search_prefs(payload: SearchPrefsPayload):
         with open(p, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 class SearchSuggestPayload(BaseModel):
@@ -3845,7 +3853,7 @@ def suggest_resume_tags(payload: ResumeTagSuggestPayload):
         if suggestions is None:
             return {"suggestions": []}
         return {"suggestions": [str(s) for s in suggestions if s]}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any LLM/parsing failure into a clean error response
         raise HTTPException(500, f"LLM generation failed: {e}")
 
 
@@ -3898,7 +3906,7 @@ def suggest_search(payload: SearchSuggestPayload):
         if suggestions is None:
             return {"suggestions": []}
         return {"suggestions": [str(s) for s in suggestions if s]}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any LLM/parsing failure into a clean error response
         raise HTTPException(500, f"LLM generation failed: {e}")
 
 
@@ -3942,7 +3950,7 @@ def get_llm_config():
             for i, bid in enumerate(ordered_ids)
         ]
         return {"backends": backends, "byok_acknowledged": user.get("byok_acknowledged_backends", [])}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/settings/system/llm")
@@ -3975,7 +3983,7 @@ def save_llm_config(payload: LlmConfigPayload):
         with open(LLM_CONFIG_PATH, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/settings/system/llm/byok-ack")
@@ -3986,7 +3994,7 @@ def byok_ack(payload: ByokAckPayload):
         user["byok_acknowledged_backends"] = list(set(existing + payload.backends))
         save_user_profile(_user_yaml_path(), user)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4085,7 +4093,7 @@ def _probes_for_assignments(task_models: dict) -> dict:
             continue
         try:
             cached = _get_cached_probe(backend_id, model)
-        except Exception as e:  # cache is advisory -- never fail the GET over it
+        except Exception as e:  # noqa: BLE001 - cache is advisory -- never fail the GET over it
             _log.warning("[task-models] could not read cached probe for %s: %s", key, e)
             continue
         if cached is not None and "passed" in cached:
@@ -4141,8 +4149,8 @@ def _configured_ollama_base_url() -> str:
         port = services.get("ollama_port")
         if host and not (_running_in_docker() and host in ("localhost", "127.0.0.1")):
             return f"http://{host}:{port or 11434}"
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort config read; fall back to OLLAMA_HOST/default on any failure
+        _log.debug("_configured_ollama_base_url: failed to read wizard config: %s", exc)
     ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     if not ollama_host.startswith("http"):
         ollama_host = f"http://{ollama_host}"
@@ -4160,8 +4168,8 @@ def get_ollama_models(host: str | None = None, port: int | None = None):
         if resp.status_code == 200:
             models = [m["name"] for m in resp.json().get("models", [])]
             return {"models": models}
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - Ollama frequently isn't running yet; log at debug to avoid spamming Settings-page polling
+        _log.debug("get_ollama_models: request to %s failed: %s", base_url, exc)
     return {"models": []}
 
 
@@ -4176,8 +4184,8 @@ def _configured_vllm_base_url() -> str:
         port = services.get("vllm_port")
         if host and not (_running_in_docker() and host in ("localhost", "127.0.0.1")):
             return f"http://{host}:{port or 8000}"
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort config read; fall back to the default URL on any failure
+        _log.debug("_configured_vllm_base_url: failed to read wizard config: %s", exc)
     return "http://localhost:8000"
 
 
@@ -4191,8 +4199,8 @@ def get_vllm_models(host: str | None = None, port: int | None = None):
         if resp.status_code == 200:
             models = [m["id"] for m in resp.json().get("data", [])]
             return {"models": models}
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - vLLM frequently isn't running yet; log at debug to avoid spamming Settings-page polling
+        _log.debug("get_vllm_models: request to %s failed: %s", base_url, exc)
     return {"models": []}
 
 
@@ -4218,7 +4226,8 @@ def ollama_detect(payload: OllamaDetectPayload):
             resp = requests.get(url, timeout=3)
             if resp.status_code == 200:
                 return {"found": True, "host": host, "port": payload.port}
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - candidate-address probing; an unreachable candidate just means try the next one
+            _log.debug("ollama_detect: candidate %s unreachable: %s", url, exc)
             continue
     return {"found": False, "tried": tried}
 
@@ -4245,7 +4254,8 @@ def vllm_detect(payload: VllmDetectPayload):
             resp = requests.get(url, timeout=3)
             if resp.status_code == 200:
                 return {"found": True, "host": host, "port": payload.port}
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - candidate-address probing; an unreachable candidate just means try the next one
+            _log.debug("vllm_detect: candidate %s unreachable: %s", url, exc)
             continue
     return {"found": False, "tried": tried}
 
@@ -4277,7 +4287,7 @@ def get_services():
             result.append({"name": svc["name"], "port": svc["port"],
                            "running": _port_open(svc["port"]), "note": svc["note"]})
         return result
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4292,7 +4302,7 @@ def start_service(name: str):
         return {"ok": r.returncode == 0, "output": r.stdout + r.stderr}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4307,7 +4317,7 @@ def stop_service(name: str):
         return {"ok": r.returncode == 0, "output": r.stdout + r.stderr}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4334,7 +4344,7 @@ def get_email_config():
         config["password_set"] = bool(password)
         config.pop("password", None)  # strip if somehow in yaml
         return config
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4354,7 +4364,7 @@ def save_email_config(payload: dict):
         with os.fdopen(fd, "w") as f:
             yaml.dump(safe_config, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4379,7 +4389,7 @@ def test_email(payload: dict):
         conn.login(username, password)
         conn.logout()
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - connection test: report any failure (auth, network, SSL, protocol) as a clean {ok: False} response
         return {"ok": False, "error": str(e)}
 
 
@@ -4402,7 +4412,7 @@ def get_integrations():
         return result
     except ImportError:
         return []  # integrations module not yet implemented
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4417,7 +4427,7 @@ def test_integration(integration_id: str, payload: dict):
         return {"ok": ok, "error": error}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4435,7 +4445,7 @@ def connect_integration(integration_id: str, payload: dict):
         return {"ok": True}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4450,7 +4460,7 @@ def disconnect_integration(integration_id: str):
         return {"ok": True}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4465,7 +4475,7 @@ def get_file_paths():
             "data_dir": user.get("data_dir", ""),
             "model_dir": user.get("model_dir", ""),
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4478,7 +4488,7 @@ def save_file_paths(payload: dict):
                 user[key] = payload[key]
         save_user_profile(_user_yaml_path(), user)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4492,7 +4502,7 @@ def get_deploy_config():
             "server_host": os.environ.get("STREAMLIT_SERVER_ADDRESS", "0.0.0.0"),
             "server_port": int(os.environ.get("STREAMLIT_SERVER_PORT", "8502")),
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4732,8 +4742,8 @@ def pull_ollama_model(payload: OllamaPullPayload, background_tasks: BackgroundTa
     def _do_pull():
         try:
             requests.post(f"{base_url}/api/pull", json={"name": model, "stream": False}, timeout=1800)
-        except Exception:
-            pass  # best-effort -- frontend polling detects success/failure by presence, not by this call
+        except Exception:  # noqa: BLE001, S110 - best-effort background pull; frontend polling detects success/failure by presence, not by this call's result
+            _log.warning("Background ollama pull failed for model=%s", model)
 
     background_tasks.add_task(_do_pull)
     return {"ok": True, "status": "pulling"}
@@ -4780,11 +4790,16 @@ def finetune_status():
         try:
             from scripts.user_profile import UserProfile
             _opted_in = UserProfile(Path(_user_yaml_path())).training_export_opt_in
-        except Exception:
+        except (FileNotFoundError, yaml.YAMLError):
+            # Covers a missing user.yaml or invalid YAML syntax. A hand-edited-but-
+            # syntactically-valid file with the wrong shape (e.g. nda_companies: null,
+            # or a top-level list instead of a mapping) can still raise TypeError here --
+            # that's intentionally left to propagate to the outer except Exception below,
+            # which returns a clean 500 rather than silently defaulting opted_in=False.
             _opted_in = False
         # Stub quota for self-hosted; cloud overrides via its own middleware
         return {"status": status, "pairs_count": pairs_count, "quota_remaining": None, "opted_in": _opted_in}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4818,7 +4833,7 @@ def finetune_extract():
         from scripts.task_runner import submit_task
         task_id = submit_task(DB_PATH, "finetune_extract", None)
         return {"task_id": str(task_id)}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4836,7 +4851,7 @@ async def finetune_upload(files: list[UploadFile]):
                 out.write(content)
             saved.append(str(dest))
         return {"file_count": len(saved), "paths": saved}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4847,7 +4862,7 @@ def finetune_submit():
         from scripts.task_runner import submit_task
         task_id, is_new = submit_task(Path(DB_PATH), "prepare_training", None)
         return {"job_id": str(task_id), "is_new": is_new}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4860,7 +4875,7 @@ def finetune_local_status():
         )
         model_ready = "alex-cover-writer" in (result.stdout or "")
         return {"model_ready": model_ready}
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort local model status check; ollama missing/unreachable/slow just means not ready
         return {"model_ready": False}
 
 
@@ -4895,7 +4910,7 @@ def set_training_opt_in(body: TrainingOptInBody):
         profile.training_export_opt_in = body.enabled
         profile.save()
         return {"ok": True, "enabled": profile.training_export_opt_in}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4912,7 +4927,7 @@ def list_db_pairs():
             "total": len(pairs),
             "excluded_count": excluded_count,
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4923,7 +4938,7 @@ def exclude_db_pair(job_id: int):
         from scripts.db import set_training_exclusion
         set_training_exclusion(Path(_request_db.get() or DB_PATH), job_id, excluded=True)
         return {"ok": True, "job_id": job_id}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4934,7 +4949,7 @@ def include_db_pair(job_id: int):
         from scripts.db import set_training_exclusion
         set_training_exclusion(Path(_request_db.get() or DB_PATH), job_id, excluded=False)
         return {"ok": True, "job_id": job_id}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5007,7 +5022,7 @@ def get_license():
             "active": bool(data.get("active", False)),
             "grace_period_ends": data.get("grace_period_ends"),
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5028,7 +5043,7 @@ def activate_license(payload: LicenseActivatePayload):
         with os.fdopen(fd, "w") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True, "tier": "paid"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5044,7 +5059,7 @@ def deactivate_license():
             with os.fdopen(fd, "w") as f:
                 yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5076,7 +5091,7 @@ def create_backup(payload: BackupCreatePayload):
                     file_count += 1
         size_bytes = dest.stat().st_size
         return {"path": str(dest), "file_count": file_count, "size_bytes": size_bytes}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5095,7 +5110,7 @@ def get_privacy():
             "usage_events": cfg.get("usage_events", True),
             "content_sharing": bool(cfg.get("content_sharing", False)),
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5108,7 +5123,7 @@ def save_privacy(payload: dict):
                 cfg[k] = v
         _save_user_config(cfg)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5127,7 +5142,7 @@ def get_developer():
             "dev_tier_override": cfg.get("dev_tier_override"),
             "hf_token_set": bool(tokens.get("huggingface_token")),
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5141,7 +5156,7 @@ def set_dev_tier(payload: DevTierPayload):
         cfg["dev_tier_override"] = payload.tier
         _save_user_config(cfg)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5153,7 +5168,7 @@ def save_hf_token(payload: HfTokenPayload):
     try:
         set_credential("peregrine_tokens", "huggingface_token", payload.token)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5166,7 +5181,7 @@ def test_hf_token():
         from huggingface_hub import whoami
         info = whoami(token=token)
         return {"ok": True, "username": info.get("name")}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - external huggingface_hub call; any failure (network, invalid token, API error) just means the token test failed
         return {"ok": False, "error": str(e)}
 
 
@@ -5177,7 +5192,7 @@ def wizard_reset():
         cfg["wizard_complete"] = False
         _save_user_config(cfg)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5193,7 +5208,7 @@ def export_classifier():
         with open(export_path, "w") as f:
             f.writelines(_json.dumps(e) + "\n" for e in emails)
         return {"ok": True, "count": len(emails), "path": str(export_path)}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5215,7 +5230,7 @@ def _wizard_yaml_path() -> str:
 def _load_wizard_yaml() -> dict:
     try:
         return load_user_profile(_wizard_yaml_path()) or {}
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort wizard config load; missing/broken user.yaml just means no saved wizard state yet
         return {}
 
 
@@ -5237,7 +5252,7 @@ def _detect_gpus() -> list[str]:
             text=True, timeout=5,
         )
         return [line.strip() for line in out.strip().splitlines() if line.strip()]
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort GPU detection; nvidia-smi missing/failing just means no GPUs detected
         return []
 
 
@@ -5271,7 +5286,7 @@ def _wizard_section_status(cfg: dict) -> dict:
             with open(resume_path) as f:
                 resume_cfg = yaml.safe_load(f) or {}
             resume_complete = _has_value(resume_cfg.get("experience"))
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort onboarding section-completion check; malformed resume.yaml just means the section isn't marked complete
             resume_complete = False
 
     search_path = _search_prefs_path()
@@ -5287,7 +5302,7 @@ def _wizard_section_status(cfg: dict) -> dict:
                 None,
             )
             search_complete = bool(default_profile) and _has_value(default_profile.get("job_titles"))
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort onboarding section-completion check; malformed search-prefs.yaml just means the section isn't marked complete
             search_complete = False
 
     return {
@@ -5339,7 +5354,7 @@ def wizard_connections_acknowledge():
     this is a pure acknowledgment, not a data save."""
     try:
         _save_wizard_yaml({"connections_acknowledged": True})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True}
 
@@ -5353,7 +5368,7 @@ def wizard_setup_path(payload: WizardSetupPathPayload):
     """Persist the user's onboarding setup-path choice (AI-assisted vs manual)."""
     try:
         _save_wizard_yaml({"setup_path": payload.path})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True}
 
@@ -5443,7 +5458,7 @@ def wizard_save_step(payload: WizardStepPayload):
 
     try:
         _save_wizard_yaml(updates)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"ok": True, "step": step}
@@ -5461,7 +5476,7 @@ def _fetch_cforch_nodes() -> list[dict]:
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = _json.loads(resp.read())
             return data.get("nodes", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 - documented contract: returns [] on any error (network, timeout, malformed response)
         return []
 
 
@@ -5476,7 +5491,7 @@ def _probe_ollama() -> bool:
             r = requests.get(url, timeout=2)
             if r.status_code == 200:
                 return True
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - probing multiple candidate URLs; an unreachable candidate is expected/routine, not an error worth logging on every wizard load
             pass
     return False
 
@@ -5493,7 +5508,7 @@ def _probe_searxng() -> bool:
             r = requests.get(url, timeout=2)
             if r.status_code < 500:
                 return True
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - probing multiple candidate URLs; an unreachable candidate is expected/routine, not an error worth logging on every wizard load
             pass
     return False
 
@@ -5580,7 +5595,7 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
                 n = len(nodes)
                 return {"ok": True, "message": f"Orchard reachable — {n} node(s) online."}
             return {"ok": False, "message": f"Orchard returned HTTP {resp.status_code}."}
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - connectivity test is a soft warning by design; any failure surfaces as a friendly "can't reach" message so the wizard isn't blocked
             return {
                 "ok": False,
                 "message": (
@@ -5613,7 +5628,7 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
                         os.environ.pop(k, None)
                     else:
                         os.environ[k] = v
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - connectivity test is a soft warning by design; any LLM router failure surfaces as a friendly message so the wizard isn't blocked
             return {"ok": False, "message": f"LLM test failed: {exc}"}
 
     else:
@@ -5628,7 +5643,7 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
             resp = requests.get(f"{ollama_url}/api/tags", timeout=5, allow_redirects=False)
             ok = resp.status_code == 200
             message = "Ollama is running." if ok else f"Ollama returned HTTP {resp.status_code}."
-        except Exception:
+        except Exception:  # noqa: BLE001 - connectivity test is a soft warning by design; any failure surfaces as a friendly "not responding" message so the wizard isn't blocked
             return {
                 "ok": False,
                 "message": (
@@ -5654,8 +5669,8 @@ def wizard_complete():
             profile_obj = UserProfile(yaml_path)
             if llm_yaml.exists():
                 apply_service_urls(profile_obj, llm_yaml)
-        except Exception:
-            pass  # don't block completion on llm.yaml errors
+        except Exception:  # noqa: BLE001, S110 - don't block wizard completion on llm.yaml errors; log so a broken service-url apply isn't completely silent
+            _log.warning("apply_service_urls failed during wizard completion; continuing without it", exc_info=True)
 
         cfg = _load_wizard_yaml()
         cfg["wizard_complete"] = True
@@ -5663,7 +5678,7 @@ def wizard_complete():
         save_user_profile(yaml_path, cfg)
 
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -5826,7 +5841,7 @@ def wizard_ai_finalize(request: WizardFinalizeRequest):
         updates = {k: v for k, v in request.profile.items() if k in _WIZARD_ALLOWED_FIELDS}
         merged = {**current, **updates}
         save_user_profile(yaml_path, merged)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(500, detail={"error": "write_error", "message": str(exc)})
     merged_keys = list(updates.keys())
     return {"saved": True, "fields": merged_keys}
