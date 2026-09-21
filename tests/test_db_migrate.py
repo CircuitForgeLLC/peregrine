@@ -7,7 +7,6 @@ import pytest
 
 from scripts.db_migrate import migrate_db
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _applied(db_path: Path) -> list[str]:

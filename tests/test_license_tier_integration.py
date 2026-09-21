@@ -1,9 +1,10 @@
 import json
-import pytest
 from datetime import datetime, timedelta, timezone
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
+
 import jwt as pyjwt
+import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 
 @pytest.fixture()

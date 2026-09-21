@@ -1,10 +1,11 @@
 """Tests for wizard API endpoints (GET/POST /api/wizard/*)."""
 import os
 import sys
-import yaml
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 # ── Path bootstrap ────────────────────────────────────────────────────────────
@@ -729,10 +730,12 @@ class TestAiWizardCloudTrial:
         """wizard_ai_interview must build its LLMRouter via router_for_tenant()
         in cloud mode, not a bare LLMRouter() -- otherwise a tenant's saved
         task_models assignment is silently ignored."""
-        from dev_api import app
-        from fastapi.testclient import TestClient
-        from unittest.mock import patch, MagicMock
         import os
+        from unittest.mock import MagicMock, patch
+
+        from fastapi.testclient import TestClient
+
+        from dev_api import app
 
         tenant_db = tmp_path / "tenant" / "staging.db"
         tenant_db.parent.mkdir(parents=True)

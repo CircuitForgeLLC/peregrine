@@ -14,8 +14,9 @@ def test_running_in_docker_false_when_dockerenv_absent():
 
 
 def test_configured_ollama_base_url_trusts_localhost_when_not_dockerized(tmp_path, monkeypatch):
-    import dev_api
     import yaml
+
+    import dev_api
     cfg = tmp_path / "config"
     cfg.mkdir()
     (cfg / "user.yaml").write_text(yaml.dump({"services": {"ollama_host": "localhost", "ollama_port": 11434}}))
@@ -25,8 +26,9 @@ def test_configured_ollama_base_url_trusts_localhost_when_not_dockerized(tmp_pat
 
 
 def test_configured_ollama_base_url_distrusts_localhost_when_dockerized(tmp_path, monkeypatch):
-    import dev_api
     import yaml
+
+    import dev_api
     cfg = tmp_path / "config"
     cfg.mkdir()
     (cfg / "user.yaml").write_text(yaml.dump({"services": {"ollama_host": "localhost", "ollama_port": 11434}}))
@@ -39,8 +41,9 @@ def test_configured_ollama_base_url_distrusts_localhost_when_dockerized(tmp_path
 
 
 def test_configured_ollama_base_url_uses_saved_nonlocalhost_host_regardless_of_docker(tmp_path, monkeypatch):
-    import dev_api
     import yaml
+
+    import dev_api
     cfg = tmp_path / "config"
     cfg.mkdir()
     (cfg / "user.yaml").write_text(yaml.dump({"services": {"ollama_host": "host.docker.internal", "ollama_port": 11434}}))

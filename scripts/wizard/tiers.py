@@ -26,8 +26,8 @@ import os as _os
 from pathlib import Path
 
 from circuitforge_core.tiers import (
+    TIERS,  # noqa: F401 -- re-exported; consumers import TIERS from this module
     can_use as _core_can_use,
-    TIERS,
     tier_label as _core_tier_label,
 )
 
@@ -174,8 +174,9 @@ def effective_tier(
     if profile and getattr(profile, "dev_tier_override", None):
         return profile.dev_tier_override
 
-    from scripts.license import effective_tier as _license_tier
     from pathlib import Path as _Path
+
+    from scripts.license import effective_tier as _license_tier
 
     kwargs = {}
     if license_path is not None:

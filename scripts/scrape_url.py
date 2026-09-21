@@ -17,8 +17,7 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urlparse, urlencode, parse_qsl
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -72,7 +71,7 @@ def _detect_board(url: str) -> str:
     return "generic"
 
 
-def _extract_linkedin_job_id(url: str) -> Optional[str]:
+def _extract_linkedin_job_id(url: str) -> str | None:
     """Extract numeric job ID from a LinkedIn job URL."""
     m = re.search(r"/jobs/view/(\d+)", url)
     return m.group(1) if m else None

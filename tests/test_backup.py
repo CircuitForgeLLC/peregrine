@@ -5,7 +5,6 @@ import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 from scripts.backup import (
     _decrypt_db_to_bytes,
     _detect_source_label,
@@ -14,7 +13,6 @@ from scripts.backup import (
     list_backup_contents,
     restore_backup,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

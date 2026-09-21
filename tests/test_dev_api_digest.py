@@ -1,5 +1,6 @@
 """Tests for digest queue API endpoints."""
 import sqlite3
+
 import pytest
 from fastapi.testclient import TestClient
 

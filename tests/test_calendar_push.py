@@ -8,14 +8,18 @@ from datetime import timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 def _make_db(tmp_path, interview_date="2026-04-15", calendar_event_id=None):
-    from scripts.db import init_db, insert_job, set_interview_date, set_calendar_event_id
+    from scripts.db import (
+        init_db,
+        insert_job,
+        set_calendar_event_id,
+        set_interview_date,
+    )
     db = tmp_path / "test.db"
     init_db(db)
     job_id = insert_job(db, {

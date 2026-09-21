@@ -1,5 +1,5 @@
 """Tests for BYOK cloud backend detection."""
-from scripts.byok_guard import is_cloud_backend, cloud_backends
+from scripts.byok_guard import cloud_backends, is_cloud_backend
 
 
 class TestIsCloudBackend:

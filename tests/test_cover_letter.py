@@ -1,6 +1,5 @@
 # tests/test_cover_letter.py
-from unittest.mock import patch, MagicMock
-
+from unittest.mock import MagicMock, patch
 
 # ── prepare_training_data tests ──────────────────────────────────────────────
 

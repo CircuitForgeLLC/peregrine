@@ -1,9 +1,11 @@
 """Shared data models for the Peregrine E2E test harness."""
 from __future__ import annotations
+
 import fnmatch
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Any
+from typing import Any
 
 
 @dataclass(frozen=True)

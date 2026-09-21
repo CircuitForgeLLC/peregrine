@@ -5,28 +5,35 @@ Run with:
     conda run -n job-seeker uvicorn dev-api:app --port 8600 --reload
 """
 import imaplib
+import ipaddress
 import json
 import logging
 import os
-import ipaddress
 import re
 import socket
 import sqlite3
 import ssl as ssl_mod
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, List, Literal
+from typing import Literal
 from urllib.parse import urlparse
 
 import requests
 import yaml
 from bs4 import BeautifulSoup
-from contextlib import asynccontextmanager
-
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -37,12 +44,15 @@ PEREGRINE_ROOT = Path(__file__).resolve().parent
 if str(PEREGRINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PEREGRINE_ROOT))
 
-from circuitforge_core.api import make_feedback_router as _make_feedback_router  # noqa: E402
-from circuitforge_core.config.settings import load_env as _load_env  # noqa: E402
-from circuitforge_core.sync import SyncConfig, make_sync_router  # noqa: E402
-from scripts.credential_store import get_credential, set_credential  # noqa: E402
-from scripts.rate_limit import limiter, rate_limit_exceeded_handler  # noqa: E402
-from slowapi.errors import RateLimitExceeded  # noqa: E402
+from circuitforge_core.api import (
+    make_feedback_router as _make_feedback_router,
+)
+from circuitforge_core.config.settings import load_env as _load_env
+from circuitforge_core.sync import SyncConfig, make_sync_router
+from slowapi.errors import RateLimitExceeded
+
+from scripts.credential_store import get_credential, set_credential
+from scripts.rate_limit import limiter, rate_limit_exceeded_handler
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 
@@ -276,6 +286,7 @@ def _resolve_cf_user_id(cookie_str: str) -> str | None:
         return None
     token = m.group(1).strip()
     import base64
+
     import jwt  # PyJWT
     secrets_to_try: list[str | bytes] = [_DIRECTUS_SECRET]
     try:
@@ -395,10 +406,10 @@ _JOB_PATH_SEGMENTS = frozenset({'careers', 'jobs'})
 _FILTER_RE = re.compile(
     r'(unsubscribe|mailto:|/track/|pixel\.|\.gif|\.png|\.jpg'
     r'|/open\?|/click\?|list-unsubscribe)',
-    re.I,
+    re.IGNORECASE,
 )
 
-_URL_RE = re.compile(r'https?://[^\s<>"\')\]]+', re.I)
+_URL_RE = re.compile(r'https?://[^\s<>"\')\]]+', re.IGNORECASE)
 
 
 def _score_url(url: str) -> int:
@@ -741,8 +752,9 @@ def research_task_status(job_id: int):
 @app.get("/api/jobs/{job_id}/resume_optimizer")
 def get_optimized_resume(job_id: int):
     """Return the current optimized resume and ATS gap report for a job."""
-    from scripts.db import get_optimized_resume as _get
     import json
+
+    from scripts.db import get_optimized_resume as _get
     result = _get(db_path=Path(_request_db.get() or DB_PATH), job_id=job_id)
     gap_report = result.get("ats_gap_report", "")
     try:
@@ -886,7 +898,9 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
     """
     from scripts.db import get_resume_draft as _get_draft
     from scripts.resume_optimizer import (
-        apply_review_decisions, frame_skill_gaps, render_resume_text,
+        apply_review_decisions,
+        frame_skill_gaps,
+        render_resume_text,
     )
 
     db_path = Path(_request_db.get() or DB_PATH)
@@ -952,6 +966,7 @@ def approve_resume(job_id: int, body: dict):
     Saves both the rendered plain text and the struct (for YAML export).
     """
     import json as _json
+
     from scripts.db import finalize_resume as _finalize
 
     db_path = Path(_request_db.get() or DB_PATH)
@@ -1014,8 +1029,10 @@ def _get_final_struct(job_id: int) -> dict:
 def export_resume_pdf(job_id: int):
     """Generate a PDF from the approved resume struct and return it as a download."""
     import tempfile
-    from scripts.resume_optimizer import export_pdf
+
     from fastapi.responses import FileResponse
+
+    from scripts.resume_optimizer import export_pdf
 
     struct = _get_final_struct(job_id)
     tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
@@ -1080,6 +1097,7 @@ def create_resume_endpoint(body: dict):
 @app.post("/api/resumes/import")
 async def import_resume_endpoint(file: UploadFile, name: str = ""):
     import json as _json
+
     from scripts.db import create_resume as _create
     db_path = Path(_request_db.get() or DB_PATH)
     content = await file.read()
@@ -1095,9 +1113,13 @@ async def import_resume_endpoint(file: UploadFile, name: str = ""):
 
     elif ext in (".pdf", ".docx", ".odt"):
         from scripts.resume_parser import (
-            extract_text_from_pdf as _extract_pdf,
             extract_text_from_docx as _extract_docx,
+        )
+        from scripts.resume_parser import (
             extract_text_from_odt as _extract_odt,
+        )
+        from scripts.resume_parser import (
+            extract_text_from_pdf as _extract_pdf,
         )
         if ext == ".pdf":
             text = _extract_pdf(content)
@@ -1108,6 +1130,7 @@ async def import_resume_endpoint(file: UploadFile, name: str = ""):
 
     elif ext in (".yaml", ".yml"):
         import yaml as _yaml
+
         from scripts.task_runner import _normalize_aihawk_resume
         raw = _yaml.safe_load(content.decode("utf-8", errors="replace")) or {}
         struct = _normalize_aihawk_resume(raw)
@@ -1181,8 +1204,9 @@ def resume_score_task_status(resume_id: int):
 
 @app.get("/api/resumes/{resume_id}/score")
 def get_resume_score_endpoint(resume_id: int):
-    from scripts.db import get_resume as _get
     import json as _json
+
+    from scripts.db import get_resume as _get
     db_path = Path(_request_db.get() or DB_PATH)
     r = _get(db_path, resume_id)
     if not r:
@@ -1198,7 +1222,10 @@ class ApplySuggestionBody(BaseModel):
 @app.post("/api/resumes/{resume_id}/score/apply-suggestion")
 def apply_resume_suggestion(resume_id: int, body: ApplySuggestionBody):
     import json as _json
-    from scripts.db import get_resume as _get, update_resume_struct as _update_struct, create_resume as _create
+
+    from scripts.db import create_resume as _create
+    from scripts.db import get_resume as _get
+    from scripts.db import update_resume_struct as _update_struct
     from scripts.resume_optimizer import hallucination_check, render_resume_text
     from scripts.resume_scorer import apply_suggestion
     from scripts.resume_sync import make_auto_backup_name
@@ -1242,7 +1269,8 @@ def apply_resume_suggestion(resume_id: int, body: ApplySuggestionBody):
 
 @app.patch("/api/resumes/{resume_id}")
 def update_resume_endpoint(resume_id: int, body: dict):
-    from scripts.db import get_resume as _get, update_resume as _update
+    from scripts.db import get_resume as _get
+    from scripts.db import update_resume as _update
     db_path = Path(_request_db.get() or DB_PATH)
     if not _get(db_path, resume_id):
         raise HTTPException(404, "Resume not found")
@@ -1251,7 +1279,9 @@ def update_resume_endpoint(resume_id: int, body: dict):
 
 @app.delete("/api/resumes/{resume_id}")
 def delete_resume_endpoint(resume_id: int):
-    from scripts.db import get_resume as _get, list_resumes as _list, delete_resume as _delete
+    from scripts.db import delete_resume as _delete
+    from scripts.db import get_resume as _get
+    from scripts.db import list_resumes as _list
     db_path = Path(_request_db.get() or DB_PATH)
     r = _get(db_path, resume_id)
     if not r:
@@ -1267,7 +1297,9 @@ def delete_resume_endpoint(resume_id: int):
 @app.post("/api/resumes/{resume_id}/set-default")
 def set_default_resume_endpoint(resume_id: int):
     import yaml as _yaml
-    from scripts.db import get_resume as _get, set_default_resume as _set_default
+
+    from scripts.db import get_resume as _get
+    from scripts.db import set_default_resume as _set_default
     db_path = Path(_request_db.get() or DB_PATH)
     if not _get(db_path, resume_id):
         raise HTTPException(404, "Resume not found")
@@ -1294,12 +1326,14 @@ def apply_resume_to_profile(resume_id: int):
       7. Return backup details for the frontend notification.
     """
     import json as _json
+
+    from scripts.db import create_resume as _create
+    from scripts.db import get_resume as _get
     from scripts.resume_sync import (
         library_to_profile_content,
-        profile_to_library,
         make_auto_backup_name,
+        profile_to_library,
     )
-    from scripts.db import get_resume as _get, create_resume as _create
 
     db_path = Path(_request_db.get() or DB_PATH)
     entry = _get(db_path, resume_id)
@@ -1343,7 +1377,8 @@ def apply_resume_to_profile(resume_id: int):
     with open(resume_path, "w", encoding="utf-8") as f:
         yaml.dump(current_profile, f, allow_unicode=True, default_flow_style=False)
 
-    from scripts.db import update_resume_synced_at as _mark_synced, set_default_resume as _set_default
+    from scripts.db import set_default_resume as _set_default
+    from scripts.db import update_resume_synced_at as _mark_synced
     _mark_synced(db_path, resume_id)
 
     # Establish this entry as the default so future Profile saves sync back to it
@@ -1375,7 +1410,9 @@ def get_job_resume_endpoint(job_id: int):
 
 @app.patch("/api/jobs/{job_id}/resume")
 def set_job_resume_endpoint(job_id: int, body: dict):
-    from scripts.db import get_resume as _get_r, set_job_resume as _set, get_job_resume as _get_job
+    from scripts.db import get_job_resume as _get_job
+    from scripts.db import get_resume as _get_r
+    from scripts.db import set_job_resume as _set
     db_path = Path(_request_db.get() or DB_PATH)
     resume_id = body.get("resume_id")
     if not resume_id or not _get_r(db_path, resume_id):
@@ -1431,8 +1468,11 @@ def _imitate_load_profile():
 
 def _imitate_cover_letter(db, profile, limit: int) -> dict:
     from scripts.generate_cover_letter import (
-        build_prompt, _build_system_context,
-        load_corpus, find_similar_letters, detect_mission_alignment,
+        _build_system_context,
+        build_prompt,
+        detect_mission_alignment,
+        find_similar_letters,
+        load_corpus,
     )
     rows = db.execute(
         "SELECT id, title, company, description, cover_letter, status FROM jobs "
@@ -1712,9 +1752,9 @@ def get_job_contacts(job_id: int):
 class LogContactBody(BaseModel):
     direction:   str
     subject:     str
-    from_addr:   Optional[str] = None
-    body:        Optional[str] = None
-    received_at: Optional[str] = None
+    from_addr:   str | None = None
+    body:        str | None = None
+    received_at: str | None = None
 
 
 @app.post("/api/jobs/{job_id}/contacts")
@@ -1733,7 +1773,7 @@ def log_contact(job_id: int, payload: LogContactBody):
 
 
 class InterviewDateBody(BaseModel):
-    interview_date: Optional[str] = None
+    interview_date: str | None = None
 
 
 @app.patch("/api/jobs/{job_id}/interview_date")
@@ -1766,8 +1806,7 @@ def calendar_push(job_id: int):
 # ── Survey endpoints ─────────────────────────────────────────────────────────
 
 # Module-level imports so tests can patch dev_api.LLMRouter etc.
-from scripts.db import insert_survey_response, get_survey_responses  # noqa: E402
-
+from scripts.db import get_survey_responses, insert_survey_response
 
 
 @app.get("/api/vision/health")
@@ -1780,8 +1819,8 @@ def vision_health():
 
 
 class SurveyAnalyzeBody(BaseModel):
-    text: Optional[str] = None
-    image_b64: Optional[str] = None
+    text: str | None = None
+    image_b64: str | None = None
     mode: str  # "quick" or "detailed"
 
 
@@ -1791,6 +1830,7 @@ def survey_analyze(job_id: int, body: SurveyAnalyzeBody, request: Request):
     if body.mode not in ("quick", "detailed"):
         raise HTTPException(400, f"Invalid mode: {body.mode!r}")
     import json as _json
+
     from scripts.task_runner import submit_task
     params = _json.dumps({
         "text":      body.text,
@@ -1812,7 +1852,7 @@ def survey_analyze(job_id: int, body: SurveyAnalyzeBody, request: Request):
 # ── GET /api/jobs/:id/survey/analyze/task ────────────────────────────────────
 
 @app.get("/api/jobs/{job_id}/survey/analyze/task")
-def survey_analyze_task(job_id: int, task_id: Optional[int] = None):
+def survey_analyze_task(job_id: int, task_id: int | None = None):
     import json as _json
     db = _get_db()
     if task_id is not None:
@@ -1847,13 +1887,13 @@ def survey_analyze_task(job_id: int, task_id: Optional[int] = None):
 
 
 class SurveySaveBody(BaseModel):
-    survey_name: Optional[str] = None
+    survey_name: str | None = None
     mode: str
     source: str
-    raw_input: Optional[str] = None
-    image_b64: Optional[str] = None
+    raw_input: str | None = None
+    image_b64: str | None = None
     llm_output: str
-    reported_score: Optional[str] = None
+    reported_score: str | None = None
 
 
 @app.post("/api/jobs/{job_id}/survey/responses")
@@ -1906,13 +1946,14 @@ def download_pdf(job_id: int):
         raise HTTPException(404, "No cover letter found")
 
     try:
-        from reportlab.lib.pagesizes import letter as letter_size
-        from reportlab.lib.units import inch
-        from reportlab.lib.colors import HexColor
-        from reportlab.lib.styles import ParagraphStyle
-        from reportlab.lib.enums import TA_LEFT
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
         import io
+
+        from reportlab.lib.colors import HexColor
+        from reportlab.lib.enums import TA_LEFT
+        from reportlab.lib.pagesizes import letter as letter_size
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
         buf  = io.BytesIO()
         doc  = SimpleDocTemplate(buf, pagesize=letter_size,
@@ -1962,7 +2003,7 @@ class QAItem(BaseModel):
 
 
 class QAPayload(BaseModel):
-    items: List[QAItem]
+    items: list[QAItem]
 
 
 class QASuggestPayload(BaseModel):
@@ -2085,8 +2126,8 @@ def save_hired_feedback(job_id: int, payload: HiredFeedbackPayload):
 # ── GET /api/contacts ──────────────────────────────────────────────────────────
 
 @app.get("/api/contacts")
-def list_contacts(job_id: Optional[int] = None, direction: Optional[str] = None,
-                  search: Optional[str] = None, limit: int = 100, offset: int = 0):
+def list_contacts(job_id: int | None = None, direction: str | None = None,
+                  search: str | None = None, limit: int = 100, offset: int = 0):
     db = _get_db()
     query = """
         SELECT jc.id, jc.job_id, jc.direction, jc.subject, jc.from_addr, jc.to_addr,
@@ -2527,7 +2568,7 @@ def trigger_notion_sync():
 # ── Bulk job actions ───────────────────────────────────────────────────────────
 
 class BulkArchiveBody(BaseModel):
-    statuses: List[str]
+    statuses: list[str]
 
 
 @app.post("/api/jobs/archive")
@@ -2538,13 +2579,13 @@ def bulk_archive_jobs(body: BulkArchiveBody):
 
 
 class BulkPurgeBody(BaseModel):
-    statuses: Optional[List[str]] = None
-    target: Optional[str] = None  # "email", "non_remote", "rescrape"
+    statuses: list[str] | None = None
+    target: str | None = None  # "email", "non_remote", "rescrape"
 
 
 @app.post("/api/jobs/purge")
 def bulk_purge_jobs(body: BulkPurgeBody):
-    from scripts.db import purge_jobs, purge_email_data, purge_non_remote
+    from scripts.db import purge_email_data, purge_jobs, purge_non_remote
     if body.target == "email":
         contacts, jobs = purge_email_data(_db_path())
         return {"ok": True, "contacts": contacts, "jobs": jobs}
@@ -2562,7 +2603,7 @@ def bulk_purge_jobs(body: BulkPurgeBody):
 
 
 class AddJobsBody(BaseModel):
-    urls: List[str]
+    urls: list[str]
     skip_review: bool = True
 
 
@@ -2570,8 +2611,9 @@ class AddJobsBody(BaseModel):
 def add_jobs_by_url(body: AddJobsBody):
     try:
         from datetime import datetime as _dt
-        from scripts.scrape_url import canonicalize_url
+
         from scripts.db import get_existing_urls, insert_job
+        from scripts.scrape_url import canonicalize_url
         from scripts.task_runner import submit_task
         db_path = _db_path()
         existing = get_existing_urls(db_path)
@@ -2601,8 +2643,9 @@ async def upload_jobs_csv(file: UploadFile):
         import csv as _csv
         import io as _io
         from datetime import datetime as _dt
-        from scripts.scrape_url import canonicalize_url
+
         from scripts.db import get_existing_urls, insert_job
+        from scripts.scrape_url import canonicalize_url
         from scripts.task_runner import submit_task
         content = await file.read()
         reader = _csv.DictReader(_io.StringIO(content.decode("utf-8", errors="replace")))
@@ -2993,7 +3036,7 @@ def config_user():
 
 # ── Settings: My Profile endpoints ───────────────────────────────────────────
 
-from scripts.user_profile import load_user_profile, save_user_profile  # noqa: E402
+from scripts.user_profile import load_user_profile, save_user_profile
 
 
 def _user_yaml_path() -> str:
@@ -3058,8 +3101,8 @@ class UserProfilePayload(BaseModel):
     career_summary: str = ""
     candidate_voice: str = ""
     inference_profile: str = "cpu"
-    mission_preferences: List[MissionPrefModel] = []
-    nda_companies: List[str] = []
+    mission_preferences: list[MissionPrefModel] = []
+    nda_companies: list[str] = []
     accessibility_focus: bool = False
     lgbtq_focus: bool = False
 
@@ -3344,7 +3387,7 @@ def generate_candidate_voice():
 
 class WorkEntry(BaseModel):
     title: str = ""; company: str = ""; period: str = ""; location: str = ""
-    industry: str = ""; responsibilities: str = ""; skills: List[str] = []
+    industry: str = ""; responsibilities: str = ""; skills: list[str] = []
 
 class EducationEntry(BaseModel):
     institution: str = ""; degree: str = ""; field: str = ""
@@ -3354,15 +3397,15 @@ class ResumePayload(BaseModel):
     name: str = ""; email: str = ""; phone: str = ""; linkedin_url: str = ""
     surname: str = ""; address: str = ""; city: str = ""; zip_code: str = ""; date_of_birth: str = ""
     career_summary: str = ""
-    experience: List[WorkEntry] = []
-    education: List[EducationEntry] = []
-    achievements: List[str] = []
+    experience: list[WorkEntry] = []
+    education: list[EducationEntry] = []
+    achievements: list[str] = []
     salary_min: int = 0; salary_max: int = 0; notice_period: str = ""
     remote: bool = False; relocation: bool = False
     assessment: bool = False; background_check: bool = False
     gender: str = ""; pronouns: str = ""; ethnicity: str = ""
     veteran_status: str = ""; disability: str = ""
-    skills: List[str] = []; domains: List[str] = []; keywords: List[str] = []
+    skills: list[str] = []; domains: list[str] = []; keywords: list[str] = []
 
 def _config_dir() -> Path:
     """Resolve per-user config directory. Always co-located with user.yaml."""
@@ -3483,8 +3526,11 @@ def get_resume():
 def save_resume(payload: ResumePayload):
     """Save resume profile. If a default library entry exists, sync content back to it."""
     import json as _json
+
     from scripts.db import (
         get_resume as _get_resume,
+    )
+    from scripts.db import (
         update_resume_content as _update_content,
     )
     from scripts.resume_sync import profile_to_library
@@ -3528,9 +3574,9 @@ def create_blank_resume():
 async def upload_resume(file: UploadFile):
     try:
         from scripts.resume_parser import (
-            extract_text_from_pdf,
             extract_text_from_docx,
             extract_text_from_odt,
+            extract_text_from_pdf,
             structure_resume,
         )
         suffix = Path(file.filename).suffix.lower()
@@ -3577,7 +3623,9 @@ async def upload_resume(file: UploadFile):
 
         # Also add to resume library and mark as default
         import json as _json
-        from scripts.db import create_resume as _create_r, set_default_resume as _set_default
+
+        from scripts.db import create_resume as _create_r
+        from scripts.db import set_default_resume as _set_default
         db_path = Path(_request_db.get() or DB_PATH)
         resume_name = Path(file.filename).stem or "Uploaded Resume"
         library_entry = _create_r(
@@ -3599,15 +3647,15 @@ async def upload_resume(file: UploadFile):
 # ── Settings: Search Preferences endpoints ────────────────────────────────────
 
 class SearchPrefsPayload(BaseModel):
-    remote_preference: List[str] = ["onsite", "remote", "hybrid"]
-    job_titles: List[str] = []
-    locations: List[str] = []
-    exclude_keywords: List[str] = []
-    job_boards: List[dict] = []
-    custom_board_urls: List[str] = []
-    blocklist_companies: List[str] = []
-    blocklist_industries: List[str] = []
-    blocklist_locations: List[str] = []
+    remote_preference: list[str] = ["onsite", "remote", "hybrid"]
+    job_titles: list[str] = []
+    locations: list[str] = []
+    exclude_keywords: list[str] = []
+    job_boards: list[dict] = []
+    custom_board_urls: list[str] = []
+    blocklist_companies: list[str] = []
+    blocklist_industries: list[str] = []
+    blocklist_locations: list[str] = []
 
 def _default_boards_for_locations(locations: list[str]) -> list[str]:
     """Sensible default job boards, expanded with regional boards when a
@@ -3737,12 +3785,12 @@ def save_search_prefs(payload: SearchPrefsPayload):
 
 class SearchSuggestPayload(BaseModel):
     type: str          # "titles" | "locations" | "exclude_keywords"
-    current: List[str] = []
+    current: list[str] = []
 
 
 class ResumeTagSuggestPayload(BaseModel):
     type: str          # "skills" | "domains" | "keywords"
-    current: List[str] = []
+    current: list[str] = []
 
 
 @app.post("/api/settings/resume/suggest-tags")
@@ -3857,10 +3905,10 @@ def suggest_search(payload: SearchSuggestPayload):
 # ── Settings: System — LLM Backends + BYOK endpoints ─────────────────────────
 
 class ByokAckPayload(BaseModel):
-    backends: List[str] = []
+    backends: list[str] = []
 
 class LlmConfigPayload(BaseModel):
-    backends: List[dict] = []
+    backends: list[dict] = []
 
 LLM_CONFIG_PATH = Path("config/llm.yaml")
 
@@ -3959,14 +4007,14 @@ def byok_ack(payload: ByokAckPayload):
 # scripts/llm_router.py, rather than by writing into this same file. Do not
 # "fix" the cloud branch back to file co-location -- that reintroduces the
 # bug this file's fix resolved (peregrine#173).
-from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH  # noqa: E402
+from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
 
 # Imported at module scope (not per-call-site) so that `router_for_tenant` is
 # a patchable attribute of this module for tests -- a per-call-site local
 # `from scripts.llm_router import ... router_for_tenant` would re-bind a
 # fresh reference to the real function on every call, silently shadowing any
 # `patch("dev_api.router_for_tenant", ...)` applied in tests.
-from scripts.llm_router import router_for_tenant  # noqa: E402
+from scripts.llm_router import router_for_tenant
 
 
 class TaskModelAssignment(BaseModel):
@@ -4102,7 +4150,7 @@ def _configured_ollama_base_url() -> str:
 
 
 @app.get("/api/settings/llm/ollama-models")
-def get_ollama_models(host: Optional[str] = None, port: Optional[int] = None):
+def get_ollama_models(host: str | None = None, port: int | None = None):
     """Return available Ollama models by querying the configured Ollama host,
     or an explicit host/port override -- lets the frontend show a just-detected
     host's models immediately, before the user has saved it."""
@@ -4134,7 +4182,7 @@ def _configured_vllm_base_url() -> str:
 
 
 @app.get("/api/settings/llm/vllm-models")
-def get_vllm_models(host: Optional[str] = None, port: Optional[int] = None):
+def get_vllm_models(host: str | None = None, port: int | None = None):
     """Return models currently served by vLLM's OpenAI-compatible /v1/models
     endpoint, from the configured host or an explicit override."""
     try:
@@ -4546,11 +4594,11 @@ class LlmBackendPayload(BaseModel):
     openai_url: str = ""
     openai_key: str = ""
     ollama_host: str = ""
-    ollama_port: Optional[int] = None
+    ollama_port: int | None = None
     vllm_host: str = ""
-    vllm_port: Optional[int] = None
+    vllm_port: int | None = None
     searxng_host: str = ""
-    searxng_port: Optional[int] = None
+    searxng_port: int | None = None
     inference_profile: str = ""
     ollama_model: str = ""
 
@@ -4715,8 +4763,7 @@ def _load_training_pairs() -> list[dict]:
 def _save_training_pairs(pairs: list[dict]) -> None:
     _TRAINING_JSONL.parent.mkdir(parents=True, exist_ok=True)
     with open(_TRAINING_JSONL, "w", encoding="utf-8") as f:
-        for p in pairs:
-            f.write(json.dumps(p, ensure_ascii=False) + "\n")
+        f.writelines(json.dumps(p, ensure_ascii=False) + "\n" for p in pairs)
 
 
 @app.get("/api/settings/fine-tune/status")
@@ -4895,7 +4942,9 @@ def include_db_pair(job_id: int):
 def export_training_jsonl():
     _training_opt_in_required()
     import json as _json
+
     from fastapi.responses import StreamingResponse
+
     from scripts.db import get_training_pairs
 
     db_path = Path(_request_db.get() or DB_PATH)
@@ -5007,8 +5056,8 @@ class BackupCreatePayload(BaseModel):
 @app.post("/api/settings/data/backup/create")
 def create_backup(payload: BackupCreatePayload):
     try:
-        import zipfile
         import datetime
+        import zipfile
         cfg_dir = _config_dir()
         backup_dir = cfg_dir.parent / "backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
@@ -5083,7 +5132,7 @@ def get_developer():
 
 
 class DevTierPayload(BaseModel):
-    tier: Optional[str]
+    tier: str | None
 
 @app.put("/api/settings/developer/tier")
 def set_dev_tier(payload: DevTierPayload):
@@ -5136,13 +5185,13 @@ def wizard_reset():
 def export_classifier():
     try:
         import json as _json
+
         from scripts.db import get_labeled_emails
         emails = get_labeled_emails(DB_PATH)
         export_path = Path("data/email_score.jsonl")
         export_path.parent.mkdir(parents=True, exist_ok=True)
         with open(export_path, "w") as f:
-            for e in emails:
-                f.write(_json.dumps(e) + "\n")
+            f.writelines(_json.dumps(e) + "\n" for e in emails)
         return {"ok": True, "count": len(emails), "path": str(export_path)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -5406,8 +5455,8 @@ def _fetch_cforch_nodes() -> list[dict]:
     if not url:
         return []
     try:
-        import urllib.request
         import json as _json
+        import urllib.request
         req = urllib.request.Request(f"{url}/api/nodes", headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = _json.loads(resp.read())
@@ -5595,8 +5644,8 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
 def wizard_complete():
     """Finalise the wizard: set wizard_complete=true, apply service URLs."""
     try:
-        from scripts.user_profile import UserProfile
         from scripts.generate_llm_config import apply_service_urls
+        from scripts.user_profile import UserProfile
 
         yaml_path = _wizard_yaml_path()
         llm_yaml = Path(yaml_path).parent / "llm.yaml"
@@ -5719,7 +5768,7 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
         k: v for k, v in body.profile_so_far.items() if v not in (None, "", [], {})
     }
     if gathered_so_far:
-        gathered = ", ".join(f"{k}={repr(v)}" for k, v in gathered_so_far.items())
+        gathered = ", ".join(f"{k}={v!r}" for k, v in gathered_so_far.items())
         profile_context = f"\n\n[Already gathered: {gathered}]"
     else:
         profile_context = ""
@@ -5788,16 +5837,16 @@ def wizard_ai_finalize(request: WizardFinalizeRequest):
 # ── Messaging models ──────────────────────────────────────────────────────────
 
 class MessageCreateBody(BaseModel):
-    job_id: Optional[int] = None
-    job_contact_id: Optional[int] = None
+    job_id: int | None = None
+    job_contact_id: int | None = None
     type: str = "email"
-    direction: Optional[str] = None
-    subject: Optional[str] = None
-    body: Optional[str] = None
-    from_addr: Optional[str] = None
-    to_addr: Optional[str] = None
-    template_id: Optional[int] = None
-    logged_at: Optional[str] = None
+    direction: str | None = None
+    subject: str | None = None
+    body: str | None = None
+    from_addr: str | None = None
+    to_addr: str | None = None
+    template_id: int | None = None
+    logged_at: str | None = None
 
 
 class MessageUpdateBody(BaseModel):
@@ -5807,24 +5856,24 @@ class MessageUpdateBody(BaseModel):
 class TemplateCreateBody(BaseModel):
     title: str
     category: str = "custom"
-    subject_template: Optional[str] = None
+    subject_template: str | None = None
     body_template: str
 
 
 class TemplateUpdateBody(BaseModel):
-    title: Optional[str] = None
-    category: Optional[str] = None
-    subject_template: Optional[str] = None
-    body_template: Optional[str] = None
+    title: str | None = None
+    category: str | None = None
+    subject_template: str | None = None
+    body_template: str | None = None
 
 
 # ── Messaging (MIT) ───────────────────────────────────────────────────────────
 
 @app.get("/api/messages")
 def get_messages(
-    job_id: Optional[int] = None,
-    type: Optional[str] = None,
-    direction: Optional[str] = None,
+    job_id: int | None = None,
+    type: str | None = None,
+    direction: str | None = None,
     limit: int = Query(default=100, ge=1, le=1000),
 ):
     from scripts.messaging import list_messages
@@ -5911,9 +5960,9 @@ def _get_effective_tier() -> str:
 @app.post("/api/contacts/{contact_id}/draft-reply")
 def draft_reply(contact_id: int):
     """Generate an LLM draft reply for an inbound job_contacts row. Tier-gated."""
-    from scripts.wizard.tiers import can_use, has_configured_llm
-    from scripts.messaging import create_message
     from scripts.llm_reply_draft import generate_draft_reply
+    from scripts.messaging import create_message
+    from scripts.wizard.tiers import can_use, has_configured_llm
 
     db_path = Path(_request_db.get() or DB_PATH)
     tier = _get_effective_tier()

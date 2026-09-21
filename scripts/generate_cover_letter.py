@@ -21,8 +21,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from scripts.cf_orch_client import CfOrchTaskError, complete_via_cf_orch
 from scripts.user_profile import UserProfile
-from scripts.cf_orch_client import complete_via_cf_orch, CfOrchTaskError
+
 _USER_YAML = Path(__file__).parent.parent / "config" / "user.yaml"
 _profile = UserProfile(_USER_YAML) if UserProfile.exists(_USER_YAML) else None
 
@@ -307,16 +308,14 @@ def generate(
 
     if _router is None:
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from scripts.llm_router import LLMRouter, CONFIG_PATH
-        if isinstance(config_path, dict):
-            resolved = config_path
-        elif config_path and Path(config_path).exists():
+        from scripts.llm_router import CONFIG_PATH, LLMRouter
+        if isinstance(config_path, dict) or config_path and Path(config_path).exists():
             resolved = config_path
         else:
             resolved = CONFIG_PATH
         _router = LLMRouter(resolved)
 
-    from scripts.llm_router import TaskModelUnreachableError, TaskModelNotAssignedError
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
         result = _router.complete_task("primary", prompt, max_tokens=1200)
     except TaskModelNotAssignedError:
@@ -338,8 +337,9 @@ def main() -> None:
     title, company, description = args.title, args.company, args.description
 
     if args.job_id is not None:
-        from scripts.db import DEFAULT_DB
         import sqlite3
+
+        from scripts.db import DEFAULT_DB
         conn = sqlite3.connect(DEFAULT_DB)
         conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (args.job_id,)).fetchone()

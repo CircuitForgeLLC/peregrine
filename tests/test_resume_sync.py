@@ -1,9 +1,9 @@
 """Unit tests for scripts.resume_sync — format transform between library and profile."""
 from scripts.resume_sync import (
-    library_to_profile_content,
-    profile_to_library,
-    make_auto_backup_name,
     blank_fields_on_import,
+    library_to_profile_content,
+    make_auto_backup_name,
+    profile_to_library,
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

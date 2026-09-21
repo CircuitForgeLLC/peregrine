@@ -1,8 +1,9 @@
 """Tests for scripts/suggest_helpers.py."""
 import json
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 RESUME_PATH = Path(__file__).parent.parent / "config" / "plain_text_resume.yaml"
 

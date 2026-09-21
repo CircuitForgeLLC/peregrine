@@ -6,19 +6,21 @@ are flagged as regressions.
 Run: pytest tests/e2e/test_interactions.py --mode=demo -v
 """
 from __future__ import annotations
+
 import pytest
 
 from tests.e2e.conftest import (
-    wait_for_streamlit, screenshot_on_fail,
+    screenshot_on_fail,
+    wait_for_streamlit,
 )
 from tests.e2e.models import diff_errors
-from tests.e2e.pages.home_page import HomePage
-from tests.e2e.pages.job_review_page import JobReviewPage
 from tests.e2e.pages.apply_page import ApplyPage
-from tests.e2e.pages.interviews_page import InterviewsPage
+from tests.e2e.pages.home_page import HomePage
 from tests.e2e.pages.interview_prep_page import InterviewPrepPage
-from tests.e2e.pages.survey_page import SurveyPage
+from tests.e2e.pages.interviews_page import InterviewsPage
+from tests.e2e.pages.job_review_page import JobReviewPage
 from tests.e2e.pages.settings_page import SettingsPage
+from tests.e2e.pages.survey_page import SurveyPage
 
 PAGE_CLASSES = [
     HomePage, JobReviewPage, ApplyPage, InterviewsPage,

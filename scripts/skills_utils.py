@@ -5,6 +5,7 @@ load_suggestions(category)  → list[str]   bundled suggestions for a category
 filter_tag(tag)             → str | None   cleaned tag, or None if rejected
 """
 from __future__ import annotations
+
 import re
 from pathlib import Path
 
@@ -18,7 +19,7 @@ _BLOCKED = {
     "fuck", "shit", "ass", "bitch", "cunt", "dick", "bastard", "damn",
 }
 
-_URL_RE = re.compile(r"https?://|www\.|\.com\b|\.net\b|\.org\b", re.I)
+_URL_RE = re.compile(r"https?://|www\.|\.com\b|\.net\b|\.org\b", re.IGNORECASE)
 _ALLOWED_CHARS = re.compile(r"^[\w\s\-\.\+\#\/\&\(\)]+$", re.UNICODE)
 
 

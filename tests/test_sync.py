@@ -1,6 +1,5 @@
 # tests/test_sync.py
-from unittest.mock import patch, MagicMock
-
+from unittest.mock import MagicMock, patch
 
 SAMPLE_FM = {
     "title_field": "Salary", "job_title": "Job Title", "company": "Company Name",
@@ -15,8 +14,8 @@ SAMPLE_NOTION_CFG = {"token": "secret_test", "database_id": "fake-db-id", "field
 
 def test_sync_pushes_approved_jobs(tmp_path):
     """sync_to_notion pushes approved jobs and marks them synced."""
+    from scripts.db import get_jobs_by_status, init_db, insert_job, update_job_status
     from scripts.sync import sync_to_notion
-    from scripts.db import init_db, insert_job, get_jobs_by_status, update_job_status
 
     db_path = tmp_path / "test.db"
     init_db(db_path)
@@ -42,8 +41,8 @@ def test_sync_pushes_approved_jobs(tmp_path):
 
 def test_sync_falls_back_to_core_fields_on_validation_error(tmp_path):
     """When Notion returns a validation_error (missing column), sync retries without optional fields."""
+    from scripts.db import get_jobs_by_status, init_db, insert_job, update_job_status
     from scripts.sync import sync_to_notion
-    from scripts.db import init_db, insert_job, get_jobs_by_status, update_job_status
 
     db_path = tmp_path / "test.db"
     init_db(db_path)
@@ -73,8 +72,8 @@ def test_sync_falls_back_to_core_fields_on_validation_error(tmp_path):
 
 def test_sync_returns_zero_when_nothing_approved(tmp_path):
     """sync_to_notion returns 0 when there are no approved jobs."""
-    from scripts.sync import sync_to_notion
     from scripts.db import init_db
+    from scripts.sync import sync_to_notion
 
     db_path = tmp_path / "test.db"
     init_db(db_path)
