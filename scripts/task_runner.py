@@ -248,11 +248,14 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
         elif task_type == "cover_letter":
             import json as _json
+            import os as _os
             p = _json.loads(params or "{}")
             from scripts.generate_cover_letter import generate
-            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
+            from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH, _merged_cloud_llm_config
             _cfg_dir = Path(db_path).parent / "config"
             _user_yaml = _cfg_dir / "user.yaml"
+            _cloud_mode = _os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
+            _llm_config_path = _merged_cloud_llm_config(db_path) if _cloud_mode else LLM_ROUTER_CONFIG_PATH
             result = generate(
                 job.get("title", ""),
                 job.get("company", ""),
@@ -260,7 +263,7 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 previous_result=p.get("previous_result", ""),
                 feedback=p.get("feedback", ""),
                 is_jobgether=job.get("source") == "jobgether",
-                config_path=LLM_ROUTER_CONFIG_PATH,
+                config_path=_llm_config_path,
                 user_yaml_path=_user_yaml,
                 user_id=_resolve_cloud_user_id(db_path),
             )
