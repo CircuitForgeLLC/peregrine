@@ -498,9 +498,9 @@ def _llm_career_summary(raw_text: str) -> str:
             f"Resume:\n{raw_text[:1500]}"
         )
         return LLMRouter().complete(prompt)
-    except Exception:  # noqa: BLE001 - LLM router call can fail via network errors,
-        # provider/API exceptions, or router config issues; this is a best-effort
-        # optional enhancement so any failure should fall back to no summary.
+    except Exception:  # LLM router call can fail via network errors, provider/API
+        # exceptions, or router config issues; this is a best-effort optional
+        # enhancement so any failure should fall back to no summary.
         log.warning("[resume_parser] LLM career summary generation failed", exc_info=True)
         return ""
 
