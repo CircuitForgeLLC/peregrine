@@ -2048,7 +2048,7 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
         "Be specific and genuine. Do not use hollow filler phrases."
     )
 
-    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
         answer = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt)
         return {"answer": answer.strip()}
@@ -3268,7 +3268,7 @@ def generate_career_summary():
         "Be specific, highlight key strengths, and avoid hollow filler phrases like "
         "'results-driven' or 'passionate self-starter'."
     )
-    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
         summary = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"summary": summary.strip()}
@@ -3291,7 +3291,7 @@ def generate_mission_preferences():
         "'label' (human-readable name), and 'note' (one sentence on why it fits). "
         "Only output the JSON array, no other text."
     )
-    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
         raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
@@ -3330,7 +3330,7 @@ def generate_candidate_voice():
         "values that come through in their writing, and any standout personality. "
         "Write it in third person as a style directive (e.g. 'Writes in a clear, direct tone...')."
     )
-    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
         voice = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"voice": voice.strip()}
@@ -3785,7 +3785,7 @@ def suggest_resume_tags(payload: ResumeTagSuggestPayload):
     else:
         raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
 
-    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
         raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
@@ -3838,7 +3838,7 @@ def suggest_search(payload: SearchSuggestPayload):
     else:
         raise HTTPException(400, f"Unknown suggestion type: {payload.type}")
 
-    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
         raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
@@ -3952,6 +3952,13 @@ def byok_ack(payload: ByokAckPayload):
 # different path from `_config_dir()` (per-user data directory, /app/data/config
 # in the Docker deployment), so it must be spelled out explicitly rather than
 # assumed to coincide.
+#
+# Cloud mode is a deliberate exception to this co-location invariant:
+# per-tenant `task_models` live in a separate file and are merged with the
+# shared backend config in memory at call time by `router_for_tenant()` in
+# scripts/llm_router.py, rather than by writing into this same file. Do not
+# "fix" the cloud branch back to file co-location -- that reintroduces the
+# bug this file's fix resolved (peregrine#173).
 from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH  # noqa: E402
 
 # Imported at module scope (not per-call-site) so that `router_for_tenant` is
@@ -5719,7 +5726,7 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
 
     prompt = history_block + profile_context
 
-    from scripts.llm_router import LLMRouter, TaskModelNotAssignedError, TaskModelUnreachableError
+    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
     try:
         response_text = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
     except TaskModelNotAssignedError:
