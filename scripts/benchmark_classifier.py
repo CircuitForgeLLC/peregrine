@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Email classifier benchmark — compare HuggingFace models against our 6 labels.
 

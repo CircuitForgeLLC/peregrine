@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Generate demo/seed.sql — committed seed INSERT statements for the demo DB.
 

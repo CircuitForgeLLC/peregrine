@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Peregrine preflight check.
 
@@ -74,7 +73,7 @@ _DOCKER_INTERNAL: dict[str, tuple[str, int]] = {
 
 def _sh(*cmd: str, timeout: int = 5) -> str:
     try:
-        r = subprocess.run(list(cmd), capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(list(cmd), capture_output=True, text=True, timeout=timeout, check=False)
         return r.stdout.strip() if r.returncode == 0 else ""
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return ""
