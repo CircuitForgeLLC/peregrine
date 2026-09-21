@@ -159,7 +159,7 @@ def push_to_notion(notion: Client, db_id: str, job: dict, fm: dict) -> None:
             fm["source"]:      {"multi_select": [{"name": str(job.get("site", "unknown")).title()}]},
             fm["status"]:      {"select": {"name": fm["status_new"]}},
             fm["remote"]:      {"checkbox": bool(job.get("is_remote", False))},
-            fm["date_found"]:  {"date": {"start": datetime.now().isoformat()[:10]}},
+            fm["date_found"]:  {"date": {"start": datetime.now().isoformat()[:10]}},  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
         },
     )
 
@@ -240,7 +240,7 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
             "is_remote":   bool(job_row.get("is_remote", False)),
             "salary":      job_row.get("salary", ""),
             "description": job_row.get("description", ""),
-            "date_found":  datetime.now().isoformat()[:10],
+            "date_found":  datetime.now().isoformat()[:10],  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
         })
         existing_urls.add(url)
         return True

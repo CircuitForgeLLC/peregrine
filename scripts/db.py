@@ -451,7 +451,7 @@ def finalize_resume(db_path: Path = DEFAULT_DB, job_id: int | None = None,
         if row["optimized_resume"]:
             from datetime import datetime
             archive.append({
-                "archived_at": datetime.now().isoformat()[:16],
+                "archived_at": datetime.now().isoformat()[:16],  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
                 "text": row["optimized_resume"],
             })
 
@@ -512,7 +512,7 @@ def mark_applied(db_path: Path = DEFAULT_DB, ids: list[int] | None = None) -> No
     """Set status='applied' and record today's date for a list of job IDs."""
     if not ids:
         return
-    today = datetime.now().isoformat()[:10]
+    today = datetime.now().isoformat()[:10]  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     conn = sqlite3.connect(db_path)
     conn.execute(
         f"UPDATE jobs SET status = 'applied', applied_at = ? WHERE id IN ({','.join('?' * len(ids))})",
@@ -654,7 +654,7 @@ def get_interview_jobs(db_path: Path = DEFAULT_DB) -> dict[str, list[dict]]:
 
 def advance_to_stage(db_path: Path = DEFAULT_DB, job_id: int | None = None, stage: str = "") -> None:
     """Move a job to the next interview stage and record a timestamp."""
-    now = datetime.now().isoformat()[:16]
+    now = datetime.now().isoformat()[:16]  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     ts_col = _STAGE_TS_COL.get(stage)
     conn = sqlite3.connect(db_path)
     if ts_col:
@@ -707,7 +707,7 @@ def add_contact(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                 message_id: str = "",
                 stage_signal: str = "") -> int:
     """Log an email contact. Returns the new row id."""
-    ts = received_at or datetime.now().isoformat()[:16]
+    ts = received_at or datetime.now().isoformat()[:16]  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     conn = sqlite3.connect(db_path)
     cur = conn.execute(
         """INSERT INTO job_contacts
@@ -787,7 +787,7 @@ def save_research(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                   accessibility_brief: str = "",
                   scrape_used: int = 0) -> None:
     """Insert or replace a company research record for a job."""
-    now = datetime.now().isoformat()[:16]
+    now = datetime.now().isoformat()[:16]  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     conn = sqlite3.connect(db_path)
     conn.execute(
         """INSERT INTO company_research
@@ -912,7 +912,7 @@ def insert_task(db_path: Path = DEFAULT_DB, task_type: str = "",
 def update_task_status(db_path: Path = DEFAULT_DB, task_id: int | None = None,
                        status: str = "", error: str | None = None) -> None:
     """Update a task's status and set the appropriate timestamp."""
-    now = datetime.now().isoformat()[:16]
+    now = datetime.now().isoformat()[:16]  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     conn = sqlite3.connect(db_path)
     if status == "running":
         conn.execute(
