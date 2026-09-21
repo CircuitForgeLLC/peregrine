@@ -96,6 +96,27 @@ def test_run_task_cover_letter_uses_real_llm_config_not_probe_cache_file(tmp_pat
     assert called_config_path == LLM_ROUTER_CONFIG_PATH
 
 
+def test_run_task_cover_letter_cloud_mode_uses_tenant_task_models(tmp_path):
+    """Cloud mode's cover_letter task must pass a per-tenant-aware config
+    to generate(), not the shared LLM_ROUTER_CONFIG_PATH -- otherwise a
+    cloud tenant's Primary task assignment is silently ignored for the one
+    feature (cover letters) task_models.primary exists for."""
+    db, job_id = _make_db(tmp_path)
+    from scripts.db import insert_task
+    task_id, _ = insert_task(db, "cover_letter", job_id)
+
+    with patch.dict("os.environ", {"CLOUD_MODE": "true"}, clear=False), \
+         patch("scripts.generate_cover_letter.generate", return_value="Dear Hiring Manager,\nGreat fit!") as mock_generate:
+        from scripts.task_runner import _run_task
+        _run_task(db, task_id, "cover_letter", job_id)
+
+    called_config_path = mock_generate.call_args.kwargs["config_path"]
+    # In cloud mode this must be a dict (the per-tenant merge), never the
+    # shared LLM_ROUTER_CONFIG_PATH Path object.
+    assert isinstance(called_config_path, dict)
+    assert "task_models" in called_config_path
+
+
 def test_run_task_company_research_success(tmp_path):
     """_run_task marks running→completed and saves research to DB."""
     db, job_id = _make_db(tmp_path)

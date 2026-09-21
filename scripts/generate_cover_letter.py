@@ -225,7 +225,7 @@ def generate(
     feedback: str = "",
     is_jobgether: bool = False,
     _router=None,
-    config_path: "Path | None" = None,
+    config_path: "Path | dict | None" = None,
     user_yaml_path: "Path | None" = None,
     user_id: str | None = None,
 ) -> str:
@@ -234,6 +234,10 @@ def generate(
     Pass previous_result + feedback for iterative refinement — the prior draft
     and requested changes are appended to the prompt so the LLM revises rather
     than starting from scratch.
+
+    config_path can be a file Path (self-hosted mode) or a pre-merged dict
+    (cloud mode). Cloud mode passes a dict from _merged_cloud_llm_config()
+    so that a tenant's task_models.primary assignment is used.
 
     user_yaml_path overrides the module-level profile — required in cloud mode
     so each user's name/voice/mission prefs are used instead of the global default.
@@ -304,7 +308,12 @@ def generate(
     if _router is None:
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from scripts.llm_router import LLMRouter, CONFIG_PATH
-        resolved = config_path if (config_path and Path(config_path).exists()) else CONFIG_PATH
+        if isinstance(config_path, dict):
+            resolved = config_path
+        elif config_path and Path(config_path).exists():
+            resolved = config_path
+        else:
+            resolved = CONFIG_PATH
         _router = LLMRouter(resolved)
 
     from scripts.llm_router import TaskModelUnreachableError, TaskModelNotAssignedError
