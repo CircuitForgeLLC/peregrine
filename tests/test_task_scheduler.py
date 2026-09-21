@@ -366,7 +366,7 @@ def test_singleton_thread_safe(tmp_db):
         t.join()
 
     assert not errors
-    assert len(set(id(s) for s in instances)) == 1  # all the same object
+    assert len({id(s) for s in instances}) == 1  # all the same object
 
 
 def test_reset_scheduler_cleans_up(tmp_db):

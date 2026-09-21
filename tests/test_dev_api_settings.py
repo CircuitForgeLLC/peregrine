@@ -18,7 +18,7 @@ def client():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _write_user_yaml(path: Path, data: dict = None):
+def _write_user_yaml(path: Path, data: dict | None = None):
     """Write a minimal user.yaml to the given path."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:

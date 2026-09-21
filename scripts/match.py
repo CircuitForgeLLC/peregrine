@@ -160,7 +160,7 @@ def run_match(page_url_or_id: str) -> None:
     print("[match] Written to Notion.")
 
 
-def score_pending_jobs(db_path: Path = None) -> int:
+def score_pending_jobs(db_path: Path | None = None) -> int:
     """
     Score all unscored jobs (any status) in SQLite using the description
     already scraped during discovery. Writes match_score + keyword_gaps back.
