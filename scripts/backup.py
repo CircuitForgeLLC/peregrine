@@ -99,8 +99,10 @@ def _decrypt_db_to_bytes(db_path: Path, db_key: str) -> bytes:
         return Path(tmp_path).read_bytes()
     finally:
         try:
+            # Best-effort cleanup of the plaintext temp file; os.unlink only
+            # ever raises OSError (missing file, permission, locked handle).
             os.unlink(tmp_path)
-        except Exception:
+        except OSError:
             pass
 
 
@@ -126,8 +128,10 @@ def _encrypt_db_from_bytes(plain_bytes: bytes, dest_path: Path, db_key: str) -> 
         conn.close()
     finally:
         try:
+            # Best-effort cleanup of the plaintext temp file; os.unlink only
+            # ever raises OSError (missing file, permission, locked handle).
             os.unlink(tmp_path)
-        except Exception:
+        except OSError:
             pass
 
 
