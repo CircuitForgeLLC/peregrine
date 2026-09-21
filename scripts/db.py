@@ -988,11 +988,11 @@ def _resume_as_dict(row) -> dict:
         "is_default":  row["is_default"],
         "created_at":  row["created_at"],
         "updated_at":  row["updated_at"],
-        "synced_at":   row["synced_at"] if "synced_at" in row.keys() else None,
-        "score":         row["score"] if "score" in row.keys() else None,
-        "ats_score":     row["ats_score"] if "ats_score" in row.keys() else None,
-        "feedback_json": row["feedback_json"] if "feedback_json" in row.keys() else None,
-        "scored_at":     row["scored_at"] if "scored_at" in row.keys() else None,
+        "synced_at":   row["synced_at"] if "synced_at" in row.keys() else None,  # noqa: SIM118 -- row is sqlite3.Row, not a dict; `in row` checks VALUES not column names
+        "score":         row["score"] if "score" in row.keys() else None,  # noqa: SIM118
+        "ats_score":     row["ats_score"] if "ats_score" in row.keys() else None,  # noqa: SIM118
+        "feedback_json": row["feedback_json"] if "feedback_json" in row.keys() else None,  # noqa: SIM118
+        "scored_at":     row["scored_at"] if "scored_at" in row.keys() else None,  # noqa: SIM118
     }
 
 

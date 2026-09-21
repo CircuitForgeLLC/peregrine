@@ -125,7 +125,7 @@ def test_library_to_profile_missing_fields_no_keyerror():
 # ── profile_to_library ────────────────────────────────────────────────────────
 
 def test_profile_to_library_full_name():
-    text, struct = profile_to_library(PROFILE_PAYLOAD)
+    _text, struct = profile_to_library(PROFILE_PAYLOAD)
     assert struct["name"] == "Alex Rivera"
 
 def test_profile_to_library_experience_bullets_reconstructed():

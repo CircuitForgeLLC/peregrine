@@ -214,7 +214,7 @@ def test_submit_task_actually_completes(tmp_path):
 
     with patch("scripts.generate_cover_letter.generate", return_value="Cover letter text"):
         from scripts.task_runner import submit_task
-        task_id, _ = submit_task(db, "cover_letter", job_id)
+        _task_id, _ = submit_task(db, "cover_letter", job_id)
         # Wait for scheduler to complete the task (max 5s)
         for _ in range(50):
             task = get_task_for_job(db, "cover_letter", job_id)
@@ -440,7 +440,7 @@ def test_submit_task_passes_db_path_to_enqueue_in_cloud_mode(tmp_path, monkeypat
     monkeypatch.setattr("os.environ", {**__import__("os").environ, "CLOUD_MODE": "true"})
 
     from scripts.task_runner import submit_task
-    task_id, is_new = submit_task(db, "cover_letter", job_id, None)
+    task_id, _is_new = submit_task(db, "cover_letter", job_id, None)
 
     assert get_scheduler_calls == [None], "cloud mode must call get_scheduler with db_path=None"
     fake_scheduler.enqueue.assert_called_once_with(task_id, "cover_letter", job_id, None, db)
@@ -463,7 +463,7 @@ def test_submit_task_passes_real_db_path_to_get_scheduler_self_hosted(tmp_path, 
     monkeypatch.delenv("CLOUD_MODE", raising=False)
 
     from scripts.task_runner import submit_task
-    task_id, is_new = submit_task(db, "cover_letter", job_id, None)
+    task_id, _is_new = submit_task(db, "cover_letter", job_id, None)
 
     assert get_scheduler_calls == [db], "self-hosted must still pass the real db_path to get_scheduler"
     fake_scheduler.enqueue.assert_called_once_with(task_id, "cover_letter", job_id, None, db)

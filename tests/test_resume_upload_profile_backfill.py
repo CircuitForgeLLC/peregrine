@@ -49,7 +49,7 @@ def _upload(client):
 
 
 def test_upload_backfills_empty_profile_fields(fresh_db, monkeypatch):
-    db, cfg = fresh_db
+    _db, cfg = fresh_db
     import dev_api
     client = TestClient(dev_api.app)
 
@@ -65,7 +65,7 @@ def test_upload_backfills_empty_profile_fields(fresh_db, monkeypatch):
 
 
 def test_upload_never_overwrites_existing_profile_fields(fresh_db, monkeypatch):
-    db, cfg = fresh_db
+    _db, cfg = fresh_db
     (cfg / "user.yaml").write_text(yaml.dump({
         "name": "Existing Name",
         "email": "existing@example.com",

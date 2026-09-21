@@ -603,7 +603,7 @@ def test_insert_task_with_params(tmp_path):
     assert task_id == task_id2
     # Different section = new task
     params2 = json.dumps({"section": "job_titles"})
-    task_id3, is_new3 = insert_task(db, "wizard_generate", 0, params=params2)
+    _task_id3, is_new3 = insert_task(db, "wizard_generate", 0, params=params2)
     assert is_new3 is True
 
 

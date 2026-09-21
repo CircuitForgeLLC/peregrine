@@ -166,7 +166,7 @@ class EnhancedCompanyScraper:
         """Create necessary directories for caching and debugging"""
         # Create cache directories for all search types
         if self.args.use_cache:
-            for search_type in Config.SEARCH_TYPES.keys():
+            for search_type in Config.SEARCH_TYPES:
                 os.makedirs(os.path.join(Config.CACHE_DIR, search_type), exist_ok=True)
         
         if self.args.debug:
@@ -175,7 +175,7 @@ class EnhancedCompanyScraper:
             os.makedirs(os.path.join(Config.DEBUG_DIR, "patterns"), exist_ok=True)
         
         if self.args.save_raw:
-            for search_type in Config.SEARCH_TYPES.keys():
+            for search_type in Config.SEARCH_TYPES:
                 os.makedirs(os.path.join(Config.RAW_DIR, search_type), exist_ok=True)
     
     def load_companies(self):
@@ -912,7 +912,7 @@ class EnhancedCompanyScraper:
                 all_fields.update(result.keys())
             
             # Ensure 'company' is the first field
-            field_list = sorted(list(all_fields))
+            field_list = sorted(all_fields)
             if 'company' in field_list:
                 field_list.remove('company')
                 field_list = ['company'] + field_list

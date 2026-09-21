@@ -1174,9 +1174,9 @@ def score_resume_endpoint(resume_id: int):
         db_path=db_path,
         task_type="resume_score",
         job_id=0,
-        params=_json.dumps(dict(resume_id=resume_id)),
+        params=_json.dumps({"resume_id": resume_id}),
     )
-    return dict(task_id=task_id, is_new=is_new)
+    return {"task_id": task_id, "is_new": is_new}
 
 
 @app.get("/api/resumes/{resume_id}/score/task")
@@ -1198,8 +1198,8 @@ def resume_score_task_status(resume_id: int):
     ).fetchone()
     db.close()
     if not row:
-        return dict(status="none", stage=None, message=None)
-    return dict(status=row["status"], stage=row["stage"], message=row["error"])
+        return {"status": "none", "stage": None, "message": None}
+    return {"status": row["status"], "stage": row["stage"], "message": row["error"]}
 
 
 @app.get("/api/resumes/{resume_id}/score")
@@ -1212,7 +1212,7 @@ def get_resume_score_endpoint(resume_id: int):
     if not r:
         raise HTTPException(404, "Resume not found")
     feedback = _json.loads(r["feedback_json"]) if r.get("feedback_json") else None
-    return dict(score=feedback, scored_at=r.get("scored_at"))
+    return {"score": feedback, "scored_at": r.get("scored_at")}
 
 
 class ApplySuggestionBody(BaseModel):
@@ -5738,9 +5738,7 @@ def _can_use_ai_wizard(tier: str) -> bool:
     from scripts.wizard.tiers import can_use, has_configured_llm
     if can_use(tier, "llm_ai_wizard", has_byok=has_configured_llm()):
         return True
-    if _CLOUD_MODE and not bool(_load_wizard_yaml().get("wizard_complete", False)):
-        return True
-    return False
+    return bool(_CLOUD_MODE and not bool(_load_wizard_yaml().get("wizard_complete", False)))
 
 
 @app.post("/api/wizard/ai/interview")

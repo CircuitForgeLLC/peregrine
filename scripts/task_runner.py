@@ -387,7 +387,7 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 parse_err = ""
             else:
                 resume_text = ""
-                resume_struct, parse_err = structure_resume("")
+                resume_struct, _parse_err = structure_resume("")
 
             # Extract keyword gaps and build gap report (free tier)
             update_task_stage(db_path, task_id, "extracting keyword gaps")
