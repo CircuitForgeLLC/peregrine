@@ -93,9 +93,11 @@ def test_suggest_search_terms_raises_on_llm_exhausted():
     from scripts.suggest_helpers import suggest_search_terms
     mock_router = MagicMock()
     mock_router.complete.side_effect = RuntimeError("All LLM backends exhausted")
-    with patch("scripts.suggest_helpers.LLMRouter", return_value=mock_router):
-        with pytest.raises(RuntimeError, match="All LLM backends exhausted"):
-            suggest_search_terms(["CSM"], RESUME_PATH, BLOCKLIST, USER_PROFILE)
+    with (
+        patch("scripts.suggest_helpers.LLMRouter", return_value=mock_router),
+        pytest.raises(RuntimeError, match="All LLM backends exhausted"),
+    ):
+        suggest_search_terms(["CSM"], RESUME_PATH, BLOCKLIST, USER_PROFILE)
 
 
 # ── suggest_resume_keywords ───────────────────────────────────────────────────
@@ -144,6 +146,8 @@ def test_suggest_resume_keywords_raises_on_llm_exhausted():
     from scripts.suggest_helpers import suggest_resume_keywords
     mock_router = MagicMock()
     mock_router.complete.side_effect = RuntimeError("All LLM backends exhausted")
-    with patch("scripts.suggest_helpers.LLMRouter", return_value=mock_router):
-        with pytest.raises(RuntimeError, match="All LLM backends exhausted"):
-            suggest_resume_keywords(RESUME_PATH, CURRENT_KW)
+    with (
+        patch("scripts.suggest_helpers.LLMRouter", return_value=mock_router),
+        pytest.raises(RuntimeError, match="All LLM backends exhausted"),
+    ):
+        suggest_resume_keywords(RESUME_PATH, CURRENT_KW)

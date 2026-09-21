@@ -327,10 +327,9 @@ async def cloud_session_middleware(request: Request, call_next):
     if _CLOUD_MODE and _DIRECTUS_SECRET:
         cookie_header = request.headers.get("X-CF-Session", "")
         user_id = _resolve_cf_user_id(cookie_header)
-        if user_id:
-            if not _VALID_USER_ID_RE.match(user_id):
-                _log.warning("cloud_session_middleware: rejected non-UUID user_id: %s", user_id[:40])
-                user_id = None
+        if user_id and not _VALID_USER_ID_RE.match(user_id):
+            _log.warning("cloud_session_middleware: rejected non-UUID user_id: %s", user_id[:40])
+            user_id = None
         if user_id:
             first_access = user_id not in _seen_users
             if first_access:
@@ -1036,12 +1035,12 @@ def export_resume_pdf(job_id: int):
     from scripts.resume_optimizer import export_pdf
 
     struct = _get_final_struct(job_id)
-    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-    tmp.close()
-    export_pdf(struct, tmp.name)
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp_path = tmp.name
+    export_pdf(struct, tmp_path)
 
     return FileResponse(
-        tmp.name,
+        tmp_path,
         media_type="application/pdf",
         filename=f"resume-optimized-job-{job_id}.pdf",
     )
@@ -2547,7 +2546,7 @@ def trigger_score():
     try:
         result = subprocess.run(
             [sys.executable, "scripts/match.py"],
-            capture_output=True, text=True, cwd=str(PEREGRINE_ROOT),
+            capture_output=True, text=True, cwd=str(PEREGRINE_ROOT), check=False,
         )
         if result.returncode == 0:
             return {"ok": True, "output": result.stdout}
@@ -3602,7 +3601,13 @@ async def upload_resume(file: UploadFile):
         # Persist parsed data so store.load() reads the updated file
         resume_path = _resume_path()
         resume_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(resume_path, "w") as f:
+        with open(resume_path, "w") as f:  # noqa: ASYNC230 - small YAML write (a
+            # handful of resume fields); this handler already does substantially
+            # heavier synchronous work above it (PDF/DOCX text extraction) that
+            # ASYNC230 doesn't flag since it only targets open() calls, not general
+            # blocking work -- a real fix needs offloading the whole endpoint to a
+            # background task, not swapping this one write for aiofiles (not a
+            # current dependency) while the bigger blocking calls stay as-is.
             yaml.dump(result, f, allow_unicode=True, default_flow_style=False)
 
         # Backfill empty My Profile fields from the parsed resume -- never
@@ -4298,7 +4303,7 @@ def start_service(name: str):
         if not svc:
             raise HTTPException(404, "Unknown service")
         r = subprocess.run(["docker", "compose", "up", "-d", svc["compose_service"]],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, check=False)
         return {"ok": r.returncode == 0, "output": r.stdout + r.stderr}
     except HTTPException:
         raise
@@ -4313,7 +4318,7 @@ def stop_service(name: str):
         if not svc:
             raise HTTPException(404, "Unknown service")
         r = subprocess.run(["docker", "compose", "stop", svc["compose_service"]],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, check=False)
         return {"ok": r.returncode == 0, "output": r.stdout + r.stderr}
     except HTTPException:
         raise
@@ -4871,7 +4876,7 @@ def finetune_local_status():
     try:
         import subprocess
         result = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True, timeout=5
+            ["ollama", "list"], capture_output=True, text=True, timeout=5, check=False
         )
         model_ready = "alex-cover-writer" in (result.stdout or "")
         return {"model_ready": model_ready}

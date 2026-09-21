@@ -379,12 +379,13 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             if resume_path and Path(resume_path).exists():
                 resume_text = Path(resume_path).read_text(errors="replace")
                 resume_struct, parse_err = structure_resume(resume_text)
+                if parse_err:
+                    log.warning("[task_runner] resume parse error for task_id=%s: %s", task_id, parse_err)
             elif _plain_yaml.exists():
                 import yaml as _yaml
                 _raw = _yaml.safe_load(_plain_yaml.read_text(encoding="utf-8")) or {}
                 resume_struct = _normalize_aihawk_resume(_raw)
                 resume_text = resume_struct.get("career_summary", "")
-                parse_err = ""
             else:
                 resume_text = ""
                 resume_struct, _parse_err = structure_resume("")

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Compare email classifiers across models on a live sample from IMAP.
 

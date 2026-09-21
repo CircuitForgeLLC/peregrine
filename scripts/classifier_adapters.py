@@ -168,7 +168,11 @@ class ZeroShotAdapter(ClassifierAdapter):
         return self._model_id
 
     def load(self) -> None:
-        import scripts.classifier_adapters as _mod
+        import scripts.classifier_adapters as _mod  # noqa: PLW0406 - intentional
+        # self-import indirection, not an accident: tests patch the module-level
+        # `pipeline` symbol via patch("scripts.classifier_adapters.pipeline", ...),
+        # which only takes effect on attribute lookups through the module object,
+        # not on a name already bound directly into this function's local scope.
         _pipe_fn = _mod.pipeline
         if _pipe_fn is None:
             raise ImportError("transformers not installed — run: pip install transformers")
