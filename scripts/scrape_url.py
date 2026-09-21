@@ -149,7 +149,12 @@ def _scrape_glassdoor(url: str) -> dict:
         scraper.scraper_input = ScraperInput(site_type=[Site.GLASSDOOR])
         description = scraper._fetch_job_description(int(m.group(1)))
         return {"description": description} if description else {}
-    except Exception:
+    except Exception:  # noqa: BLE001 -- this block spans importing/using JobSpy's
+        # internal Glassdoor scraper (CSRF token fetch, session creation, HTTP calls,
+        # HTML/JSON parsing inside a third-party library we don't control), so the
+        # failure surface isn't limited to one exception family. Description fetch is
+        # a best-effort enrichment step; failing must degrade to an empty result, not
+        # abort the whole scrape.
         return {}
 
 
@@ -196,7 +201,11 @@ def _scrape_jobgether(url: str) -> dict:
         result["source"] = "jobgether"
         return {k: v for k, v in result.items() if v}
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- Playwright browser automation (launch,
+        # navigate, wait_for_load_state, in-page JS evaluate) can raise many distinct
+        # playwright.sync_api errors (timeouts, target-closed, navigation failures), and
+        # this scraper's contract (see docstring) is to always fall back to the URL-slug
+        # company extraction rather than propagate a scrape failure.
         print(f"[scrape_url] Jobgether Playwright error for {url}: {exc}")
         company = _company_from_jobgether_url(url)
         return {"company": company, "source": "jobgether"} if company else {}
@@ -261,7 +270,10 @@ def _scrape_oracle_hcm(url: str) -> dict:
         result["source"] = "oracle_hcm"
         return {k: v for k, v in result.items() if v}
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- same reasoning as _scrape_jobgether
+        # above: Playwright browser automation over an unpredictable third-party React
+        # SPA can raise many distinct playwright.sync_api errors, and this scraper must
+        # degrade to an empty result rather than crash the enrichment task.
         print(f"[scrape_url] Oracle HCM Playwright error for {url}: {exc}")
         return {}
 
@@ -293,7 +305,15 @@ def _parse_json_ld_or_og(html: str) -> dict:
                     "description": data.get("description", ""),
                     "salary": str(data.get("baseSalary", "")) if data.get("baseSalary") else "",
                 }.items() if v}
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 -- iterating arbitrary third-party
+            # JSON-LD `<script>` tags: `json.loads` can raise JSONDecodeError on
+            # malformed JSON, and if the parsed value isn't a dict-shaped JobPosting
+            # (a bare string/number/bool at the top level, or an unexpected nested
+            # shape for hiringOrganization/jobLocation/address) the chained `.get()`
+            # calls can raise AttributeError/TypeError — the exact shape of a random
+            # site's JSON-LD isn't something we control. Skipping to the next script
+            # tag (rather than logging every malformed tag) is the intended behavior;
+            # a genuine JobPosting match still gets returned normally above.
             continue
 
     def _meta(prop):
@@ -350,7 +370,14 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dic
     except requests.RequestException as exc:
         print(f"[scrape_url] HTTP error for job {job_id} ({url}): {exc}")
         return {}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- this dispatches to one of five
+        # board-specific scrapers (LinkedIn guest API, Indeed/generic JSON-LD+bs4
+        # parsing, JobSpy's internal Glassdoor scraper, Playwright automation for
+        # Jobgether/Oracle HCM), each with its own non-request failure surface
+        # (parsing, DOM extraction, third-party library internals); per this
+        # function's own docstring contract ("does not raise — failures are logged
+        # and the job row is left as-is"), any of those must degrade to an empty
+        # result rather than crash the background task.
         print(f"[scrape_url] Error scraping job {job_id} ({url}): {exc}")
         return {}
 

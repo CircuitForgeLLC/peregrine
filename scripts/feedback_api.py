@@ -34,7 +34,9 @@ def collect_context(page: str) -> dict:
             ["git", "describe", "--tags", "--always"],
             cwd=_ROOT, text=True, timeout=5,
         ).strip()
-    except Exception:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        # OSError covers FileNotFoundError (git not installed/not on PATH); the
+        # feedback report just falls back to a generic "dev" version label.
         version = "dev"
 
     # Tier from user.yaml
@@ -42,7 +44,11 @@ def collect_context(page: str) -> dict:
     try:
         user = yaml.safe_load((_ROOT / "config" / "user.yaml").read_text()) or {}
         tier = user.get("tier", "unknown")
-    except Exception:
+    except (OSError, yaml.YAMLError):
+        # config/user.yaml is legitimately absent for many installs (defaults haven't
+        # been written yet) — this is an expected, common path, not a real failure, so
+        # we deliberately don't log it on every feedback submission; the "unknown"
+        # default is already informative in the collected context.
         pass
 
     # LLM backend from llm.yaml — report first entry in fallback_order that's enabled
@@ -54,7 +60,12 @@ def collect_context(page: str) -> dict:
             if backends.get(name, {}).get("enabled", False):
                 llm_backend = name
                 break
-    except Exception:
+    except (OSError, yaml.YAMLError, AttributeError):
+        # Same reasoning as the tier lookup above: config/llm.yaml missing/malformed is
+        # expected for many installs, and AttributeError covers a non-dict `backends`
+        # entry from a malformed YAML shape (`.get` called on something that isn't a
+        # dict). Not logged on every submission for the same "expected, not a real
+        # failure" reason.
         pass
 
     return {
@@ -221,5 +232,10 @@ def screenshot_page(port: int | None = None) -> bytes | None:
             png = page.screenshot(full_page=False)
             browser.close()
             return png
-    except Exception:
+    except Exception:  # noqa: BLE001 -- Playwright browser automation (launch,
+        # navigate, wait_for_load_state, screenshot) can raise many distinct
+        # playwright.sync_api errors (timeouts, target-closed, connection issues) plus
+        # OSError if the Chromium binary itself is missing; per the docstring this
+        # function's contract is "return None on any capture failure," never raise, so
+        # a screenshot problem doesn't block the rest of the feedback submission.
         return None
