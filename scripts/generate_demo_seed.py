@@ -220,8 +220,8 @@ REFERENCES: list[tuple] = [
      "former_manager",
      "Managed me for 3 years on the consumer app redesign. Enthusiastic reference.",
      '["manager","design"]',
-     "Hi Priya,\n\nI hope you're doing well! I'm currently interviewing for a few senior UX roles "
-     "and would be so grateful if you'd be willing to serve as a reference.\n\nThank you!\n[Your name]"),
+     ("Hi Priya,\n\nI hope you're doing well! I'm currently interviewing for a few senior UX roles "
+     "and would be so grateful if you'd be willing to serve as a reference.\n\nThank you!\n[Your name]")),
 
     ("Sam Torres", "sam.torres@example.com", "Senior Product Designer", "Acme Corp",
      "former_colleague",

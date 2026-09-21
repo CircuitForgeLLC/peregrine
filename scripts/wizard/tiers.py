@@ -27,7 +27,11 @@ from pathlib import Path
 
 from circuitforge_core.tiers import (
     TIERS,  # noqa: F401 -- re-exported; consumers import TIERS from this module
+)
+from circuitforge_core.tiers import (
     can_use as _core_can_use,
+)
+from circuitforge_core.tiers import (
     tier_label as _core_tier_label,
 )
 

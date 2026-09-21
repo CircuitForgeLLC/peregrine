@@ -133,7 +133,7 @@ def test_sync_job_emails_classifies_inbound(tmp_path):
     conn_mock.fetch.return_value = ("OK", [(b"1 (RFC822 {123})", fake_msg_bytes)])
 
     with patch("scripts.imap_sync.classify_stage_signal", return_value="interview_scheduled"):
-        inb, out = sync_job_emails(job, conn_mock, {"lookback_days": 90}, db_path)
+        inb, _out = sync_job_emails(job, conn_mock, {"lookback_days": 90}, db_path)
 
     assert inb == 1
     contacts = get_contacts(db_path, job_id=job_id)
@@ -758,11 +758,11 @@ def test_scan_unmatched_leads_no_reinsert_on_second_run(tmp_path):
     init_db(db_path)
 
     known = set()
-    shared_kwargs = dict(
-        conn=MagicMock(),
-        cfg={"lookback_days": 90},
-        db_path=db_path,
-    )
+    shared_kwargs = {
+        "conn": MagicMock(),
+        "cfg": {"lookback_days": 90},
+        "db_path": db_path,
+    }
 
     with patch("scripts.imap_sync._search_folder", return_value=[b"1"]), \
          patch("scripts.imap_sync._parse_message", return_value=_PLAIN_RECRUIT_EMAIL), \

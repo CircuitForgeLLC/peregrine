@@ -216,8 +216,8 @@ def _apply_to_copy(struct: dict[str, Any], suggestion: dict[str, Any]) -> dict[s
             # as a new entry so hallucination_check() sees the fabricated
             # company/title as a new anchor and rejects it, instead of letting
             # an unmatched target through as a no-op that looks "safe".
-            new_entry = dict(company=company, title=title, start_date="",
-                              end_date="", bullets=[after])
+            new_entry = {"company": company, "title": title, "start_date": "",
+                              "end_date": "", "bullets": [after]}
             rewritten.setdefault("experience", []).append(new_entry)
     elif section == "skills":
         skills = rewritten.get("skills") or []

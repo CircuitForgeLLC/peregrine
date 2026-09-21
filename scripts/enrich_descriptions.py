@@ -191,7 +191,7 @@ def enrich_all_descriptions(
 
 def enrich_craigslist_fields(
     db_path: Path = DEFAULT_DB,
-    job_id: int = None,
+    job_id: int | None = None,
 ) -> dict:
     """
     Use LLM to extract company name and salary from a Craigslist job description.

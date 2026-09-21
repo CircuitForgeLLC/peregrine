@@ -21,7 +21,7 @@ def client(tmp_path, monkeypatch):
 
 
 def test_create_and_list(client):
-    c, db = client
+    c, _db = client
     resp = c.post("/api/resumes", json={"name": "Base", "text": "Resume text here"})
     assert resp.status_code == 200
     r = resp.json()
@@ -33,14 +33,14 @@ def test_create_and_list(client):
 
 
 def test_get_single(client):
-    c, db = client
+    c, _db = client
     created = c.post("/api/resumes", json={"name": "Test", "text": "text"}).json()
     fetched = c.get(f"/api/resumes/{created['id']}").json()
     assert fetched["name"] == "Test"
 
 
 def test_patch_resume(client):
-    c, db = client
+    c, _db = client
     created = c.post("/api/resumes", json={"name": "Old", "text": "old text"}).json()
     updated = c.patch(f"/api/resumes/{created['id']}", json={"name": "New"}).json()
     assert updated["name"] == "New"
@@ -48,7 +48,7 @@ def test_patch_resume(client):
 
 
 def test_delete_resume(client):
-    c, db = client
+    c, _db = client
     a = c.post("/api/resumes", json={"name": "A", "text": "text a"}).json()
     b = c.post("/api/resumes", json={"name": "B", "text": "text b"}).json()
     resp = c.delete(f"/api/resumes/{a['id']}")
@@ -57,14 +57,14 @@ def test_delete_resume(client):
 
 
 def test_delete_only_resume_rejected(client):
-    c, db = client
+    c, _db = client
     r = c.post("/api/resumes", json={"name": "Only", "text": "text"}).json()
     resp = c.delete(f"/api/resumes/{r['id']}")
     assert resp.status_code == 409
 
 
 def test_set_default(client):
-    c, db = client
+    c, _db = client
     a = c.post("/api/resumes", json={"name": "A", "text": "text a"}).json()
     b = c.post("/api/resumes", json={"name": "B", "text": "text b"}).json()
     c.post(f"/api/resumes/{a['id']}/set-default")
@@ -75,7 +75,7 @@ def test_set_default(client):
 
 
 def test_import_txt(client):
-    c, db = client
+    c, _db = client
     f = io.BytesIO(b"Software engineer with ten years experience building distributed systems.")
     resp = c.post("/api/resumes/import", files={"file": ("resume.txt", f, "text/plain")},
                   data={"name": "Imported"})
@@ -86,7 +86,7 @@ def test_import_txt(client):
 
 
 def test_import_yaml(client):
-    c, db = client
+    c, _db = client
     yaml_content = b"""
 career_summary: Experienced engineer.
 experience:
@@ -131,13 +131,13 @@ import json as _json
 
 
 def test_score_endpoint_queues_task_and_status_round_trips(client):
-    c, db = client
-    struct = dict(name="Jane Doe", career_summary="A developer.",
-                  experience=[], education=[], skills=[], achievements=[])
-    resume = c.post("/api/resumes", json=dict(
-        name="Test Resume", text="Jane Doe\nSUMMARY\nA developer.",
-        struct_json=_json.dumps(struct),
-    )).json()
+    c, _db = client
+    struct = {"name": "Jane Doe", "career_summary": "A developer.",
+                  "experience": [], "education": [], "skills": [], "achievements": []}
+    resume = c.post("/api/resumes", json={
+        "name": "Test Resume", "text": "Jane Doe\nSUMMARY\nA developer.",
+        "struct_json": _json.dumps(struct),
+    }).json()
 
     resume_id = resume["id"]
     resp = c.post("/api/resumes/" + str(resume_id) + "/score")
@@ -150,15 +150,15 @@ def test_score_endpoint_queues_task_and_status_round_trips(client):
 
 
 def test_get_score_before_scoring_returns_null(client):
-    c, db = client
-    resume = c.post("/api/resumes", json=dict(name="Unscored", text="x")).json()
+    c, _db = client
+    resume = c.post("/api/resumes", json={"name": "Unscored", "text": "x"}).json()
     resp = c.get("/api/resumes/" + str(resume["id"]) + "/score")
     assert resp.status_code == 200
-    assert resp.json() == dict(score=None, scored_at=None)
+    assert resp.json() == {"score": None, "scored_at": None}
 
 
 def test_apply_suggestion_updates_resume_text(client):
-    c, db = client
+    c, _db = client
     struct = {"career_summary": "A developer.", "experience": [], "education": [],
               "skills": ["Python"], "achievements": []}
     resume = c.post("/api/resumes", json={
@@ -175,7 +175,7 @@ def test_apply_suggestion_updates_resume_text(client):
 
 
 def test_apply_suggestion_rejects_hallucinated_content(client):
-    c, db = client
+    c, _db = client
     struct = {"career_summary": "A developer.", "experience": [
         {"title": "Developer", "company": "Acme", "bullets": ["Did work"]}
     ], "education": [], "skills": [], "achievements": []}
@@ -191,7 +191,7 @@ def test_apply_suggestion_rejects_hallucinated_content(client):
 
 
 def test_apply_suggestion_404_when_resume_missing(client):
-    c, db = client
+    c, _db = client
     resp = c.post(
         "/api/resumes/99999/score/apply-suggestion",
         json={"suggestion": {"section": "skills", "before": "Python", "after": "Python 3"}},
@@ -200,7 +200,7 @@ def test_apply_suggestion_404_when_resume_missing(client):
 
 
 def test_apply_suggestion_409_when_no_struct_json(client):
-    c, db = client
+    c, _db = client
     resume = c.post("/api/resumes", json={"name": "NoStruct", "text": "plain text only"}).json()
     resp = c.post(
         f"/api/resumes/{resume['id']}/score/apply-suggestion",
@@ -220,7 +220,7 @@ def test_score_persists_struct_json_when_missing_and_unblocks_apply(client):
     fake_llm_json = '{"overall_score": 6, "summary": "ok", "strengths": [], "improvements": [], "suggestions": [{"id": "sugg-1", "section": "skills", "before": "Python", "after": "Python 3", "rationale": "x"}]}'
     with patch('scripts.resume_scorer.LLMRouter') as mock_router_cls:
         mock_router_cls.return_value.complete.return_value = fake_llm_json
-        _run_task(_Path(db), 1, 'resume_score', 0, params=_json.dumps(dict(resume_id=resume['id'])))
+        _run_task(_Path(db), 1, 'resume_score', 0, params=_json.dumps({"resume_id": resume['id']}))
     updated = c.get('/api/resumes/' + str(resume['id'])).json()
     assert updated['struct_json'] is not None
     struct = _json.loads(updated['struct_json'])
@@ -230,7 +230,7 @@ def test_score_persists_struct_json_when_missing_and_unblocks_apply(client):
 
 
 def test_apply_suggestion_422_when_before_text_does_not_match(client):
-    c, db = client
+    c, _db = client
     struct = {'career_summary': 'A developer.', 'experience': [], 'education': [], 'skills': ['Python'], 'achievements': []}
     resume = c.post('/api/resumes', json={'name': 'Test', 'text': 'A developer.', 'struct_json': _json.dumps(struct)}).json()
     resp = c.post('/api/resumes/' + str(resume['id']) + '/score/apply-suggestion', json={'suggestion': {'section': 'skills', 'before': 'text that does not exist', 'after': 'new text'}})
@@ -238,7 +238,7 @@ def test_apply_suggestion_422_when_before_text_does_not_match(client):
 
 
 def test_apply_suggestion_creates_backup_before_overwrite(client):
-    c, db = client
+    c, _db = client
     struct = {'career_summary': 'A developer.', 'experience': [], 'education': [], 'skills': ['Python'], 'achievements': []}
     resume = c.post('/api/resumes', json={'name': 'Backup Me', 'text': 'A developer.', 'struct_json': _json.dumps(struct)}).json()
     before_count = len(c.get('/api/resumes').json()['resumes'])

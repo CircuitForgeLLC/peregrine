@@ -106,7 +106,7 @@ def test_try_rerank_preserves_job_fields():
     from scripts.job_ranker import _try_rerank
     result = _try_rerank(RESUME_TEXT, SAMPLE_JOBS)
     for job in result:
-        assert "stack_score" not in job or True  # stack_score may or may not be present
+        assert True  # stack_score may or may not be present
         assert "id" in job
         assert "title" in job
 

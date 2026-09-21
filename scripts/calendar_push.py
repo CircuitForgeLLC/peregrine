@@ -61,8 +61,8 @@ def _build_event_details(job: dict, research: dict | None) -> tuple[str, str]:
 
 def push_interview_event(
     db_path: Path = DEFAULT_DB,
-    job_id: int = None,
-    config_dir: Path = None,
+    job_id: int | None = None,
+    config_dir: Path | None = None,
 ) -> dict:
     """Push (or update) an interview event on the first connected calendar integration.
 
