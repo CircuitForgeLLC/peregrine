@@ -98,12 +98,14 @@ def test_scrape_returns_empty_on_missing_config():
 
 def test_scrape_remote_hits_all_metros():
     """location='Remote' triggers one RSS fetch per configured metro."""
-    with patch("scripts.custom_boards.craigslist._load_config",
-               return_value=_TWO_METRO_CONFIG):
-        with patch("scripts.custom_boards.craigslist.requests.get",
-                   return_value=_mock_resp(_SAMPLE_RSS)) as mock_get:
-            from scripts.custom_boards import craigslist
-            result = craigslist.scrape(_PROFILE, "Remote")
+    with (
+        patch("scripts.custom_boards.craigslist._load_config",
+              return_value=_TWO_METRO_CONFIG),
+        patch("scripts.custom_boards.craigslist.requests.get",
+              return_value=_mock_resp(_SAMPLE_RSS)) as mock_get,
+    ):
+        from scripts.custom_boards import craigslist
+        result = craigslist.scrape(_PROFILE, "Remote")
 
     assert mock_get.call_count == 2
     fetched_urls = [call.args[0] for call in mock_get.call_args_list]
@@ -114,12 +116,14 @@ def test_scrape_remote_hits_all_metros():
 
 def test_scrape_location_map_resolves():
     """Known location string maps to exactly one metro."""
-    with patch("scripts.custom_boards.craigslist._load_config",
-               return_value=_TWO_METRO_CONFIG):
-        with patch("scripts.custom_boards.craigslist.requests.get",
-                   return_value=_mock_resp(_SAMPLE_RSS)) as mock_get:
-            from scripts.custom_boards import craigslist
-            result = craigslist.scrape(_PROFILE, "San Francisco Bay Area, CA")
+    with (
+        patch("scripts.custom_boards.craigslist._load_config",
+              return_value=_TWO_METRO_CONFIG),
+        patch("scripts.custom_boards.craigslist.requests.get",
+              return_value=_mock_resp(_SAMPLE_RSS)) as mock_get,
+    ):
+        from scripts.custom_boards import craigslist
+        result = craigslist.scrape(_PROFILE, "San Francisco Bay Area, CA")
 
     assert mock_get.call_count == 1
     assert "sfbay" in mock_get.call_args.args[0]
@@ -129,11 +133,13 @@ def test_scrape_location_map_resolves():
 
 def test_scrape_location_not_in_map_returns_empty():
     """Location not in location_map → [] without raising."""
-    with patch("scripts.custom_boards.craigslist._load_config",
-               return_value=_SINGLE_METRO_CONFIG):
-        with patch("scripts.custom_boards.craigslist.requests.get") as mock_get:
-            from scripts.custom_boards import craigslist
-            result = craigslist.scrape(_PROFILE, "Portland, OR")
+    with (
+        patch("scripts.custom_boards.craigslist._load_config",
+              return_value=_SINGLE_METRO_CONFIG),
+        patch("scripts.custom_boards.craigslist.requests.get") as mock_get,
+    ):
+        from scripts.custom_boards import craigslist
+        result = craigslist.scrape(_PROFILE, "Portland, OR")
 
     assert result == []
     mock_get.assert_not_called()
@@ -142,12 +148,14 @@ def test_scrape_location_not_in_map_returns_empty():
 def test_hours_old_filter():
     """Items older than hours_old are excluded."""
     profile = {"titles": ["Customer Success Manager"], "hours_old": 48}
-    with patch("scripts.custom_boards.craigslist._load_config",
-               return_value=_SINGLE_METRO_CONFIG):
-        with patch("scripts.custom_boards.craigslist.requests.get",
-                   return_value=_mock_resp(_OLD_ITEM_RSS)):
-            from scripts.custom_boards import craigslist
-            result = craigslist.scrape(profile, "San Francisco Bay Area, CA")
+    with (
+        patch("scripts.custom_boards.craigslist._load_config",
+              return_value=_SINGLE_METRO_CONFIG),
+        patch("scripts.custom_boards.craigslist.requests.get",
+              return_value=_mock_resp(_OLD_ITEM_RSS)),
+    ):
+        from scripts.custom_boards import craigslist
+        result = craigslist.scrape(profile, "San Francisco Bay Area, CA")
 
     assert result == []
 
@@ -160,12 +168,14 @@ def test_dedup_within_run():
         "description": "Same job.",
         "pubDate": _pubdate(1),
     }])
-    with patch("scripts.custom_boards.craigslist._load_config",
-               return_value=_TWO_METRO_CONFIG):
-        with patch("scripts.custom_boards.craigslist.requests.get",
-                   return_value=_mock_resp(same_url_rss)):
-            from scripts.custom_boards import craigslist
-            result = craigslist.scrape(_PROFILE, "Remote")
+    with (
+        patch("scripts.custom_boards.craigslist._load_config",
+              return_value=_TWO_METRO_CONFIG),
+        patch("scripts.custom_boards.craigslist.requests.get",
+              return_value=_mock_resp(same_url_rss)),
+    ):
+        from scripts.custom_boards import craigslist
+        result = craigslist.scrape(_PROFILE, "Remote")
 
     urls = [r["url"] for r in result]
     assert len(urls) == len(set(urls))
@@ -173,12 +183,14 @@ def test_dedup_within_run():
 
 def test_http_error_graceful():
     """HTTP error → [] without raising."""
-    with patch("scripts.custom_boards.craigslist._load_config",
-               return_value=_SINGLE_METRO_CONFIG):
-        with patch("scripts.custom_boards.craigslist.requests.get",
-                   side_effect=requests.RequestException("timeout")):
-            from scripts.custom_boards import craigslist
-            result = craigslist.scrape(_PROFILE, "San Francisco Bay Area, CA")
+    with (
+        patch("scripts.custom_boards.craigslist._load_config",
+              return_value=_SINGLE_METRO_CONFIG),
+        patch("scripts.custom_boards.craigslist.requests.get",
+              side_effect=requests.RequestException("timeout")),
+    ):
+        from scripts.custom_boards import craigslist
+        result = craigslist.scrape(_PROFILE, "San Francisco Bay Area, CA")
 
     assert result == []
 
@@ -188,22 +200,26 @@ def test_malformed_xml_graceful():
     bad_resp = MagicMock()
     bad_resp.content = b"this is not xml <<<<"
     bad_resp.raise_for_status = MagicMock()
-    with patch("scripts.custom_boards.craigslist._load_config",
-               return_value=_SINGLE_METRO_CONFIG):
-        with patch("scripts.custom_boards.craigslist.requests.get",
-                   return_value=bad_resp):
-            from scripts.custom_boards import craigslist
-            result = craigslist.scrape(_PROFILE, "San Francisco Bay Area, CA")
+    with (
+        patch("scripts.custom_boards.craigslist._load_config",
+              return_value=_SINGLE_METRO_CONFIG),
+        patch("scripts.custom_boards.craigslist.requests.get",
+              return_value=bad_resp),
+    ):
+        from scripts.custom_boards import craigslist
+        result = craigslist.scrape(_PROFILE, "San Francisco Bay Area, CA")
     assert result == []
 
 
 def test_results_wanted_cap():
     """Never returns more than results_wanted items."""
-    with patch("scripts.custom_boards.craigslist._load_config",
-               return_value=_TWO_METRO_CONFIG):
-        with patch("scripts.custom_boards.craigslist.requests.get",
-                   return_value=_mock_resp(_TWO_ITEM_RSS)):
-            from scripts.custom_boards import craigslist
-            result = craigslist.scrape(_PROFILE, "Remote", results_wanted=1)
+    with (
+        patch("scripts.custom_boards.craigslist._load_config",
+              return_value=_TWO_METRO_CONFIG),
+        patch("scripts.custom_boards.craigslist.requests.get",
+              return_value=_mock_resp(_TWO_ITEM_RSS)),
+    ):
+        from scripts.custom_boards import craigslist
+        result = craigslist.scrape(_PROFILE, "Remote", results_wanted=1)
 
     assert len(result) <= 1
