@@ -1,4 +1,5 @@
 .env
+.env.cloud-rc1-test*
 config/notion.yaml
 config/tokens.yaml
 config/email.yaml
