@@ -140,8 +140,8 @@ def test_gpu_detection_does_not_affect_local_scheduler(tmp_db, monkeypatch):
 def test_enqueue_adds_taskspec_to_deque(tmp_db):
     """enqueue() appends a TaskSpec to the correct per-type deque."""
     s = TaskScheduler(tmp_db, _noop_run_task)
-    s.enqueue(1, "cover_letter", 10, None)
-    s.enqueue(2, "cover_letter", 11, '{"key": "val"}')
+    s.enqueue(1, "cover_letter", 10, None, tmp_db)
+    s.enqueue(2, "cover_letter", 11, '{"key": "val"}', tmp_db)
 
     assert len(s._queues["cover_letter"]) == 2
     assert s._queues["cover_letter"][0].id == 1
@@ -152,7 +152,7 @@ def test_enqueue_wakes_scheduler(tmp_db):
     """enqueue() sets the _wake event so the scheduler loop re-evaluates."""
     s = TaskScheduler(tmp_db, _noop_run_task)
     assert not s._wake.is_set()
-    s.enqueue(1, "cover_letter", 10, None)
+    s.enqueue(1, "cover_letter", 10, None, tmp_db)
     assert s._wake.is_set()
 
 
@@ -166,14 +166,14 @@ def test_max_queue_depth_marks_task_failed(tmp_db):
     # Fill the queue to the limit via direct deque manipulation (no DB rows needed)
     from scripts.task_scheduler import TaskSpec
     s._queues.setdefault("cover_letter", deque())
-    s._queues["cover_letter"].append(TaskSpec(99, 1, None))
-    s._queues["cover_letter"].append(TaskSpec(100, 2, None))
+    s._queues["cover_letter"].append(TaskSpec(99, 1, None, tmp_db))
+    s._queues["cover_letter"].append(TaskSpec(100, 2, None, tmp_db))
 
     # Insert a real DB row for the task we're about to drop
     task_id, _ = insert_task(tmp_db, "cover_letter", 3)
 
     # This enqueue should be rejected and the DB row marked failed
-    s.enqueue(task_id, "cover_letter", 3, None)
+    s.enqueue(task_id, "cover_letter", 3, None, tmp_db)
 
     conn = sqlite3.connect(tmp_db)
     row = conn.execute(
@@ -197,7 +197,7 @@ def test_max_queue_depth_logs_warning(tmp_db, caplog):
 
     task_id, _ = insert_task(tmp_db, "cover_letter", 1)
     with caplog.at_level(logging.WARNING, logger="scripts.task_scheduler"):
-        s.enqueue(task_id, "cover_letter", 1, None)
+        s.enqueue(task_id, "cover_letter", 1, None, tmp_db)
 
     assert any("depth" in r.message.lower() for r in caplog.records)
 
@@ -233,8 +233,8 @@ def test_all_task_types_complete(tmp_db):
     s = TaskScheduler(tmp_db, run_task_fn)
 
     for i in range(3):
-        s.enqueue(i + 1, "cover_letter", i + 1, None)
-    s.enqueue(4, "company_research", 4, None)
+        s.enqueue(i + 1, "cover_letter", i + 1, None, tmp_db)
+    s.enqueue(4, "company_research", 4, None, tmp_db)
 
     s.start()
     assert done.wait(timeout=5.0), "timed out — not all 4 tasks completed"
@@ -252,7 +252,7 @@ def test_fifo_within_type(tmp_db):
     s = _start_scheduler(tmp_db, _make_recording_run_task(log, done, 3))
 
     for task_id in [10, 20, 30]:
-        s.enqueue(task_id, "cover_letter", task_id, None)
+        s.enqueue(task_id, "cover_letter", task_id, None, tmp_db)
 
     assert done.wait(timeout=5.0), "timed out — not all 3 tasks completed"
     s.shutdown()
@@ -273,8 +273,8 @@ def test_concurrent_batches_different_types(tmp_db):
             all_done.set()
 
     s = _start_scheduler(tmp_db, run_task)
-    s.enqueue(1, "cover_letter", 1, None)
-    s.enqueue(2, "company_research", 2, None)
+    s.enqueue(1, "cover_letter", 1, None, tmp_db)
+    s.enqueue(2, "company_research", 2, None, tmp_db)
 
     all_done.wait(timeout=5.0)
     s.shutdown()
@@ -299,9 +299,9 @@ def test_new_tasks_picked_up_mid_batch(tmp_db):
             done.set()
 
     s = _start_scheduler(tmp_db, run_task)
-    s.enqueue(1, "cover_letter", 1, None)
+    s.enqueue(1, "cover_letter", 1, None, tmp_db)
     task1_started.wait(timeout=2.0)    # wait until task 1 is actually executing
-    s.enqueue(2, "cover_letter", 2, None)
+    s.enqueue(2, "cover_letter", 2, None, tmp_db)
     task2_ready.set()                  # unblock task 1 so it finishes
 
     assert done.wait(timeout=5.0), "timed out — task 2 never picked up mid-batch"
@@ -328,8 +328,8 @@ def test_worker_crash_does_not_stall_scheduler(tmp_db):
         done.set()
 
     s = _start_scheduler(tmp_db, run_task)
-    s.enqueue(1, "cover_letter", 1, None)
-    s.enqueue(2, "cover_letter", 2, None)
+    s.enqueue(1, "cover_letter", 1, None, tmp_db)
+    s.enqueue(2, "cover_letter", 2, None, tmp_db)
 
     assert done.wait(timeout=5.0), "timed out — task 2 never completed after task 1 crash"
     s.shutdown()
@@ -490,3 +490,58 @@ def test_shim_exports_unchanged_api():
     assert "resume_optimize" in LLM_TASK_TYPES
     assert callable(get_scheduler)
     assert callable(reset_scheduler)
+
+
+def test_task_scheduler_enqueue_passes_db_path_through(tmp_path):
+    """Peregrine's TaskScheduler.enqueue() override must accept and forward
+    db_path to the base class, matching the new required signature."""
+    from scripts.task_scheduler import TaskScheduler
+
+    db_path = tmp_path / "staging.db"
+    seen = {}
+
+    def fake_run_task(db_path_arg, task_id, task_type, job_id, params):
+        seen["db_path"] = db_path_arg
+
+    sched = TaskScheduler(db_path, fake_run_task)
+    sched.start()
+    try:
+        sched.enqueue(1, "cover_letter", 100, None, db_path)
+        import time
+        for _ in range(50):
+            if seen:
+                break
+            time.sleep(0.1)
+        assert seen.get("db_path") == db_path
+    finally:
+        sched.shutdown()
+
+
+def test_task_scheduler_queue_full_uses_task_db_path_not_scheduler_db_path(tmp_path, monkeypatch):
+    """The queue-full fallback path (update_task_status on drop) must mark
+    the FAILING task's own db_path, not the scheduler's construction-time
+    db_path -- this was the same class of bug at smaller scale."""
+    from scripts.task_scheduler import TaskScheduler
+
+    scheduler_db_path = tmp_path / "scheduler-tenant.db"
+    task_db_path = tmp_path / "different-tenant.db"
+
+    calls = []
+    # update_task_status is imported inside TaskScheduler.enqueue()'s body via a
+    # function-local `from scripts.db import update_task_status` -- patching the
+    # scripts.task_scheduler module attribute doesn't intercept that local import,
+    # so patch scripts.db.update_task_status directly instead.
+    monkeypatch.setattr(
+        "scripts.db.update_task_status",
+        lambda db_path, task_id, status, error=None: calls.append((db_path, task_id, status)),
+    )
+
+    sched = TaskScheduler(scheduler_db_path, lambda *a: None)
+    sched._max_queue_depth = 0  # force every enqueue to report queue-full
+    try:
+        sched.enqueue(1, "cover_letter", 100, None, task_db_path)
+    finally:
+        sched.shutdown()
+
+    assert len(calls) == 1
+    assert calls[0][0] == task_db_path, "must use the failing task's own db_path, not the scheduler's"
