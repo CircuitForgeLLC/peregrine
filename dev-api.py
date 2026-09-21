@@ -4742,7 +4742,7 @@ def pull_ollama_model(payload: OllamaPullPayload, background_tasks: BackgroundTa
     def _do_pull():
         try:
             requests.post(f"{base_url}/api/pull", json={"name": model, "stream": False}, timeout=1800)
-        except Exception:  # noqa: BLE001, S110 - best-effort background pull; frontend polling detects success/failure by presence, not by this call's result
+        except Exception:  # noqa: BLE001 - best-effort background pull; frontend polling detects success/failure by presence, not by this call's result
             _log.warning("Background ollama pull failed for model=%s", model)
 
     background_tasks.add_task(_do_pull)
@@ -5669,7 +5669,7 @@ def wizard_complete():
             profile_obj = UserProfile(yaml_path)
             if llm_yaml.exists():
                 apply_service_urls(profile_obj, llm_yaml)
-        except Exception:  # noqa: BLE001, S110 - don't block wizard completion on llm.yaml errors; log so a broken service-url apply isn't completely silent
+        except Exception:  # noqa: BLE001 - don't block wizard completion on llm.yaml errors; log so a broken service-url apply isn't completely silent
             _log.warning("apply_service_urls failed during wizard completion; continuing without it", exc_info=True)
 
         cfg = _load_wizard_yaml()
