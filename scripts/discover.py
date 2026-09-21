@@ -327,7 +327,11 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                         jobspy_kwargs["is_remote"] = _is_remote
                     jobs: pd.DataFrame = scrape_jobs(**jobspy_kwargs)
                     print(f"  [jobspy] {len(jobs)} raw results")
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - scrape_jobs() fans out to
+                    # multiple third-party job boards (LinkedIn, Indeed, etc.) over
+                    # the network via the jobspy library; any board outage, rate
+                    # limit, or parsing error there should degrade to an empty
+                    # result for this location rather than aborting the whole run.
                     print(f"  [jobspy] ERROR: {exc}")
                     jobs = pd.DataFrame()
 
@@ -384,7 +388,11 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                 print(f"  [{board_name}] {location} — fetching up to {results_per_board} results …")
                 try:
                     custom_jobs = scraper_fn(profile, location, results_wanted=results_per_board)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - each custom board scraper
+                    # (Playwright automation against a live third-party site) has its
+                    # own unpredictable failure surface; one board's outage or markup
+                    # change should not prevent the other boards in this run from
+                    # being scraped.
                     print(f"  [{board_name}] ERROR: {exc}")
                     custom_jobs = []
 

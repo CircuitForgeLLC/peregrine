@@ -55,7 +55,11 @@ def _try_rerank(resume_text: str, jobs: list[dict]) -> list[dict]:
             if i not in used:
                 reranked.append(j)
         return reranked
-    except Exception:
+    except Exception:  # noqa: BLE001 - rerank() runs a cross-encoder ML model whose
+        # failure surface spans missing/incompatible model weights, GPU/inference
+        # errors, and malformed candidate data; already logged with a full
+        # traceback, and this function's documented contract is to fall back to
+        # the input order on any reranker failure rather than break job listing.
         _log.warning("Reranker pass failed; using stack_score order.", exc_info=True)
         return jobs
 
@@ -202,7 +206,11 @@ def recency_decay(date_found: str) -> float:
         now = datetime.now(tz=timezone.utc)
         days_old = max(0.0, (now - found).total_seconds() / 86400)
         return math.exp(-math.log(2) * days_old / RECENCY_HALF_LIFE)
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
+        # AttributeError: date_found is None or a non-str (no .split); TypeError:
+        # naive/aware datetime subtraction mismatch; ValueError: fromisoformat()
+        # can't parse a malformed date string. All three mean "unparseable" per
+        # this function's documented contract, which returns a neutral 0.5.
         return 0.5
 
 

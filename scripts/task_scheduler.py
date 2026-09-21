@@ -78,7 +78,15 @@ def _load_config_overrides(db_path: Path | None) -> tuple[dict[str, float], int]
             sched_cfg = cfg.get("scheduler", {})
             budgets.update(sched_cfg.get("vram_budgets", {}))
             max_depth = int(sched_cfg.get("max_queue_depth", max_depth))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - config/llm.yaml is a hand-edited
+            # user config file; failure sources here include file I/O (permission,
+            # race with exists()), yaml.YAMLError on malformed YAML, AttributeError
+            # if the YAML root or "scheduler" key isn't a mapping (e.g. a user
+            # accidentally wrote a list), and ValueError/TypeError from int() if
+            # max_queue_depth isn't a valid integer. This function's documented
+            # contract is to fall back to the compiled-in defaults on any bad
+            # config rather than crash scheduler startup; already logged with the
+            # exception so a malformed config is visible to the operator.
             logger.warning(
                 "Failed to load scheduler config from %s: %s", config_path, exc
             )
@@ -89,7 +97,17 @@ def _load_config_overrides(db_path: Path | None) -> tuple[dict[str, float], int]
 # (existing tests monkeypatch this symbol — keep it here for backward compat).
 try:
     from scripts.preflight import get_gpus as _get_gpus
-except Exception:
+except Exception:  # noqa: BLE001 - scripts.preflight is a heavier optional module
+    # (subprocess/nvidia-smi probing, yaml config parsing) whose import-time
+    # failure surface goes beyond a plain ImportError (e.g. a subprocess/OSError
+    # from GPU probing code that runs at import time on some platforms); any
+    # failure here should degrade to the no-GPU stub rather than block the
+    # scheduler module from importing at all, since GPU-aware VRAM budgeting is
+    # a best-effort optimization, not a scheduling correctness requirement.
+    logger.warning(
+        "scripts.preflight unavailable; task scheduler will not see GPU info.",
+        exc_info=True,
+    )
     _get_gpus = list
 
 
