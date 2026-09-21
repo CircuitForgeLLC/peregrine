@@ -81,7 +81,7 @@ def _is_ssrf_host(host: str) -> bool:
     try:
         addr = ipaddress.ip_address(socket.gethostbyname(host))
         return any(addr in net for net in _PRIVATE_NETS)
-    except Exception:
+    except Exception:  # noqa: BLE001 - SSRF guard must fail closed on ANY resolution error
         return True  # fail closed on resolution errors
 IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
@@ -168,7 +168,7 @@ async def lifespan(app: FastAPI):
                 migrate_db(user_db)
                 _migrated_db_paths.add(str(user_db))
                 _sweep_log.info("Migrated user DB: %s", user_db)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one bad user DB must not abort the startup sweep
                 _sweep_log.warning("Migration failed for %s: %s", user_db, exc)
 
     if IS_DEMO and (seed_file := os.environ.get("DEMO_SEED_FILE")):
@@ -286,13 +286,14 @@ def _resolve_cf_user_id(cookie_str: str) -> str | None:
         return None
     token = m.group(1).strip()
     import base64
+    import binascii
 
     import jwt  # PyJWT
     secrets_to_try: list[str | bytes] = [_DIRECTUS_SECRET]
     try:
         secrets_to_try.append(base64.b64decode(_DIRECTUS_SECRET))
-    except Exception:
-        pass
+    except (binascii.Error, ValueError) as exc:
+        _log.debug("_resolve_cf_user_id: base64 decode of DIRECTUS_JWT_SECRET failed: %s", exc)
     # Skip exp verification — we use the token for routing only, not auth.
     # Directus manages actual auth; Caddy gates on cookie presence.
     decode_opts = {"verify_exp": False}
@@ -303,7 +304,7 @@ def _resolve_cf_user_id(cookie_str: str) -> str | None:
             if user_id:
                 _log.debug("_resolve_cf_user_id: resolved user_id=%s", user_id)
                 return user_id
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - jwt.decode raises varied error types per secret tried; any failure just means try the next secret
             _log.debug("_resolve_cf_user_id: decode failed (%s): %s", type(exc).__name__, exc)
             continue
     _log.warning("_resolve_cf_user_id: all secrets failed for token prefix %s…", token[:20])
@@ -551,8 +552,8 @@ def salary_stats(titles: str | None = None, location: str | None = None):
                 if location is None:
                     locations = profile.get("locations") or []
                     location_val = locations[0] if locations else ""
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort default-profile fallback; keep the already-computed defaults on any failure
+            _log.debug("salary_stats: failed to load default search profile: %s", exc)
 
     db = _get_db()
     try:
@@ -678,7 +679,7 @@ def generate_cover_letter(job_id: int, request: Request):
             job_id=job_id,
         )
         return {"task_id": task_id, "is_new": is_new}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(500, str(e))
 
 
@@ -728,7 +729,7 @@ def generate_research(job_id: int, request: Request):
         from scripts.task_runner import submit_task
         task_id, is_new = submit_task(db_path=Path(_request_db.get() or DB_PATH), task_type="company_research", job_id=job_id)
         return {"task_id": task_id, "is_new": is_new}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(500, str(e))
 
 
@@ -759,7 +760,7 @@ def get_optimized_resume(job_id: int):
     gap_report = result.get("ats_gap_report", "")
     try:
         gap_report_parsed = json.loads(gap_report) if gap_report else []
-    except Exception:
+    except json.JSONDecodeError:
         gap_report_parsed = []
     return {
         "optimized_resume": result.get("optimized_resume", ""),
@@ -789,7 +790,7 @@ def generate_optimized_resume(job_id: int, body: ResumeOptimizeBody):
             params=params,
         )
         return {"task_id": task_id, "is_new": is_new}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(500, str(e))
 
 
@@ -1344,7 +1345,7 @@ def apply_resume_to_profile(resume_id: int):
     if entry.get("struct_json"):
         try:
             struct_json = _json.loads(entry["struct_json"])
-        except Exception:
+        except _json.JSONDecodeError:
             raise HTTPException(422, "Library entry has malformed struct_json — re-import the resume to repair it.")
 
     resume_path = _resume_path()
@@ -1462,7 +1463,8 @@ def _imitate_load_profile():
         from scripts.user_profile import UserProfile
         _yaml = PEREGRINE_ROOT / "config" / "user.yaml"
         return UserProfile(_yaml) if UserProfile.exists(_yaml) else None
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort profile load for the Imitate tab; missing/broken profile just means no profile
+        _log.debug("_imitate_load_profile: failed to load user profile: %s", exc)
         return None
 
 
@@ -1485,7 +1487,8 @@ def _imitate_cover_letter(db, profile, limit: int) -> dict:
     system_ctx = _build_system_context(profile)
     try:
         corpus = load_corpus()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort example corpus for the Imitate tab preview; fall back to no examples
+        _log.debug("_imitate_cover_letter: failed to load corpus: %s", exc)
         corpus = []
 
     if not rows:
@@ -1544,8 +1547,8 @@ def _imitate_company_research(db, profile, limit: int) -> dict:
                 if val:
                     parts.append(f"### {section.title()}\n{val if isinstance(val, str) else str(val)}")
             resume_ctx = "\n\n".join(parts)[:2000]
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort resume context for the Imitate tab preview; fall back to no resume context
+        _log.debug("_imitate_company_research: failed to load resume context: %s", exc)
 
     if not rows:
         rows = [_SYNTHETIC_JOB]
@@ -1661,8 +1664,8 @@ def _imitate_ats_resume(db, profile, limit: int) -> dict:
         _rpath = PEREGRINE_ROOT / "config" / "plain_text_resume.yaml"
         if _rpath.exists():
             resume_text = _rpath.read_text(encoding="utf-8")[:3000]
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort resume text for the Imitate tab preview; fall back to no resume text
+        _log.debug("_imitate_ats_resume: failed to load resume text: %s", exc)
     resume_block = f"\n## Current Resume\n{resume_text}" if resume_text else ""
 
     if not rows:
@@ -1814,7 +1817,7 @@ def vision_health():
     try:
         r = requests.get("http://localhost:8002/health", timeout=2)
         return {"available": r.status_code == 200}
-    except Exception:
+    except Exception:  # noqa: BLE001 - health check must report unavailable on ANY error (network, timeout, or otherwise); covered by test_vision_health_unavailable
         return {"available": False}
 
 
@@ -1845,7 +1848,7 @@ def survey_analyze(job_id: int, body: SurveyAnalyzeBody, request: Request):
             params=params,
         )
         return {"task_id": task_id, "is_new": is_new}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(500, str(e))
 
 
@@ -1911,7 +1914,7 @@ def save_survey_response(job_id: int, body: SurveySaveBody):
             img_path = screenshots_dir / f"{timestamp}.png"
             img_path.write_bytes(base64.b64decode(body.image_b64))
             image_path = str(img_path)
-        except Exception:
+        except Exception:  # noqa: BLE001 - covers base64 decode errors and filesystem write failures alike; both surface as a generic 400 to the client
             raise HTTPException(400, "Invalid image data")
     row_id = insert_survey_response(
         db_path=Path(_request_db.get() or DB_PATH),
@@ -1992,7 +1995,7 @@ def _ensure_qa_column(db) -> None:
     try:
         db.execute("ALTER TABLE jobs ADD COLUMN application_qa TEXT")
         db.commit()
-    except Exception:
+    except sqlite3.OperationalError:
         pass  # Column already exists
 
 
@@ -2020,7 +2023,7 @@ def get_qa(job_id: int):
         raise HTTPException(404, "Job not found")
     try:
         items = json.loads(row["application_qa"] or "[]")
-    except Exception:
+    except json.JSONDecodeError:
         items = []
     return {"items": items}
 
@@ -2076,7 +2079,7 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
             if resume_data.get("career_summary"):
                 parts.append(f"Summary: {resume_data['career_summary'][:400]}")
             resume_context = "\n".join(parts)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort resume context for the QA suggestion prompt; already logged below
         _log.warning("suggest_qa_answer: failed to load resume context", exc_info=True)
 
     prompt = (
@@ -2266,7 +2269,7 @@ def link_reference_to_job(ref_id: int, body: PrepEmailPayload):
             (body.job_id, ref_id),
         )
         db.commit()
-    except Exception:
+    except sqlite3.IntegrityError:
         pass  # already linked
     db.close()
     return {"ok": True}
@@ -2322,7 +2325,7 @@ Return only the email body (no subject line)."""
         from scripts.llm_router import LLMRouter
         router = LLMRouter()
         email_text = router.complete(prompt)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any LLM/router failure into a clean 500 response
         raise HTTPException(500, f"LLM generation failed: {e}")
 
     # Persist to job_references
@@ -2373,7 +2376,7 @@ Return only the letter body."""
         from scripts.llm_router import LLMRouter
         router = LLMRouter()
         letter_text = router.complete(prompt)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any LLM/router failure into a clean 500 response
         raise HTTPException(500, f"LLM generation failed: {e}")
 
     db = _get_db()
@@ -2551,7 +2554,7 @@ def trigger_score():
         raise HTTPException(status_code=500, detail=result.stderr)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any subprocess/scoring failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2561,7 +2564,7 @@ def trigger_notion_sync():
         from scripts.sync import sync_to_notion
         count = sync_to_notion(_db_path())
         return {"ok": True, "count": count}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any sync failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2633,7 +2636,7 @@ def add_jobs_by_url(body: AddJobsBody):
                 submit_task(db_path, "scrape_url", job_id)
                 queued += 1
         return {"queued": queued}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2671,7 +2674,7 @@ async def upload_jobs_csv(file: UploadFile):
                 submit_task(db_path, "scrape_url", job_id)
                 queued += 1
         return {"queued": queued, "total": len(urls)}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2702,7 +2705,8 @@ def get_setup_banners():
             return []
         dismissed = set(cfg.get("dismissed_banners", []))
         return [b for b in _SETUP_BANNERS if b["key"] not in dismissed]
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - non-critical UI banner list; any config load failure just hides the banners
+        _log.debug("get_setup_banners: failed to load config: %s", exc)
         return []
 
 
@@ -2716,7 +2720,7 @@ def dismiss_setup_banner(key: str):
             cfg["dismissed_banners"] = dismissed
             _save_user_config(cfg)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any config-save failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2978,7 +2982,7 @@ def _resolve_cloud_tier() -> str:
         if resp.status_code == 404:
             return "free"
         _log.warning("Heimdall resolve returned %s for user %s", resp.status_code, user_id)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - must degrade gracefully to "free" on ANY resolution failure (network, JSON, etc.); already logged
         _log.warning("Heimdall tier resolve failed for user %s: %s", user_id, exc)
     return "free"
 
@@ -3001,7 +3005,8 @@ def get_app_config():
     try:
         cfg = load_user_profile(_user_yaml_path())
         wizard_complete = bool(cfg.get("wizard_complete", False))
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - app config endpoint must not 500 on a broken user.yaml; treat as not-yet-onboarded
+        _log.debug("get_app_config: failed to load user profile: %s", exc)
         wizard_complete = False
 
     from scripts.wizard.tiers import has_configured_llm
@@ -3030,7 +3035,8 @@ def config_user():
         with open(cfg_path) as f:
             cfg = yaml.safe_load(f)
         return {"name": cfg.get("name", "")}
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort name read for header display; missing/broken user.yaml just means no name yet
+        _log.debug("config_user: failed to load user.yaml: %s", exc)
         return {"name": ""}
 
 
@@ -3084,7 +3090,7 @@ def get_profile():
             "accessibility_focus": cfg.get("candidate_accessibility_focus", False),
             "lgbtq_focus":        cfg.get("candidate_lgbtq_focus", False),
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any profile-read failure into a clean 500 response
         raise HTTPException(500, f"Could not read profile: {e}")
 
 
@@ -3128,7 +3134,7 @@ def set_theme(payload: ThemePayload):
         data["theme"] = payload.theme
         save_user_profile(_user_yaml_path(), data)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any theme-save failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3145,7 +3151,7 @@ def set_ui_preference(payload: UIPrefPayload):
         data["ui_preference"] = payload.preference
         save_user_profile(_user_yaml_path(), data)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any UI-preference-save failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3160,7 +3166,7 @@ def sync_identity(payload: IdentitySyncPayload):
         data["linkedin"] = payload.linkedin_url  # yaml key is 'linkedin', not 'linkedin_url'
         save_user_profile(_user_yaml_path(), data)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any identity-sync failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3184,7 +3190,7 @@ def save_profile(payload: UserProfilePayload):
         cfg["candidate_lgbtq_focus"] = payload.lgbtq_focus
         save_user_profile(yaml_path, cfg)
         return {"ok": True}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level handler: convert any profile-save failure into a clean 500 response
         raise HTTPException(500, f"Could not save profile: {e}")
 
 
@@ -3210,7 +3216,8 @@ def _resume_context_snippet() -> str:
                 if titles:
                     parts.append(f"Recent roles: {', '.join(titles)}")
         return "\n".join(parts)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort resume context for LLM prompts; fall back to no context
+        _log.debug("_resume_context_snippet: failed to load resume: %s", exc)
         return ""
 
 
