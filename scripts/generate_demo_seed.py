@@ -15,7 +15,7 @@ from pathlib import Path
 
 OUT_PATH = Path(__file__).parent.parent / "demo" / "seed.sql"
 
-TODAY = date.today()
+TODAY = date.today()  # noqa: DTZ011 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
 
 
 def _dago(n: int) -> str:

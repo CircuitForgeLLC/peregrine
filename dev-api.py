@@ -1761,7 +1761,7 @@ class LogContactBody(BaseModel):
 def log_contact(job_id: int, payload: LogContactBody):
     """Log a manually entered inbound or outbound email contact for a job."""
     db = _get_db()
-    received_at = payload.received_at or datetime.utcnow().isoformat()
+    received_at = payload.received_at or datetime.utcnow().isoformat()  # noqa: DTZ003 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     db.execute(
         "INSERT INTO job_contacts (job_id, direction, subject, from_addr, body, received_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -1900,14 +1900,14 @@ class SurveySaveBody(BaseModel):
 def save_survey_response(job_id: int, body: SurveySaveBody):
     if body.mode not in ("quick", "detailed"):
         raise HTTPException(400, f"Invalid mode: {body.mode!r}")
-    received_at = datetime.now().isoformat()
+    received_at = datetime.now().isoformat()  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     image_path = None
     if body.image_b64:
         try:
             import base64
             screenshots_dir = Path(DB_PATH).parent / "survey_screenshots" / str(job_id)
             screenshots_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
             img_path = screenshots_dir / f"{timestamp}.png"
             img_path.write_bytes(base64.b64decode(body.image_b64))
             image_path = str(img_path)
@@ -1973,7 +1973,7 @@ def download_pdf(job_id: int):
         doc.build(story)
 
         company_safe = re.sub(r"[^a-zA-Z0-9]", "", row["company"] or "Company")
-        date_str     = datetime.now().strftime("%Y-%m-%d")
+        date_str     = datetime.now().strftime("%Y-%m-%d")  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
         filename     = f"CoverLetter_{company_safe}_{date_str}.pdf"
 
         return Response(
@@ -2626,7 +2626,7 @@ def add_jobs_by_url(body: AddJobsBody):
             job_id = insert_job(db_path, {
                 "title": "Importing...", "company": "", "url": url,
                 "source": "manual", "location": "", "description": "",
-                "date_found": _dt.now().isoformat()[:10],
+                "date_found": _dt.now().isoformat()[:10],  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
                 "status": status,
             })
             if job_id:
@@ -2665,7 +2665,7 @@ async def upload_jobs_csv(file: UploadFile):
             job_id = insert_job(db_path, {
                 "title": "Importing...", "company": "", "url": url,
                 "source": "manual", "location": "", "description": "",
-                "date_found": _dt.now().isoformat()[:10],
+                "date_found": _dt.now().isoformat()[:10],  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
             })
             if job_id:
                 submit_task(db_path, "scrape_url", job_id)
@@ -2875,7 +2875,7 @@ def queue_digest_jobs(digest_id: int, body: QueueJobsBody):
             'title': '',
             'company': '',
             'source': 'digest',
-            'date_found': datetime.utcnow().isoformat(),
+            'date_found': datetime.utcnow().isoformat(),  # noqa: DTZ003 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
         })
         if result:
             queued += 1
@@ -5061,7 +5061,7 @@ def create_backup(payload: BackupCreatePayload):
         cfg_dir = _config_dir()
         backup_dir = cfg_dir.parent / "backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
         dest = backup_dir / f"peregrine_backup_{ts}.zip"
         file_count = 0
         with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:

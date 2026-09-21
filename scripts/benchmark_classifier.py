@@ -205,7 +205,7 @@ def _parse_uid(conn: imaplib.IMAP4_SSL, uid: bytes) -> dict[str, str] | None:
 def _fetch_imap_sample(limit: int, days: int) -> list[dict[str, str]]:
     cfg = _load_imap_config()
     conn = _imap_connect(cfg)
-    since = (datetime.now() - timedelta(days=days)).strftime("%d-%b-%Y")
+    since = (datetime.now() - timedelta(days=days)).strftime("%d-%b-%Y")  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     conn.select("INBOX")
 
     seen_uids: dict[bytes, None] = {}

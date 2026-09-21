@@ -93,7 +93,7 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config()
-    since = (datetime.now() - timedelta(days=args.days)).strftime("%d-%b-%Y")
+    since = (datetime.now() - timedelta(days=args.days)).strftime("%d-%b-%Y")  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
 
     print(f"Connecting to {cfg.get('host')} …")
     conn = connect(cfg)

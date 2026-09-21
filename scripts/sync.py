@@ -36,7 +36,7 @@ def _build_properties(job: dict, fm: dict, include_optional: bool = True) -> dic
         fm["source"]:      {"multi_select": [{"name": job.get("source", "unknown").title()}]},
         fm["status"]:      {"select": {"name": fm["status_new"]}},
         fm["remote"]:      {"checkbox": bool(job.get("is_remote", 0))},
-        fm["date_found"]:  {"date": {"start": job.get("date_found", datetime.now().isoformat()[:10])}},
+        fm["date_found"]:  {"date": {"start": job.get("date_found", datetime.now().isoformat()[:10])}},  # noqa: DTZ005 -- intentionally naive; all stored timestamps in this app use naive local/UTC-by-convention isoformat strings, never compared against tz-aware values (see peregrine#179)
     }
     if include_optional:
         score = job.get("match_score")
