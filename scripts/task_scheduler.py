@@ -97,8 +97,8 @@ def _load_config_overrides(db_path: Path | None) -> tuple[dict[str, float], int]
 # (existing tests monkeypatch this symbol — keep it here for backward compat).
 try:
     from scripts.preflight import get_gpus as _get_gpus
-except Exception:  # noqa: BLE001 - scripts.preflight is a heavier optional module
-    # (subprocess/nvidia-smi probing, yaml config parsing) whose import-time
+except Exception:  # scripts.preflight is a heavier optional module (subprocess/
+    # nvidia-smi probing, yaml config parsing) whose import-time
     # failure surface goes beyond a plain ImportError (e.g. a subprocess/OSError
     # from GPU probing code that runs at import time on some platforms); any
     # failure here should degrade to the no-GPU stub rather than block the
