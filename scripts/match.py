@@ -124,9 +124,9 @@ def match_score(resume_text: str, job_text: str, company_name: str = "") -> tupl
     top_job_terms = [feature_names[i] for i in top_indices if job_tfidf[i] > 0]
     gaps = [
         t for t in top_job_terms
-        if t not in resume_terms and t == t
+        if t not in resume_terms
         and t not in _JD_BOILERPLATE_NOISE_WORDS and t not in company_words
-    ][:10]  # t==t drops NaN
+    ][:10]
 
     return round(score, 1), gaps
 
