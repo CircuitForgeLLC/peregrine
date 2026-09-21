@@ -71,7 +71,11 @@ def sync_to_notion(db_path: Path = DEFAULT_DB) -> int:
             )
             synced_ids.append(job["id"])
             print(f"[sync] + {job.get('title')} @ {job.get('company')}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - Notion SDK network call whose failure
+            # surface (network error, auth failure, API validation error, rate
+            # limit) is inspected by message text below to decide the fallback path;
+            # already surfaced to the user via print, and one job's failure must not
+            # abort syncing the rest of the batch.
             err = str(e)
             # Notion returns 400 validation_error when a property column doesn't exist yet.
             # Fall back to core fields only and warn the user.
@@ -84,7 +88,9 @@ def sync_to_notion(db_path: Path = DEFAULT_DB) -> int:
                     synced_ids.append(job["id"])
                     print(f"[sync] + {job.get('title')} @ {job.get('company')} "
                           f"(skipped optional fields — add Match Score / Keyword Gaps columns to Notion DB)")
-                except Exception as e2:
+                except Exception as e2:  # noqa: BLE001 - retry of the same Notion API
+                    # call with a reduced property set; same broad network/API
+                    # failure surface as the outer call, already surfaced via print.
                     print(f"[sync] Error syncing {job.get('url')}: {e2}")
             else:
                 print(f"[sync] Error syncing {job.get('url')}: {e}")

@@ -70,7 +70,18 @@ def test_interactions_all_pages(active_modes, mode_contexts, playwright):
                         content_matches[element.index].click()
                     else:
                         continue
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- interacting with a
+                    # live Streamlit page through Playwright; the try block
+                    # spans query_selector_all(), element.evaluate(), and
+                    # .click(), each of which can raise Playwright's
+                    # TimeoutError, Error (stale/detached element), or a
+                    # JS-side exception from the evaluate() call, depending
+                    # on unpredictable page/DOM state at the moment of the
+                    # click. A test harness walking every discovered
+                    # interactable must record any interaction failure and
+                    # move on to the next element rather than abort the
+                    # whole page's sweep -- not silent, the failure is
+                    # recorded in `failures`.
                     failures.append(
                         f"[{mode.name}] {PageClass.nav_label} / '{element.label}' — "
                         f"could not interact: {e}"

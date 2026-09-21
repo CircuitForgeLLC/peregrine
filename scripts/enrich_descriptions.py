@@ -82,7 +82,10 @@ def enrich_glassdoor_descriptions(
 
     try:
         scraper = _setup_scraper()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- jobspy's Glassdoor scraper init hits the
+        # network for a fallback token and can fail in many unpredictable ways
+        # (connection errors, HTTP errors, JSON/HTML parsing errors from a
+        # third-party library we don't control); already logged into result["errors"].
         msg = f"Glassdoor scraper init failed: {e}"
         result["errors"].append(msg)
         result["failed"] = len(rows)
@@ -115,7 +118,10 @@ def enrich_glassdoor_descriptions(
             else:
                 print(f"[enrich] {company} — {title}: empty response (expired listing?)")
                 result["failed"] += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- per-job scrape of an external site;
+            # failures span network errors, HTTP errors, and jobspy's internal
+            # HTML/JSON parsing of Glassdoor's page, none of which should abort
+            # the batch. Already logged into result["errors"] below.
             msg = f"job #{db_id} ({company}): {e}"
             result["errors"].append(msg)
             result["failed"] += 1
@@ -177,7 +183,10 @@ def enrich_all_descriptions(
             else:
                 print(f"[enrich] [{source}] {company} — {title}: no data returned")
                 result["failed"] += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- scrape_job_url dispatches to a
+            # different scraper per source (LinkedIn, Indeed, Glassdoor, Adzuna,
+            # generic JSON-LD/og: parsing), each with its own unpredictable
+            # failure modes; already logged into result["errors"] below.
             msg = f"job #{db_id} ({company}): {e}"
             result["errors"].append(msg)
             result["failed"] += 1
@@ -232,7 +241,10 @@ def enrich_craigslist_fields(
     try:
         router = LLMRouter()
         raw = router.complete(prompt)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- LLMRouter can dispatch to a local
+        # backend or a cloud provider depending on config, each with distinct
+        # failure types (connection errors, HTTP errors, provider-specific
+        # exceptions); already logged below.
         print(f"[enrich_craigslist] LLM error for job {job_id}: {exc}")
         return {}
 

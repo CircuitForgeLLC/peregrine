@@ -239,7 +239,8 @@ def _extract_domain(url_or_email: str) -> str:
         host = parsed.netloc or parsed.path
         # strip www.
         return re.sub(r"^www\.", "", host).lower()
-    except Exception:
+    except Exception:  # noqa: BLE001 -- urlparse() input is an arbitrary email/URL string
+        # from message headers; any malformed value should just yield "", not crash sync.
         return ""
 
 
@@ -323,7 +324,9 @@ def classify_stage_signal(subject: str, body: str) -> str | None:
             if text.startswith(label) or label in text:
                 return label
         return "neutral"
-    except Exception:
+    except Exception:  # noqa: BLE001 -- LLM router call can fail in many ways (network,
+        # Ollama down, model timeout); a classification failure must not abort the sync,
+        # so treat it as "no signal" and continue.
         return None
 
 
@@ -368,7 +371,9 @@ def extract_lead_info(subject: str, body: str,
         company = data.get("company") or None
         title   = data.get("title") or None
         return company, title
-    except Exception:
+    except Exception:  # noqa: BLE001 -- LLM router call + JSON parsing of a free-form
+        # completion can fail in many ways (network, malformed JSON); one lead's
+        # extraction failing must not abort the sync, so treat it as "no lead".
         return None, None
 
 
@@ -748,8 +753,11 @@ def _detect_sent_folder(conn: imaplib.IMAP4) -> str:
         for candidate in candidates:
             if candidate.lower() in flat.lower():
                 return candidate
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001 -- IMAP LIST can fail in many ways (server
+        # quirks, transient connection issues); auto-detection is best-effort and
+        # falls back to the "Sent" default, but log it since a wrong guess silently
+        # skips syncing the Sent folder.
+        print(f"[imap] WARNING — sent-folder auto-detect failed: {e}")
     return "Sent"
 
 
@@ -771,7 +779,9 @@ def _search_folder(conn: imaplib.IMAP4, folder: str, criteria: str,
         conn.select(_quote_folder(folder), readonly=True)
         _, data = conn.search(None, f'(SINCE "{since}" {criteria})')
         return data[0].split() if data and data[0] else []
-    except Exception:
+    except Exception:  # noqa: BLE001 -- IMAP SELECT/SEARCH against one folder (possibly
+        # user-configured) can fail in many server-specific ways; one folder failing
+        # to search must not abort the whole sync, so treat it as "no matches".
         return []
 
 
@@ -793,13 +803,16 @@ def _parse_message(conn: imaplib.IMAP4, uid: bytes) -> dict | None:
                 if ct == "text/html" and not html_body:
                     try:
                         html_body = part.get_payload(decode=True).decode("utf-8", errors="replace")
-                    except Exception:
-                        pass
+                    except Exception as e:  # noqa: BLE001 -- get_payload(decode=True) can
+                        # return None (AttributeError on .decode) or raise on malformed
+                        # transfer-encoded payloads; one bad part must not abort parsing
+                        # of the rest of the message.
+                        print(f"[imap] WARNING — failed to decode text/html part: {e}")
                 elif ct == "text/plain" and not plain_body:
                     try:
                         plain_body = part.get_payload(decode=True).decode("utf-8", errors="replace")
-                    except Exception:
-                        pass
+                    except Exception as e:  # noqa: BLE001 -- same as text/html case above.
+                        print(f"[imap] WARNING — failed to decode text/plain part: {e}")
         else:
             ct = msg.get_content_type()
             try:
@@ -808,8 +821,10 @@ def _parse_message(conn: imaplib.IMAP4, uid: bytes) -> dict | None:
                     html_body = raw
                 else:
                     plain_body = raw
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 -- same decode-failure reasoning as
+                # the multipart branch above; a single unparsable message body must not
+                # abort the sync.
+                print(f"[imap] WARNING — failed to decode message body: {e}")
 
         if html_body:
             # Strip <head>…</head> (CSS, meta, title) and any stray <style> blocks.
@@ -832,7 +847,9 @@ def _parse_message(conn: imaplib.IMAP4, uid: bytes) -> dict | None:
             "date":       _decode_str(msg.get("Date")),
             "body":       body,  # no truncation — digest emails need full content
         }
-    except Exception:
+    except Exception:  # noqa: BLE001 -- fetching/parsing one arbitrary email (imaplib
+        # fetch errors, email.message_from_bytes on malformed RFC822 data) can fail in
+        # many ways; one bad message must not abort the whole sync, so skip it.
         return None
 
 
@@ -975,7 +992,9 @@ def sync_all(db_path: Path = DEFAULT_DB,
                     summary["synced"] += 1
                 summary["inbound"]  += inb
                 summary["outbound"] += out
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- one job's email sync (IMAP + LLM
+                # calls) failing must not abort syncing the rest of the pipeline;
+                # already logged and recorded in summary["errors"] below.
                 msg = f"{job.get('company')}: {e}"
                 summary["errors"].append(msg)
                 print(f"[imap] ERROR — {msg}")
@@ -990,7 +1009,10 @@ def sync_all(db_path: Path = DEFAULT_DB,
     finally:
         try:
             conn.logout()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- best-effort cleanup of a connection
+            # we're discarding anyway (often already closed by the server or a prior
+            # error above); logging here is noise, not signal, since the sync outcome
+            # is already fully reported via summary/print above.
             pass
 
     return summary

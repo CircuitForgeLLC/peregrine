@@ -34,7 +34,17 @@ class GoogleDriveIntegration(IntegrationBase):
                 fileId=self._config["folder_id"], fields="id,name,mimeType"
             ).execute()
             return True
-        except Exception:
+        except Exception:  # noqa: BLE001 -- test() is a user-initiated
+            # "Test Connection" check against a third-party API (Google
+            # Drive); failure modes span googleapiclient.errors.HttpError,
+            # google.auth exceptions (bad/missing service-account JSON), and
+            # malformed self._config access. Returning False is the intended
+            # UI contract (verified: identical pattern across all 10
+            # scripts/integrations/*.py test() methods). Not logging here is
+            # deliberate -- this runs on every "Test" button click during
+            # setup, including expected failed attempts while a user is
+            # still entering credentials, so a warning log would be noisy
+            # rather than informative.
             return False
 
     def _build_service(self):

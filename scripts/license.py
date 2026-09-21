@@ -166,7 +166,11 @@ def deactivate(
             json={"jwt": stored["jwt"], "machine_id": stored.get("machine_id", _machine_id())},
             timeout=10,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- fire-and-forget deactivation POST over
+        # httpx; the license file is deleted locally regardless of whether the server
+        # could be reached, so any network/HTTP failure here is expected and
+        # inconsequential to the operation's success. Silent by design: this is a
+        # routine offline/unreachable-server path, not a fault worth logging.
         pass  # best-effort
     license_path.unlink(missing_ok=True)
 
@@ -189,7 +193,15 @@ def refresh_if_needed(
     except pyjwt.exceptions.ExpiredSignatureError:
         # Already expired — try to refresh anyway, set grace if unreachable
         pass
-    except Exception:
+    except (pyjwt.exceptions.PyJWTError, OSError, KeyError, ValueError, OverflowError, TypeError):
+        # Any other JWT decode failure (bad signature, malformed token, ...), a
+        # public-key file read failure, a token missing the `exp` claim (KeyError --
+        # PyJWT doesn't require it unless `require=["exp"]` is passed, which we don't),
+        # or a malformed/out-of-range exp value: ValueError/OverflowError from
+        # datetime.fromtimestamp on a bad numeric, TypeError if exp decoded to a
+        # non-numeric (e.g. a string -- PyJWT's own exp validation only does an
+        # int() comparison and doesn't reject a numeric-looking string claim).
+        # All mean we can't trust the local JWT, so bail out without refreshing.
         return
 
     try:
@@ -206,7 +218,12 @@ def refresh_if_needed(
         stored["last_refresh"] = datetime.now(timezone.utc).isoformat()
         stored["grace_until"] = None
         _write_license(stored, license_path)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- spans the refresh HTTP POST, raise_for_status,
+        # JSON body parsing, and a local file write, each with distinct exception
+        # families (httpx errors, ValueError from bad JSON, KeyError from a malformed
+        # response payload, OSError from the write); per this function's docstring
+        # ("No-op on network failure"), any failure in this block should fall through
+        # to the grace-period logic below rather than propagate.
         # Server unreachable — set grace period if not already set
         if not stored.get("grace_until"):
             grace = datetime.now(timezone.utc) + timedelta(days=_GRACE_PERIOD_DAYS)
@@ -233,7 +250,11 @@ def report_usage(
                 headers={"Authorization": f"Bearer {stored['jwt']}"},
                 timeout=5,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- fire-and-forget usage telemetry on a
+            # daemon thread; function docstring is explicit ("Never blocks, never
+            # raises"). Silent by design: an offline/unreachable license server is a
+            # routine, expected condition for telemetry and not worth logging from a
+            # background thread with no caller left to observe it.
             pass
 
     threading.Thread(target=_send, daemon=True).start()
@@ -258,7 +279,9 @@ def report_flag(
                 headers={"Authorization": f"Bearer {stored['jwt']}"},
                 timeout=5,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- same reasoning as report_usage's
+            # _send above: fire-and-forget violation report on a daemon thread,
+            # docstring-guaranteed to "never block, never raise."
             pass
 
     threading.Thread(target=_send, daemon=True).start()

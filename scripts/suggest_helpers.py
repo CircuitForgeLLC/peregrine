@@ -33,7 +33,10 @@ def _parse_json(text: str) -> dict[str, Any]:
     if m:
         try:
             return json.loads(m.group())
-        except Exception:
+        except json.JSONDecodeError:
+            # m.group() is always a str (from re.search), so json.loads() here can
+            # only raise JSONDecodeError on malformed LLM output — no other
+            # exception source in this single call.
             pass
     return {}
 

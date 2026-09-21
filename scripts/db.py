@@ -422,8 +422,10 @@ def get_resume_draft(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> d
         return None
     import json
     try:
+        # resume_draft_json is a TEXT column already checked truthy above,
+        # so json.loads can only fail with malformed JSON.
         return json.loads(row["resume_draft_json"])
-    except Exception:
+    except json.JSONDecodeError:
         return None
 
 
@@ -445,8 +447,10 @@ def finalize_resume(db_path: Path = DEFAULT_DB, job_id: int | None = None,
     if row:
         if row["resume_archive_json"]:
             try:
+                # resume_archive_json is a TEXT column already checked truthy
+                # above, so json.loads can only fail with malformed JSON.
                 archive = json.loads(row["resume_archive_json"])
-            except Exception:
+            except json.JSONDecodeError:
                 archive = []
         if row["optimized_resume"]:
             from datetime import datetime
@@ -478,9 +482,18 @@ def get_resume_archive(db_path: Path = DEFAULT_DB, job_id: int | None = None) ->
         return []
     import json
     try:
+        # resume_archive_json is a TEXT column already checked truthy above.
+        # json.loads can fail with malformed JSON; reversed() can fail with
+        # TypeError if the stored value decodes to a non-sequence (e.g. an
+        # int or bool) rather than the expected list. A decoded dict or str
+        # wouldn't raise here (both support reversed()) but also isn't the
+        # expected shape, so it's explicitly rejected rather than silently
+        # returned as reversed dict keys / reversed characters.
         entries = json.loads(row["resume_archive_json"])
+        if not isinstance(entries, list):
+            return []
         return list(reversed(entries))  # newest first
-    except Exception:
+    except (json.JSONDecodeError, TypeError):
         return []
 
 

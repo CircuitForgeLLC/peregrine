@@ -58,7 +58,10 @@ def _classify(subject: str, body: str, model_override: str, fallback_order: list
             if text.startswith(label) or label in text:
                 return label
         return f"? ({text[:30]})"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - dev comparison script calling multiple LLM
+        # backends (ollama/vllm) over the network; any failure (connection, timeout,
+        # provider error) should surface as a per-model "ERR:" cell in the comparison
+        # table rather than aborting the whole run, so the other models still get scored.
         return f"ERR: {e!s:.20}"
 
 
@@ -159,7 +162,9 @@ def main():
 
     try:
         conn.logout()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - best-effort IMAP logout at script exit;
+        # the connection is being torn down regardless, so any error here (already
+        # closed, network drop) is expected and would only add noise to script output.
         pass
 
 

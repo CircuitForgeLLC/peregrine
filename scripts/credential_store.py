@@ -50,7 +50,11 @@ def _get_backend() -> str:
         if "fail" in type(kr).__name__.lower() or "null" in type(kr).__name__.lower():
             raise RuntimeError("No usable keyring backend found")
         return "keyring"
-    except Exception:
+    except Exception:  # noqa: BLE001 -- `keyring.get_keyring()` can raise backend-specific
+        # errors (DBus/SecretService connection failures, import errors from optional
+        # backend plugins, RuntimeError we raise ourselves above) depending on what's
+        # installed on the host; any failure here means "keyring isn't usable," so we
+        # fall back to the file backend rather than crash credential lookup.
         return "file"
 
 
@@ -84,17 +88,23 @@ def _file_read(service: str) -> dict:
     if fernet:
         try:
             return json.loads(fernet.decrypt(raw))
-        except Exception:
+        except Exception:  # noqa: BLE001 -- security-sensitive decrypt+parse path: Fernet
+            # can raise `cryptography.fernet.InvalidToken` (wrong/rotated key, corrupted
+            # ciphertext, or the plaintext-file case handled below) as well as TypeError
+            # on malformed input, and json.loads on the decrypted payload can independently
+            # raise JSONDecodeError. Narrowing risks missing a decrypt failure mode and
+            # silently masking it as "not encrypted yet" — any failure here must fall
+            # through to the plaintext-read attempt below, never be treated as success.
             # May be an older plaintext file — try reading as text
             try:
                 return json.loads(raw.decode())
-            except Exception:
+            except (UnicodeDecodeError, json.JSONDecodeError):
                 logger.error("Failed to read credentials for service %s", service)
                 return {}
     else:
         try:
             return json.loads(raw.decode())
-        except Exception:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             return {}
 
 
@@ -131,7 +141,11 @@ def get_credential(service: str, key: str) -> str | None:
         try:
             import keyring
             raw = keyring.get_password(service, key)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- keyring backends vary by OS (macOS
+            # Keychain, SecretService/DBus, Windows Credential Locker) and each can raise
+            # its own backend-specific errors in addition to `keyring.errors.KeyringError`
+            # subclasses; a get failure must degrade to "no credential found" rather than
+            # crash the caller, and the specific exception is already logged above.
             logger.error("keyring get failed for %s/%s: %s", service, key, e)
     else:  # file
         data = _file_read(service)
@@ -165,7 +179,9 @@ def set_credential(service: str, key: str, value: str) -> None:
             import keyring
             keyring.set_password(service, key, value)
             return
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- same reasoning as get_credential above:
+            # backend-specific keyring errors vary by OS/backend, and any failure here
+            # must fall back to the file backend rather than lose the credential entirely.
             logger.error("keyring set failed for %s/%s: %s — falling back to file", service, key, e)
             backend = "file"
 
@@ -184,7 +200,10 @@ def delete_credential(service: str, key: str) -> None:
             import keyring
             keyring.delete_password(service, key)
             return
-        except Exception:
+        except Exception:  # noqa: BLE001 -- same reasoning as get_credential above:
+            # backend-specific keyring errors vary by OS/backend (including when the
+            # key simply doesn't exist in that backend), and deletion must fall through
+            # to the file backend rather than crash.
             backend = "file"
 
     data = _file_read(service)

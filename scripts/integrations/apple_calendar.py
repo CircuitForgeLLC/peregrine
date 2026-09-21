@@ -47,7 +47,12 @@ class AppleCalendarIntegration(IntegrationBase):
             )
             principal = client.principal()
             return principal is not None
-        except Exception:
+        except Exception:  # noqa: BLE001 - this is a connectivity test function whose
+            # entire contract is "return whether the configured CalDAV credentials
+            # work"; failures span missing config keys, DNS/network errors, auth
+            # rejection, and CalDAV protocol errors, all of which mean the same
+            # thing to the caller (False), so a print here would just be noise on
+            # every failed test click in the integration settings UI.
             return False
 
     def _get_calendar(self):
@@ -103,6 +108,10 @@ class AppleCalendarIntegration(IntegrationBase):
             cal.add_component(event)
             existing.data = cal.to_ical().decode()
             existing.save()
-        except Exception:
+        except Exception:  # noqa: BLE001 - the caldav library doesn't document a
+            # specific exception type for "event UID not found" vs. network/protocol
+            # errors during event_by_uid()/save(); any failure here is handled by
+            # falling back to creating the event fresh, which is itself the recovery
+            # action (not a silent swallow), so no separate logging is needed.
             return self.create_event(uid, title, start_dt, end_dt, description)
         return uid
