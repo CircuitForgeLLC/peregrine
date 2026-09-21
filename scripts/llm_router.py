@@ -141,6 +141,53 @@ class LLMRouter(_CoreLLMRouter):
             raise TaskModelUnreachableError(task, backend_id, str(e)) from e
 
 
+def _merged_cloud_llm_config(db_path: "Path") -> dict:
+    """Build the effective LLM config dict for one cloud tenant: the shared,
+    centrally-managed backends/fallback_order (read-only, from CONFIG_PATH)
+    with task_models replaced by this tenant's own file. Never writes
+    anything. task_models lives ONLY per-tenant in cloud mode -- there is no
+    shared task_models to merge in, each tenant gets their own or an empty
+    dict if they've never saved one.
+    """
+    import yaml as _yaml
+    shared_cfg: dict = {}
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH) as f:
+            shared_cfg = _yaml.safe_load(f) or {}
+
+    tenant_task_models_path = Path(db_path).parent / "config" / "task_models.yaml"
+    tenant_task_models: dict = {}
+    if tenant_task_models_path.exists():
+        with open(tenant_task_models_path) as f:
+            tenant_data = _yaml.safe_load(f) or {}
+        tenant_task_models = tenant_data.get("task_models", {})
+
+    merged = dict(shared_cfg)
+    merged["task_models"] = tenant_task_models
+    return merged
+
+
+def router_for_tenant(db_path: "Path", cloud_mode: bool) -> "LLMRouter":
+    """Build the correctly-scoped LLMRouter for a task-scoped complete_task()
+    call.
+
+    Self-hosted (cloud_mode=False): returns a bare LLMRouter() -- completely
+    unchanged from today's behavior. backends and task_models live together
+    in the same file (CONFIG_PATH) for a single-tenant install, so the
+    no-arg default already does the right thing.
+
+    Cloud (cloud_mode=True): the shared backends/fallback_order config is
+    centrally CF-managed and must never be written to by a per-tenant save
+    -- but which model handles which task IS a real per-user preference.
+    Merges the two into an in-memory dict and constructs LLMRouter from
+    that dict directly (LLMRouter.__init__ already supports a raw dict
+    config, no changes needed in circuitforge-core).
+    """
+    if not cloud_mode:
+        return LLMRouter()
+    return LLMRouter(_merged_cloud_llm_config(db_path))
+
+
 # Module-level singleton for convenience
 _router: LLMRouter | None = None
 
