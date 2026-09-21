@@ -120,7 +120,17 @@ def has_configured_llm(config_path: Path | None = None) -> bool:
             b.get("enabled", True) and b.get("type") != "vision_service"
             for b in cfg.get("backends", {}).values()
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 -- the try block mixes open()/file
+        # reading (OSError subclasses), yaml.safe_load() (yaml.YAMLError on
+        # malformed config), and cfg.get()/b.get() (AttributeError if
+        # llm.yaml's shape doesn't match, e.g. "backends" isn't a mapping or
+        # a backend entry isn't a dict). llm.yaml is a locally-edited config
+        # file, so malformed content is plausible; returning False (no
+        # configured LLM) is the correct fail-safe default for a tier-gating
+        # check. This module has no logging setup, and this helper can run
+        # on every page load to determine feature availability, so adding a
+        # warning log here would be noisy on every request until the user
+        # fixes their config, rather than informative.
         return False
 
 

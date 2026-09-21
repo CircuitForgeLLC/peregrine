@@ -60,7 +60,10 @@ def _parse_pubdate(pubdate_str: str) -> datetime | None:
     """Parse an RSS pubDate string to a timezone-aware datetime."""
     try:
         return parsedate_to_datetime(pubdate_str)
-    except Exception:
+    except ValueError:
+        # Caller always passes item.get("pubDate", "") -> guaranteed str input,
+        # so parsedate_to_datetime's only failure mode here is an unparsable
+        # date string, which it reports as ValueError (verified on Python 3.12).
         return None
 
 

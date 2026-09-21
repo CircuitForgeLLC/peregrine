@@ -32,5 +32,16 @@ class NotionIntegration(IntegrationBase):
             from notion_client import Client
             db = Client(auth=self._token).databases.retrieve(self._database_id)
             return bool(db)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- test() is a user-initiated
+            # "Test Connection" check against a third-party API (Notion);
+            # failure modes span notion_client.errors.APIResponseError
+            # (bad token, missing database access), the underlying httpx
+            # exceptions it wraps (connection error, timeout), and malformed
+            # self._token/_database_id access. Returning False is the
+            # intended UI contract (verified: identical pattern across all
+            # 10 scripts/integrations/*.py test() methods). Not logging here
+            # is deliberate -- this runs on every "Test" button click during
+            # setup, including expected failed attempts while a user is
+            # still entering credentials, so a warning log would be noisy
+            # rather than informative.
             return False

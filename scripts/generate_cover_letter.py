@@ -287,7 +287,15 @@ def generate(
         try:
             raw_yaml = yaml.safe_load(Path(user_yaml_path).read_text()) or {}
             custom_model_alias = (raw_yaml.get("custom_model_alias") or "").strip()
-        except Exception:
+        except Exception:  # noqa: BLE001 -- optional user config file; the
+            # try block mixes read_text() (OSError subclasses, plus
+            # UnicodeDecodeError which is NOT an OSError subclass),
+            # yaml.safe_load() (yaml.YAMLError on malformed YAML), and
+            # raw_yaml.get() (AttributeError if the YAML root isn't a
+            # mapping, e.g. a bare list). custom_model_alias is a purely
+            # optional override -- falling back to "" is the intended
+            # behavior, and this module has no logging setup, so a new log
+            # import for a best-effort config read isn't warranted here.
             custom_model_alias = ""
     orch_url = os.environ.get("CF_ORCH_URL", "").strip()
 
