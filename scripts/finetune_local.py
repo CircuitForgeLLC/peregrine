@@ -285,15 +285,24 @@ def _auto_register_ollama(gguf_path: Path, model_name: str, system_prompt: str) 
             if line:
                 import json as _json
                 try:
+                    # _json.loads can raise JSONDecodeError on a malformed
+                    # line; .get() can raise AttributeError if the line
+                    # decodes to something other than a JSON object (Ollama's
+                    # streaming API is expected to send objects, but isn't
+                    # contractually guaranteed to).
                     msg = _json.loads(line).get("status", "")
-                except Exception:
+                except (_json.JSONDecodeError, AttributeError):
                     msg = line.decode()
                 if msg:
                     print(f"  {msg}")
         if r.status_code != 200:
             print(f"  WARNING: Ollama returned HTTP {r.status_code}")
             return False
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- covers the whole Ollama registration
+        # network round-trip (POST, streamed response parsing, status check):
+        # requests connection/timeout errors, HTTP errors, and streaming
+        # decode errors are all equally "registration failed" here, and the
+        # user always gets a manual fallback command printed below.
         print(f"  Ollama registration failed: {exc}")
         print(f"  Run manually: ollama create {model_name} -f {OUTPUT_DIR / 'Modelfile'}")
         return False
@@ -310,7 +319,13 @@ def _auto_register_ollama(gguf_path: Path, model_name: str, system_prompt: str) 
                     _yaml.dump(cfg, default_flow_style=False, allow_unicode=True)
                 )
                 print(f"  llm.yaml updated → ollama.model = {model_name}:latest")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- this is a best-effort convenience
+            # update to a user-editable config file: read_text/write_text can
+            # raise OSError or UnicodeDecodeError, yaml.safe_load can raise
+            # yaml.YAMLError on malformed YAML, and the nested dict/key access
+            # above can raise TypeError if "backends"/"ollama" exist but aren't
+            # dicts. Any of these should fall back to the manual instructions
+            # already printed above, never abort the fine-tune script.
             print(f"  Could not update llm.yaml automatically: {exc}")
 
     print(f"\n{'='*60}")

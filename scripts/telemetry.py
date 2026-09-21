@@ -85,8 +85,12 @@ def log_usage_event(
                 (user_id, app, event_type, json.dumps(metadata) if metadata else None),
             )
         conn.commit()
-    except Exception:
-        # Telemetry must never crash the app
+    except Exception:  # noqa: BLE001, S110 -- documented hard contract (see module
+        # docstring): telemetry must never crash the app under any failure
+        # (DB connectivity, consent lookup, serialization, transient Postgres
+        # errors). Not logged: this path fires on ordinary DB hiccups in cloud
+        # mode and would be noisy; the consent/no-PII guarantee above it is
+        # what actually matters here, not visibility into transport failures.
         pass
 
 
@@ -123,5 +127,9 @@ def update_consent(user_id: str, **fields) -> None:
                 [user_id] + col_vals,
             )
         conn.commit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- same documented "never crash" contract
+        # as log_usage_event above: this is the Settings UI's consent-update path,
+        # and a transient DB hiccup here must not break the settings page. Not
+        # logged, to keep this file's no-op-on-failure behavior structurally
+        # identical to log_usage_event's rationale above.
         pass
