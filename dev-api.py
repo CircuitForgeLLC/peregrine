@@ -4791,6 +4791,11 @@ def finetune_status():
             from scripts.user_profile import UserProfile
             _opted_in = UserProfile(Path(_user_yaml_path())).training_export_opt_in
         except (FileNotFoundError, yaml.YAMLError):
+            # Covers a missing user.yaml or invalid YAML syntax. A hand-edited-but-
+            # syntactically-valid file with the wrong shape (e.g. nda_companies: null,
+            # or a top-level list instead of a mapping) can still raise TypeError here --
+            # that's intentionally left to propagate to the outer except Exception below,
+            # which returns a clean 500 rather than silently defaulting opted_in=False.
             _opted_in = False
         # Stub quota for self-hosted; cloud overrides via its own middleware
         return {"status": status, "pairs_count": pairs_count, "quota_remaining": None, "opted_in": _opted_in}
