@@ -213,10 +213,12 @@ def test_rewrite_for_ats_reranker_fallback_on_error(monkeypatch):
     from scripts.resume_optimizer import rewrite_for_ats
 
     # Patch rerank to raise so we test the fallback path
-    with patch("circuitforge_core.reranker.rerank", side_effect=RuntimeError("boom")):
-        with patch("scripts.llm_router.LLMRouter") as MockRouter:
-            MockRouter.return_value.complete.return_value = '["Built pipelines."]'
-            result = rewrite_for_ats(SAMPLE_RESUME, PRIORITIZED_GAPS, SAMPLE_JOB)
+    with (
+        patch("circuitforge_core.reranker.rerank", side_effect=RuntimeError("boom")),
+        patch("scripts.llm_router.LLMRouter") as MockRouter,
+    ):
+        MockRouter.return_value.complete.return_value = '["Built pipelines."]'
+        result = rewrite_for_ats(SAMPLE_RESUME, PRIORITIZED_GAPS, SAMPLE_JOB)
 
     assert isinstance(result, dict)
 
