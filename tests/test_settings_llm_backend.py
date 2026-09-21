@@ -24,9 +24,11 @@ class TestLlmBackendSettings:
         _write_user_yaml(yaml_path, {"services": {"ollama_host": "10.1.10.5", "ollama_port": 11500}})
         env_path = tmp_path / ".env"
         env_path.write_text("ANTHROPIC_API_KEY=sk-ant-secret\n")
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.get("/api/settings/system/llm-backend")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.get("/api/settings/system/llm-backend")
         assert r.status_code == 200
         body = r.json()
         assert body["anthropic_key_set"] is True
@@ -38,9 +40,11 @@ class TestLlmBackendSettings:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.get("/api/settings/system/llm-backend")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.get("/api/settings/system/llm-backend")
         assert r.status_code == 200
         body = r.json()
         assert body["anthropic_key_set"] is False
@@ -52,11 +56,13 @@ class TestLlmBackendSettings:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "anthropic_key": "sk-ant-new",
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "anthropic_key": "sk-ant-new",
+            })
         assert r.status_code == 200
         assert "ANTHROPIC_API_KEY=sk-ant-new" in env_path.read_text()
 
@@ -65,9 +71,11 @@ class TestLlmBackendSettings:
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
         env_path.write_text("SOME_OTHER_KEY=unrelated\n")
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                client.post("/api/settings/system/llm-backend", json={"anthropic_key": "sk-ant-new"})
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            client.post("/api/settings/system/llm-backend", json={"anthropic_key": "sk-ant-new"})
         content = env_path.read_text()
         assert "SOME_OTHER_KEY=unrelated" in content
         assert "ANTHROPIC_API_KEY=sk-ant-new" in content
@@ -76,12 +84,14 @@ class TestLlmBackendSettings:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "ollama_host": "10.1.10.5",
-                    "ollama_port": 11500,
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "ollama_host": "10.1.10.5",
+                "ollama_port": 11500,
+            })
         assert r.status_code == 200
         saved = _read_user_yaml(yaml_path)
         assert saved["services"]["ollama_host"] == "10.1.10.5"
@@ -94,11 +104,13 @@ class TestLlmBackendSettings:
             "ollama_host": "old-host",
         }})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "ollama_host": "10.1.10.5",
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "ollama_host": "10.1.10.5",
+            })
         assert r.status_code == 200
         saved = _read_user_yaml(yaml_path)
         assert saved["services"]["vllm_host"] == "10.1.10.9"
@@ -108,11 +120,13 @@ class TestLlmBackendSettings:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "inference_profile": "dual-gpu",
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "inference_profile": "dual-gpu",
+            })
         assert r.status_code == 200
         saved = _read_user_yaml(yaml_path)
         assert saved["inference_profile"] == "dual-gpu"
@@ -121,11 +135,13 @@ class TestLlmBackendSettings:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"inference_profile": "single-gpu"})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "ollama_host": "10.1.10.5",
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "ollama_host": "10.1.10.5",
+            })
         assert r.status_code == 200
         saved = _read_user_yaml(yaml_path)
         assert saved["inference_profile"] == "single-gpu"
@@ -134,9 +150,11 @@ class TestLlmBackendSettings:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"inference_profile": "cpu"})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.get("/api/settings/system/llm-backend")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.get("/api/settings/system/llm-backend")
         assert r.status_code == 200
         assert r.json()["inference_profile"] == "cpu"
 
@@ -145,20 +163,24 @@ class TestLlmBackendSettings:
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
         env_path.write_text("ANTHROPIC_API_KEY=sk-ant-keepme\n")
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                client.post("/api/settings/system/llm-backend", json={"anthropic_key": ""})
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            client.post("/api/settings/system/llm-backend", json={"anthropic_key": ""})
         assert "ANTHROPIC_API_KEY=sk-ant-keepme" in env_path.read_text()
 
     def test_post_rejects_newline_in_anthropic_key(self, tmp_path):
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "anthropic_key": "x\nGPU_SERVER_URL=http://evil",
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "anthropic_key": "x\nGPU_SERVER_URL=http://evil",
+            })
         assert r.status_code == 400
         assert not env_path.exists()
 
@@ -166,19 +188,23 @@ class TestLlmBackendSettings:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "openai_url": "http://x\r\nEVIL=1",
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "openai_url": "http://x\r\nEVIL=1",
+            })
         assert r.status_code == 400
         assert not env_path.exists()
 
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "openai_key": "sk-x\nEVIL=1",
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "openai_key": "sk-x\nEVIL=1",
+            })
         assert r.status_code == 400
         assert not env_path.exists()
 
@@ -186,11 +212,13 @@ class TestLlmBackendSettings:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "anthropic_key": "sk-ant-new",
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "anthropic_key": "sk-ant-new",
+            })
         assert r.status_code == 200
         mode = os.stat(env_path).st_mode & 0o777
         assert mode == 0o600
@@ -206,10 +234,12 @@ class TestOllamaModelConfig:
             "backends": {"ollama": {"model": "llama3.1:8b", "type": "openai_compat"}},
         }))
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
-                    r = client.get("/api/settings/system/llm-backend")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+            patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path),
+        ):
+            r = client.get("/api/settings/system/llm-backend")
         assert r.status_code == 200
         assert r.json()["ollama_model"] == "llama3.1:8b"
 
@@ -218,10 +248,12 @@ class TestOllamaModelConfig:
         _write_user_yaml(yaml_path, {})
         llm_yaml_path = tmp_path / "config" / "llm.yaml"
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
-                    r = client.get("/api/settings/system/llm-backend")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+            patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path),
+        ):
+            r = client.get("/api/settings/system/llm-backend")
         assert r.status_code == 200
         assert r.json()["ollama_model"] == ""
 
@@ -234,12 +266,14 @@ class TestOllamaModelConfig:
             "backends": {"ollama": {"model": "llama3.2:3b", "type": "openai_compat"}},
         }))
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
-                    r = client.post("/api/settings/system/llm-backend", json={
-                        "ollama_model": "llama3.1:8b",
-                    })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+            patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "ollama_model": "llama3.1:8b",
+            })
         assert r.status_code == 200
         saved = yaml.safe_load(llm_yaml_path.read_text())
         assert saved["backends"]["ollama"]["model"] == "llama3.1:8b"
@@ -257,12 +291,14 @@ class TestOllamaModelConfig:
             "fallback_order": ["ollama", "anthropic"],
         }))
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
-                    r = client.post("/api/settings/system/llm-backend", json={
-                        "ollama_model": "llama3.1:8b",
-                    })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+            patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "ollama_model": "llama3.1:8b",
+            })
         assert r.status_code == 200
         saved = yaml.safe_load(llm_yaml_path.read_text())
         assert saved["backends"]["anthropic"]["model"] == "claude-sonnet-4-6"
@@ -285,12 +321,14 @@ class TestOllamaModelConfig:
             "backends": {"ollama": {"model": "llama3.2:3b", "type": "openai_compat"}},
         }))
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
-                    r = client.post("/api/settings/system/llm-backend", json={
-                        "ollama_model": "llama3.1:8b",
-                    })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+            patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "ollama_model": "llama3.1:8b",
+            })
         assert r.status_code == 200
         saved = _read_user_yaml(yaml_path)
         assert saved["services"]["ollama_host"] == "host.docker.internal"
@@ -305,12 +343,14 @@ class TestOllamaModelConfig:
             "backends": {"ollama": {"model": "llama3.1:8b", "type": "openai_compat"}},
         }))
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                with patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path):
-                    r = client.post("/api/settings/system/llm-backend", json={
-                        "ollama_host": "10.1.10.5",
-                    })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+            patch("dev_api.LLM_CONFIG_PATH", llm_yaml_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "ollama_host": "10.1.10.5",
+            })
         assert r.status_code == 200
         saved = yaml.safe_load(llm_yaml_path.read_text())
         assert saved["backends"]["ollama"]["model"] == "llama3.1:8b"
@@ -324,9 +364,11 @@ class TestOllamaModelsList:
             "status_code": 200,
             "json": lambda self: {"models": [{"name": "llama3.1:8b"}, {"name": "llama3.2:3b"}]},
         })()
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
-                r = client.get("/api/settings/llm/ollama-models")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api.requests.get", return_value=fake_resp) as mock_get,
+        ):
+            r = client.get("/api/settings/llm/ollama-models")
         assert r.status_code == 200
         assert r.json()["models"] == ["llama3.1:8b", "llama3.2:3b"]
         called_url = mock_get.call_args[0][0]
@@ -345,11 +387,13 @@ class TestOllamaModelsList:
             "status_code": 200,
             "json": lambda self: {"models": [{"name": "llama3.1:8b"}]},
         })()
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch.dict(os.environ, {"OLLAMA_HOST": "http://host.docker.internal:11434"}):
-                with patch("dev_api._running_in_docker", return_value=True):
-                    with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
-                        r = client.get("/api/settings/llm/ollama-models")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch.dict(os.environ, {"OLLAMA_HOST": "http://host.docker.internal:11434"}),
+            patch("dev_api._running_in_docker", return_value=True),
+            patch("dev_api.requests.get", return_value=fake_resp) as mock_get,
+        ):
+            r = client.get("/api/settings/llm/ollama-models")
         assert r.status_code == 200
         assert r.json()["models"] == ["llama3.1:8b"]
         called_url = mock_get.call_args[0][0]
@@ -366,9 +410,11 @@ class TestOllamaModelsList:
             "status_code": 200,
             "json": lambda self: {"models": [{"name": "llama3.1:8b"}]},
         })()
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
-                r = client.get("/api/settings/llm/ollama-models?host=host.docker.internal&port=11434")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api.requests.get", return_value=fake_resp) as mock_get,
+        ):
+            r = client.get("/api/settings/llm/ollama-models?host=host.docker.internal&port=11434")
         assert r.status_code == 200
         assert r.json()["models"] == ["llama3.1:8b"]
         called_url = mock_get.call_args[0][0]
@@ -381,9 +427,11 @@ class TestOllamaModelsList:
             "status_code": 200,
             "json": lambda self: {"models": [{"name": "llama3.1:8b"}]},
         })()
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api.requests.get", return_value=fake_resp) as mock_get:
-                r = client.get("/api/settings/llm/ollama-models")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api.requests.get", return_value=fake_resp) as mock_get,
+        ):
+            r = client.get("/api/settings/llm/ollama-models")
         assert r.status_code == 200
         called_url = mock_get.call_args[0][0]
         assert "10.1.10.5:11500" in called_url
@@ -394,9 +442,11 @@ class TestVllmHostPortConfig:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"services": {"vllm_host": "10.1.10.9", "vllm_port": 8001}})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.get("/api/settings/system/llm-backend")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.get("/api/settings/system/llm-backend")
         assert r.status_code == 200
         body = r.json()
         assert body["vllm_host"] == "10.1.10.9"
@@ -406,9 +456,11 @@ class TestVllmHostPortConfig:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.get("/api/settings/system/llm-backend")
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.get("/api/settings/system/llm-backend")
         assert r.status_code == 200
         body = r.json()
         assert body["vllm_host"] == ""
@@ -418,12 +470,14 @@ class TestVllmHostPortConfig:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "vllm_host": "host.docker.internal",
-                    "vllm_port": 8000,
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "vllm_host": "host.docker.internal",
+                "vllm_port": 8000,
+            })
         assert r.status_code == 200
         saved = _read_user_yaml(yaml_path)
         assert saved["services"]["vllm_host"] == "host.docker.internal"
@@ -437,11 +491,13 @@ class TestVllmHostPortConfig:
             "ollama_host": "10.1.10.5", "ollama_port": 11500,
         }})
         env_path = tmp_path / ".env"
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api._env_path", return_value=env_path):
-                r = client.post("/api/settings/system/llm-backend", json={
-                    "vllm_host": "10.1.10.9",
-                })
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api._env_path", return_value=env_path),
+        ):
+            r = client.post("/api/settings/system/llm-backend", json={
+                "vllm_host": "10.1.10.9",
+            })
         assert r.status_code == 200
         saved = _read_user_yaml(yaml_path)
         assert saved["services"]["ollama_host"] == "10.1.10.5"
@@ -499,9 +555,11 @@ class TestOllamaPull:
         yaml_path = tmp_path / "config" / "user.yaml"
         _write_user_yaml(yaml_path, {"services": {"ollama_host": "10.1.10.5", "ollama_port": 11500}})
         fake_resp = type("R", (), {"status_code": 200, "json": lambda self: {}})()
-        with patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)):
-            with patch("dev_api.requests.post", return_value=fake_resp) as mock_post:
-                r = client.post("/api/settings/system/ollama-pull", json={"model": "llama3.2:3b"})
+        with (
+            patch("dev_api._wizard_yaml_path", return_value=str(yaml_path)),
+            patch("dev_api.requests.post", return_value=fake_resp) as mock_post,
+        ):
+            r = client.post("/api/settings/system/ollama-pull", json={"model": "llama3.2:3b"})
         assert r.status_code == 200
         assert r.json() == {"ok": True, "status": "pulling"}
         mock_post.assert_called_once()
