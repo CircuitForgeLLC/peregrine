@@ -312,7 +312,7 @@ def _scrape_generic(url: str) -> dict:
     return _parse_json_ld_or_og(resp.text) or {}
 
 
-def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict:
+def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dict:
     """
     Fetch the job listing at the stored URL and update the job record.
 

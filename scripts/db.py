@@ -240,7 +240,7 @@ def init_db(db_path: Path = DEFAULT_DB) -> None:
     _migrate_db(db_path)
 
 
-def insert_job(db_path: Path = DEFAULT_DB, job: dict = None) -> int | None:
+def insert_job(db_path: Path = DEFAULT_DB, job: dict | None = None) -> int | None:
     """Insert a job. Returns row id, or None if URL already exists."""
     if job is None:
         return None
@@ -273,7 +273,7 @@ def insert_job(db_path: Path = DEFAULT_DB, job: dict = None) -> int | None:
         conn.close()
 
 
-def get_job_by_id(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict | None:
+def get_job_by_id(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dict | None:
     """Return a single job by ID, or None if not found."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -318,7 +318,7 @@ def get_job_counts(db_path: Path = DEFAULT_DB) -> dict:
     return counts
 
 
-def update_job_status(db_path: Path = DEFAULT_DB, ids: list[int] = None, status: str = "approved") -> None:
+def update_job_status(db_path: Path = DEFAULT_DB, ids: list[int] | None = None, status: str = "approved") -> None:
     """Batch-update status for a list of job IDs."""
     if not ids:
         return
@@ -340,7 +340,7 @@ def get_existing_urls(db_path: Path = DEFAULT_DB) -> set[str]:
     return urls
 
 
-def write_match_scores(db_path: Path = DEFAULT_DB, job_id: int = None,
+def write_match_scores(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                        score: float = 0.0, gaps: str = "") -> None:
     """Write match score and keyword gaps back to a job row."""
     conn = sqlite3.connect(db_path)
@@ -352,7 +352,7 @@ def write_match_scores(db_path: Path = DEFAULT_DB, job_id: int = None,
     conn.close()
 
 
-def update_cover_letter(db_path: Path = DEFAULT_DB, job_id: int = None, text: str = "") -> None:
+def update_cover_letter(db_path: Path = DEFAULT_DB, job_id: int | None = None, text: str = "") -> None:
     """Persist a generated/edited cover letter for a job."""
     if job_id is None:
         return
@@ -362,7 +362,7 @@ def update_cover_letter(db_path: Path = DEFAULT_DB, job_id: int = None, text: st
     conn.close()
 
 
-def save_optimized_resume(db_path: Path = DEFAULT_DB, job_id: int = None,
+def save_optimized_resume(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                           text: str = "", gap_report: str = "") -> None:
     """Persist ATS-optimized resume text and/or gap report for a job."""
     if job_id is None:
@@ -376,7 +376,7 @@ def save_optimized_resume(db_path: Path = DEFAULT_DB, job_id: int = None,
     conn.close()
 
 
-def get_optimized_resume(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict:
+def get_optimized_resume(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dict:
     """Return optimized_resume and ats_gap_report for a job, or empty strings if absent."""
     if job_id is None:
         return {"optimized_resume": "", "ats_gap_report": ""}
@@ -394,7 +394,7 @@ def get_optimized_resume(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict
     }
 
 
-def save_resume_draft(db_path: Path = DEFAULT_DB, job_id: int = None,
+def save_resume_draft(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                       draft_json: str = "") -> None:
     """Persist a structured resume review draft (awaiting user approval)."""
     if job_id is None:
@@ -408,7 +408,7 @@ def save_resume_draft(db_path: Path = DEFAULT_DB, job_id: int = None,
     conn.close()
 
 
-def get_resume_draft(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict | None:
+def get_resume_draft(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dict | None:
     """Return the pending review draft, or None if no draft is waiting."""
     if job_id is None:
         return None
@@ -427,7 +427,7 @@ def get_resume_draft(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict | N
         return None
 
 
-def finalize_resume(db_path: Path = DEFAULT_DB, job_id: int = None,
+def finalize_resume(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                     final_text: str = "") -> None:
     """Save approved resume text, archive the previous version, and clear draft."""
     if job_id is None:
@@ -464,7 +464,7 @@ def finalize_resume(db_path: Path = DEFAULT_DB, job_id: int = None,
     conn.close()
 
 
-def get_resume_archive(db_path: Path = DEFAULT_DB, job_id: int = None) -> list:
+def get_resume_archive(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> list:
     """Return list of past finalized resume versions (newest archived first)."""
     if job_id is None:
         return []
@@ -490,8 +490,8 @@ _UPDATABLE_JOB_COLS = {
 }
 
 
-def update_job_fields(db_path: Path = DEFAULT_DB, job_id: int = None,
-                      fields: dict = None) -> None:
+def update_job_fields(db_path: Path = DEFAULT_DB, job_id: int | None = None,
+                      fields: dict | None = None) -> None:
     """Update arbitrary job columns. Unknown keys are silently ignored."""
     if job_id is None or not fields:
         return
@@ -508,7 +508,7 @@ def update_job_fields(db_path: Path = DEFAULT_DB, job_id: int = None,
     conn.close()
 
 
-def mark_applied(db_path: Path = DEFAULT_DB, ids: list[int] = None) -> None:
+def mark_applied(db_path: Path = DEFAULT_DB, ids: list[int] | None = None) -> None:
     """Set status='applied' and record today's date for a list of job IDs."""
     if not ids:
         return
@@ -571,7 +571,7 @@ def purge_email_data(db_path: Path = DEFAULT_DB) -> tuple[int, int]:
     return c1, c2
 
 
-def purge_jobs(db_path: Path = DEFAULT_DB, statuses: list[str] = None) -> int:
+def purge_jobs(db_path: Path = DEFAULT_DB, statuses: list[str] | None = None) -> int:
     """Delete jobs matching given statuses. Returns number of rows deleted.
     If statuses is None or empty, deletes ALL jobs (full reset).
     """
@@ -605,7 +605,7 @@ def purge_non_remote(db_path: Path = DEFAULT_DB) -> int:
     return count
 
 
-def archive_jobs(db_path: Path = DEFAULT_DB, statuses: list[str] = None) -> int:
+def archive_jobs(db_path: Path = DEFAULT_DB, statuses: list[str] | None = None) -> int:
     """Set status='archived' for jobs matching given statuses.
 
     Archived jobs stay in the DB (preserving dedup by URL) but are invisible
@@ -652,7 +652,7 @@ def get_interview_jobs(db_path: Path = DEFAULT_DB) -> dict[str, list[dict]]:
     return result
 
 
-def advance_to_stage(db_path: Path = DEFAULT_DB, job_id: int = None, stage: str = "") -> None:
+def advance_to_stage(db_path: Path = DEFAULT_DB, job_id: int | None = None, stage: str = "") -> None:
     """Move a job to the next interview stage and record a timestamp."""
     now = datetime.now().isoformat()[:16]
     ts_col = _STAGE_TS_COL.get(stage)
@@ -668,7 +668,7 @@ def advance_to_stage(db_path: Path = DEFAULT_DB, job_id: int = None, stage: str 
     conn.close()
 
 
-def reject_at_stage(db_path: Path = DEFAULT_DB, job_id: int = None,
+def reject_at_stage(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                     rejection_stage: str = "") -> None:
     """Mark a job as rejected and record at which stage it was rejected."""
     conn = sqlite3.connect(db_path)
@@ -680,7 +680,7 @@ def reject_at_stage(db_path: Path = DEFAULT_DB, job_id: int = None,
     conn.close()
 
 
-def set_interview_date(db_path: Path = DEFAULT_DB, job_id: int = None,
+def set_interview_date(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                        date_str: str = "") -> None:
     """Persist an interview date for a job."""
     conn = sqlite3.connect(db_path)
@@ -689,7 +689,7 @@ def set_interview_date(db_path: Path = DEFAULT_DB, job_id: int = None,
     conn.close()
 
 
-def set_calendar_event_id(db_path: Path = DEFAULT_DB, job_id: int = None,
+def set_calendar_event_id(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                           event_id: str = "") -> None:
     """Persist the calendar event ID returned after a successful push."""
     conn = sqlite3.connect(db_path)
@@ -700,7 +700,7 @@ def set_calendar_event_id(db_path: Path = DEFAULT_DB, job_id: int = None,
 
 # ── Contact log helpers ───────────────────────────────────────────────────────
 
-def add_contact(db_path: Path = DEFAULT_DB, job_id: int = None,
+def add_contact(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                 direction: str = "inbound", subject: str = "",
                 from_addr: str = "", to_addr: str = "",
                 body: str = "", received_at: str = "",
@@ -723,7 +723,7 @@ def add_contact(db_path: Path = DEFAULT_DB, job_id: int = None,
     return row_id
 
 
-def get_contacts(db_path: Path = DEFAULT_DB, job_id: int = None) -> list[dict]:
+def get_contacts(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> list[dict]:
     """Return all contact log entries for a job, oldest first."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -737,7 +737,7 @@ def get_contacts(db_path: Path = DEFAULT_DB, job_id: int = None) -> list[dict]:
 
 
 def get_unread_stage_signals(db_path: Path = DEFAULT_DB,
-                             job_id: int = None) -> list[dict]:
+                             job_id: int | None = None) -> list[dict]:
     """Return inbound contacts with a non-neutral, non-dismissed stage signal."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -756,7 +756,7 @@ def get_unread_stage_signals(db_path: Path = DEFAULT_DB,
 
 
 def dismiss_stage_signal(db_path: Path = DEFAULT_DB,
-                         contact_id: int = None) -> None:
+                         contact_id: int | None = None) -> None:
     """Mark a stage signal suggestion as dismissed."""
     conn = sqlite3.connect(db_path)
     conn.execute(
@@ -779,7 +779,7 @@ def get_all_message_ids(db_path: Path = DEFAULT_DB) -> set[str]:
 
 # ── Company research helpers ──────────────────────────────────────────────────
 
-def save_research(db_path: Path = DEFAULT_DB, job_id: int = None,
+def save_research(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                   company_brief: str = "", ceo_brief: str = "",
                   talking_points: str = "", raw_output: str = "",
                   tech_brief: str = "", funding_brief: str = "",
@@ -815,7 +815,7 @@ def save_research(db_path: Path = DEFAULT_DB, job_id: int = None,
     conn.close()
 
 
-def get_research(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict | None:
+def get_research(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dict | None:
     """Return the company research record for a job, or None if absent."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -831,7 +831,7 @@ def get_research(db_path: Path = DEFAULT_DB, job_id: int = None) -> dict | None:
 
 def insert_survey_response(
     db_path: Path = DEFAULT_DB,
-    job_id: int = None,
+    job_id: int | None = None,
     survey_name: str = "",
     received_at: str = "",
     source: str = "text_paste",
@@ -858,7 +858,7 @@ def insert_survey_response(
     return row_id
 
 
-def get_survey_responses(db_path: Path = DEFAULT_DB, job_id: int = None) -> list[dict]:
+def get_survey_responses(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> list[dict]:
     """Return all survey responses for a job, newest first."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -873,7 +873,7 @@ def get_survey_responses(db_path: Path = DEFAULT_DB, job_id: int = None) -> list
 # ── Background task helpers ───────────────────────────────────────────────────
 
 def insert_task(db_path: Path = DEFAULT_DB, task_type: str = "",
-                job_id: int = None,
+                job_id: int | None = None,
                 params: str | None = None) -> tuple[int, bool]:
     """Insert a new background task.
 
@@ -909,7 +909,7 @@ def insert_task(db_path: Path = DEFAULT_DB, task_type: str = "",
         conn.close()
 
 
-def update_task_status(db_path: Path = DEFAULT_DB, task_id: int = None,
+def update_task_status(db_path: Path = DEFAULT_DB, task_id: int | None = None,
                        status: str = "", error: str | None = None) -> None:
     """Update a task's status and set the appropriate timestamp."""
     now = datetime.now().isoformat()[:16]
@@ -933,7 +933,7 @@ def update_task_status(db_path: Path = DEFAULT_DB, task_id: int = None,
     conn.close()
 
 
-def update_task_stage(db_path: Path = DEFAULT_DB, task_id: int = None,
+def update_task_stage(db_path: Path = DEFAULT_DB, task_id: int | None = None,
                       stage: str = "") -> None:
     """Update the stage label on a running task (for progress display)."""
     conn = sqlite3.connect(db_path)
@@ -958,7 +958,7 @@ def get_active_tasks(db_path: Path = DEFAULT_DB) -> list[dict]:
 
 
 def get_task_for_job(db_path: Path = DEFAULT_DB, task_type: str = "",
-                     job_id: int = None) -> dict | None:
+                     job_id: int | None = None) -> dict | None:
     """Return the most recent task row for a (task_type, job_id) pair, or None."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row

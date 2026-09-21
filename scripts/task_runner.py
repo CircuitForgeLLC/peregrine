@@ -99,7 +99,7 @@ from scripts.db import (
 
 
 def submit_task(db_path: Path = DEFAULT_DB, task_type: str = "",
-                job_id: int = None,
+                job_id: int | None = None,
                 params: str | None = None) -> tuple[int, bool]:
     """Submit a background task.
 
