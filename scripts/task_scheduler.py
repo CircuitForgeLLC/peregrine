@@ -145,6 +145,7 @@ class TaskScheduler(_CoreTaskScheduler):
         """
         enqueued = super().enqueue(task_id, task_type, job_id, params, db_path)
         if not enqueued:
+            # Log under this module's logger so existing caplog tests pass
             logger.warning(
                 "Queue depth limit reached for %s (max=%d) — task %d dropped",
                 task_type, self._max_queue_depth, task_id,
