@@ -724,3 +724,37 @@ class TestAiWizardCloudTrial:
              patch("scripts.wizard.tiers.has_configured_llm", return_value=False):
             r = client.post("/api/wizard/ai/interview", json={"history": [], "profile_so_far": {}})
         assert r.status_code == 402
+
+    def test_wizard_ai_interview_cloud_mode_calls_router_for_tenant(self, tmp_path):
+        """wizard_ai_interview must build its LLMRouter via router_for_tenant()
+        in cloud mode, not a bare LLMRouter() -- otherwise a tenant's saved
+        task_models assignment is silently ignored."""
+        from dev_api import app
+        from fastapi.testclient import TestClient
+        from unittest.mock import patch, MagicMock
+        import os
+
+        tenant_db = tmp_path / "tenant" / "staging.db"
+        tenant_db.parent.mkdir(parents=True)
+        _write_user_yaml(tenant_db.parent / "config" / "user.yaml", {"wizard_complete": False})
+
+        client = TestClient(app)
+        fake_router = MagicMock()
+        fake_router.complete_task.return_value = '{"reply": "hi", "extracted_fields": {}, "complete": false, "asking_about": "name"}'
+
+        with patch.dict(os.environ, {"CLOUD_MODE": "true"}, clear=False), \
+             patch("dev_api._CLOUD_MODE", True), \
+             patch("dev_api._request_db") as mock_ctx, \
+             patch("dev_api.DB_PATH", str(tenant_db)), \
+             patch("dev_api._wizard_yaml_path", return_value=str(tenant_db.parent / "config" / "user.yaml")), \
+             patch("scripts.wizard.tiers.has_configured_llm", return_value=False), \
+             patch("dev_api._get_effective_tier", return_value="free"), \
+             patch("dev_api.router_for_tenant", return_value=fake_router) as mock_router_for_tenant:
+            mock_ctx.get.return_value = str(tenant_db)
+            r = client.post("/api/wizard/ai/interview", json={"history": [], "profile_so_far": {}})
+
+        assert r.status_code == 200
+        mock_router_for_tenant.assert_called_once()
+        call_args = mock_router_for_tenant.call_args
+        assert call_args.args[1] is True or call_args.kwargs.get("cloud_mode") is True
+        fake_router.complete_task.assert_called_once()
