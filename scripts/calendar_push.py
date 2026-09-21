@@ -112,7 +112,14 @@ def push_interview_event(
             set_calendar_event_id(db_path, job_id, event_id)
             return {"ok": True, "provider": name, "event_id": event_id}
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- the try block spans a
+            # third-party calendar integration's create_event/update_event
+            # (CalDAV client for Apple/Nextcloud, or googleapiclient for
+            # Google Calendar -- each raises its own distinct exception
+            # hierarchy) plus a sqlite write via set_calendar_event_id.
+            # This is a user-facing "push to calendar" action already
+            # surfaced as {"ok": False, "error": ...} to the caller, so a
+            # blind catch here is the correct boundary, not silent.
             return {"ok": False, "error": str(exc)}
 
     return {"ok": False, "error": "No calendar integration configured — connect one in Settings → Integrations"}

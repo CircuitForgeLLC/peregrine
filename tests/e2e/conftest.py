@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 from playwright.sync_api import BrowserContext, Page
+from playwright.sync_api import Error as PlaywrightError
 
 from tests.e2e.models import ErrorRecord, ModeConfig
 from tests.e2e.modes.cloud import CLOUD
@@ -119,16 +120,20 @@ def wait_for_streamlit(page: Page, timeout: int = 10_000) -> None:
     500ms which is too short for Peregrine's 3s sidebar fragment poller).
     """
     try:
+        # Best-effort wait; page.wait_for_selector only raises playwright's
+        # Error/TimeoutError family (timeout, target/context already closed).
         page.wait_for_selector('[data-testid="stSpinner"]', state="hidden", timeout=timeout)
-    except Exception:
+    except PlaywrightError:
         pass
     try:
+        # Same rationale — page.wait_for_function only raises playwright's
+        # Error/TimeoutError family.
         page.wait_for_function(
             "() => !document.querySelector('[data-testid=\"stStatusWidget\"]')"
             "?.textContent?.includes('running')",
             timeout=5_000,
         )
-    except Exception:
+    except PlaywrightError:
         pass
     page.wait_for_timeout(2_000)
 

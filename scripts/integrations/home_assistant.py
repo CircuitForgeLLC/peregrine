@@ -37,5 +37,16 @@ class HomeAssistantIntegration(IntegrationBase):
                 timeout=8,
             )
             return r.status_code == 200
-        except Exception:
+        except Exception:  # noqa: BLE001 -- test() is a user-initiated
+            # "Test Connection" check against a third-party API (Home
+            # Assistant); failure modes span requests exceptions (connection
+            # error, timeout, TLS -- often a self-hosted instance with a
+            # self-signed cert or on a LAN address), and malformed
+            # self._config access. Returning False is the intended UI
+            # contract (verified: identical pattern across all 10
+            # scripts/integrations/*.py test() methods). Not logging here is
+            # deliberate -- this runs on every "Test" button click during
+            # setup, including expected failed attempts while a user is
+            # still entering credentials, so a warning log would be noisy
+            # rather than informative.
             return False

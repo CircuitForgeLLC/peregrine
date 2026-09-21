@@ -102,7 +102,10 @@ def _select_first(soup, selectors):
             el = soup.select_one(sel)
             if el and el.get_text(strip=True):
                 return el.get_text(strip=True)
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 -- trying an ordered list of CSS
+            # selector fallbacks against LinkedIn's frequently-changing/blurred DOM;
+            # a selector failing is the expected/normal case (that's why there's a
+            # fallback list), not an error worth logging on every parse.
             continue
     return ""
 
@@ -113,7 +116,8 @@ def _select_all(soup, selectors):
             els = soup.select(sel)
             if els:
                 return els
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 -- same selector-fallback reasoning as
+            # _select_first above.
             continue
     return []
 
@@ -134,7 +138,8 @@ def _date_range_text(item):
                 text = el.get_text(strip=True)
                 if text:
                     return text
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 -- same selector-fallback reasoning as
+            # _select_first above.
             continue
     return ""
 
@@ -164,7 +169,8 @@ def parse_html(raw_html: str) -> dict:
                 career_summary = _LOGIN_NOISE.sub("", raw_text).strip()
                 if career_summary:
                     break
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 -- same selector-fallback reasoning as
+            # _select_first above.
             continue
 
     experience = []
@@ -184,7 +190,8 @@ def parse_html(raw_html: str) -> dict:
                 desc_el = item.select_one(sel)
                 if desc_el:
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 -- same selector-fallback reasoning
+                # as _select_first above.
                 continue
         bullets = _split_bullets(desc_el.get_text(" ", strip=True)) if desc_el else []
         if title or company:
@@ -206,7 +213,8 @@ def parse_html(raw_html: str) -> dict:
                 if el:
                     dates = el.get_text(strip=True)
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 -- same selector-fallback reasoning
+                # as _select_first above.
                 continue
         if school or degree:
             education.append({

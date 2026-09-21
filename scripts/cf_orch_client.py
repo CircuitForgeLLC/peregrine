@@ -88,5 +88,10 @@ def complete_via_cf_orch(
                     f"{orch_url}/api/services/{service}/allocations/{allocation_id}",
                     timeout=10.0,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - best-effort release of the
+                # allocation lease after the response has already been returned (or
+                # the request already failed); the allocation carries its own ttl_s
+                # expiry on the cf-orch side, so a failed release here is not silent
+                # data loss, just a deferred cleanup, and this thin client has no
+                # logging setup of its own to route a warning through.
                 pass

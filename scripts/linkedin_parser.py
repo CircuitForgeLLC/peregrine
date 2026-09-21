@@ -29,7 +29,10 @@ def parse_stage(stage_path: Path) -> tuple[dict, str]:
 
     try:
         data = json.loads(stage_path.read_text())
-    except Exception as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        # read_text() can raise OSError subclasses (missing/unreadable file) or
+        # UnicodeDecodeError (not an OSError subclass — checked explicitly);
+        # json.loads() can raise JSONDecodeError on a corrupted staging file.
         return {}, f"Could not read staging file: {e}"
 
     source   = data.get("source")

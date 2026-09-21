@@ -88,7 +88,15 @@ def analyze(req: AnalyzeRequest):
     try:
         image_data = base64.b64decode(req.image_base64)
         image = Image.open(io.BytesIO(image_data)).convert("RGB")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- req.image_base64 is untrusted
+        # client-supplied data; base64.b64decode() can raise
+        # binascii.Error (bad padding) or TypeError (wrong input type), and
+        # Image.open()/.convert() can raise PIL.UnidentifiedImageError,
+        # OSError (truncated/corrupt image), or ValueError depending on the
+        # garbage bytes handed to it. A blind catch at this API boundary,
+        # converted to a 400 with the underlying message, is the correct
+        # response to arbitrary malformed input -- not silent, it's
+        # re-raised as an HTTPException.
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
     with torch.no_grad():

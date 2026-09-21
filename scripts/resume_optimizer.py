@@ -248,8 +248,14 @@ def rewrite_for_ats(
                 prioritized_gaps,
                 key=lambda g: term_rank.get(g["term"], len(prioritized_gaps)),
             )
-        except Exception:
-            pass  # keep original priority ordering
+        except Exception:  # noqa: BLE001, S110 - reranking is an optional relevance
+            # boost spanning an optional import (circuitforge_core.reranker may not
+            # be installed), dict-keyed gap access, and a cross-encoder ML inference
+            # call; any failure should keep the original priority ordering rather
+            # than break resume generation. Logged at debug since this reranker is
+            # an optional dependency and a missing-package skip is expected, not
+            # actionable, in most deployments.
+            log.debug("Gap reranking skipped; using original priority order.", exc_info=True)
 
     # Group gaps by target section
     by_section: dict[str, list[str]] = {}

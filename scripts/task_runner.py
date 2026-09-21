@@ -526,7 +526,14 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
 
         update_task_status(db_path, task_id, "completed")
 
-    except BaseException as exc:
-        # BaseException catches SystemExit (from companyScraper sys.exit calls)
-        # in addition to regular exceptions.
+    except BaseException as exc:  # noqa: BLE001 -- deliberately broader than
+        # Exception: this wraps the entire dispatch of task_type handlers,
+        # several of which shell out to third-party/legacy scraper modules
+        # (e.g. companyScraper) that call sys.exit() on failure, raising
+        # SystemExit -- a BaseException subclass that a plain `except
+        # Exception` would let propagate and crash the task runner. This
+        # runs inside a background task worker (not the main thread), so
+        # catching KeyboardInterrupt here as a side effect does not block
+        # process-level interrupt handling. Not silent -- the task is marked
+        # "failed" with the error recorded via update_task_status().
         update_task_status(db_path, task_id, "failed", error=str(exc))

@@ -356,7 +356,14 @@ def test_singleton_thread_safe(tmp_db):
     def _get():
         try:
             instances.append(get_scheduler(tmp_db, _noop_run_task))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- this test is explicitly
+            # exercising get_scheduler()'s thread safety under 20 concurrent
+            # callers; the whole point of the try/except is to catch and
+            # record ANY exception the singleton init might raise under a
+            # race, of whatever type, so the assertion below (`assert not
+            # errors`) can fail with detail instead of one thread's
+            # exception silently killing that thread. Not silent -- errors
+            # are collected and asserted on.
             errors.append(e)
 
     threads = [threading.Thread(target=_get) for _ in range(20)]

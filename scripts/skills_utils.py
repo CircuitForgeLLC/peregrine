@@ -64,5 +64,15 @@ def load_suggestions(category: str) -> list[str]:
         import yaml
         data = yaml.safe_load(_SUGGESTIONS_FILE.read_text()) or {}
         return list(data.get(category, []))
-    except Exception:
+    except Exception:  # noqa: BLE001 -- the try block mixes read_text()
+        # (OSError subclasses, plus UnicodeDecodeError which is NOT an
+        # OSError subclass), yaml.safe_load() (yaml.YAMLError on malformed
+        # YAML), and data.get()/list() (AttributeError/TypeError if the
+        # bundled YAML's shape doesn't match, e.g. a list at the document
+        # root). This feeds a non-critical UI suggestion list, so returning
+        # [] is the intended graceful-degradation contract, matching the
+        # existing "file missing -> []" branch above. This module has no
+        # logging setup and the suggestions file ships with the package
+        # (not user-editable in normal operation), so adding a new logging
+        # import for this fallback isn't warranted.
         return []
