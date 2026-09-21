@@ -194,7 +194,13 @@ def score_pending_jobs(db_path: Path | None = None) -> int:
             write_match_scores(db_path, job_id, score, ", ".join(gaps))
             print(f"[match] {title} @ {company}: {score}/100  gaps: {', '.join(gaps) or 'none'}")
             scored += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- batch scoring loop over
+            # many jobs; the try block spans match_score() (arbitrary
+            # keyword/scoring logic over untrusted scraped job text) and a
+            # sqlite write via write_match_scores(). One bad/malformed job
+            # description must not abort scoring of the remaining jobs, so a
+            # catch-log-continue per item is the intended pattern here. Not
+            # silent -- already prints the error per job.
             print(f"[match] Error scoring job {job_id}: {e}")
 
     print(f"[match] Done — {scored} jobs scored.")
