@@ -187,7 +187,10 @@ class EnhancedCompanyScraper:
                         company = line.strip()
                         if company:
                             self.companies.append(company)
-            except Exception as e:
+            except (OSError, UnicodeDecodeError) as e:
+                # File open/read (missing file, permissions, bad encoding) are the only
+                # failure modes here; narrowed since this is a local file read, not a
+                # network or parsing operation.
                 print(f"Error loading companies from file: {e}")
                 sys.exit(1)
         else:
@@ -317,7 +320,11 @@ class EnhancedCompanyScraper:
                     
                     return html_content
                     
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- this block spans a network request
+                    # (requests.get), optional raw/cache file writes, and response body
+                    # access, each with its own exception family (requests exceptions,
+                    # OSError, etc.); on any failure we deliberately fall through to the
+                    # next search engine rather than aborting the whole scrape.
                     if self.args.verbose:
                         print(f"Error searching with SearXNG/{engine}: {e}")
                     continue
@@ -403,7 +410,11 @@ class EnhancedCompanyScraper:
                         self.debug_log(f"Extracted CEO from related text: {ceo}", company, "extraction")
                         return ceo
         
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- regex/bs4 extraction over arbitrary,
+            # externally-scraped HTML; group-index, attribute, and encoding failures can
+            # come from many different exception types depending on what the page
+            # actually contains, and this method's contract is to degrade to "Not found"
+            # rather than crash the whole scrape run.
             self.debug_log(f"Error extracting CEO: {e}", company, "extraction")
         
         # If all extraction methods fail, return placeholder
@@ -487,7 +498,9 @@ class EnhancedCompanyScraper:
                         self.debug_log(f"Extracted {target_title} from related text: {staff_name}", company, "extraction")
                         return staff_name
         
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- same reasoning as extract_ceo above:
+            # regex/bs4 extraction over arbitrary scraped HTML, degrade-to-"Not found"
+            # contract.
             self.debug_log(f"Error extracting {target_title}: {e}", company, "extraction")
         
         # If all extraction methods fail, return placeholder
@@ -558,7 +571,9 @@ class EnhancedCompanyScraper:
                         self.debug_log(f"Extracted address from related text: {address}", company, "extraction")
                         return address
         
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- same reasoning as extract_ceo above:
+            # regex/bs4 extraction over arbitrary scraped HTML, degrade-to-"Not found"
+            # contract.
             self.debug_log(f"Error extracting address: {e}", company, "extraction")
         
         # If all extraction methods fail, return placeholder
@@ -617,7 +632,9 @@ class EnhancedCompanyScraper:
                             self.debug_log(f"Extracted mailing address from snippet: {address}", company, "extraction")
                             return address
         
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- same reasoning as extract_ceo above:
+            # regex/bs4 extraction over arbitrary scraped HTML, degrade-to-"Not found"
+            # contract.
             self.debug_log(f"Error extracting mailing address: {e}", company, "extraction")
         
         # If all extraction methods fail, return placeholder
@@ -671,7 +688,9 @@ class EnhancedCompanyScraper:
                             self.debug_log(f"Extracted phone from snippet: {phone}", company, "extraction")
                             return phone
         
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- same reasoning as extract_ceo above:
+            # regex/bs4 extraction over arbitrary scraped HTML, degrade-to-"Not found"
+            # contract.
             self.debug_log(f"Error extracting phone: {e}", company, "extraction")
         
         # If all extraction methods fail, return placeholder
@@ -729,7 +748,9 @@ class EnhancedCompanyScraper:
                                 self.debug_log(f"Extracted email from snippet: {email}", company, "extraction")
                                 return email
         
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- same reasoning as extract_ceo above:
+            # regex/bs4 extraction over arbitrary scraped HTML, degrade-to-"Not found"
+            # contract.
             self.debug_log(f"Error extracting email: {e}", company, "extraction")
         
         # If all extraction methods fail, return placeholder
@@ -795,7 +816,9 @@ class EnhancedCompanyScraper:
             if social_results:
                 return "; ".join(social_results)
         
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- same reasoning as extract_ceo above:
+            # regex/bs4 extraction over arbitrary scraped HTML, degrade-to-"Not found"
+            # contract.
             self.debug_log(f"Error extracting social media: {e}", company, "extraction")
         
         # If no social media profiles found, return placeholder
@@ -928,7 +951,10 @@ class EnhancedCompanyScraper:
                     writer.writerow(row)
             
             print(f"Results saved to {self.args.output_file}")
-        except Exception as e:
+        except (OSError, csv.Error, UnicodeEncodeError) as e:
+            # Local file write only (open + csv.writer): OSError covers disk/permission
+            # failures, csv.Error covers malformed row data, UnicodeEncodeError covers
+            # scraped field values that can't be encoded as UTF-8.
             print(f"Error saving results: {e}")
     
     def run(self):

@@ -56,7 +56,9 @@ def _searxng_running(searxng_url: str = "http://localhost:8888") -> bool:
         import requests
         r = requests.get(f"{searxng_url}/", timeout=3)
         return r.status_code == 200
-    except Exception:
+    except requests.exceptions.RequestException:
+        # requests.get is the only call in this block; connection errors, timeouts,
+        # and other transport failures all derive from RequestException.
         return False
 
 
@@ -141,7 +143,13 @@ def _run_search_query(query: str, results: dict, key: str) -> None:
             content = r.get("content", "").strip()
             if title or content:
                 snippets.append(f"- **{title}**\n  {content}\n  <{url}>")
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- this is a background thread target (see
+        # _fetch_search_data) running one of several parallel SearXNG queries; it spans
+        # a network request and JSON body parsing, and by design one query's failure
+        # (timeout, non-JSON body, unexpected schema) must never affect the other
+        # threads or crash the research brief. Silent on purpose: SearXNG being
+        # offline/flaky is a routine, expected condition here (see _searxng_running
+        # gate above), not one worth logging per-query per-thread.
         pass
     results[key] = "\n\n".join(snippets)
 
@@ -316,7 +324,12 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None,
         if on_stage:
             try:
                 on_stage(msg)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- `on_stage` is an arbitrary
+                # caller-supplied progress callback (UI update, websocket push, etc.);
+                # its failure modes are unknowable here, and by contract a broken
+                # progress indicator must never abort company research. Silent by
+                # design: this fires on every stage transition, so logging would be
+                # noisy for what is an expected/inconsequential UI hiccup.
                 pass  # never let stage callbacks break the task
 
     # ── Phase 1: live scrape (optional) ──────────────────────────────────────
@@ -340,7 +353,13 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None,
                     + "\n".join(f"- {p}" for p in parts)
                     + "\n\nIncorporate these facts where relevant."
                 )
-        except BaseException as e:
+        except Exception as e:  # noqa: BLE001 -- narrowed from `BaseException` (which
+            # wrongly swallowed KeyboardInterrupt/SystemExit) to `Exception`. This block
+            # drives the third-party companyScraper module through several stages
+            # (SearXNG HTTP requests, bs4/regex extraction, dict access) with failure
+            # types that vary by stage; the surrounding contract is "live scrape is
+            # optional, always fall back to noting the failure and continuing with
+            # LLM-only research," so a blind catch is intentional here.
             scrape_note = f"\n\n_(Live scrape attempted but failed: {e})_"
 
     # ── Phase 1b: parallel search queries ────────────────────────────────────
@@ -351,7 +370,14 @@ def research_company(job: dict, use_scraper: bool = True, on_stage=None,
         try:
             ceo_name = (live_data.get("ceo") or "") if live_data else ""
             search_data = _fetch_search_data(company, ceo=ceo_name)
-        except BaseException:
+        except Exception:  # noqa: BLE001, S110 -- narrowed from `BaseException` (which
+            # wrongly swallowed KeyboardInterrupt/SystemExit) to `Exception`.
+            # _fetch_search_data fans out multiple network+JSON-parsing threads whose
+            # individual failures are already swallowed per-thread (see
+            # _run_search_query above); this outer catch is a last-resort guard for
+            # anything in the thread-join/dict-assembly path. Silent by design per the
+            # same "best-effort, never fail the whole research task" contract as the
+            # rest of this phase.
             pass  # best-effort; never fail the whole task
 
     # Track whether SearXNG actually contributed usable data to this brief.
