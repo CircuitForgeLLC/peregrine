@@ -44,30 +44,6 @@
       </div>
     </section>
 
-    <!-- Custom cover letter model (paid+, cloud) -->
-    <section v-if="config.isCloud && meetsRequiredTier('paid')" class="form-section">
-      <h3>Custom Cover Letter Model</h3>
-      <p class="section-note">
-        Select your fine-tuned Ollama model for cover letter generation.
-        Leave blank to use the cloud default.
-      </p>
-      <div class="field-row">
-        <label>Model</label>
-        <select v-model="coverLetterModel" class="field-select">
-          <option value="">(cloud default)</option>
-          <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
-        </select>
-        <button @click="saveCoverLetterModel" :disabled="clmSaving" class="btn-save-inline">
-          {{ clmSaving ? 'Saving…' : 'Save' }}
-        </button>
-      </div>
-      <p v-if="clmError" class="error">{{ clmError }}</p>
-      <p v-if="clmSaved" class="success">Saved.</p>
-      <p v-if="ollamaModels.length === 0" class="section-note">
-        No Ollama models found — make sure Ollama is running and has models pulled.
-      </p>
-    </section>
-
     <!-- Services section -->
     <section class="form-section">
       <h3>Services</h3>
@@ -136,8 +112,160 @@
       <p v-if="store.deployError" class="error-msg">{{ store.deployError }}</p>
     </section>
 
+    <!-- Compute & AI Backend -->
+    <section v-if="!config.isCloud" class="form-section">
+      <h3>Compute &amp; AI Backend</h3>
+      <p class="section-note">
+        Which hardware profile Peregrine uses, and the keys/hosts for
+        whichever inference backend that profile needs.
+      </p>
+
+      <div class="field-row">
+        <label>Hardware profile</label>
+        <select v-model="hardwareProfile" class="field-select">
+          <option v-for="p in hardwareProfiles" :key="p" :value="p">{{ p }}</option>
+        </select>
+      </div>
+      <p v-if="detectedGpus.length" class="section-note">
+        Detected: {{ detectedGpus.join(', ') }}
+      </p>
+
+      <div class="field-row">
+        <label>Find Ollama</label>
+        <button class="btn-save-inline" :disabled="detecting" @click="runOllamaDetect">
+          {{ detecting ? 'Detecting…' : 'Detect' }}
+        </button>
+      </div>
+      <p v-if="detectResult" class="section-note">{{ detectResult }}</p>
+
+      <div class="field-row">
+        <label>Find vLLM</label>
+        <button class="btn-save-inline" :disabled="vllmDetecting" @click="runVllmDetect">
+          {{ vllmDetecting ? 'Detecting…' : 'Detect' }}
+        </button>
+      </div>
+      <p v-if="vllmDetectResult" class="section-note">{{ vllmDetectResult }}</p>
+
+      <div class="field-row">
+        <label>Anthropic API key</label>
+        <input
+          v-model="anthropicKey"
+          type="password"
+          :placeholder="anthropicKeySet ? '••••••••  (set, enter to replace)' : 'sk-ant-…'"
+          class="field-input-wide"
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="field-row">
+        <label>OpenAI-compatible endpoint</label>
+        <input v-model="openaiUrl" type="url" placeholder="https://api.together.xyz/v1" class="field-input-wide" />
+      </div>
+      <div v-if="openaiUrl" class="field-row">
+        <label>Endpoint API key</label>
+        <input
+          v-model="openaiKey"
+          type="password"
+          :placeholder="openaiKeySet ? '••••••••  (set, enter to replace)' : 'API key for the endpoint above'"
+          class="field-input-wide"
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="field-row">
+        <label>Ollama host</label>
+        <input v-model="ollamaHost" type="text" placeholder="localhost" class="field-input-wide" />
+      </div>
+      <div class="field-row">
+        <label>Ollama port</label>
+        <input v-model.number="ollamaPort" type="number" class="field-input-wide" />
+      </div>
+
+      <div class="field-row">
+        <label>vLLM host</label>
+        <input v-model="vllmHost" type="text" placeholder="localhost" class="field-input-wide" />
+      </div>
+      <div class="field-row">
+        <label>vLLM port</label>
+        <input v-model.number="vllmPort" type="number" class="field-input-wide" />
+      </div>
+
+      <div class="field-row">
+        <label>Ollama model</label>
+        <select v-model="ollamaModel" class="field-select">
+          <option value="">(none selected)</option>
+          <option v-for="m in ollamaModelOptions" :key="m" :value="m">{{ m }}</option>
+        </select>
+      </div>
+      <p v-if="ollamaModel && ollamaModelAvailable" class="model-status model-status--ok">
+        ✓ Installed and ready to use.
+      </p>
+      <p v-else-if="ollamaModel && !ollamaModelAvailable" class="model-status model-status--warn">
+        ⚠ Not installed on this Ollama host yet.
+        <button
+          class="btn-save-inline"
+          :disabled="ollamaModelPulling"
+          @click="pullOllamaModel"
+        >{{ ollamaModelPulling ? 'Downloading…' : 'Download' }}</button>
+      </p>
+
+      <div class="form-actions">
+        <button @click="saveLlmBackend" :disabled="llmBackendSaving" class="btn-primary">
+          {{ llmBackendSaving ? 'Saving…' : 'Save Compute & AI Backend' }}
+        </button>
+        <p v-if="llmBackendError" class="error">{{ llmBackendError }}</p>
+        <p v-if="llmBackendSaved" class="success">Saved.</p>
+      </div>
+    </section>
+
+    <!-- Model Assignments -->
+    <section v-if="!config.isCloud" class="form-section">
+      <h3>Model Assignments</h3>
+      <p class="section-note">
+        Which model handles each kind of task. Research and Chat are checked
+        for reliable structured-output before being used without a warning;
+        Primary (cover letters) is not, since writing quality can't be
+        tested automatically.
+      </p>
+
+      <div v-for="task in (['primary', 'research', 'chat'] as const)" :key="task" class="field-row">
+        <label>{{ task === 'primary' ? 'Primary (cover letters)' : task === 'research' ? 'Research (suggestions)' : 'Chat (AI assistant)' }}</label>
+        <div class="provider-radio-group" role="radiogroup" :aria-label="`${task} provider`">
+          <label v-for="p in (['ollama', 'vllm'] as const)" :key="p" class="provider-radio">
+            <input
+              type="radio"
+              :name="`${task}-provider`"
+              :value="p"
+              :checked="taskProvider[task] === p"
+              @change="taskProvider[task] = p"
+            />
+            {{ p === 'ollama' ? 'Ollama' : 'vLLM' }}
+          </label>
+        </div>
+        <select :value="taskModels[task]?.model ?? ''" class="field-select" @change="onTaskModelChange(task, ($event.target as HTMLSelectElement).value)">
+          <option value="">(none assigned)</option>
+          <option v-for="m in modelOptionsFor(task)" :key="m" :value="m">{{ m }}</option>
+        </select>
+        <span
+          v-if="task !== 'primary' && taskModels[task]?.model && probeBadge(task) === 'warn'"
+          class="model-status model-status--warn"
+        >⚠ May not follow instructions reliably</span>
+        <span
+          v-if="task !== 'primary' && taskModels[task]?.model && probeBadge(task) === 'ok'"
+          class="model-status model-status--ok"
+        >✓ Structured output OK</span>
+      </div>
+
+      <div class="form-actions">
+        <button @click="saveTaskModels" :disabled="taskModelsStore.saving" class="btn-primary">
+          {{ taskModelsStore.saving ? 'Saving…' : 'Save Model Assignments' }}
+        </button>
+        <p v-if="taskModelsStore.saveError" class="error">{{ taskModelsStore.saveError }}</p>
+      </div>
+    </section>
+
     <!-- Orchard coordinator -->
-    <section class="form-section">
+    <section v-if="!config.isCloud" class="form-section">
       <h3>Orchard Coordinator</h3>
       <p class="section-note">
         The Orchard is CircuitForge's distributed GPU cluster. Requires a Paid license or higher.
@@ -157,6 +285,42 @@
       </div>
       <p v-if="orchError" class="error">{{ orchError }}</p>
       <p v-if="orchSaved" class="success">Saved.</p>
+    </section>
+
+    <!-- Custom fine-tuned model (cloud managed users only) -->
+    <section v-if="config.isCloud" class="form-section">
+      <h3>Custom Model</h3>
+      <p class="section-note">
+        If CircuitForge has provisioned a fine-tuned model for your account (Premium tier),
+        enter its alias here to use it for cover letter generation. Leave blank to use the
+        standard managed model.
+      </p>
+      <p v-if="!isPremium" class="section-note">
+        Upgrade to use your own fine-tuned model.
+      </p>
+      <div class="field-row">
+        <label>Model alias</label>
+        <input
+          v-model="customModelAlias"
+          type="text"
+          placeholder="e.g. meghan-letter-writer-v2"
+          class="field-input-wide"
+          data-testid="custom-model-alias-input"
+          :disabled="!customModelEditable"
+          :aria-disabled="!customModelEditable ? 'true' : undefined"
+        />
+        <button
+          @click="saveCustomModel"
+          :disabled="customModelSaving || !customModelEditable"
+          :aria-disabled="(customModelSaving || !customModelEditable) ? 'true' : undefined"
+          class="btn-save-inline"
+          data-testid="custom-model-save"
+        >
+          {{ customModelSaving ? 'Saving…' : 'Save' }}
+        </button>
+      </div>
+      <p v-if="customModelError" class="error">{{ customModelError }}</p>
+      <p v-if="customModelSaved" class="success">Saved.</p>
     </section>
 
     <!-- BYOK Modal -->
@@ -191,15 +355,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { storeToRefs } from 'pinia'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useSystemStore } from '../../stores/settings/system'
 import { useAppConfigStore } from '../../stores/appConfig'
 import { useApiFetch } from '../../composables/useApi'
+import { useTaskModelsStore, type TaskName } from '../../stores/settings/taskModels'
 
 const store = useSystemStore()
 const config = useAppConfigStore()
-const { tier } = storeToRefs(config)
 
 const byokConfirmed = ref(false)
 const dragIdx = ref<number | null>(null)
@@ -211,11 +374,6 @@ const visibleBackends = computed(() =>
     !CONTRACTED_ONLY.includes(b.id) || config.contractedClient
   )
 )
-
-const tierOrder = ['free', 'paid', 'premium', 'ultra']
-function meetsRequiredTier(required: string): boolean {
-  return tierOrder.indexOf(tier.value) >= tierOrder.indexOf(required || 'free')
-}
 
 function dragStart(idx: number) {
   dragIdx.value = idx
@@ -244,33 +402,92 @@ async function handleConfirmByok() {
   byokConfirmed.value = false
 }
 
-// ── Custom cover letter model ─────────────────────────────────────────────────
-const coverLetterModel = ref('')
-const ollamaModels     = ref<string[]>([])
-const clmSaving        = ref(false)
-const clmError         = ref<string | null>(null)
-const clmSaved         = ref(false)
+// ── Model Assignments (Primary/Research/Chat) ─────────────────────────────────
+// Note: `ollamaModels` below is shared with the "Compute & AI Backend" section
+// (ollamaModelOptions/ollamaModelAvailable/pullOllamaModel/loadLlmBackend) --
+// it is unrelated to the removed cover-letter picker and is kept here.
+const ollamaModels = ref<string[]>([])
 
-async function loadCoverLetterModel() {
-  const { data } = await useApiFetch<{ model: string }>('/api/settings/llm/cover-letter-model')
-  if (data) coverLetterModel.value = data.model ?? ''
-  const { data: mData } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
-  if (mData) ollamaModels.value = mData.models ?? []
+const taskModelsStore = useTaskModelsStore()
+const taskModels = computed(() => ({
+  primary: taskModelsStore.primary, research: taskModelsStore.research, chat: taskModelsStore.chat,
+}))
+const detecting = ref(false)
+const detectResult = ref<string | null>(null)
+const vllmDetecting = ref(false)
+const vllmDetectResult = ref<string | null>(null)
+
+// Which provider's model list each task row is currently showing --
+// defaults from that task's existing assignment (if any), else Ollama.
+const taskProvider = reactive<Record<TaskName, 'ollama' | 'vllm'>>({
+  primary: (taskModels.value.primary?.backend as 'ollama' | 'vllm') ?? 'ollama',
+  research: (taskModels.value.research?.backend as 'ollama' | 'vllm') ?? 'ollama',
+  chat: (taskModels.value.chat?.backend as 'ollama' | 'vllm') ?? 'ollama',
+})
+
+function modelOptionsFor(task: TaskName): string[] {
+  return taskProvider[task] === 'vllm' ? taskModelsStore.vllmModels : taskModelsStore.ollamaModels
 }
 
-async function saveCoverLetterModel() {
-  clmSaving.value = true
-  clmError.value  = null
-  clmSaved.value  = false
-  const { error } = await useApiFetch('/api/settings/llm/cover-letter-model', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: coverLetterModel.value }),
-  })
-  clmSaving.value = false
-  if (error) { clmError.value = 'Failed to save model.'; return }
-  clmSaved.value = true
-  setTimeout(() => { clmSaved.value = false }, 3000)
+function onTaskModelChange(task: TaskName, model: string) {
+  const backend = taskProvider[task]
+  const assignment = model ? { backend, model } : null
+  if (task === 'primary') taskModelsStore.primary = assignment
+  else if (task === 'research') taskModelsStore.research = assignment
+  else taskModelsStore.chat = assignment
+  if (assignment && task !== 'primary') {
+    taskModelsStore.probeModel(backend, model)
+  }
+}
+
+function probeBadge(task: TaskName): 'ok' | 'warn' | null {
+  const assignment = taskModels.value[task]
+  if (!assignment) return null
+  const result = taskModelsStore.probeResults[`${assignment.backend}:${assignment.model}`]
+  if (!result) return null
+  return result.passed ? 'ok' : 'warn'
+}
+
+async function saveTaskModels() {
+  await taskModelsStore.save()
+}
+
+async function runOllamaDetect() {
+  detecting.value = true
+  detectResult.value = null
+  const result = await taskModelsStore.detectOllama(11434)
+  detecting.value = false
+  if (result.found) {
+    // Write into the real, persisted Ollama host field (saved by
+    // saveLlmBackend) -- not a second, dead copy of it.
+    ollamaHost.value = result.host ?? ''
+    ollamaPort.value = result.port ?? ollamaPort.value
+    detectResult.value = `Found Ollama at ${result.host}:${result.port}. Filled into the Ollama host field above — click “Save Compute & AI Backend” to keep it.`
+    // Query the just-detected host directly for its models -- don't make
+    // the user Save first just to see what's installed there.
+    const { data } = await useApiFetch<{ models: string[] }>(
+      `/api/settings/llm/ollama-models?host=${encodeURIComponent(ollamaHost.value)}&port=${ollamaPort.value}`,
+    )
+    if (data) ollamaModels.value = data.models ?? []
+    await taskModelsStore.loadOllamaModels(ollamaHost.value, ollamaPort.value)
+  } else {
+    detectResult.value = `Couldn't find Ollama — tried: ${(result.tried ?? []).join(', ')}.`
+  }
+}
+
+async function runVllmDetect() {
+  vllmDetecting.value = true
+  vllmDetectResult.value = null
+  const result = await taskModelsStore.detectVllm(8000)
+  vllmDetecting.value = false
+  if (result.found) {
+    vllmHost.value = result.host ?? ''
+    vllmPort.value = result.port ?? vllmPort.value
+    vllmDetectResult.value = `Found vLLM at ${result.host}:${result.port}. Filled into the vLLM host field above — click “Save Compute & AI Backend” to keep it.`
+    await taskModelsStore.loadVllmModels(vllmHost.value, vllmPort.value)
+  } else {
+    vllmDetectResult.value = `Couldn't find vLLM — tried: ${(result.tried ?? []).join(', ')}.`
+  }
 }
 
 // ── Orchard coordinator URL ───────────────────────────────────────────────────
@@ -299,16 +516,181 @@ async function saveOrchUrl() {
   setTimeout(() => { orchSaved.value = false }, 3000)
 }
 
+// ── Custom fine-tuned model (cloud managed users only) ────────────────────────
+const customModelAlias   = ref('')
+const customModelSaving  = ref(false)
+const customModelError   = ref<string | null>(null)
+const customModelSaved   = ref(false)
+const isPremium          = computed(() => config.tier === 'premium')
+// Set once from the loaded value, not the live input -- lets a non-Premium
+// user clear an existing alias down to '' without the Save button
+// re-disabling itself the instant the field goes empty (it would, if this
+// tracked customModelAlias directly instead of "was there something to
+// clear when the page loaded").
+const hadExistingCustomModelAlias = ref(false)
+// Editable when the user can either set (Premium) or clear (non-Premium,
+// something to clear) the alias -- same reasoning as the Save button below.
+const customModelEditable = computed(() => isPremium.value || hadExistingCustomModelAlias.value)
+
+async function loadCustomModel() {
+  const { data } = await useApiFetch<{ custom_model_alias: string }>('/api/settings/system/custom-model')
+  if (data) customModelAlias.value = data.custom_model_alias ?? ''
+  hadExistingCustomModelAlias.value = !!customModelAlias.value
+}
+
+async function saveCustomModel() {
+  customModelSaving.value = true
+  customModelError.value  = null
+  customModelSaved.value  = false
+  const { error } = await useApiFetch('/api/settings/system/custom-model', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ custom_model_alias: customModelAlias.value }),
+  })
+  customModelSaving.value = false
+  if (error) {
+    if (error.kind === 'http' && error.status === 402) {
+      customModelError.value = 'Custom models require the Premium tier.'
+    } else {
+      customModelError.value = 'Failed to save.'
+    }
+    return
+  }
+  customModelSaved.value = true
+  setTimeout(() => { customModelSaved.value = false }, 3000)
+}
+
+// ── Compute & AI Backend ──────────────────────────────────────────────────────
+const hardwareProfile   = ref('')
+const hardwareProfiles  = ref<string[]>([])
+const detectedGpus      = ref<string[]>([])
+const anthropicKey      = ref('')
+const anthropicKeySet   = ref(false)
+const openaiUrl         = ref('')
+const openaiKey         = ref('')
+const openaiKeySet      = ref(false)
+const ollamaHost        = ref('')
+const ollamaPort        = ref(11434)
+const vllmHost          = ref('')
+const vllmPort          = ref(8000)
+const ollamaModel       = ref('')
+const ollamaModelPulling = ref(false)
+const llmBackendSaving  = ref(false)
+const llmBackendError   = ref<string | null>(null)
+const llmBackendSaved   = ref(false)
+
+// The dropdown must always include the currently configured model, even if
+// it isn't installed yet -- otherwise picking a model that needs a download
+// would silently disappear from its own picker.
+const ollamaModelOptions = computed(() => {
+  if (ollamaModel.value && !ollamaModels.value.includes(ollamaModel.value)) {
+    return [ollamaModel.value, ...ollamaModels.value]
+  }
+  return ollamaModels.value
+})
+const ollamaModelAvailable = computed(() => ollamaModels.value.includes(ollamaModel.value))
+
+async function loadLlmBackend() {
+  const { data } = await useApiFetch<{
+    anthropic_key_set: boolean; openai_url: string; openai_key_set: boolean
+    ollama_host: string; ollama_port: number; vllm_host: string; vllm_port: number
+    inference_profile: string; ollama_model: string
+  }>('/api/settings/system/llm-backend')
+  if (data) {
+    anthropicKeySet.value = data.anthropic_key_set
+    openaiUrl.value       = data.openai_url
+    openaiKeySet.value    = data.openai_key_set
+    ollamaHost.value      = data.ollama_host
+    ollamaPort.value      = data.ollama_port
+    vllmHost.value        = data.vllm_host
+    vllmPort.value        = data.vllm_port
+    ollamaModel.value     = data.ollama_model
+    if (data.inference_profile) hardwareProfile.value = data.inference_profile
+  }
+
+  const { data: hwData } = await useApiFetch<{ profiles: string[]; suggested_profile: string; gpus: string[] }>(
+    '/api/wizard/hardware',
+  )
+  if (hwData) {
+    hardwareProfiles.value = hwData.profiles ?? []
+    detectedGpus.value     = hwData.gpus ?? []
+    if (!hardwareProfile.value) hardwareProfile.value = hwData.suggested_profile ?? ''
+  }
+
+  const { data: mData } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
+  if (mData) ollamaModels.value = mData.models ?? []
+}
+
+async function saveLlmBackend() {
+  llmBackendSaving.value = true
+  llmBackendError.value  = null
+  llmBackendSaved.value  = false
+  const { error } = await useApiFetch('/api/settings/system/llm-backend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      anthropic_key: anthropicKey.value,
+      openai_url: openaiUrl.value,
+      openai_key: openaiKey.value,
+      ollama_host: ollamaHost.value,
+      ollama_port: ollamaPort.value,
+      vllm_host: vllmHost.value,
+      vllm_port: vllmPort.value,
+      inference_profile: hardwareProfile.value,
+      ollama_model: ollamaModel.value,
+    }),
+  })
+  llmBackendSaving.value = false
+  if (error) { llmBackendError.value = 'Failed to save.'; return }
+  anthropicKey.value = ''
+  openaiKey.value = ''
+  llmBackendSaved.value = true
+  setTimeout(() => { llmBackendSaved.value = false }, 3000)
+  // The saved host/port may have just changed -- refresh both model lists
+  // so the dropdowns reflect it without requiring a manual page reload.
+  const { data: mData } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
+  if (mData) ollamaModels.value = mData.models ?? []
+  await taskModelsStore.loadOllamaModels()
+  await taskModelsStore.loadVllmModels()
+}
+
+async function pullOllamaModel() {
+  if (!ollamaModel.value || ollamaModelPulling.value) return
+  ollamaModelPulling.value = true
+  await useApiFetch('/api/settings/system/ollama-pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: ollamaModel.value }),
+  })
+  await pollForOllamaModel(ollamaModel.value)
+  ollamaModelPulling.value = false
+}
+
+async function pollForOllamaModel(model: string, attempt = 0) {
+  const MAX_ATTEMPTS = 120  // 120 x 5s = 10 minutes
+  if (attempt >= MAX_ATTEMPTS) return
+  const { data } = await useApiFetch<{ models: string[] }>('/api/settings/llm/ollama-models')
+  if (data) ollamaModels.value = data.models ?? []
+  if (ollamaModels.value.includes(model)) return
+  await new Promise(resolve => setTimeout(resolve, 5000))
+  await pollForOllamaModel(model, attempt + 1)
+}
+
 onMounted(async () => {
   await store.loadLlm()
   const tasks = [
     store.loadServices(),
     store.loadFilePaths(),
     store.loadDeployConfig(),
-    loadOrchUrl(),
   ]
-  if (config.isCloud && tierOrder.indexOf(tier.value) >= tierOrder.indexOf('paid')) {
-    tasks.push(loadCoverLetterModel())
+  if (!config.isCloud) {
+    tasks.push(loadOrchUrl())
+    tasks.push(loadLlmBackend())
+    tasks.push(taskModelsStore.load())
+    tasks.push(taskModelsStore.loadOllamaModels())
+    tasks.push(taskModelsStore.loadVllmModels())
+  } else {
+    tasks.push(loadCustomModel())
   }
   await Promise.all(tasks)
 })
@@ -321,6 +703,9 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .tab-note { font-size: 0.82rem; color: var(--color-text-muted); margin-bottom: var(--space-6); }
 .form-section { margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--color-border); }
 .section-note { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 14px; }
+.model-status { font-size: 0.82rem; margin-bottom: 14px; display: flex; align-items: center; gap: var(--space-2); }
+.model-status--ok { color: var(--color-success); }
+.model-status--warn { color: var(--color-warning); }
 .backend-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
 .backend-card { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 8px; cursor: grab; user-select: none; }
 .backend-card:active { cursor: grabbing; }
@@ -378,6 +763,9 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .field-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
 .field-row label { font-size: 0.82rem; color: var(--color-text-muted); }
 .field-row input { background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); padding: 7px 10px; font-size: 0.88rem; }
+.provider-radio-group { display: flex; gap: 14px; margin-bottom: 2px; }
+.provider-radio { display: flex; align-items: center; gap: 5px; font-size: 0.85rem; color: var(--color-text); cursor: pointer; }
+.provider-radio input[type="radio"] { accent-color: var(--color-primary); cursor: pointer; }
 .field-input-wide { width: 100%; max-width: 400px; }
 .field-hint { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 3px; }
 .btn-secondary { padding: 9px 18px; background: transparent; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text-muted); cursor: pointer; font-size: 0.88rem; }

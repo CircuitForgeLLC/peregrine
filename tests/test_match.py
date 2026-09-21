@@ -26,6 +26,65 @@ def test_score_is_between_0_and_100():
     assert isinstance(gaps, list)
 
 
+def test_match_score_gaps_exclude_generic_jd_boilerplate():
+    """A 2-document TF-IDF fit (resume vs. one job posting) has almost no real
+    corpus to compute IDF against, so it degenerates to raw term frequency --
+    surfacing whatever JD section-header/boilerplate words repeat most often
+    (e.g. "experience", "required", "skills", "job", from headings like
+    "Required Skills and Experience" / "Job Description") as if they were
+    meaningful ATS keywords. Regression test for a live bug found on
+    freeze/v1.0.0/rc-1's Resume Optimizer: gaps were dominated by exactly
+    these words instead of real skills/technologies from the JD."""
+    from scripts.match import match_score
+
+    job_text = (
+        "Job Description\n"
+        "We are looking for a Software Engineer with strong Python skills.\n"
+        "Required Skills and Experience\n"
+        "Minimum 5 years of experience with Python and Kubernetes.\n"
+        "Required Education and Training\n"
+        "Bachelor's degree required.\n"
+        "Additional Information\n"
+        "This job requires on-site work.\n"
+    )
+    _, gaps = match_score(
+        resume_text="Customer Success Manager with Salesforce experience",
+        job_text=job_text,
+    )
+    boilerplate = {"experience", "required", "skills", "job", "description",
+                   "information", "additional", "education", "training"}
+    assert not (set(gaps) & boilerplate), f"boilerplate leaked into gaps: {set(gaps) & boilerplate}"
+    # The real, specific signal should still come through -- this isn't just
+    # "return no gaps", it's "return the gaps that actually matter".
+    assert "python" in gaps or "kubernetes" in gaps
+
+
+def test_match_score_gaps_exclude_company_name_words():
+    """A JD that repeats the hiring company's own name throughout (a common
+    pattern -- "At Acme, we believe...", "join Acme's team...") makes that
+    name look like a high-frequency, hence high-TF-IDF, keyword under the
+    same 2-document degenerate-IDF problem the boilerplate filter addresses.
+    The company's own name is never a real ATS skill keyword. Regression
+    test for a live bug found on freeze/v1.0.0/rc-1: "intuitive" (from
+    "Intuitive Surgical") appeared in the gap report for real."""
+    from scripts.match import match_score
+
+    job_text = (
+        "At Intuitive, we believe surgery can be less invasive. "
+        "Intuitive is looking for a Software Engineer with strong Python skills. "
+        "Join Intuitive's engineering team and help Intuitive build the future "
+        "of Intuitive's robotic surgery platform with Kubernetes expertise."
+    )
+    _, gaps = match_score(
+        resume_text="Customer Success Manager with Salesforce experience",
+        job_text=job_text,
+        company_name="Intuitive Surgical",
+    )
+    assert "intuitive" not in gaps
+    assert "surgical" not in gaps
+    assert "python" in gaps or "kubernetes" in gaps
+
+
 def test_write_score_to_notion():
     """write_match_to_notion updates the Notion page with score and gaps."""
     from scripts.match import write_match_to_notion

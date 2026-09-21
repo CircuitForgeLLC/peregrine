@@ -990,6 +990,10 @@ def _resume_as_dict(row) -> dict:
         "created_at":  row["created_at"],
         "updated_at":  row["updated_at"],
         "synced_at":   row["synced_at"] if "synced_at" in row.keys() else None,
+        "score":         row["score"] if "score" in row.keys() else None,
+        "ats_score":     row["ats_score"] if "ats_score" in row.keys() else None,
+        "feedback_json": row["feedback_json"] if "feedback_json" in row.keys() else None,
+        "scored_at":     row["scored_at"] if "scored_at" in row.keys() else None,
     }
 
 
@@ -1122,6 +1126,31 @@ def update_resume_content(
                SET text=?, struct_json=?, word_count=?,
                    synced_at=datetime('now'), updated_at=datetime('now')
                WHERE id=?""",
+            (text, struct_json, word_count, resume_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_resume_struct(
+    db_path: Path = DEFAULT_DB,
+    resume_id: int = 0,
+    text: str = "",
+    struct_json: str = "",
+) -> None:
+    """Update text and struct_json after an in-place suggestion apply.
+
+    Unlike update_resume_content(), this does NOT stamp synced_at — that field
+    means "synced to the profile", and applying a scoring suggestion here has
+    nothing to do with profile sync.
+    """
+    word_count = len(text.split()) if text else 0
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE resumes SET text=?, struct_json=?, word_count=?, "
+            "updated_at=datetime('now') WHERE id=?",
             (text, struct_json, word_count, resume_id),
         )
         conn.commit()

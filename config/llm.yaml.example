@@ -135,9 +135,9 @@ fallback_order:
 - github_copilot
 - anthropic
 research_fallback_order:
-- claude_code
 - vllm
 - ollama_research
+- claude_code
 - github_copilot
 - anthropic
 vision_fallback_order:
@@ -147,6 +147,11 @@ vision_fallback_order:
 # Note: 'ollama' (alex-cover-writer) intentionally excluded — research
 # must never use the fine-tuned writer model, and this also avoids evicting
 # the writer from GPU memory while a cover letter task is in flight.
+# Each chain's FIRST entry should be an enabled backend: when a task has no
+# explicit assignment in Settings > System > Model Assignments,
+# LLMRouter.complete_task() derives a default from fallback_order[0] (primary)
+# or research_fallback_order[0] (research/chat) directly -- it does not skip
+# a disabled leading entry the way the general complete() fallback chain does.
 
 # ── Scheduler — LLM batch queue optimizer ─────────────────────────────────────
 # The scheduler batches LLM tasks by model type to avoid GPU model switching.

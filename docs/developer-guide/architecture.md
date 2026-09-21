@@ -68,7 +68,7 @@ flowchart TD
     interviews["5_Interviews.py\nKanban: phone_screen → hired"]
     prep["6_Interview_Prep.py\nResearch brief + practice Q&A"]
     survey["7_Survey.py\nCulture-fit survey assistant"]
-    wizard["app/wizard/\nstep_hardware.py … step_integrations.py\ntiers.py — feature gate definitions"]
+    wizard["scripts/wizard/\nstep_hardware.py … step_integrations.py\ntiers.py — feature gate definitions"]
 
     entry --> setup
     entry --> review
@@ -262,13 +262,13 @@ The scripts layer was deliberately kept free of Streamlit imports. This means th
 
 `staging.db` acts as the staging layer between discovery and external integrations. This lets discovery, matching, and the UI all run independently without network dependencies. External integrations (Notion, Airtable, etc.) are push-only and optional.
 
-### Tier system in app/wizard/tiers.py
+### Tier system in scripts/wizard/tiers.py
 
 `FEATURES` is a single dict that maps feature key → minimum tier. `can_use(tier, feature)` is the single gating function. New features are added to `FEATURES` in one place.
 
 ### Vision service is a separate process
 
-Moondream2 requires `torch` and `transformers`, which are incompatible with the lightweight main conda environment. The vision service runs as a separate FastAPI process in a separate conda environment (`job-seeker-vision`), keeping the main env free of GPU dependencies.
+Moondream2 requires `torch` and `transformers`, which are incompatible with the lightweight main conda environment. The vision service runs as a separate FastAPI process in its own Docker container, keeping the main env free of GPU dependencies.
 
 ### Cloud mode is a transparent layer, not a fork
 

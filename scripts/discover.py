@@ -20,6 +20,8 @@ from scripts.db import DEFAULT_DB, init_db, insert_job, get_existing_urls as db_
 from scripts.custom_boards import adzuna as _adzuna
 from scripts.custom_boards import theladders as _theladders
 from scripts.custom_boards import craigslist as _craigslist
+from scripts.custom_boards import remoteok as _remoteok
+from scripts.custom_boards import weworkremotely as _weworkremotely
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 NOTION_CFG = CONFIG_DIR / "notion.yaml"
@@ -31,6 +33,8 @@ CUSTOM_SCRAPERS: dict[str, object] = {
     "adzuna": _adzuna.scrape,
     "theladders": _theladders.scrape,
     "craigslist": _craigslist.scrape,
+    "remoteok": _remoteok.scrape,
+    "weworkremotely": _weworkremotely.scrape,
 }
 
 
@@ -42,6 +46,18 @@ def _normalize_profiles(raw: dict) -> dict:
     This converts on load so both formats work without a migration.
     """
     if "profiles" in raw:
+        # Per-entry job_boards -> boards conversion still has to run here,
+        # even though the top-level structure needs no migration -- writers
+        # like the Settings PUT handler (save_search_prefs) merge job_boards
+        # (the API schema) directly into an entry inside an already-
+        # `profiles`-format file, and this is the only place left that would
+        # otherwise translate it into the `boards` list run_discovery reads.
+        for profile in raw["profiles"]:
+            if not isinstance(profile, dict):
+                continue
+            job_boards = profile.get("job_boards")
+            if job_boards and not profile.get("boards"):
+                profile["boards"] = [b["name"] for b in job_boards if b.get("enabled", True)]
         return raw
     # Wizard-written format: top-level keys are profile names (usually "default")
     profiles = []
@@ -206,6 +222,10 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
         if any(kw in title_lower or kw in desc_lower for kw in exclude_kw):
             return False
 
+        require_kw = job_row.get("_require_kw", [])
+        if require_kw and not any(kw in title_lower or kw in desc_lower for kw in require_kw):
+            return False
+
         tc_key = (title_lower[:80], job_row.get("company", "").lower().strip())
         if tc_key in existing_tc:
             return False
@@ -232,17 +252,29 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
         exclude_kw = [kw.lower() for kw in profile.get("exclude_keywords", [])]
         results_per_board = profile.get("results_per_board", 25)
 
-        # Map remote_preference → JobSpy is_remote param:
-        #   'remote'  → True  (remote-only listings)
-        #   'onsite'  → False (on-site-only listings)
-        #   'both'    → None  (no filter — JobSpy default)
-        _rp = profile.get("remote_preference", "both")
-        _is_remote: bool | None = True if _rp == "remote" else (False if _rp == "onsite" else None)
+        # remote_preference is a multi-select: any subset of {onsite, remote,
+        # hybrid}. Older profiles (pre-multi-select) may still have it as a
+        # single string, including the retired 'both' value -- normalize
+        # both shapes to a set before mapping.
+        _rp_raw = profile.get("remote_preference", ["onsite", "remote", "hybrid"])
+        if isinstance(_rp_raw, str):
+            _rp_selected = {"onsite", "remote", "hybrid"} if _rp_raw == "both" else {_rp_raw}
+        else:
+            _rp_selected = set(_rp_raw) if _rp_raw else {"onsite", "remote", "hybrid"}
 
-        # When filtering for remote-only, also drop hybrid roles at the description level.
+        # Map the selection → JobSpy's is_remote param: only an unambiguous
+        # single choice of 'remote' or 'onsite' can set it; every other
+        # combination (including all three, matching the old 'both') leaves
+        # it unfiltered at the board level.
+        _is_remote: bool | None = (
+            True if _rp_selected == {"remote"}
+            else (False if _rp_selected == {"onsite"} else None)
+        )
+
         # Job boards (especially LinkedIn) tag hybrid listings as is_remote=True, so the
-        # board-side filter alone is not reliable.  We match specific work-arrangement
-        # phrases to avoid false positives like "hybrid cloud" or "hybrid architecture".
+        # board-side filter alone is not reliable for distinguishing hybrid from remote or
+        # onsite.  We match specific work-arrangement phrases at the description level
+        # instead, avoiding false positives like "hybrid cloud" or "hybrid architecture".
         _HYBRID_PHRASES = [
             "hybrid role", "hybrid position", "hybrid work", "hybrid schedule",
             "hybrid model", "hybrid arrangement", "hybrid opportunity",
@@ -251,8 +283,17 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
             "days in office", "days per week in", "days onsite", "days on-site",
             "required to be in office", "required in office",
         ]
-        if _rp == "remote":
+        # Hybrid not selected at all: exclude anything that reads as hybrid.
+        # Hybrid selected alone (no onsite/remote also wanted): require a
+        # hybrid-phrase match instead (the inverse). Hybrid selected alongside
+        # onsite and/or remote: neither filter applies -- those other
+        # arrangements are also acceptable, so requiring hybrid phrasing
+        # would wrongly drop legitimate non-hybrid results.
+        require_kw: list[str] = []
+        if "hybrid" not in _rp_selected:
             exclude_kw = exclude_kw + _HYBRID_PHRASES
+        elif _rp_selected == {"hybrid"}:
+            require_kw = _HYBRID_PHRASES
 
         for location in profile["locations"]:
 
@@ -322,6 +363,7 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                         "description": _s(job_dict.get("description")),
                         "date_posted": date_posted_str,
                         "_exclude_kw": exclude_kw,
+                        "_require_kw": require_kw,
                     }
                     if _insert_if_new(row, _s(job_dict.get("site"))):
                         if notion_push:
@@ -349,7 +391,7 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                 print(f"  [{board_name}] {len(custom_jobs)} raw results")
                 board_new = 0
                 for job in custom_jobs:
-                    row = {**job, "_exclude_kw": exclude_kw}
+                    row = {**job, "_exclude_kw": exclude_kw, "_require_kw": require_kw}
                     if _insert_if_new(row, board_name):
                         new_count += 1
                         board_new += 1

@@ -1,0 +1,31 @@
+# compose.cloud-rc1-test.yml — isolated, manual-verification-only overlay on
+# top of compose.cloud.yml. Not part of the real menagerie deployment:
+#   - project name (peregrine-cloud-rc1-test) never collides with the live
+#     peregrine-cloud project
+#   - CLOUD_DATA_ROOT/STAGING_DB point at an isolated directory, never the
+#     real /devl/menagerie-data user data tree
+#   - ports (9601/9508) are unused by anything else on this host and are
+#     NOT registered in Caddy, so no real traffic can ever reach this stack
+# Real DIRECTUS_JWT_SECRET/CF_SERVER_SECRET/PLATFORM_DB_URL/etc. come from
+# .env.cloud-rc1-test (gitignored, not committed) so auth/tier resolution
+# behaves like a genuine cloud tenant, not a self-hosted fake.
+#
+# Usage:
+#   docker compose -f compose.cloud.yml -f compose.cloud-rc1-test.yml --project-name peregrine-cloud-rc1-test --env-file .env.cloud-rc1-test up -d
+#   docker compose -f compose.cloud.yml -f compose.cloud-rc1-test.yml --project-name peregrine-cloud-rc1-test down
+services:
+  api:
+    build:
+      context: /home/alan/.claude/jobs/099949ab/tmp/cloud-build-context
+      dockerfile: peregrine/Dockerfile.cfcore
+    ports: !override
+      - "9601:8601"
+    volumes:
+      - /home/alan/.claude/jobs/099949ab/tmp/peregrine-cloud-rc1-test-data:/devl/menagerie-data
+      - ./config/llm.cloud.yaml:/app/config/llm.yaml:ro
+    environment:
+      - CLOUD_DATA_ROOT=/devl/menagerie-data
+      - STAGING_DB=/devl/menagerie-data/cloud-default.db
+  web:
+    ports: !override
+      - "9508:80"

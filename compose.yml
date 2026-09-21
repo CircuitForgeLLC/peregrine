@@ -27,6 +27,11 @@ services:
       - MNEMO_HOST=${MNEMO_HOST:-mnemo}
       - MNEMO_PORT=${MNEMO_PORT:-8080}
       - PYTHONUNBUFFERED=1
+      # circuitforge-core's shared feedback router defaults this to the
+      # retired git.opensourcesolarpunk.com domain (410s since the
+      # 2026-08-07 migration) -- set explicitly until circuitforge-core#78
+      # ships the corrected default.
+      - FORGEJO_API_URL=${FORGEJO_API_URL:-https://git.circuitforge.tech/api/v1}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

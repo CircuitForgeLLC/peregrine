@@ -38,6 +38,12 @@ services:
       - PYTHONUNBUFFERED=1
       - FORGEJO_API_TOKEN=${FORGEJO_API_TOKEN:-}
       - FORGEJO_BOT_TOKEN=${FORGEJO_BOT_TOKEN:-}
+      # circuitforge-core's shared feedback router defaults this to the
+      # retired git.opensourcesolarpunk.com domain (410s since the
+      # 2026-08-07 migration) -- set explicitly until circuitforge-core#78
+      # ships the corrected default. Real bug: cloud feedback submissions
+      # have been silently failing without this override.
+      - FORGEJO_API_URL=${FORGEJO_API_URL:-https://git.circuitforge.tech/api/v1}
       - GPU_SERVER_URL=${GPU_SERVER_URL:-http://host.docker.internal:7700}
       - CF_ORCH_URL=${CF_ORCH_URL:-${GPU_SERVER_URL:-http://host.docker.internal:7700}}
       - CF_APP_NAME=peregrine

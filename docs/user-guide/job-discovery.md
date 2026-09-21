@@ -101,7 +101,7 @@ To add your own scraper, see [Adding a Scraper](../developer-guide/adding-scrape
 ### From the command line
 
 ```bash
-conda run -n job-seeker python scripts/discover.py
+conda run -n cf python scripts/discover.py
 ```
 
 ---

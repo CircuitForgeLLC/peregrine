@@ -34,6 +34,7 @@ LLM_TASK_TYPES: frozenset[str] = frozenset({
     "wizard_generate",
     "resume_optimize",
     "survey_analyze",
+    "resume_score",
 })
 
 # Conservative peak VRAM estimates (GB) per task type.
@@ -44,6 +45,7 @@ DEFAULT_VRAM_BUDGETS: dict[str, float] = {
     "wizard_generate":  2.5,   # same model family as cover_letter
     "resume_optimize":  5.0,   # section-by-section rewrite; same budget as research
     "survey_analyze":   2.5,   # text: phi3:mini; visual: vision service (own VRAM pool)
+    "resume_score":     2.5,   # single holistic-review LLM pass, same family as cover_letter
 }
 
 _DEFAULT_MAX_QUEUE_DEPTH = 500

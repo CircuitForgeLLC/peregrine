@@ -204,7 +204,7 @@ def test_put_get_search_roundtrip(tmp_path, monkeypatch):
     from dev_api import app
     c = TestClient(app)
     put_resp = c.put("/api/settings/search", json={
-        "remote_preference": "remote",
+        "remote_preference": ["remote"],
         "job_titles": ["Engineer"],
         "locations": ["Remote"],
         "exclude_keywords": [],
@@ -219,7 +219,100 @@ def test_put_get_search_roundtrip(tmp_path, monkeypatch):
 
     get_resp = c.get("/api/settings/search")
     assert get_resp.status_code == 200
-    assert get_resp.json()["remote_preference"] == "remote"
+    assert get_resp.json()["remote_preference"] == ["remote"]
+
+
+def test_put_get_search_roundtrip_profiles_format(tmp_path, monkeypatch):
+    """Regression test: PUT saves must be visible to a later GET when the
+    search_profiles.yaml file already uses the canonical `profiles: [...]`
+    format (exactly what the wizard and Task 1's board-seeding both write).
+
+    Before the fix, save_search_prefs wrote into a separate top-level
+    "default" key that _normalize_profiles never reads once a `profiles`
+    key exists -- so the PUT appeared to succeed but the GET kept returning
+    stale, pre-PUT data.
+    """
+    fake_path = tmp_path / "config" / "search_profiles.yaml"
+    fake_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(fake_path, "w") as f:
+        yaml.dump({
+            "profiles": [
+                {
+                    "name": "default",
+                    "job_titles": ["Old Title"],
+                    "locations": ["Old Location"],
+                    "boards": ["linkedin"],
+                }
+            ]
+        }, f)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
+
+    from dev_api import app
+    c = TestClient(app)
+    put_resp = c.put("/api/settings/search", json={
+        "remote_preference": ["remote"],
+        "job_titles": ["New Title"],
+        "locations": ["New Location"],
+        "exclude_keywords": [],
+        "job_boards": [],
+        "custom_board_urls": [],
+        "blocklist_companies": [],
+        "blocklist_industries": [],
+        "blocklist_locations": [],
+    })
+    assert put_resp.status_code == 200
+    assert put_resp.json()["ok"] is True
+
+    get_resp = c.get("/api/settings/search")
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["job_titles"] == ["New Title"]
+    assert data["locations"] == ["New Location"]
+    assert data["remote_preference"] == ["remote"]
+
+
+def test_get_search_prefs_falls_back_to_full_catalog_when_job_boards_empty(tmp_path, monkeypatch):
+    """A profile with no job_boards at all gets the full valid-board catalog,
+    all unchecked, so the Settings checklist is never a dead end."""
+    fake_path = tmp_path / "config" / "search_profiles.yaml"
+    fake_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(fake_path, "w") as f:
+        yaml.dump({"default": {"job_titles": ["Engineer"], "locations": ["Remote"]}}, f)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
+
+    from dev_api import app
+    c = TestClient(app)
+    resp = c.get("/api/settings/search")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["job_boards"]) > 0
+    assert all(b["enabled"] is False for b in data["job_boards"])
+    assert all(b["supported"] is True for b in data["job_boards"])
+    names = [b["name"] for b in data["job_boards"]]
+    assert "linkedin" in names
+    assert names == sorted(names)
+
+
+def test_get_search_prefs_does_not_override_existing_job_boards(tmp_path, monkeypatch):
+    """A profile that already has real job_boards data must be returned
+    unchanged -- the fallback only applies when job_boards is truly empty."""
+    fake_path = tmp_path / "config" / "search_profiles.yaml"
+    fake_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(fake_path, "w") as f:
+        yaml.dump({"default": {
+            "job_titles": ["Engineer"],
+            "job_boards": [{"name": "indeed", "enabled": True}],
+        }}, f)
+    monkeypatch.setattr("dev_api._search_prefs_path", lambda: fake_path)
+
+    from dev_api import app
+    c = TestClient(app)
+    resp = c.get("/api/settings/search")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["job_boards"]) == 1
+    assert data["job_boards"][0]["name"] == "indeed"
+    assert data["job_boards"][0]["enabled"] is True
 
 
 def test_get_search_missing_file_returns_empty(tmp_path, monkeypatch):
@@ -246,9 +339,15 @@ def test_get_llm_config_returns_backends_and_byok(tmp_path, monkeypatch):
     _write_user_yaml(user_yaml)
     monkeypatch.setenv("STAGING_DB", str(db_dir / "staging.db"))
 
+    # backends is a dict keyed by id in the real config/llm.yaml shape
+    # (base_url/model/type/etc per entry), not a list -- the endpoint derives
+    # the reorderable list view from this dict plus fallback_order.
     fake_llm_path = tmp_path / "llm.yaml"
     with open(fake_llm_path, "w") as f:
-        yaml.dump({"backends": [{"name": "ollama", "enabled": True}]}, f)
+        yaml.dump({
+            "backends": {"ollama": {"type": "openai_compat", "model": "llama3.1:8b", "enabled": True}},
+            "fallback_order": ["ollama"],
+        }, f)
     monkeypatch.setattr("dev_api.LLM_CONFIG_PATH", fake_llm_path)
 
     from dev_api import app
@@ -258,6 +357,7 @@ def test_get_llm_config_returns_backends_and_byok(tmp_path, monkeypatch):
     data = resp.json()
     assert "backends" in data
     assert isinstance(data["backends"], list)
+    assert data["backends"][0]["id"] == "ollama"
     assert "byok_acknowledged" in data
 
 

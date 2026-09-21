@@ -9,12 +9,10 @@ dependencies:
   - pip
   - pip:
     # ── Web UI ────────────────────────────────────────────────────────────────
-    - streamlit>=1.35
-    - watchdog            # live reload
-    - reportlab>=4.0      # PDF cover letter export
-    - pandas>=2.0
-    - pyarrow             # streamlit data tables
-    - streamlit-paste-button>=0.1.0
+    # Peregrine is served by the Vue 3 SPA (uvicorn dev_api:app) — no
+    # streamlit dependency anywhere in this product anymore (#145).
+    - reportlab>=4.0      # PDF cover letter export — dev-api.py, scripts/resume_optimizer.py
+    - pandas>=2.0          # scripts/discover.py
 
     # ── Job scraping ──────────────────────────────────────────────────────────
     - python-jobspy>=1.1
@@ -23,27 +21,23 @@ dependencies:
     - undetected-chromedriver
     - webdriver-manager
     - beautifulsoup4
+    - defusedxml          # safe RSS/XML parsing (weworkremotely, craigslist scrapers)
     - requests>=2.33.0        # CVE-2026-25645
     - curl_cffi>=0.15.0       # CVE-2026-33752
     - fake-useragent      # company scraper rotation
 
     # ── LLM / AI backends ─────────────────────────────────────────────────────
-    - openai>=1.55.0,<2.0.0  # >=1.55 required for httpx 0.28 compat; <2.0 for langchain-openai
+    # LLMRouter (scripts/llm_router.py -> circuitforge_core.llm) talks to these
+    # SDKs directly — no langchain in the request path.
+    - openai>=1.55.0       # >=1.55 required for httpx 0.28 compat
     - anthropic>=0.80     # direct Anthropic API fallback
     - ollama              # Python client for Ollama management
-    - langchain>=0.2
-    - langchain-openai
-    - langchain-anthropic
-    - langchain-ollama
-    - langchain-community
-    - langchain-google-genai
     - google-generativeai
     - tiktoken
 
     # ── Resume matching ───────────────────────────────────────────────────────
     - scikit-learn>=1.3
     - rapidfuzz
-    - lib-resume-builder-aihawk
 
     # ── Notion integration ────────────────────────────────────────────────────
     - notion-client>=3.0

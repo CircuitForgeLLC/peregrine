@@ -28,6 +28,9 @@
     </div>
 
     <main class="settings-content">
+      <RouterLink v-if="!config.wizardComplete" to="/setup" class="back-to-setup">
+        ← Back to Setup
+      </RouterLink>
       <RouterView />
     </main>
   </div>
@@ -148,6 +151,22 @@ const visibleTabs = computed(() => visibleGroups.value.flatMap(g => g.items))
   grid-column: 2;
   padding: var(--space-6) var(--space-8);
   overflow-y: auto;
+}
+.back-to-setup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+}
+.back-to-setup:hover {
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 @media (max-width: 767px) {
   .settings-layout { grid-template-columns: 1fr; }

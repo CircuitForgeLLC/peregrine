@@ -35,6 +35,8 @@
       </div>
     </header>
 
+    <MatchCriteriaStrip v-if="activeTab === 'pending'" />
+
     <!-- ── PENDING: card stack ──────────────────────────────────────────── -->
     <div v-if="activeTab === 'pending'" class="review__body">
       <!-- Loading -->
@@ -141,6 +143,12 @@
                 @click="router.push(`/apply/${job.id}`)"
                 :aria-label="`Draft cover letter for ${job.title}`"
               >✨ Draft</button>
+              <button
+                v-if="activeTab === 'applied'"
+                class="job-list__action"
+                @click="openMove(job)"
+                :aria-label="`Move ${job.title}`"
+              >Move to… ›</button>
               <a :href="job.url" target="_blank" rel="noopener noreferrer" class="job-list__link">
                 View ↗
               </a>
@@ -149,6 +157,15 @@
         </ul>
       </template>
     </div>
+
+    <!-- ── Move to stage (applied tab only) ─────────────────────────────── -->
+    <MoveToSheet
+      v-if="moveTarget"
+      :current-status="moveTarget.status"
+      :job-title="moveTarget.title"
+      @move="onMove"
+      @close="moveTarget = null"
+    />
 
     <!-- ── Help overlay ─────────────────────────────────────────────────── -->
     <Transition name="overlay">
@@ -219,8 +236,13 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useReviewStore } from '../stores/review'
+import type { Job } from '../stores/review'
+import type { PipelineStage } from '../stores/interviews'
 import JobCardStack from '../components/JobCardStack.vue'
 import HintChip from '../components/HintChip.vue'
+import MatchCriteriaStrip from '../components/MatchCriteriaStrip.vue'
+import MoveToSheet from '../components/MoveToSheet.vue'
+import { useApiFetch } from '../composables/useApi'
 import { useAppConfigStore } from '../stores/appConfig'
 
 const config = useAppConfigStore()
@@ -229,6 +251,31 @@ const store    = useReviewStore()
 const route    = useRoute()
 const router   = useRouter()
 const stackRef = ref<InstanceType<typeof JobCardStack> | null>(null)
+
+// ── Move to stage (applied tab) ─────────────────────────────────────────────
+// Mirrors InterviewsView.vue's Move-to-stage flow -- Applied is the only
+// non-pending tab with a real next action (advance the pipeline), and had
+// none at all before this fix.
+const moveTarget = ref<Job | null>(null)
+
+function openMove(job: Job) {
+  moveTarget.value = job
+}
+
+async function onMove(stage: PipelineStage, opts: { interview_date?: string; rejection_stage?: string }) {
+  if (!moveTarget.value) return
+  const jobId = moveTarget.value.id
+  moveTarget.value = null
+  const { error: err } = await useApiFetch(`/api/jobs/${jobId}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: stage, ...opts }),
+  })
+  if (!err) {
+    // Moved out of 'applied' -- refresh the list so it no longer shows here.
+    await store.fetchList('applied')
+  }
+}
 
 // ─── Tabs ──────────────────────────────────────────────────────────────────────
 
@@ -389,7 +436,16 @@ function scorePillClass(score: number) {
 
 onMounted(async () => {
   document.addEventListener('keydown', onKeyDown)
-  await store.fetchQueue()
+  // activeTab is already initialized from route.query.status (e.g. a
+  // deep link to /review?status=applied) -- fetch whatever that tab
+  // actually needs instead of always the pending queue, or a direct
+  // link to a non-pending tab lands on a UI showing that tab selected
+  // but with no data ever fetched for it.
+  if (activeTab.value === 'pending') {
+    await store.fetchQueue()
+  } else {
+    await store.fetchList(activeTab.value)
+  }
 })
 
 onUnmounted(() => {

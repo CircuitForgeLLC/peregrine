@@ -65,6 +65,58 @@ def test_run_task_cover_letter_success(tmp_path):
     assert row[0] == "Dear Hiring Manager,\nGreat fit!"
 
 
+def test_run_task_cover_letter_uses_real_llm_config_not_probe_cache_file(tmp_path):
+    """generate() must be called with the config file that actually holds
+    backends/task_models (LLM_ROUTER_CONFIG_PATH), never the per-tenant data
+    dir's llm.yaml -- that file only ever holds model_capability_probes
+    (written by _probe_model_capability in dev-api.py), so pointing
+    LLMRouter at it makes every task-model assignment invisible and
+    complete_task() raises TaskModelNotAssignedError even though Settings
+    correctly saved an assignment. Regression test for a live bug found on
+    freeze/v1.0.0/rc-1: cover letter generation failed with "No model is
+    assigned to the Primary task yet" despite a real assignment being saved.
+    """
+    db, job_id = _make_db(tmp_path)
+    from scripts.db import insert_task
+    task_id, _ = insert_task(db, "cover_letter", job_id)
+
+    # Simulate the exact condition that triggers the bug: a probe-cache-only
+    # llm.yaml already exists in the per-tenant data dir (this happens on
+    # any real instance the moment a single capability probe has ever run).
+    fake_data_cfg_dir = tmp_path / "config"
+    fake_data_cfg_dir.mkdir(parents=True, exist_ok=True)
+    (fake_data_cfg_dir / "llm.yaml").write_text("model_capability_probes: {}\n")
+
+    with patch("scripts.generate_cover_letter.generate", return_value="Dear Hiring Manager,\nGreat fit!") as mock_generate:
+        from scripts.task_runner import _run_task
+        _run_task(db, task_id, "cover_letter", job_id)
+
+    from scripts.llm_router import CONFIG_PATH as LLM_ROUTER_CONFIG_PATH
+    called_config_path = mock_generate.call_args.kwargs["config_path"]
+    assert called_config_path == LLM_ROUTER_CONFIG_PATH
+
+
+def test_run_task_cover_letter_cloud_mode_uses_tenant_task_models(tmp_path):
+    """Cloud mode's cover_letter task must pass a per-tenant-aware config
+    to generate(), not the shared LLM_ROUTER_CONFIG_PATH -- otherwise a
+    cloud tenant's Primary task assignment is silently ignored for the one
+    feature (cover letters) task_models.primary exists for."""
+    db, job_id = _make_db(tmp_path)
+    from scripts.db import insert_task
+    task_id, _ = insert_task(db, "cover_letter", job_id)
+
+    with patch.dict("os.environ", {"CLOUD_MODE": "true"}, clear=False), \
+         patch("scripts.generate_cover_letter.generate", return_value="Dear Hiring Manager,\nGreat fit!") as mock_generate:
+        from scripts.task_runner import _run_task
+        _run_task(db, task_id, "cover_letter", job_id)
+
+    called_config_path = mock_generate.call_args.kwargs["config_path"]
+    # In cloud mode this must be a dict (the per-tenant merge), never the
+    # shared LLM_ROUTER_CONFIG_PATH Path object.
+    assert isinstance(called_config_path, dict)
+    assert "task_models" in called_config_path
+
+
 def test_run_task_company_research_success(tmp_path):
     """_run_task marks running→completed and saves research to DB."""
     db, job_id = _make_db(tmp_path)
