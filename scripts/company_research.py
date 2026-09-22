@@ -52,8 +52,9 @@ _SEARXNG_URL: str = _profile.searxng_url if _profile else "http://localhost:8888
 
 def _searxng_running(searxng_url: str = "http://localhost:8888") -> bool:
     """Quick check whether SearXNG is reachable."""
+    import requests  # hoisted above the try -- an import failure here should
+    # propagate as ImportError, not be misread as a connectivity RequestException
     try:
-        import requests
         r = requests.get(f"{searxng_url}/", timeout=3)
         return r.status_code == 200
     except requests.exceptions.RequestException:
