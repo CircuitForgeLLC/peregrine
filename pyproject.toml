@@ -18,9 +18,6 @@ exclude = ["app/"]
 "scripts/task_runner.py" = ["E402"]
 "scripts/migrate.py" = ["E741"]
 
-# scrapers/: third-party script; minimal changes policy.
-"scrapers/companyScraper.py" = ["E722"]
-
 # tools/: deprecated label tool copy (canonical in avocet); suppress style warnings.
 "tools/label_tool.py" = ["E741"]
 
