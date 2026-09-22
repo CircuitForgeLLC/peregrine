@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { useApiFetch } from '../../composables/useApi'
 import { genId } from '../../utils/id'
 
-export interface MissionPref { id: string; industry: string; note: string }
+export interface MissionPref { id: string; industry: string; note: string; suggested?: boolean }
 
 export const useProfileStore = defineStore('settings/profile', () => {
   const name = ref('')
