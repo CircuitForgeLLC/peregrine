@@ -1,7 +1,7 @@
 # Contributing to Peregrine
 
 Thanks for your interest. Peregrine is developed primarily at
-[git.opensourcesolarpunk.com](https://git.opensourcesolarpunk.com/pyr0ball/peregrine).
+[git.circuitforge.tech](https://git.circuitforge.tech/Circuit-Forge/peregrine).
 GitHub and Codeberg are push mirrors — issues and PRs are welcome on either platform.
 
 ---
@@ -32,7 +32,7 @@ full instructions.
 **Quick start (Docker — recommended):**
 
 ```bash
-git clone https://git.opensourcesolarpunk.com/pyr0ball/peregrine.git
+git clone https://git.circuitforge.tech/Circuit-Forge/peregrine.git
 cd peregrine
 ./install.sh        # installs deps, activates git hooks
 ./manage.sh start
