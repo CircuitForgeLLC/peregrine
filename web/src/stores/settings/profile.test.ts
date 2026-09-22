@@ -48,4 +48,14 @@ describe('useProfileStore', () => {
     await store.load()
     expect(store.loadError).toBe('Network error')
   })
+
+  it('save() strips the client-only "suggested" flag from mission_preferences', async () => {
+    mockFetch.mockResolvedValue({ data: { ok: true }, error: null })
+    const store = useProfileStore()
+    store.mission_preferences = [{ id: 'a', industry: 'music', note: '', suggested: true }]
+    await store.save()
+    const [, putOptions] = mockFetch.mock.calls.find(([url]) => url === '/api/settings/profile')!
+    const body = JSON.parse((putOptions as { body: string }).body)
+    expect(body.mission_preferences).toEqual([{ industry: 'music', note: '' }])
+  })
 })
