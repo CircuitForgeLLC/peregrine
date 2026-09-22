@@ -182,8 +182,8 @@ def create_forgejo_issue(title: str, body: str, labels: list[str]) -> dict:
     """Create a Forgejo issue. Returns {"number": int, "url": str}."""
     # Use the bot token when set; fall back to the main API token for dev/self-hosted.
     token = os.environ.get("FORGEJO_BOT_TOKEN") or os.environ.get("FORGEJO_API_TOKEN", "")
-    repo = os.environ.get("FORGEJO_REPO", "pyr0ball/peregrine")
-    base = os.environ.get("FORGEJO_API_URL", "https://git.opensourcesolarpunk.com/api/v1")
+    repo = os.environ.get("FORGEJO_REPO", "Circuit-Forge/peregrine")
+    base = os.environ.get("FORGEJO_API_URL", "https://git.circuitforge.tech/api/v1")
     headers = {"Authorization": f"token {token}", "Content-Type": "application/json"}
     label_ids = _ensure_labels(labels, base, headers, repo)
     resp = requests.post(
@@ -202,8 +202,8 @@ def upload_attachment(
 ) -> str:
     """Upload a screenshot to an existing Forgejo issue. Returns attachment URL."""
     token = os.environ.get("FORGEJO_BOT_TOKEN") or os.environ.get("FORGEJO_API_TOKEN", "")
-    repo = os.environ.get("FORGEJO_REPO", "pyr0ball/peregrine")
-    base = os.environ.get("FORGEJO_API_URL", "https://git.opensourcesolarpunk.com/api/v1")
+    repo = os.environ.get("FORGEJO_REPO", "Circuit-Forge/peregrine")
+    base = os.environ.get("FORGEJO_API_URL", "https://git.circuitforge.tech/api/v1")
     headers = {"Authorization": f"token {token}"}
     resp = requests.post(
         f"{base}/repos/{repo}/issues/{issue_number}/assets",
