@@ -166,7 +166,7 @@ Bug reports and feature requests: [Forgejo issues](https://git.circuitforge.tech
 
 ## Contributing
 
-Contributions are welcome. The discovery pipeline — scrapers, board integrations, matching logic — is MIT-licensed. Fork it, extend it, send PRs. AI features are BSL 1.1. See the [contributing guide](https://docs.circuitforge.tech/peregrine/developer-guide/contributing/) for conventions.
+Contributions are welcome. The discovery pipeline — scrapers, board integrations, matching logic — is MIT-licensed. Fork it, extend it, send PRs. LLM features are BSL 1.1. See the [contributing guide](https://docs.circuitforge.tech/peregrine/developer-guide/contributing/) for conventions.
 
 ---
 
