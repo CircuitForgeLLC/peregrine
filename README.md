@@ -10,18 +10,18 @@
   [![License: MIT / BSL 1.1](https://img.shields.io/badge/License-MIT%20%2F%20BSL%201.1-blue.svg)](#license)
   [![CI](https://github.com/CircuitForgeLLC/peregrine/actions/workflows/ci.yml/badge.svg)](https://github.com/CircuitForgeLLC/peregrine/actions/workflows/ci.yml)
   [![Docs](https://img.shields.io/badge/docs-docs.circuitforge.tech-orange)](https://docs.circuitforge.tech/peregrine/)
-  [![Version](https://img.shields.io/badge/version-0.9.0-green)](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/releases)
+  [![Version](https://img.shields.io/badge/version-1.0.1-green)](https://git.circuitforge.tech/Circuit-Forge/peregrine/releases)
 
   <p>
     <a href="https://demo.circuitforge.tech/peregrine"><strong>Live Demo</strong></a> —
     no account required, nothing saved &nbsp;|&nbsp;
     <a href="https://docs.circuitforge.tech/peregrine/">Docs</a> &nbsp;|&nbsp;
-    <a href="https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/issues">Issues</a>
+    <a href="https://git.circuitforge.tech/Circuit-Forge/peregrine/issues">Issues</a>
   </p>
 
   <blockquote>
     <strong>Primary development</strong> happens at
-    <a href="https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine">git.opensourcesolarpunk.com/Circuit-Forge/peregrine</a>.
+    <a href="https://git.circuitforge.tech/Circuit-Forge/peregrine">git.circuitforge.tech/Circuit-Forge/peregrine</a>.
     GitHub and Codeberg are push mirrors. Issues and PRs are welcome on any platform.
   </blockquote>
 </div>
@@ -58,13 +58,13 @@ Job search is a second job nobody hired you for. ATS (applicant tracking system)
 One-line install:
 
 ```bash
-bash <(curl -fsSL https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/raw/branch/main/install.sh)
+bash <(curl -fsSL https://git.circuitforge.tech/Circuit-Forge/peregrine/raw/branch/main/install.sh)
 ```
 
 Or clone and run manually:
 
 ```bash
-git clone https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine
+git clone https://git.circuitforge.tech/Circuit-Forge/peregrine
 cd peregrine
 ./manage.sh setup
 ./manage.sh start
@@ -160,7 +160,7 @@ This is intentional. Automated mass-applying is a bad experience for everyone an
 
 Full docs at **[docs.circuitforge.tech/peregrine](https://docs.circuitforge.tech/peregrine)**
 
-Bug reports and feature requests: [Forgejo issues](https://git.opensourcesolarpunk.com/Circuit-Forge/peregrine/issues)
+Bug reports and feature requests: [Forgejo issues](https://git.circuitforge.tech/Circuit-Forge/peregrine/issues)
 
 ---
 
