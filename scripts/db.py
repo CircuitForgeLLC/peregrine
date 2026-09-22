@@ -424,9 +424,10 @@ def get_resume_draft(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> d
     try:
         # resume_draft_json is a TEXT column already checked truthy above,
         # so json.loads can only fail with malformed JSON.
-        return json.loads(row["resume_draft_json"])
+        result = json.loads(row["resume_draft_json"])
     except json.JSONDecodeError:
         return None
+    return result if isinstance(result, dict) else None
 
 
 def finalize_resume(db_path: Path = DEFAULT_DB, job_id: int | None = None,
@@ -448,8 +449,13 @@ def finalize_resume(db_path: Path = DEFAULT_DB, job_id: int | None = None,
         if row["resume_archive_json"]:
             try:
                 # resume_archive_json is a TEXT column already checked truthy
-                # above, so json.loads can only fail with malformed JSON.
-                archive = json.loads(row["resume_archive_json"])
+                # above, so json.loads can only fail with malformed JSON. A
+                # decoded dict or str wouldn't raise here (both are valid
+                # json.loads results) but also isn't the expected shape, so
+                # it's explicitly rejected -- archive.append() below would
+                # otherwise raise AttributeError and abort the whole save.
+                decoded = json.loads(row["resume_archive_json"])
+                archive = decoded if isinstance(decoded, list) else []
             except json.JSONDecodeError:
                 archive = []
         if row["optimized_resume"]:

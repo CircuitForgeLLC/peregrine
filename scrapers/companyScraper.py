@@ -99,8 +99,11 @@ class EnhancedCompanyScraper:
         # Use fake-useragent to rotate user agents
         try:
             self.ua = UserAgent()
-        except:
-            # Fallback if fake-useragent fails
+        except Exception:  # noqa: BLE001 -- fake_useragent's UserAgent() fetches
+            # and parses a remote UA database; failure modes span network errors,
+            # its own FakeUserAgentError, and JSON parsing, so a broad catch is
+            # intentional here. Narrowed from a bare `except:` (which wrongly
+            # swallowed KeyboardInterrupt/SystemExit) to `Exception`.
             self.ua = None
             print("Warning: fake-useragent failed to initialize. Using default user agent.")
     
@@ -160,7 +163,10 @@ class EnhancedCompanyScraper:
         try:
             response = requests.get(Config.SEARXNG_URL, timeout=5)
             return response.status_code == 200
-        except:
+        except requests.exceptions.RequestException:
+            # requests.get is the only call in this block; connection errors,
+            # timeouts, and other transport failures all derive from
+            # RequestException.
             return False
     
     def setup_directories(self):
