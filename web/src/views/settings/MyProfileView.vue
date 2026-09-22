@@ -75,6 +75,14 @@
             :disabled="generatingSummary"
           >{{ generatingSummary ? 'Generating…' : 'Generate ✦' }}</button>
           <p v-if="generateSummaryError" class="error-msg">{{ generateSummaryError }}</p>
+          <div v-if="suggestedSummary !== null" class="suggestion-box">
+            <p class="suggestion-label">Suggested summary</p>
+            <p class="suggestion-text">{{ suggestedSummary }}</p>
+            <div class="suggestion-actions">
+              <button class="btn-generate" type="button" @click="acceptSummary">Use this</button>
+              <button class="btn-secondary" type="button" @click="discardSummary">Discard</button>
+            </div>
+          </div>
         </div>
 
         <div class="field-row field-row--stacked">
@@ -94,6 +102,14 @@
             :disabled="generatingVoice"
           >{{ generatingVoice ? 'Generating…' : 'Generate ✦' }}</button>
           <p v-if="generateVoiceError" class="error-msg">{{ generateVoiceError }}</p>
+          <div v-if="suggestedVoice !== null" class="suggestion-box">
+            <p class="suggestion-label">Suggested voice note</p>
+            <p class="suggestion-text">{{ suggestedVoice }}</p>
+            <div class="suggestion-actions">
+              <button class="btn-generate" type="button" @click="acceptVoice">Use this</button>
+              <button class="btn-secondary" type="button" @click="discardVoice">Discard</button>
+            </div>
+          </div>
         </div>
 
         <div v-if="!config.isCloud" class="field-row">
@@ -125,18 +141,22 @@
           v-for="(pref, idx) in store.mission_preferences"
           :key="pref.id"
           class="mission-row"
+          :class="{ 'mission-row--suggested': pref.suggested }"
         >
+          <span v-if="pref.suggested" class="suggested-badge" title="AI-suggested — edit or remove to review">✦ suggested</span>
           <input
             v-model="pref.industry"
             type="text"
             class="text-input mission-industry"
             placeholder="Industry (e.g. music)"
+            @input="clearSuggestedFlag(idx)"
           />
           <input
             v-model="pref.note"
             type="text"
             class="text-input mission-note"
             placeholder="Your personal note (optional)"
+            @input="clearSuggestedFlag(idx)"
           />
           <button class="btn-remove" type="button" @click="removeMission(idx)" aria-label="Remove">×</button>
         </div>
@@ -253,6 +273,11 @@ const generateSummaryError = ref<string | null>(null)
 const generateMissionsError = ref<string | null>(null)
 const generateVoiceError = ref<string | null>(null)
 
+// Generated suggestions for the single-value fields never overwrite the real
+// field directly -- they sit here until the user explicitly accepts them.
+const suggestedSummary = ref<string | null>(null)
+const suggestedVoice = ref<string | null>(null)
+
 onMounted(() => { store.load() })
 
 // ── Mission helpers ──────────────────────────────────────
@@ -262,6 +287,13 @@ function addMission() {
 
 function removeMission(idx: number) {
   store.mission_preferences = store.mission_preferences.filter((_, i) => i !== idx)
+}
+
+// Editing a suggested row means the user has reviewed and claimed it as
+// their own -- drop the "suggested" marker so the highlight clears.
+function clearSuggestedFlag(idx: number) {
+  const pref = store.mission_preferences[idx]
+  if (pref?.suggested) pref.suggested = false
 }
 
 // ── NDA helpers (autosave on add/remove) ────────────────
@@ -286,18 +318,33 @@ function autosave() {
 }
 
 // ── AI generation (paid tier) ────────────────────────────
+// Generated content is always a draft: it lands in a review step, never
+// straight into a saved field. Text fields (summary/voice) show the
+// suggestion separately with Accept/Discard; the missions list appends new
+// rows instead of replacing existing ones. See peregrine#190.
 async function generateSummary() {
   generatingSummary.value = true
   generateSummaryError.value = null
+  suggestedSummary.value = null
   const { data, error } = await useApiFetch<{ summary?: string }>(
     '/api/settings/profile/generate-summary', { method: 'POST' }
   )
   generatingSummary.value = false
   if (!error && data?.summary) {
-    store.career_summary = data.summary
+    suggestedSummary.value = data.summary
   } else {
     generateSummaryError.value = 'Could not generate a summary — please try again.'
   }
+}
+
+function acceptSummary() {
+  if (suggestedSummary.value === null) return
+  store.career_summary = suggestedSummary.value
+  suggestedSummary.value = null
+}
+
+function discardSummary() {
+  suggestedSummary.value = null
 }
 
 async function generateMissions() {
@@ -308,9 +355,15 @@ async function generateMissions() {
   )
   generatingMissions.value = false
   if (!error && data?.mission_preferences?.length) {
-    store.mission_preferences = data.mission_preferences.map((m) => ({
-      id: genId(), industry: m.industry ?? '', note: m.note ?? '',
-    }))
+    const existingIndustries = new Set(
+      store.mission_preferences.map((p) => p.industry.trim().toLowerCase()).filter(Boolean)
+    )
+    const suggestions = data.mission_preferences
+      .filter((m) => !existingIndustries.has((m.industry ?? '').trim().toLowerCase()))
+      .map((m) => ({ id: genId(), industry: m.industry ?? '', note: m.note ?? '', suggested: true }))
+    if (suggestions.length) {
+      store.mission_preferences = [...store.mission_preferences, ...suggestions]
+    }
   } else {
     generateMissionsError.value = 'Could not generate suggestions — please try again.'
   }
@@ -319,15 +372,26 @@ async function generateMissions() {
 async function generateVoice() {
   generatingVoice.value = true
   generateVoiceError.value = null
+  suggestedVoice.value = null
   const { data, error } = await useApiFetch<{ voice?: string }>(
     '/api/settings/profile/generate-voice', { method: 'POST' }
   )
   generatingVoice.value = false
   if (!error && data?.voice) {
-    store.candidate_voice = data.voice
+    suggestedVoice.value = data.voice
   } else {
     generateVoiceError.value = 'Could not generate a voice note — please try again.'
   }
+}
+
+function acceptVoice() {
+  if (suggestedVoice.value === null) return
+  store.candidate_voice = suggestedVoice.value
+  suggestedVoice.value = null
+}
+
+function discardVoice() {
+  suggestedVoice.value = null
 }
 </script>
 
@@ -597,6 +661,37 @@ async function generateVoice() {
   cursor: not-allowed;
 }
 
+/* ── AI suggestion review (summary/voice) ─────────────── */
+.suggestion-box {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  border-radius: 6px;
+}
+
+.suggestion-label {
+  margin: 0 0 var(--space-1) 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-primary);
+}
+
+.suggestion-text {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-text);
+  white-space: pre-wrap;
+}
+
+.suggestion-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 .btn-secondary {
   padding: var(--space-2) var(--space-3);
   background: transparent;
@@ -614,11 +709,31 @@ async function generateVoice() {
 
 /* ── Mission rows ─────────────────────────────────────── */
 .mission-row {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 2fr auto;
   gap: var(--space-2);
   margin-bottom: var(--space-2);
   align-items: center;
+}
+
+.mission-row--suggested {
+  padding: var(--space-2);
+  margin-top: var(--space-2);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  border-radius: 6px;
+}
+
+.suggested-badge {
+  position: absolute;
+  top: -0.65rem;
+  left: var(--space-2);
+  padding: 0 var(--space-1);
+  background: var(--color-surface, #fff);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-primary);
 }
 
 .mission-actions {
