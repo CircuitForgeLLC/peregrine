@@ -70,6 +70,43 @@ def _extract_jobs_js() -> str:
     }"""
 
 
+def _build_job_dict(
+    job: dict[str, Any],
+    href: str,
+    full_url: str,
+    title_slug: str,
+    location: str,
+) -> dict[str, Any]:
+    """
+    Build the final job dict for one scraped card.
+
+    Deliberately does not take the search's remote filter (e.g. "Remote"
+    typed into the location field) as an input. The Ladders, like other
+    boards, pads a remote-filtered search with hybrid/onsite jobs that are
+    merely remote-eligible or geographically near a remote pool, so the
+    search filter must never be treated as this job's own remote status:
+    a job's own per-card remote badge (job["is_remote"]) is the only
+    source of truth for whether that specific job is actually remote.
+    """
+    company = _company_from_url(href, title_slug)
+    loc_text = (job.get("location") or "").replace("Remote", "").strip(", ")
+    if job.get("is_remote"):
+        loc_display = "Remote" + (f" — {loc_text}" if loc_text and loc_text != "US-Anywhere" else "")
+    else:
+        loc_display = loc_text or location
+
+    return {
+        "title":       job.get("title", ""),
+        "company":     company,
+        "url":         full_url,
+        "source":      "theladders",
+        "location":    loc_display,
+        "is_remote":   bool(job.get("is_remote")),
+        "salary":      job.get("salary") or "",
+        "description": "",  # not available in card view; scrape_url will fill in
+    }
+
+
 def scrape(profile: dict, location: str, results_wanted: int = 50) -> list[dict]:
     """
     Scrape job listings from The Ladders using Playwright.
@@ -157,23 +194,7 @@ def scrape(profile: dict, location: str, results_wanted: int = 50) -> list[dict]
                     continue
                 seen_urls.add(full_url)
 
-                company = _company_from_url(href, title_slug)
-                loc_text = (job.get("location") or "").replace("Remote", "").strip(", ")
-                if is_remote_search or job.get("is_remote"):
-                    loc_display = "Remote" + (f" — {loc_text}" if loc_text and loc_text != "US-Anywhere" else "")
-                else:
-                    loc_display = loc_text or location
-
-                results.append({
-                    "title":       job.get("title", ""),
-                    "company":     company,
-                    "url":         full_url,
-                    "source":      "theladders",
-                    "location":    loc_display,
-                    "is_remote":   bool(job.get("is_remote") or is_remote_search),
-                    "salary":      job.get("salary") or "",
-                    "description": "",  # not available in card view; scrape_url will fill in
-                })
+                results.append(_build_job_dict(job, href, full_url, title_slug, location))
 
                 if len(results) >= results_wanted:
                     break
