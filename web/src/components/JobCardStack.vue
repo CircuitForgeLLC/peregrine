@@ -9,8 +9,9 @@
       ref="wrapperEl"
       class="card-wrapper"
       :class="{
-        'is-held':    isHeld,
-        'is-exiting': isExiting,
+        'is-held':     isHeld,
+        'is-exiting':  isExiting,
+        'is-expanded': isExpanded,
       }"
       :style="cardStyle"
       role="region"
@@ -108,6 +109,11 @@ function onPointerDown(e: PointerEvent) {
   // Let interactive children (links, buttons) receive their events
   if ((e.target as Element).closest('button, a, input, select, textarea')) return
   if (isExiting.value) return
+  // While expanded, the card is in "read" mode: don't capture the pointer
+  // or start a swipe-drag, so touch/scroll gestures reach the page to
+  // scroll the now-taller card body. Collapse (via the Show less button)
+  // to swipe again.
+  if (isExpanded.value) return
   ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   pickupX = e.clientX
   pickupY = e.clientY
@@ -277,6 +283,13 @@ defineExpose({ dismissApprove, dismissReject, dismissSkip, resetCard })
   cursor: grabbing;
   transition: none;  /* instant response while dragging */
   box-shadow: var(--shadow-xl, 0 12px 40px rgba(0,0,0,0.18));
+}
+
+/* Expanded = read mode: allow native vertical scroll/pan instead of
+   capturing all touch input for the swipe gesture. */
+.card-wrapper.is-expanded {
+  touch-action: pan-y;
+  cursor: auto;
 }
 
 /* is-exiting: override to linear ease-in for off-screen fly */
