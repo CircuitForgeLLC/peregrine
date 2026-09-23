@@ -8,6 +8,8 @@ backends:
     type: openai_compat
     cf_orch:
       service: cf-text
+      model_candidates:
+        - granite-4.2-8b
       ttl_s: 300
   anthropic:
     api_key_env: ANTHROPIC_API_KEY
@@ -33,7 +35,7 @@ backends:
     api_key: ollama
     base_url: http://host.docker.internal:11434/v1
     enabled: true
-    model: llama3.1:8b  # generic — no personal fine-tunes in cloud
+    model: alex-cover-writer:latest  # CF's own cover-letter fine-tune (3.2B llama, Q8_0) — cloud default for the "primary" task category
     supports_images: false
     type: openai_compat
     cf_orch:
@@ -79,9 +81,9 @@ backends:
         - Qwen2.5-3B-Instruct
       ttl_s: 300
 fallback_order:
+- ollama
 - cf_text
 - vllm
-- ollama
 research_fallback_order:
 - cf_text
 - vllm_research
