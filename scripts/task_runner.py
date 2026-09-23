@@ -87,6 +87,54 @@ def _normalize_aihawk_resume(raw: dict) -> dict:
     }
 
 
+def _resume_struct_to_text(resume_struct: dict) -> str:
+    """Flatten a normalized resume struct (career_summary/experience/education/
+    skills/achievements) into plain text for TF-IDF gap matching.
+
+    career_summary alone is frequently empty for AIHawk-format profiles, which
+    have no such field -- this pulls in the actual content (experience bullets,
+    skills) so gap analysis has something real to compare a job description
+    against instead of silently running on an empty string.
+    """
+    lines: list[str] = []
+
+    summary = resume_struct.get("career_summary", "")
+    if isinstance(summary, str) and summary.strip():
+        lines.append(summary.strip())
+
+    for entry in resume_struct.get("experience", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        header = " — ".join(p for p in (entry.get("title", ""), entry.get("company", "")) if p)
+        if header:
+            lines.append(header)
+        for bullet in entry.get("bullets", []) or []:
+            if isinstance(bullet, str) and bullet.strip():
+                lines.append(bullet.strip())
+
+    skills = resume_struct.get("skills", []) or []
+    skill_terms = [s if isinstance(s, str) else s.get("name", "") for s in skills]
+    skill_terms = [s for s in skill_terms if s]
+    if skill_terms:
+        lines.append("Skills: " + ", ".join(skill_terms))
+
+    for entry in resume_struct.get("education", []) or []:
+        if isinstance(entry, str) and entry.strip():
+            lines.append(entry.strip())
+        elif isinstance(entry, dict):
+            header = " — ".join(
+                p for p in (entry.get("degree", ""), entry.get("school", "")) if p
+            )
+            if header:
+                lines.append(header)
+
+    for entry in resume_struct.get("achievements", []) or []:
+        if isinstance(entry, str) and entry.strip():
+            lines.append(entry.strip())
+
+    return "\n".join(lines)
+
+
 from scripts.db import (
     DEFAULT_DB,
     insert_task,
@@ -385,7 +433,14 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
                 import yaml as _yaml
                 _raw = _yaml.safe_load(_plain_yaml.read_text(encoding="utf-8")) or {}
                 resume_struct = _normalize_aihawk_resume(_raw)
-                resume_text = resume_struct.get("career_summary", "")
+                # career_summary alone is frequently empty for AIHawk-format
+                # profiles (no such field in the raw YAML) -- that silently
+                # starved extract_jd_signals()'s TF-IDF phase, which requires
+                # a non-empty resume_text to run at all. Flatten the full
+                # structured resume (summary + experience bullets + skills)
+                # into plain text instead, so TF-IDF has real content to
+                # compare against regardless of which fields the profile has.
+                resume_text = _resume_struct_to_text(resume_struct)
             else:
                 resume_text = ""
                 resume_struct, _parse_err = structure_resume("")

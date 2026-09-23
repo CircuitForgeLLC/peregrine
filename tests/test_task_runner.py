@@ -472,3 +472,67 @@ def test_submit_task_passes_real_db_path_to_get_scheduler_self_hosted(tmp_path, 
 
     assert get_scheduler_calls == [db], "self-hosted must still pass the real db_path to get_scheduler"
     fake_scheduler.enqueue.assert_called_once_with(task_id, "cover_letter", job_id, None, db)
+
+
+# ── _resume_struct_to_text ──────────────────────────────────────────────────
+# Regression coverage: resume_optimize used to derive resume_text as just
+# resume_struct.get("career_summary", ""), which is empty for AIHawk-format
+# profiles (no career_summary field in the raw YAML) -- silently starving
+# extract_jd_signals()'s TF-IDF phase (it requires a non-empty resume_text to
+# run at all), so the gap report came back empty regardless of how good or
+# bad the real match was. Found live on peregrine-cloud 2026-09-23: a real
+# job with 11 genuine TF-IDF+LLM gap terms produced a "No significant keyword
+# gaps found" result because resume_text was "".
+
+def test_resume_struct_to_text_includes_career_summary():
+    from scripts.task_runner import _resume_struct_to_text
+    struct = {"career_summary": "Backend engineer with 8 years of Python experience."}
+    text = _resume_struct_to_text(struct)
+    assert "Backend engineer with 8 years of Python experience." in text
+
+
+def test_resume_struct_to_text_includes_experience_bullets():
+    from scripts.task_runner import _resume_struct_to_text
+    struct = {
+        "experience": [{
+            "title": "Senior Engineer", "company": "Acme Corp",
+            "bullets": ["Built the payments pipeline.", "Led a team of 4 engineers."],
+        }],
+    }
+    text = _resume_struct_to_text(struct)
+    assert "Senior Engineer" in text and "Acme Corp" in text
+    assert "Built the payments pipeline." in text
+    assert "Led a team of 4 engineers." in text
+
+
+def test_resume_struct_to_text_includes_skills():
+    from scripts.task_runner import _resume_struct_to_text
+    struct = {"skills": ["Python", "AWS", "Kubernetes"]}
+    text = _resume_struct_to_text(struct)
+    assert "Python" in text and "AWS" in text and "Kubernetes" in text
+
+
+def test_resume_struct_to_text_nonempty_even_with_no_career_summary():
+    """The exact bug scenario: a real AIHawk-format profile with experience
+    and skills but no career_summary field must still produce non-empty text."""
+    from scripts.task_runner import _normalize_aihawk_resume, _resume_struct_to_text
+    raw = {
+        "experience": [{
+            "title": "Software Engineer III", "company": "EVgo",
+            "responsibilities": "Built cloud security tooling.\nOwned AWS infrastructure.",
+            "period": "2022 – Present",
+        }],
+        "skills": ["AWS", "Python", "Security"],
+    }
+    struct = _normalize_aihawk_resume(raw)
+    assert struct["career_summary"] == ""  # confirms the bug precondition
+    text = _resume_struct_to_text(struct)
+    assert text.strip() != ""
+    assert "Software Engineer III" in text
+    assert "Built cloud security tooling." in text
+    assert "AWS" in text
+
+
+def test_resume_struct_to_text_handles_empty_struct():
+    from scripts.task_runner import _resume_struct_to_text
+    assert _resume_struct_to_text({}) == ""
