@@ -5,6 +5,8 @@ config/tokens.yaml
 config/email.yaml
 config/adzuna.yaml
 config/craigslist.yaml
+config/.credential_key
+config/credentials/
 __pycache__/
 *.pyc
 .pytest_cache/

@@ -55,7 +55,8 @@ COPY . .
 # guarantees they never appear in the image even if .dockerignore is misconfigured.
 RUN rm -f config/user.yaml config/plain_text_resume.yaml config/notion.yaml \
           config/email.yaml config/tokens.yaml config/craigslist.yaml \
-          config/adzuna.yaml .env
+          config/adzuna.yaml config/.credential_key .env && \
+    rm -rf config/credentials
 
 EXPOSE 8601
 

@@ -703,3 +703,65 @@ def test_wizard_reset_returns_ok(tmp_path, monkeypatch):
     resp = c.post("/api/settings/developer/wizard-reset")
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+
+
+# ── _cred_dir() -- per-tenant credential isolation ────────────────────────────
+# Regression coverage for peregrine-cloud 2026-09-23: get_credential()/
+# set_credential() always used credential_store's module-wide CRED_DIR
+# (co-located with the app install, not per-tenant data) -- every cloud
+# tenant's IMAP app password collided in the same encrypted file, and was
+# wiped on every container restart since it wasn't on persistent storage.
+
+def test_cred_dir_is_none_in_self_hosted_mode(monkeypatch):
+    """Self-hosted has exactly one user -- _cred_dir() must return None so
+    credential_store falls back to its own module-wide default (preserves
+    already-saved credentials for existing self-hosted installs)."""
+    monkeypatch.setattr("dev_api._CLOUD_MODE", False)
+    from dev_api import _cred_dir
+    assert _cred_dir() is None
+
+
+def test_cred_dir_is_per_tenant_in_cloud_mode(tmp_path, monkeypatch):
+    """Cloud mode must scope credentials under the requesting tenant's own
+    config directory, not a process-wide shared location."""
+    db_dir = tmp_path / "db"
+    db_dir.mkdir()
+    monkeypatch.setenv("STAGING_DB", str(db_dir / "staging.db"))
+    monkeypatch.setattr("dev_api._CLOUD_MODE", True)
+    from dev_api import _cred_dir
+    assert _cred_dir() == db_dir / "config" / "credentials"
+
+
+def test_email_credentials_isolated_between_cloud_tenants(tmp_path, monkeypatch):
+    """End-to-end: two 'tenants' (different STAGING_DB roots) saving email
+    config via the real API must not see or overwrite each other's stored
+    password."""
+    from scripts.credential_store import get_credential
+
+    tenant_a_db = tmp_path / "tenant-a" / "staging.db"
+    tenant_b_db = tmp_path / "tenant-b" / "staging.db"
+    monkeypatch.setattr("dev_api._CLOUD_MODE", True)
+
+    from dev_api import app
+    c = TestClient(app)
+
+    monkeypatch.setenv("STAGING_DB", str(tenant_a_db))
+    resp = c.put("/api/settings/system/email", json={
+        "host": "imap.gmail.com", "port": 993, "ssl": True,
+        "username": "a@example.com", "password": "tenant-a-secret",
+    })
+    assert resp.status_code == 200
+
+    monkeypatch.setenv("STAGING_DB", str(tenant_b_db))
+    resp = c.put("/api/settings/system/email", json={
+        "host": "imap.gmail.com", "port": 993, "ssl": True,
+        "username": "b@example.com", "password": "tenant-b-secret",
+    })
+    assert resp.status_code == 200
+
+    assert get_credential(
+        "peregrine", "imap_password", cred_dir=tenant_a_db.parent / "config" / "credentials"
+    ) == "tenant-a-secret"
+    assert get_credential(
+        "peregrine", "imap_password", cred_dir=tenant_b_db.parent / "config" / "credentials"
+    ) == "tenant-b-secret"
