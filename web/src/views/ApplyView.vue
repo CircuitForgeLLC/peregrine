@@ -52,9 +52,25 @@
   </div>
 
   <!-- ── Desktop: split pane ─────────────────────────────────────── -->
-  <div v-else class="apply-split" :class="{ 'has-selection': selectedJobId !== null }" ref="splitEl">
+  <div
+    v-else
+    class="apply-split"
+    :class="{ 'has-selection': selectedJobId !== null, 'apply-split--list-collapsed': listCollapsed }"
+    ref="splitEl"
+  >
     <!-- Left: narrow job list -->
     <div class="apply-split__list">
+      <!-- Collapse toggle — reclaims width for the workspace panel -->
+      <button
+        class="list-panel-toggle"
+        :aria-expanded="!listCollapsed"
+        aria-label="Toggle job list panel"
+        @click="listCollapsed = !listCollapsed"
+      >
+        <span aria-hidden="true">{{ listCollapsed ? '▶' : '◀' }}</span>
+      </button>
+
+      <template v-if="!listCollapsed">
       <HintChip
         v-if="config.isDemo"
         view-key="apply"
@@ -67,6 +83,11 @@
         </span>
       </div>
 
+      <label class="remote-filter">
+        <input type="checkbox" v-model="remoteOnly" />
+        Remote only
+      </label>
+
       <div v-if="loading" class="split-list__loading" aria-live="polite">
         <span class="spinner" aria-hidden="true" />
       </div>
@@ -76,8 +97,12 @@
         <RouterLink to="/review" class="split-list__cta">Go to Job Review →</RouterLink>
       </div>
 
+      <div v-else-if="filteredJobs.length === 0" class="split-list__empty" role="status">
+        <span>No remote jobs among your approved listings.</span>
+      </div>
+
       <ul v-else class="split-list__jobs" role="list">
-        <li v-for="job in jobs" :key="job.id">
+        <li v-for="job in filteredJobs" :key="job.id">
           <button
             class="narrow-row"
             :class="{ 'narrow-row--selected': job.id === selectedJobId }"
@@ -99,6 +124,7 @@
           </button>
         </li>
       </ul>
+      </template>
     </div>
 
     <!-- Right: workspace panel -->
@@ -130,14 +156,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { RouterLink } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useStorage } from '@vueuse/core'
 import { useApiFetch } from '../composables/useApi'
 import ApplyWorkspace from '../components/ApplyWorkspace.vue'
 import HintChip from '../components/HintChip.vue'
 import { useAppConfigStore } from '../stores/appConfig'
 
 const config = useAppConfigStore()
+const route  = useRoute()
+const router = useRouter()
 
 // ── Responsive ───────────────────────────────────────────────────────────────
 
@@ -187,6 +216,18 @@ async function fetchJobs() {
 
 onMounted(fetchJobs)
 
+// ── List filter + collapse (desktop split pane) ────────────────────────────────
+// Mirrors ApplyWorkspace.vue's own jobPanelCollapsed pattern (useStorage,
+// same collapse-toggle affordance) so the job-list column can also be
+// collapsed to reclaim width for the workspace panel.
+
+const remoteOnly = ref(false)
+const filteredJobs = computed(() =>
+  remoteOnly.value ? jobs.value.filter(j => j.is_remote) : jobs.value
+)
+
+const listCollapsed = useStorage('peregrine_apply_list_collapsed', false)
+
 // ── Score badge — 4-tier ──────────────────────────────────────────────────────
 
 function scoreBadgeClass(score: number | null): string {
@@ -198,8 +239,15 @@ function scoreBadgeClass(score: number | null): string {
 }
 
 // ── Selection ─────────────────────────────────────────────────────────────────
+// Deep-linkable via ?job=<id> -- e.g. the "Draft" button in Job Review's
+// Approved tab used to always push /apply/:id (the mobile-only full-page
+// workspace route, per ApplyWorkspaceView.vue's own comment), so on desktop
+// it landed on a bare workspace with no job list beside it. The fix on that
+// side sends desktop users to /apply?job=<id> instead; this picks that up.
 
-const selectedJobId = ref<number | null>(null)
+const selectedJobId = ref<number | null>(
+  route.query.job ? Number(route.query.job) : null
+)
 
 // Speed Demon: track up to 5 most-recent click timestamps
 // Plain let (not ref) — never bound to template, no reactivity needed
@@ -207,6 +255,7 @@ let recentClicks: number[] = []
 
 function selectJob(id: number) {
   selectedJobId.value = id
+  router.replace({ query: { ...route.query, job: id } })
 
   // Speed Demon tracking
   const now = Date.now()
@@ -224,6 +273,8 @@ function selectJob(id: number) {
 
 async function onJobRemoved() {
   selectedJobId.value = null
+  const { job: _job, ...rest } = route.query
+  router.replace({ query: rest })
   await fetchJobs()
 }
 
@@ -383,12 +434,60 @@ function fireSpeedDemon() {
   grid-template-columns: 28% 1fr;
 }
 
+/* Collapsed list column reclaims width for the workspace panel, same as
+   ApplyWorkspace's own job-details collapse. Higher specificity than
+   .has-selection so it wins regardless of selection state. */
+.apply-split.apply-split--list-collapsed {
+  grid-template-columns: 3.5rem 1fr;
+}
+
 /* ── Left: narrow list column ────────────────────────────────────── */
 .apply-split__list {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--color-border-light);
   overflow: hidden;
+  position: relative;
+}
+
+.apply-split--list-collapsed .apply-split__list {
+  align-items: center;
+  padding-top: var(--space-3);
+}
+
+.list-panel-toggle {
+  align-self: flex-end;
+  margin: var(--space-3) var(--space-4) 0;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  transition: var(--transition);
+}
+
+.list-panel-toggle:hover,
+.list-panel-toggle:focus-visible {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.apply-split--list-collapsed .list-panel-toggle {
+  align-self: center;
+  margin: 0;
+}
+
+.remote-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .split-list__header {
