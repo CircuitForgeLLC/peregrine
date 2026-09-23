@@ -11,6 +11,8 @@ config/email.yaml
 config/tokens.yaml
 config/craigslist.yaml
 config/adzuna.yaml
+config/.credential_key
+config/credentials/
 .env
 .streamlit.pid
 .streamlit.log

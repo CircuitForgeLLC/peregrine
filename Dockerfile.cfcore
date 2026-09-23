@@ -50,7 +50,8 @@ COPY peregrine/ .
 # but an explicit rm guarantees they never end up in the cloud image.
 RUN rm -f config/user.yaml config/plain_text_resume.yaml config/notion.yaml \
           config/email.yaml config/tokens.yaml config/craigslist.yaml \
-          config/adzuna.yaml .env
+          config/adzuna.yaml config/.credential_key .env && \
+    rm -rf config/credentials
 
 EXPOSE 8501
 
