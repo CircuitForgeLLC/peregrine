@@ -7,7 +7,7 @@ app password wrote to and read from the same encrypted file, silently
 overwriting each other's credentials, and the file was wiped on every
 container restart since it wasn't on persistent per-tenant storage.
 """
-from scripts.credential_store import get_credential, set_credential, delete_credential
+from scripts.credential_store import delete_credential, get_credential, set_credential
 
 
 def test_set_and_get_credential_uses_given_cred_dir(tmp_path):
