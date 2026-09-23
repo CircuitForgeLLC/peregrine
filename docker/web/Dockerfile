@@ -1,5 +1,5 @@
 # Stage 1: build
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY web/package*.json ./
 RUN npm ci --prefer-offline
