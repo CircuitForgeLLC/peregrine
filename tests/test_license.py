@@ -119,3 +119,55 @@ class TestEffectiveTier:
         from scripts.license import effective_tier
         result = effective_tier(license_path=license_path, public_key_path=public_path)
         assert result == "premium"
+
+
+class TestStatus:
+    """peregrine#170: status() is the single source get_license() (dev-api.py)
+    reads, so the frontend actually reflects a real activated license."""
+
+    def test_no_license_returns_free_and_inactive(self, tmp_path):
+        from scripts.license import status
+        result = status(
+            license_path=tmp_path / "missing.json",
+            public_key_path=tmp_path / "key.pem",
+        )
+        assert result == {
+            "tier": "free",
+            "key": None,
+            "active": False,
+            "grace_period_ends": None,
+        }
+
+    def test_valid_jwt_reports_active_with_key_and_tier(self, test_keys, tmp_path):
+        private_pem, _, public_path = test_keys
+        token = _make_jwt(private_pem, tier="premium")
+        license_path = _write_license(tmp_path, token)
+        from scripts.license import status
+        result = status(license_path=license_path, public_key_path=public_path)
+        assert result["tier"] == "premium"
+        assert result["key"] == "CFG-PRNG-TEST-TEST-TEST"
+        assert result["active"] is True
+        assert result["grace_period_ends"] is None
+
+    def test_expired_past_grace_reports_inactive_but_keeps_key_display(self, test_keys, tmp_path):
+        private_pem, _, public_path = test_keys
+        token = _make_jwt(private_pem, exp_delta_days=-10)
+        grace_until = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        license_path = _write_license(tmp_path, token, grace_until=grace_until)
+        from scripts.license import status
+        result = status(license_path=license_path, public_key_path=public_path)
+        assert result["tier"] == "free"
+        assert result["active"] is False
+        assert result["key"] == "CFG-PRNG-TEST-TEST-TEST"
+        assert result["grace_period_ends"] == grace_until
+
+    def test_expired_within_grace_reports_active(self, test_keys, tmp_path):
+        private_pem, _, public_path = test_keys
+        token = _make_jwt(private_pem, tier="paid", exp_delta_days=-1)
+        grace_until = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+        license_path = _write_license(tmp_path, token, grace_until=grace_until)
+        from scripts.license import status
+        result = status(license_path=license_path, public_key_path=public_path)
+        assert result["tier"] == "paid"
+        assert result["active"] is True
+        assert result["grace_period_ends"] == grace_until
