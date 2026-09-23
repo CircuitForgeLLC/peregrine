@@ -28,8 +28,8 @@
           @click="setTab(tab.status)"
         >
           {{ tab.label }}
-          <span v-if="tab.status === 'pending' && store.remaining > 0" class="tab-badge">
-            {{ store.remaining }}
+          <span v-if="tabCount(tab.status) > 0" class="tab-badge">
+            {{ tabCount(tab.status) }}
           </span>
         </button>
       </div>
@@ -140,7 +140,7 @@
               <button
                 v-if="activeTab === 'approved'"
                 class="job-list__action"
-                @click="router.push(`/apply/${job.id}`)"
+                @click="goToDraft(job.id)"
                 :aria-label="`Draft cover letter for ${job.title}`"
               >✨ Draft</button>
               <button
@@ -237,6 +237,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useReviewStore } from '../stores/review'
 import type { Job } from '../stores/review'
+import { useJobsStore } from '../stores/jobs'
 import type { PipelineStage } from '../stores/interviews'
 import JobCardStack from '../components/JobCardStack.vue'
 import HintChip from '../components/HintChip.vue'
@@ -247,10 +248,23 @@ import { useAppConfigStore } from '../stores/appConfig'
 
 const config = useAppConfigStore()
 
-const store    = useReviewStore()
+const store     = useReviewStore()
+const jobsStore = useJobsStore()
 const route    = useRoute()
 const router   = useRouter()
 const stackRef = ref<InstanceType<typeof JobCardStack> | null>(null)
+
+// /apply/:id is the mobile-only full-page workspace (see
+// ApplyWorkspaceView.vue's own comment) -- on desktop it lands on a bare
+// workspace with no job list beside it. Same 1024px breakpoint ApplyView.vue
+// itself uses to decide mobile-list vs. desktop-split-pane.
+function goToDraft(jobId: number) {
+  if (window.innerWidth < 1024) {
+    router.push(`/apply/${jobId}`)
+  } else {
+    router.push({ path: '/apply', query: { job: jobId } })
+  }
+}
 
 // ── Move to stage (applied tab) ─────────────────────────────────────────────
 // Mirrors InterviewsView.vue's Move-to-stage flow -- Applied is the only
@@ -274,6 +288,7 @@ async function onMove(stage: PipelineStage, opts: { interview_date?: string; rej
   if (!err) {
     // Moved out of 'applied' -- refresh the list so it no longer shows here.
     await store.fetchList('applied')
+    jobsStore.fetchCounts()
   }
 }
 
@@ -286,6 +301,17 @@ const TABS = [
   { status: 'applied',  label: 'Applied'  },
   { status: 'synced',   label: 'Synced'   },
 ]
+
+// Pending uses the live client-side queue length (updates instantly on each
+// swipe, no round-trip needed); the other tabs read from jobsStore's server
+// count, which is what actually has approved/rejected/applied/synced totals
+// -- review.ts's own store never tracked anything beyond the pending queue.
+function tabCount(status: string): number {
+  if (status === 'pending') return store.remaining
+  const counts = jobsStore.counts
+  if (!counts) return 0
+  return counts[status as 'approved' | 'rejected' | 'applied' | 'synced'] ?? 0
+}
 
 const activeTab = ref((route.query.status as string) ?? 'pending')
 
@@ -313,6 +339,7 @@ async function doUndo() {
   clearTimeout(toastTimer)
   undoToast.value = null
   await store.undo()
+  jobsStore.fetchCounts()
 }
 
 function capitalize(s: string) { return s.charAt(0).toUpperCase() + s.slice(1) }
@@ -326,6 +353,7 @@ async function onApprove() {
   if (!ok) { stackRef.value?.resetCard(); return }
   showUndoToast('approved')
   checkStoopSpeed()
+  jobsStore.fetchCounts()
 }
 
 async function onReject() {
@@ -335,6 +363,7 @@ async function onReject() {
   if (!ok) { stackRef.value?.resetCard(); return }
   showUndoToast('rejected')
   checkStoopSpeed()
+  jobsStore.fetchCounts()
 }
 
 function onSkip() {
@@ -446,6 +475,7 @@ onMounted(async () => {
   } else {
     await store.fetchList(activeTab.value)
   }
+  jobsStore.fetchCounts()
 })
 
 onUnmounted(() => {
