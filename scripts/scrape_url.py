@@ -56,7 +56,7 @@ _TIMEOUT = 12
 
 
 def _detect_board(url: str) -> str:
-    """Return 'linkedin', 'indeed', 'glassdoor', 'jobgether', 'oracle_hcm', or 'generic'."""
+    """Return 'linkedin', 'indeed', 'glassdoor', 'jobgether', 'oracle_hcm', 'theladders', or 'generic'."""
     url_lower = url.lower()
     if "linkedin.com" in url_lower:
         return "linkedin"
@@ -68,6 +68,8 @@ def _detect_board(url: str) -> str:
         return "jobgether"
     if "oraclecloud.com" in url_lower and "hcmui" in url_lower:
         return "oracle_hcm"
+    if "theladders.com" in url_lower:
+        return "theladders"
     return "generic"
 
 
@@ -278,6 +280,71 @@ def _scrape_oracle_hcm(url: str) -> dict:
         return {}
 
 
+def _is_cloudflare_challenge(html: str) -> bool:
+    """Detect Cloudflare's bot-challenge interstitial page.
+
+    The Ladders is behind Cloudflare bot protection at the TLS/connection
+    fingerprint level (confirmed 2026-09-23: plain Playwright automation gets
+    a hard 403 even with standard stealth JS evasions applied, and waiting
+    for the challenge to resolve does not help). This is a best-effort
+    scraper — when challenged, we must fail clean rather than store the
+    interstitial text as a job description. See peregrine#203.
+    """
+    return "Performing security verification" in html or "cf-error-details" in html
+
+
+def _scrape_theladders(url: str) -> dict:
+    """Scrape a The Ladders job detail page via Playwright.
+
+    The Ladders is a client-side React app (no SSR content) — same reason
+    the existing search-results scraper (scripts/custom_boards/theladders.py)
+    uses Playwright. Job detail pages are additionally behind a Cloudflare
+    bot challenge that this best-effort scraper cannot reliably bypass; when
+    challenged, this returns {} rather than storing garbage.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("[scrape_url] The Ladders: Playwright not installed, skipping")
+        return {}
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                ctx = browser.new_context(user_agent=_HEADERS["User-Agent"])
+                page = ctx.new_page()
+                page.goto(url, timeout=30_000)
+                page.wait_for_load_state("networkidle", timeout=20_000)
+                html = page.content()
+
+                if _is_cloudflare_challenge(html):
+                    print(f"[scrape_url] The Ladders: Cloudflare challenge for {url}, skipping")
+                    return {}
+
+                result = page.evaluate("""() => {
+                    const title = document.querySelector('h1')?.textContent?.trim() || '';
+                    const location = document.querySelector('.remote-location-text, .location-info')
+                        ?.textContent?.trim() || '';
+                    const desc = document.querySelector('[class*="description"], [class*="job-detail"], article')
+                        ?.innerText?.trim() || '';
+                    return { title, location, description: desc };
+                }""")
+            finally:
+                browser.close()
+
+        result["source"] = "theladders"
+        return {k: v for k, v in result.items() if v}
+
+    except Exception as exc:  # noqa: BLE001 -- same reasoning as _scrape_jobgether
+        # above: Playwright browser automation over a Cloudflare-protected React
+        # SPA can raise many distinct playwright.sync_api errors, and this
+        # scraper must degrade to an empty result rather than crash the
+        # enrichment task.
+        print(f"[scrape_url] The Ladders Playwright error for {url}: {exc}")
+        return {}
+
+
 def _parse_json_ld_or_og(html: str) -> dict:
     """Extract job fields from JSON-LD structured data, then og: meta tags."""
     soup = BeautifulSoup(html, "html.parser")
@@ -365,6 +432,8 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dic
             fields = _scrape_jobgether(url)
         elif board == "oracle_hcm":
             fields = _scrape_oracle_hcm(url)
+        elif board == "theladders":
+            fields = _scrape_theladders(url)
         else:
             fields = _scrape_generic(url)
     except requests.RequestException as exc:

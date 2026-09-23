@@ -1,6 +1,8 @@
 """Tests for URL-based job scraping."""
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 def _make_db(tmp_path, url="https://www.linkedin.com/jobs/view/99999/"):
     from scripts.db import init_db, insert_job
@@ -166,3 +168,68 @@ def test_scrape_jobgether_no_playwright(tmp_path):
 
     assert result.get("company") == "Resware"
     assert result.get("source") == "jobgether"
+
+
+def test_detect_board_theladders():
+    from scripts.scrape_url import _detect_board
+    assert _detect_board(
+        "https://www.theladders.com/job/product-engineer-engram-san-francisco-ca_88853525"
+    ) == "theladders"
+
+
+def test_is_cloudflare_challenge_detected():
+    from scripts.scrape_url import _is_cloudflare_challenge
+    challenge_html = (
+        "<html><title>Just a moment...</title><body>"
+        "Performing security verification"
+        "</body></html>"
+    )
+    assert _is_cloudflare_challenge(challenge_html) is True
+
+
+def test_is_cloudflare_challenge_not_detected_on_real_content():
+    from scripts.scrape_url import _is_cloudflare_challenge
+    assert _is_cloudflare_challenge("<html><body>Product Engineer at Engram</body></html>") is False
+
+
+def test_scrape_theladders_no_playwright(tmp_path):
+    """When Playwright is unavailable, _scrape_theladders fails clean (empty dict)."""
+    import sys
+    from unittest import mock
+
+    url = "https://www.theladders.com/job/product-engineer-engram-san-francisco-ca_88853525"
+    with mock.patch.dict(sys.modules, {"playwright": None, "playwright.sync_api": None}):
+        from scripts.scrape_url import _scrape_theladders
+        result = _scrape_theladders(url)
+
+    assert result == {}
+
+
+def test_scrape_theladders_cloudflare_challenge_returns_empty(tmp_path):
+    """A Cloudflare challenge response must never be stored as a job description."""
+    pytest.importorskip("playwright")
+    from unittest import mock
+
+    url = "https://www.theladders.com/job/product-engineer-engram-san-francisco-ca_88853525"
+
+    mock_page = mock.MagicMock()
+    mock_page.content.return_value = (
+        "<html><title>Just a moment...</title><body>"
+        "Performing security verification"
+        "</body></html>"
+    )
+    mock_ctx = mock.MagicMock()
+    mock_ctx.new_page.return_value = mock_page
+    mock_browser = mock.MagicMock()
+    mock_browser.new_context.return_value = mock_ctx
+    mock_chromium = mock.MagicMock()
+    mock_chromium.launch.return_value = mock_browser
+    mock_playwright_cm = mock.MagicMock()
+    mock_playwright_cm.__enter__.return_value.chromium = mock_chromium
+
+    with mock.patch("playwright.sync_api.sync_playwright", return_value=mock_playwright_cm):
+        from scripts.scrape_url import _scrape_theladders
+        result = _scrape_theladders(url)
+
+    assert result == {}
+    mock_page.evaluate.assert_not_called()
