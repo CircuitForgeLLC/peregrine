@@ -423,3 +423,68 @@ def test_is_blocklisted_jobgether():
     assert _is_blocklisted({"company": "Jobgether", "location": "", "description": ""}, blocklist)
     assert _is_blocklisted({"company": "jobgether inc", "location": "", "description": ""}, blocklist)
     assert not _is_blocklisted({"company": "Acme Corp", "location": "", "description": ""}, blocklist)
+
+
+def test_discover_applies_profile_blocklist_companies(tmp_path):
+    """peregrine#194-class bug: save_search_prefs() (dev-api.py) writes a
+    user's Settings -> Search Prefs 'Blocked Companies' entries onto the
+    profile as `blocklist_companies`, but run_discovery() used to only ever
+    filter against the separate, unwired config/blocklist.yaml -- so a
+    company blocked in the UI never actually got excluded. A job from a
+    blocked company must not be inserted, even though config/blocklist.yaml
+    itself has no matching entry."""
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    db_path = tmp_path / "test.db"
+    profiles_cfg = {
+        "profiles": [{
+            "name": "default", "titles": ["Customer Success Manager"],
+            "locations": ["Remote"], "boards": ["linkedin"],
+            "results_per_board": 5, "hours_old": 72,
+            "blocklist_companies": ["Google"],
+        }]
+    }
+    google_job = {**SAMPLE_JOB, "company": "Google", "job_url": "https://linkedin.com/jobs/view/999"}
+
+    with patch("scripts.discover.load_config", return_value=(profiles_cfg, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.load_blocklist", return_value={"companies": [], "industries": [], "locations": []}), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([google_job])), \
+         patch("scripts.discover.Client"):
+        run_discovery(db_path=db_path)
+
+    jobs = get_jobs_by_status(db_path, "pending")
+    assert len(jobs) == 0
+
+
+def test_discover_profile_blocklist_is_scoped_per_profile(tmp_path):
+    """A blocklist_companies entry on one profile must not leak into
+    another profile's filtering within the same run_discovery() call."""
+    from scripts.discover import run_discovery
+    from scripts.db import get_jobs_by_status
+
+    db_path = tmp_path / "test.db"
+    profiles_cfg = {
+        "profiles": [
+            {"name": "blocks-google", "titles": ["Engineer"], "locations": ["Remote"],
+             "boards": ["linkedin"], "results_per_board": 5, "hours_old": 72,
+             "blocklist_companies": ["Google"]},
+            {"name": "no-blocklist", "titles": ["Engineer"], "locations": ["Remote"],
+             "boards": ["linkedin"], "results_per_board": 5, "hours_old": 72},
+        ]
+    }
+    google_job = {**SAMPLE_JOB, "company": "Google", "job_url": "https://linkedin.com/jobs/view/888"}
+
+    with patch("scripts.discover.load_config", return_value=(profiles_cfg, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.load_blocklist", return_value={"companies": [], "industries": [], "locations": []}), \
+         patch("scripts.discover.scrape_jobs", return_value=make_jobs_df([google_job])), \
+         patch("scripts.discover.Client"):
+        run_discovery(db_path=db_path)
+
+    # First profile blocks Google and finds nothing new; second profile has
+    # no blocklist and inserts the same URL first -- so exactly one row
+    # lands, proving the block was scoped to its own profile rather than
+    # either leaking to the other or persisting from a stale closure value.
+    jobs = get_jobs_by_status(db_path, "pending")
+    assert len(jobs) == 1
+    assert jobs[0]["company"] == "Google"
