@@ -283,12 +283,16 @@ def _scrape_oracle_hcm(url: str) -> dict:
 def _is_cloudflare_challenge(html: str) -> bool:
     """Detect Cloudflare's bot-challenge interstitial page.
 
-    The Ladders is behind Cloudflare bot protection at the TLS/connection
-    fingerprint level (confirmed 2026-09-23: plain Playwright automation gets
-    a hard 403 even with standard stealth JS evasions applied, and waiting
-    for the challenge to resolve does not help). This is a best-effort
-    scraper — when challenged, we must fail clean rather than store the
-    interstitial text as a job description. See peregrine#203.
+    The Ladders sits behind Cloudflare bot protection, but a masked,
+    non-headless-looking User-Agent (see _HEADERS above) reliably gets
+    through it — the earlier "hard TLS-fingerprint block" finding
+    (peregrine#204) turned out to be an artifact of testing with a browser
+    that sent a literal "HeadlessChrome" User-Agent, not a real block of
+    this scraper's own request shape (confirmed 2026-09-23 against the real
+    cf conda env's Playwright install, matching what this function uses).
+    Kept as defensive best-effort handling in case Cloudflare's posture
+    changes or challenges intermittently — never store interstitial text as
+    a job description.
     """
     return "Performing security verification" in html or "cf-error-details" in html
 
@@ -298,9 +302,7 @@ def _scrape_theladders(url: str) -> dict:
 
     The Ladders is a client-side React app (no SSR content) — same reason
     the existing search-results scraper (scripts/custom_boards/theladders.py)
-    uses Playwright. Job detail pages are additionally behind a Cloudflare
-    bot challenge that this best-effort scraper cannot reliably bypass; when
-    challenged, this returns {} rather than storing garbage.
+    uses Playwright.
     """
     try:
         from playwright.sync_api import sync_playwright
@@ -315,7 +317,41 @@ def _scrape_theladders(url: str) -> dict:
                 ctx = browser.new_context(user_agent=_HEADERS["User-Agent"])
                 page = ctx.new_page()
                 page.goto(url, timeout=30_000)
-                page.wait_for_load_state("networkidle", timeout=20_000)
+                # The Ladders keeps background network activity (analytics,
+                # polling) alive indefinitely, so wait_for_load_state("networkidle")
+                # never resolves even once the job content has fully rendered
+                # (confirmed 2026-09-23: content is present well before any
+                # networkidle timeout fires). Wait for the actual content
+                # instead; a timeout here just means proceeding with whatever
+                # has rendered so far, not a fatal error.
+                try:
+                    # Wait on the description selector specifically, not a broad
+                    # OR including "article"/"h1" -- those bare tags exist in the
+                    # page's layout shell before React populates them, so an OR
+                    # wait can resolve on an empty shell and race ahead of the
+                    # title actually being filled in (confirmed 2026-09-23: by
+                    # the time the description-ish selector has real content,
+                    # the title is reliably populated too).
+                    page.wait_for_selector(
+                        '[class*="description"], [class*="job-detail"]',
+                        timeout=15_000,
+                    )
+                except Exception:  # noqa: BLE001 -- a selector-wait timeout means
+                    # proceeding to extraction with whatever rendered so far; the
+                    # extraction JS below already degrades to empty strings per
+                    # field when nothing matched, so this is not a fatal error.
+                    pass
+                # The title (<h1>) renders on a separate timeline from the
+                # description and is not reliably present yet even once the
+                # description selector resolves (confirmed 2026-09-23: h1 count
+                # was 0 on some runs at that point) -- give it its own short,
+                # non-fatal wait.
+                try:
+                    page.wait_for_selector("h1", timeout=5_000)
+                except Exception:  # noqa: BLE001 -- same reasoning as above: a
+                    # missing title after this wait just means title comes back
+                    # empty, not a fatal error for the whole scrape.
+                    pass
                 html = page.content()
 
                 if _is_cloudflare_challenge(html):
@@ -323,11 +359,17 @@ def _scrape_theladders(url: str) -> dict:
                     return {}
 
                 result = page.evaluate("""() => {
-                    const title = document.querySelector('h1')?.textContent?.trim() || '';
+                    // The Ladders renders contraction apostrophes through a custom
+                    // web font that maps a control/PUA codepoint (observed as the
+                    // literal two-character sequence U+0003 U+0039) to an apostrophe
+                    // glyph -- innerText/textContent extraction gets the raw
+                    // codepoints, not the rendered glyph, so undo the substitution.
+                    const fixApostrophes = (s) => s.replace(/\\u0003\\u0039/g, "'");
+                    const title = fixApostrophes(document.querySelector('h1')?.textContent?.trim() || '');
                     const location = document.querySelector('.remote-location-text, .location-info')
                         ?.textContent?.trim() || '';
-                    const desc = document.querySelector('[class*="description"], [class*="job-detail"], article')
-                        ?.innerText?.trim() || '';
+                    const desc = fixApostrophes(document.querySelector('[class*="description"], [class*="job-detail"], article')
+                        ?.innerText?.trim() || '');
                     return { title, location, description: desc };
                 }""")
             finally:
