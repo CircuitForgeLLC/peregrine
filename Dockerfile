@@ -35,8 +35,11 @@ RUN --mount=type=secret,id=forgejo_token \
     TOKEN=$(cat /run/secrets/forgejo_token 2>/dev/null || true) && \
     if [ -n "$TOKEN" ]; then \
       pip install --no-cache-dir \
-        "git+https://x-access-token:${TOKEN}@git.opensourcesolarpunk.com/Circuit-Forge/circuitforge-orch.git@main" \
+        "git+https://x-access-token:${TOKEN}@git.circuitforge.tech/Circuit-Forge/circuitforge-orch.git@main" \
         && echo "cf-orch installed"; \
+      pip install --no-cache-dir --no-deps --force-reinstall \
+        "git+https://x-access-token:${TOKEN}@git.circuitforge.tech/Circuit-Forge/circuitforge-core.git@main" \
+        && echo "cf-core re-pinned to main (cf-orch's own circuitforge-core>=0.8.0 constraint otherwise lets pip's resolver silently reinstall an older published release over the @main checkout above)"; \
     else \
       echo "cf-orch skipped (community build — local backends available)"; \
     fi
