@@ -3417,6 +3417,21 @@ def _config_dir() -> Path:
     """Resolve per-user config directory. Always co-located with user.yaml."""
     return Path(_user_yaml_path()).parent
 
+def _cred_dir() -> Path | None:
+    """Per-tenant credential storage directory, cloud mode only.
+
+    Self-hosted deployments have exactly one user, so credential_store's
+    module-wide default (CRED_DIR, co-located with the app install) is fine
+    and stays untouched -- passing None here preserves that path exactly,
+    so existing self-hosted installs don't lose access to already-saved
+    credentials. Cloud mode has many tenants sharing one process, where that
+    same module-wide default would let every tenant read and overwrite each
+    other's credentials (found live 2026-09-23 -- email app passwords were
+    colliding across tenants and being wiped on every container restart,
+    since CRED_DIR isn't on the bind-mounted per-tenant data volume).
+    """
+    return (_config_dir() / "credentials") if _CLOUD_MODE else None
+
 def _task_models_path() -> Path:
     """Per-tenant task_models storage, cloud mode only. Self-hosted keeps
     using LLM_ROUTER_CONFIG_PATH (see get_task_models/save_task_models) --
@@ -4345,7 +4360,7 @@ def get_email_config():
             with open(ep) as f:
                 config = yaml.safe_load(f) or {}
         # Never return the password — only indicate whether it's set
-        password = get_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY)
+        password = get_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY, cred_dir=_cred_dir())
         config["password_set"] = bool(password)
         config.pop("password", None)  # strip if somehow in yaml
         return config
@@ -4362,7 +4377,7 @@ def save_email_config(payload: dict):
         password = payload.pop("password", None)
         payload.pop("password_set", None)  # always discard — boolean sentinel, not a secret
         if password and isinstance(password, str):
-            set_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY, password)
+            set_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY, password, cred_dir=_cred_dir())
         # Write non-secret fields to yaml (chmod 600 still, contains username)
         safe_config = {k: v for k, v in payload.items() if k in EMAIL_YAML_FIELDS}
         fd = os.open(str(ep), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -4377,7 +4392,7 @@ def save_email_config(payload: dict):
 def test_email(payload: dict):
     try:
         # Always use the stored credential — never accept a password in the test request body
-        password = get_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY)
+        password = get_credential(EMAIL_CRED_SERVICE, EMAIL_CRED_KEY, cred_dir=_cred_dir())
         host = payload.get("host", "")
         port = int(payload.get("port", 993))
         use_ssl = payload.get("ssl", True)
@@ -5171,7 +5186,7 @@ class HfTokenPayload(BaseModel):
 @app.put("/api/settings/developer/hf-token")
 def save_hf_token(payload: HfTokenPayload):
     try:
-        set_credential("peregrine_tokens", "huggingface_token", payload.token)
+        set_credential("peregrine_tokens", "huggingface_token", payload.token, cred_dir=_cred_dir())
         return {"ok": True}
     except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
@@ -5180,7 +5195,7 @@ def save_hf_token(payload: HfTokenPayload):
 @app.post("/api/settings/developer/hf-token/test")
 def test_hf_token():
     try:
-        token = get_credential("peregrine_tokens", "huggingface_token")
+        token = get_credential("peregrine_tokens", "huggingface_token", cred_dir=_cred_dir())
         if not token:
             return {"ok": False, "error": "No token stored"}
         from huggingface_hub import whoami
