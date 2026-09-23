@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
+import httpx
 import requests
 import yaml
 from bs4 import BeautifulSoup
@@ -2995,12 +2996,12 @@ def get_app_config():
     valid_profiles = {"remote", "cpu", "single-gpu", "dual-gpu"}
     valid_tiers = {"free", "paid", "premium", "ultra"}
 
-    # Cloud: resolve tier from Heimdall (APP_TIER env is single-tenant only).
-    is_cloud = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
-    if is_cloud:
-        raw_tier = _resolve_cloud_tier()
-    else:
-        raw_tier = os.environ.get("APP_TIER", "free")
+    # Cloud: resolve tier from Heimdall. Self-hosted: resolve the real,
+    # locally verified license (peregrine#170 -- this used to read the
+    # APP_TIER env var directly, which activating a real license key never
+    # updates, so the frontend kept showing "free" no matter what tier was
+    # actually active).
+    raw_tier = _get_effective_tier()
     try:
         cfg = load_user_profile(_user_yaml_path())
         wizard_complete = bool(cfg.get("wizard_complete", False))
@@ -3445,9 +3446,6 @@ def _resume_path() -> Path:
 
 def _search_prefs_path() -> Path:
     return _config_dir() / "search_profiles.yaml"
-
-def _license_path() -> Path:
-    return _config_dir() / "license.yaml"
 
 def _tokens_path() -> Path:
     return _config_dir() / "tokens.yaml"
@@ -5014,7 +5012,7 @@ def cloud_finetune_status():
 
 # ── Settings: License ─────────────────────────────────────────────────────────
 
-# _config_dir() / _license_path() / _tokens_path() are per-request (see helpers above)
+# _config_dir() / _tokens_path() are per-request (see helpers above)
 
 
 def _load_user_config() -> dict:
@@ -5027,21 +5025,20 @@ def _save_user_config(cfg: dict) -> None:
     save_user_profile(_user_yaml_path(), cfg)
 
 
+def _license_json_path() -> Path:
+    """Path to the real RS256-JWT license file that effective_tier() reads.
+
+    These endpoints used to write to a separate license.yaml file that
+    nothing gating tier ever read -- that was peregrine#170.
+    """
+    return _config_dir() / "license.json"
+
+
 @app.get("/api/settings/license")
 def get_license():
     try:
-        lp = _license_path()
-        if lp.exists():
-            with open(lp) as f:
-                data = yaml.safe_load(f) or {}
-        else:
-            data = {}
-        return {
-            "tier": data.get("tier", "free"),
-            "key": data.get("key"),
-            "active": bool(data.get("active", False)),
-            "grace_period_ends": data.get("grace_period_ends"),
-        }
+        from scripts.license import status as license_status
+        return license_status(license_path=_license_json_path())
     except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -5051,36 +5048,37 @@ class LicenseActivatePayload(BaseModel):
 
 @app.post("/api/settings/license/activate")
 def activate_license(payload: LicenseActivatePayload):
+    key = payload.key.strip()
+    if not re.match(r'^CFG-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$', key):
+        return {"ok": False, "error": "Invalid key format"}
+
+    from scripts.license import activate as license_activate
     try:
-        # In dev: accept any key matching our format, grant paid tier
-        key = payload.key.strip()
-        if not re.match(r'^CFG-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$', key):
-            return {"ok": False, "error": "Invalid key format"}
-        lp = _license_path()
-        data = {"tier": "paid", "key": key, "active": True}
-        lp.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(str(lp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
-        return {"ok": True, "tier": "paid"}
-    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
-        raise HTTPException(status_code=500, detail=str(e))
+        data = license_activate(key, license_path=_license_json_path())
+        return {"ok": True, "tier": data.get("tier", "free")}
+    except httpx.HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("detail", "Activation rejected")
+        except Exception:  # noqa: BLE001 -- best-effort detail extraction from
+            # the license server's error body; a non-JSON or unexpected-shape response
+            # just falls back to the generic message below, which is itself a real,
+            # user-facing error already.
+            detail = "Activation rejected"
+        return {"ok": False, "error": detail}
+    except httpx.RequestError:
+        return {"ok": False, "error": "Could not reach the license server. Check your connection and try again."}
+    except (KeyError, ValueError):
+        return {"ok": False, "error": "License server returned an unexpected response"}
 
 
 @app.post("/api/settings/license/deactivate")
 def deactivate_license():
+    from scripts.license import deactivate as license_deactivate
     try:
-        lp = _license_path()
-        if lp.exists():
-            with open(lp) as f:
-                data = yaml.safe_load(f) or {}
-            data["active"] = False
-            fd = os.open(str(lp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w") as f:
-                yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
-        return {"ok": True}
+        license_deactivate(license_path=_license_json_path())
     except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
 
 
 # ── Settings: Data ────────────────────────────────────────────────────────────
@@ -5983,7 +5981,7 @@ def del_template(template_id: int):
 # ── LLM Reply Draft (BSL 1.1) ─────────────────────────────────────────────────
 
 def _get_effective_tier() -> str:
-    """Resolve effective tier: Heimdall in cloud mode, APP_TIER env var in single-tenant."""
+    """Resolve effective tier: Heimdall in cloud mode, real verified license in single-tenant."""
     if _CLOUD_MODE:
         return _resolve_cloud_tier()
     from scripts.wizard.tiers import effective_tier

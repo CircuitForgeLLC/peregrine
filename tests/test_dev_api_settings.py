@@ -1,8 +1,9 @@
 """Tests for all settings API endpoints added in Tasks 1–8."""
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -49,10 +50,18 @@ def test_app_config_iscloud_env(client):
 
 
 def test_app_config_invalid_tier_falls_back_to_free(client):
-    """Unknown APP_TIER falls back to 'free'."""
-    with patch.dict(os.environ, {"APP_TIER": "enterprise"}):
+    """An unrecognized tier value falls back to 'free'."""
+    with patch("dev_api._get_effective_tier", return_value="enterprise"):
         resp = client.get("/api/config/app")
     assert resp.json()["tier"] == "free"
+
+
+def test_app_config_reflects_real_effective_tier(client):
+    """GET /api/config/app reads the real license-derived tier (peregrine#170),
+    not a static APP_TIER env var that license activation never updates."""
+    with patch("dev_api._get_effective_tier", return_value="premium"):
+        resp = client.get("/api/config/app")
+    assert resp.json()["tier"] == "premium"
 
 
 # ── GET/PUT /api/settings/profile ─────────────────────────────────────────────
@@ -517,8 +526,8 @@ def test_finetune_status_idle_when_no_task(tmp_path, monkeypatch):
 
 def test_get_license_returns_tier_and_active(tmp_path, monkeypatch):
     """GET /api/settings/license returns tier and active fields."""
-    fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
+    fake_license = tmp_path / "license.json"
+    monkeypatch.setattr("dev_api._license_json_path", lambda: fake_license)
 
     from dev_api import app
     c = TestClient(app)
@@ -531,8 +540,8 @@ def test_get_license_returns_tier_and_active(tmp_path, monkeypatch):
 
 def test_get_license_defaults_to_free(tmp_path, monkeypatch):
     """GET /api/settings/license defaults to free tier when no file."""
-    fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
+    fake_license = tmp_path / "license.json"
+    monkeypatch.setattr("dev_api._license_json_path", lambda: fake_license)
 
     from dev_api import app
     c = TestClient(app)
@@ -543,51 +552,115 @@ def test_get_license_defaults_to_free(tmp_path, monkeypatch):
     assert data["active"] is False
 
 
-def test_activate_license_valid_key_returns_ok(tmp_path, monkeypatch):
-    """POST activate with valid key format returns {ok: true}."""
-    fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
+def test_activate_license_valid_key_calls_real_activation(tmp_path, monkeypatch):
+    """POST activate with a well-formatted key calls the real
+    scripts.license.activate() (peregrine#170 -- this used to fake-write
+    'paid' locally for any correctly-formatted key, never verifying with the
+    real license server) and returns the tier IT reports, not a fabricated one."""
+    fake_license = tmp_path / "license.json"
+    monkeypatch.setattr("dev_api._license_json_path", lambda: fake_license)
 
-    from dev_api import app
-    c = TestClient(app)
-    resp = c.post("/api/settings/license/activate", json={"key": "CFG-PRNG-A1B2-C3D4-E5F6"})
+    with patch("scripts.license.activate", return_value={"tier": "premium"}) as mock_activate:
+        from dev_api import app
+        c = TestClient(app)
+        resp = c.post("/api/settings/license/activate", json={"key": "CFG-PRNG-A1B2-C3D4-E5F6"})
+
     assert resp.status_code == 200
-    assert resp.json()["ok"] is True
+    assert resp.json() == {"ok": True, "tier": "premium"}
+    mock_activate.assert_called_once_with("CFG-PRNG-A1B2-C3D4-E5F6", license_path=fake_license)
 
 
-def test_activate_license_invalid_key_returns_ok_false(tmp_path, monkeypatch):
-    """POST activate with bad key format returns {ok: false}."""
-    fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
+def test_activate_license_invalid_key_format_short_circuits_before_network_call(tmp_path, monkeypatch):
+    """POST activate with bad key format returns {ok: false} without ever
+    calling the real activation function."""
+    fake_license = tmp_path / "license.json"
+    monkeypatch.setattr("dev_api._license_json_path", lambda: fake_license)
 
-    from dev_api import app
-    c = TestClient(app)
-    resp = c.post("/api/settings/license/activate", json={"key": "BADKEY"})
+    with patch("scripts.license.activate") as mock_activate:
+        from dev_api import app
+        c = TestClient(app)
+        resp = c.post("/api/settings/license/activate", json={"key": "BADKEY"})
+
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is False
+    mock_activate.assert_not_called()
+
+
+def test_activate_license_server_rejection_surfaces_server_detail(tmp_path, monkeypatch):
+    """A well-formatted key the license server rejects (revoked/invalid/seat
+    limit) surfaces the server's own error detail, not a generic message."""
+    fake_license = tmp_path / "license.json"
+    monkeypatch.setattr("dev_api._license_json_path", lambda: fake_license)
+
+    fake_response = MagicMock()
+    fake_response.json.return_value = {"detail": "Invalid or revoked license key"}
+    error = httpx.HTTPStatusError("403 Forbidden", request=MagicMock(), response=fake_response)
+
+    with patch("scripts.license.activate", side_effect=error):
+        from dev_api import app
+        c = TestClient(app)
+        resp = c.post("/api/settings/license/activate", json={"key": "CFG-PRNG-A1B2-C3D4-E5F6"})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is False
+    assert data["error"] == "Invalid or revoked license key"
+
+
+def test_activate_license_network_failure_degrades_to_ok_false(tmp_path, monkeypatch):
+    """A network failure reaching the license server degrades to {ok: false},
+    not an unhandled 500."""
+    fake_license = tmp_path / "license.json"
+    monkeypatch.setattr("dev_api._license_json_path", lambda: fake_license)
+
+    with patch("scripts.license.activate", side_effect=httpx.ConnectError("connection refused")):
+        from dev_api import app
+        c = TestClient(app)
+        resp = c.post("/api/settings/license/activate", json={"key": "CFG-PRNG-A1B2-C3D4-E5F6"})
+
     assert resp.status_code == 200
     assert resp.json()["ok"] is False
 
 
 def test_deactivate_license_returns_ok(tmp_path, monkeypatch):
-    """POST /api/settings/license/deactivate returns 200 with ok."""
-    fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
+    """POST /api/settings/license/deactivate calls the real deactivate() and
+    returns 200 with ok."""
+    fake_license = tmp_path / "license.json"
+    monkeypatch.setattr("dev_api._license_json_path", lambda: fake_license)
 
-    from dev_api import app
-    c = TestClient(app)
-    resp = c.post("/api/settings/license/deactivate")
+    with patch("scripts.license.deactivate") as mock_deactivate:
+        from dev_api import app
+        c = TestClient(app)
+        resp = c.post("/api/settings/license/deactivate")
+
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+    mock_deactivate.assert_called_once_with(license_path=fake_license)
 
 
 def test_activate_then_deactivate(tmp_path, monkeypatch):
-    """Activate then deactivate: active goes False."""
-    fake_license = tmp_path / "license.yaml"
-    monkeypatch.setattr("dev_api._license_path", lambda: fake_license)
+    """Activate then deactivate: active goes False. Exercises the real
+    read/write round trip against license.json (activate()/deactivate()
+    themselves are mocked to avoid a real network call, but get_license()
+    reads whatever they actually leave on disk, same as production)."""
+    fake_license = tmp_path / "license.json"
+    monkeypatch.setattr("dev_api._license_json_path", lambda: fake_license)
+
+    def _fake_activate(key, license_path):
+        license_path.write_text('{"jwt": "unused-in-this-test"}')
+        return {"tier": "paid"}
+
+    def _fake_deactivate(license_path):
+        license_path.unlink(missing_ok=True)
 
     from dev_api import app
     c = TestClient(app)
-    c.post("/api/settings/license/activate", json={"key": "CFG-PRNG-A1B2-C3D4-E5F6"})
-    c.post("/api/settings/license/deactivate")
+
+    with patch("scripts.license.activate", side_effect=_fake_activate):
+        c.post("/api/settings/license/activate", json={"key": "CFG-PRNG-A1B2-C3D4-E5F6"})
+
+    with patch("scripts.license.deactivate", side_effect=_fake_deactivate):
+        c.post("/api/settings/license/deactivate")
 
     resp = c.get("/api/settings/license")
     assert resp.status_code == 200
