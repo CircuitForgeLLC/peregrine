@@ -78,9 +78,9 @@ def _get_fernet():
     return Fernet(key)
 
 
-def _file_read(service: str) -> dict:
+def _file_read(service: str, cred_dir: Path | None = None) -> dict:
     """Read the credentials file for a service, decrypting if possible."""
-    cred_file = CRED_DIR / f"{service}.json"
+    cred_file = (cred_dir or CRED_DIR) / f"{service}.json"
     if not cred_file.exists():
         return {}
     raw = cred_file.read_bytes()
@@ -108,10 +108,11 @@ def _file_read(service: str) -> dict:
             return {}
 
 
-def _file_write(service: str, data: dict) -> None:
+def _file_write(service: str, data: dict, cred_dir: Path | None = None) -> None:
     """Write the credentials file for a service, encrypting if possible."""
-    CRED_DIR.mkdir(parents=True, exist_ok=True)
-    cred_file = CRED_DIR / f"{service}.json"
+    target_dir = cred_dir or CRED_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+    cred_file = target_dir / f"{service}.json"
     fernet = _get_fernet()
     if fernet:
         content = fernet.encrypt(json.dumps(data).encode())
@@ -129,12 +130,19 @@ def _file_write(service: str, data: dict) -> None:
             f.write(content)
 
 
-def get_credential(service: str, key: str) -> str | None:
+def get_credential(service: str, key: str, cred_dir: Path | None = None) -> str | None:
     """
     Retrieve a credential. If the stored value is an env var reference (${VAR}),
     resolves it from os.environ at call time.
+
+    cred_dir: when given, forces the file backend at this specific directory
+    instead of the default CRED_DIR / OS keyring. Callers that serve more than
+    one tenant from the same process (e.g. Peregrine cloud mode) MUST pass the
+    requesting tenant's own directory here -- the OS keyring and the default
+    CRED_DIR are both process-wide, so without this every tenant would read
+    and overwrite the same credential.
     """
-    backend = _get_backend()
+    backend = "file" if cred_dir is not None else _get_backend()
     raw: str | None = None
 
     if backend == "keyring":
@@ -148,7 +156,7 @@ def get_credential(service: str, key: str) -> str | None:
             # crash the caller, and the specific exception is already logged above.
             logger.error("keyring get failed for %s/%s: %s", service, key, e)
     else:  # file
-        data = _file_read(service)
+        data = _file_read(service, cred_dir)
         raw = data.get(key)
 
     if raw is None:
@@ -164,15 +172,17 @@ def get_credential(service: str, key: str) -> str | None:
     return raw
 
 
-def set_credential(service: str, key: str, value: str) -> None:
+def set_credential(service: str, key: str, value: str, cred_dir: Path | None = None) -> None:
     """
     Store a credential. Value may be a literal secret or a ${VAR_NAME} reference.
     Env var references are stored as-is and resolved at get time.
+
+    cred_dir: see get_credential() -- required for any multi-tenant caller.
     """
     if not value:
         return
 
-    backend = _get_backend()
+    backend = "file" if cred_dir is not None else _get_backend()
 
     if backend == "keyring":
         try:
@@ -186,14 +196,17 @@ def set_credential(service: str, key: str, value: str) -> None:
             backend = "file"
 
     # file backend
-    data = _file_read(service)
+    data = _file_read(service, cred_dir)
     data[key] = value
-    _file_write(service, data)
+    _file_write(service, data, cred_dir)
 
 
-def delete_credential(service: str, key: str) -> None:
-    """Remove a stored credential."""
-    backend = _get_backend()
+def delete_credential(service: str, key: str, cred_dir: Path | None = None) -> None:
+    """Remove a stored credential.
+
+    cred_dir: see get_credential() -- required for any multi-tenant caller.
+    """
+    backend = "file" if cred_dir is not None else _get_backend()
 
     if backend == "keyring":
         try:
@@ -206,11 +219,11 @@ def delete_credential(service: str, key: str) -> None:
             # to the file backend rather than crash.
             backend = "file"
 
-    data = _file_read(service)
+    data = _file_read(service, cred_dir)
     data.pop(key, None)
     if data:
-        _file_write(service, data)
+        _file_write(service, data, cred_dir)
     else:
-        cred_file = CRED_DIR / f"{service}.json"
+        cred_file = (cred_dir or CRED_DIR) / f"{service}.json"
         if cred_file.exists():
             cred_file.unlink()

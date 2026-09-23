@@ -9,6 +9,19 @@
     <section class="form-section">
       <h3>Email (IMAP)</h3>
       <p class="section-note">Used for email sync in the Interviews pipeline.</p>
+
+      <div class="field-row">
+        <label>Provider</label>
+        <select v-model="selectedProvider" @change="applyProviderPreset">
+          <option value="">Custom / other</option>
+          <option v-for="p in EMAIL_PROVIDERS" :key="p.id" :value="p.id">{{ p.label }}</option>
+        </select>
+      </div>
+      <p v-if="activeProvider" class="field-hint">
+        {{ activeProvider.appPasswordHint }}
+        <a :href="activeProvider.appPasswordUrl" target="_blank" rel="noopener">Get an app password →</a>
+      </p>
+
       <div class="field-row">
         <label>IMAP Host</label>
         <input v-model="(store.emailConfig as any).host" placeholder="imap.gmail.com" />
@@ -31,7 +44,7 @@
           type="password"
           :placeholder="(store.emailConfig as any).password_set ? '••••••• (saved — enter new to change)' : 'Password'"
         />
-        <span class="field-hint">Gmail: use an App Password. Tip: type ${ENV_VAR_NAME} to use an environment variable.</span>
+        <span class="field-hint">Most providers require an app-specific password, not your regular login password. Tip: type ${ENV_VAR_NAME} to use an environment variable.</span>
       </div>
       <div class="field-row">
         <label>Sent Folder</label>
@@ -97,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSystemStore } from '../../stores/settings/system'
 import { useAppConfigStore } from '../../stores/appConfig'
@@ -109,6 +122,82 @@ const { tier } = storeToRefs(config)
 const emailPasswordInput = ref('')
 const emailTestResult = ref<boolean | null>(null)
 const integrationInputs = ref<Record<string, string>>({})
+
+// ── Email provider presets ──────────────────────────────────────────────────
+// Google buried the app-password page a few settings layers deep behind
+// "2-Step Verification" (it used to be one click from the main security
+// page) -- a direct link plus the equivalent for the other major providers
+// saves a frustrating hunt, and the host/port/SSL/sent-folder presets save
+// typing values most users wouldn't otherwise know off-hand.
+
+interface EmailProvider {
+  id: string
+  label: string
+  host: string
+  port: number
+  ssl: boolean
+  sentFolder: string
+  appPasswordHint: string
+  appPasswordUrl: string
+}
+
+const EMAIL_PROVIDERS: EmailProvider[] = [
+  {
+    id: 'gmail',
+    label: 'Gmail',
+    host: 'imap.gmail.com',
+    port: 993,
+    ssl: true,
+    sentFolder: '[Gmail]/Sent Mail',
+    appPasswordHint: 'Requires 2-Step Verification to be turned on first, then an app password from your Google Account.',
+    appPasswordUrl: 'https://myaccount.google.com/apppasswords',
+  },
+  {
+    id: 'outlook',
+    label: 'Outlook / Microsoft 365',
+    host: 'outlook.office365.com',
+    port: 993,
+    ssl: true,
+    sentFolder: 'Sent Items',
+    appPasswordHint: 'Generate an app password from your Microsoft account security settings.',
+    appPasswordUrl: 'https://account.microsoft.com/security',
+  },
+  {
+    id: 'icloud',
+    label: 'iCloud Mail',
+    host: 'imap.mail.me.com',
+    port: 993,
+    ssl: true,
+    sentFolder: 'Sent Messages',
+    appPasswordHint: 'Apple calls these "app-specific passwords" -- generate one from Sign-In and Security in your Apple ID settings.',
+    appPasswordUrl: 'https://appleid.apple.com/account/manage',
+  },
+  {
+    id: 'yahoo',
+    label: 'Yahoo Mail',
+    host: 'imap.mail.yahoo.com',
+    port: 993,
+    ssl: true,
+    sentFolder: 'Sent',
+    appPasswordHint: 'Generate an app password from Yahoo Account Security.',
+    appPasswordUrl: 'https://login.yahoo.com/myaccount/security',
+  },
+]
+
+const selectedProvider = ref('')
+const activeProvider = computed(() =>
+  EMAIL_PROVIDERS.find(p => p.id === selectedProvider.value) ?? null
+)
+
+function applyProviderPreset() {
+  const provider = activeProvider.value
+  if (!provider) return
+  const cfg = store.emailConfig as any
+  cfg.host = provider.host
+  cfg.port = provider.port
+  cfg.ssl = provider.ssl
+  cfg.sent_folder = provider.sentFolder
+}
 
 const tierOrder = ['free', 'paid', 'premium', 'ultra']
 function meetsRequiredTier(required: string): boolean {
@@ -123,6 +212,14 @@ async function handleTestEmail() {
 async function handleSaveEmail() {
   const payload = { ...store.emailConfig, password: emailPasswordInput.value || undefined }
   await store.saveEmailWithPassword(payload)
+  // test_email() always tests the *stored* credential, never one just typed
+  // into the form -- a test run before Save (a natural first instinct) fails
+  // against whatever was previously saved (often nothing), and that failure
+  // then sits on screen indefinitely since nothing else clears it, looking
+  // like the connection is still broken even after a successful save.
+  // Re-test automatically so the badge reflects what was actually just saved.
+  emailPasswordInput.value = ''
+  await handleTestEmail()
 }
 
 async function handleConnect(id: string) {
@@ -147,6 +244,9 @@ async function handleTest(id: string) {
 
 onMounted(async () => {
   await Promise.all([store.loadEmail(), store.loadIntegrations()])
+  const savedHost = (store.emailConfig as any)?.host
+  const matched = EMAIL_PROVIDERS.find(p => p.host === savedHost)
+  if (matched) selectedProvider.value = matched.id
 })
 </script>
 
@@ -172,7 +272,8 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 .section-note { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 14px; }
 .field-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
 .field-row label { font-size: 0.82rem; color: var(--color-text-muted); }
-.field-row input {
+.field-row input,
+.field-row select {
   background: var(--color-surface-alt);
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -181,6 +282,7 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
   font-size: 0.88rem;
 }
 .field-hint { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 3px; }
+.field-hint a { color: var(--app-primary); }
 .checkbox-row {
   display: flex;
   align-items: flex-start;
