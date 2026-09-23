@@ -45,6 +45,15 @@ describe('ResumeScoreModal', () => {
     expect(wrapper.text()).toContain('Needs manual review')
   })
 
+  it('scopes the Apply button tooltip to company/title/dates, not full fact-checking (peregrine#160)', async () => {
+    vi.mocked(useApiFetch).mockResolvedValueOnce({ data: { score: mockFeedback }, error: null } as any)
+    const wrapper = mount(ResumeScoreModal, { props: { resumeId: 1 }, global: { stubs: { Teleport: true } } })
+    await new Promise((r) => setTimeout(r, 0))
+    const applyButton = wrapper.findAll('button').find((b) => b.text() === 'Apply')
+    expect(applyButton).toBeTruthy()
+    expect(applyButton!.attributes('title')).toContain('company, title, and dates')
+  })
+
   it('emits close when the close button is clicked', async () => {
     vi.mocked(useApiFetch).mockResolvedValueOnce({ data: { score: null }, error: null } as any)
     const wrapper = mount(ResumeScoreModal, { props: { resumeId: 1 }, global: { stubs: { Teleport: true } } })
