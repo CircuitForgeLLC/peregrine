@@ -433,8 +433,8 @@ def test_discover_applies_profile_blocklist_companies(tmp_path):
     company blocked in the UI never actually got excluded. A job from a
     blocked company must not be inserted, even though config/blocklist.yaml
     itself has no matching entry."""
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     db_path = tmp_path / "test.db"
     profiles_cfg = {
@@ -460,8 +460,8 @@ def test_discover_applies_profile_blocklist_companies(tmp_path):
 def test_discover_profile_blocklist_is_scoped_per_profile(tmp_path):
     """A blocklist_companies entry on one profile must not leak into
     another profile's filtering within the same run_discovery() call."""
-    from scripts.discover import run_discovery
     from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
 
     db_path = tmp_path / "test.db"
     profiles_cfg = {
