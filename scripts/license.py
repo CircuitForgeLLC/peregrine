@@ -115,6 +115,27 @@ def effective_tier(
     return result.get("tier", "free")
 
 
+def status(
+    license_path: Path = _DEFAULT_LICENSE_PATH,
+    public_key_path: Path = _DEFAULT_PUBLIC_KEY_PATH,
+) -> dict:
+    """Return a display-friendly summary of the current license state.
+
+    Safe to call with no license ever activated (returns free/inactive).
+    Keys: tier, key (the activated key string, or None), active (bool --
+    True whenever verify_local() accepts the stored JWT, including the
+    grace-period case), grace_period_ends (ISO string, or None).
+    """
+    stored = _read_license(license_path) or {}
+    result = verify_local(license_path=license_path, public_key_path=public_key_path)
+    return {
+        "tier": result.get("tier", "free") if result else "free",
+        "key": stored.get("key_display"),
+        "active": result is not None,
+        "grace_period_ends": stored.get("grace_until"),
+    }
+
+
 # ── Network operations (all fire-and-forget or explicit) ──────────────────────
 
 def activate(
