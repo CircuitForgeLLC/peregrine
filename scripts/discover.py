@@ -350,8 +350,32 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
                     # the network via the jobspy library; any board outage, rate
                     # limit, or parsing error there should degrade to an empty
                     # result for this location rather than aborting the whole run.
-                    print(f"  [jobspy] ERROR: {exc}")
-                    jobs = pd.DataFrame()
+                    #
+                    # A single valid-but-broken board (e.g. a JobSpy scraper whose
+                    # constructor signature drifted from what scrape_jobs() passes
+                    # uniformly to every site) raises inside JobSpy's own batched
+                    # dispatch, zeroing out every OTHER board too even though they'd
+                    # have worked fine individually. Retry per-board to isolate the
+                    # failure instead of losing the whole location's results.
+                    print(f"  [jobspy] ERROR (batched call for {', '.join(_filtered)}): {exc}")
+                    print("  [jobspy] Retrying boards individually to isolate the failure...")
+                    _frames = []
+                    _worked = []
+                    for _board in _filtered:
+                        try:
+                            _board_jobs = scrape_jobs(**{**jobspy_kwargs, "site_name": [_board]})
+                            _frames.append(_board_jobs)
+                            _worked.append(_board)
+                        except Exception as board_exc:  # noqa: BLE001 - same reasoning
+                            # as the outer batched-call catch: an individual board's
+                            # scraper failure must degrade to skipping that one board,
+                            # not abort the per-board retry loop.
+                            print(f"  [jobspy] ERROR: board '{_board}' failed, skipping: {board_exc}")
+                    if _frames:
+                        jobs = pd.concat(_frames, ignore_index=True)
+                        print(f"  [jobspy] {len(jobs)} raw results from {len(_worked)}/{len(_filtered)} boards after per-board retry")
+                    else:
+                        jobs = pd.DataFrame()
 
                 jobspy_new = 0
                 for _, job in jobs.iterrows():
