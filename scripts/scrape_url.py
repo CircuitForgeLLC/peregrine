@@ -336,9 +336,9 @@ def _scrape_theladders(url: str) -> dict:
                         '[class*="description"], [class*="job-detail"]',
                         timeout=15_000,
                     )
-                except Exception:  # noqa: BLE001 -- a selector-wait timeout means
-                    # proceeding to extraction with whatever rendered so far; the
-                    # extraction JS below already degrades to empty strings per
+                except Exception:  # noqa: BLE001, S110 -- a selector-wait timeout
+                    # means proceeding to extraction with whatever rendered so far;
+                    # the extraction JS below already degrades to empty strings per
                     # field when nothing matched, so this is not a fatal error.
                     pass
                 # The title (<h1>) renders on a separate timeline from the
@@ -348,8 +348,8 @@ def _scrape_theladders(url: str) -> dict:
                 # non-fatal wait.
                 try:
                     page.wait_for_selector("h1", timeout=5_000)
-                except Exception:  # noqa: BLE001 -- same reasoning as above: a
-                    # missing title after this wait just means title comes back
+                except Exception:  # noqa: BLE001, S110 -- same reasoning as above:
+                    # a missing title after this wait just means title comes back
                     # empty, not a fatal error for the whole scrape.
                     pass
                 html = page.content()
