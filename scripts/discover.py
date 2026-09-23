@@ -172,11 +172,12 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
         resolved_cfg = CONFIG_DIR
     profiles_cfg, notion_cfg = load_config(resolved_cfg)
     fm = notion_cfg.get("field_map") or {}
-    blocklist = load_blocklist(resolved_cfg)
+    global_blocklist = load_blocklist(resolved_cfg)
+    blocklist = global_blocklist
 
-    _bl_summary = {k: len(v) for k, v in blocklist.items() if v}
+    _bl_summary = {k: len(v) for k, v in global_blocklist.items() if v}
     if _bl_summary:
-        print(f"[discover] Blocklist active: {_bl_summary}")
+        print(f"[discover] Global blocklist active: {_bl_summary}")
 
     # SQLite dedup — by URL and by (title, company) to catch cross-board reposts
     init_db(db_path)
@@ -251,6 +252,23 @@ def run_discovery(db_path: Path = DEFAULT_DB, notion_push: bool = False, config_
         custom_boards = profile.get("custom_boards", [])
         exclude_kw = [kw.lower() for kw in profile.get("exclude_keywords", [])]
         results_per_board = profile.get("results_per_board", 25)
+
+        # Merge the profile's own blocklist fields (written by the Settings →
+        # Search Prefs UI, save_search_prefs()) into the global blocklist.yaml
+        # entries. These used to be silently ignored here -- load_blocklist()
+        # only ever read config/blocklist.yaml, so a company/industry/location
+        # a user blocked in Settings never reached the actual filter.
+        blocklist = {
+            "companies":  global_blocklist["companies"]
+                          + [c.lower() for c in profile.get("blocklist_companies", []) if c],
+            "industries": global_blocklist["industries"]
+                          + [i.lower() for i in profile.get("blocklist_industries", []) if i],
+            "locations":  global_blocklist["locations"]
+                          + [loc.lower() for loc in profile.get("blocklist_locations", []) if loc],
+        }
+        _profile_bl_summary = {k: len(v) for k, v in blocklist.items() if v}
+        if _profile_bl_summary:
+            print(f"[discover] Blocklist active for this profile: {_profile_bl_summary}")
 
         # remote_preference is a multi-select: any subset of {onsite, remote,
         # hybrid}. Older profiles (pre-multi-select) may still have it as a
