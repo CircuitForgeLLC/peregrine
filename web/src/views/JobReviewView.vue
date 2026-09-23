@@ -140,7 +140,7 @@
               <button
                 v-if="activeTab === 'approved'"
                 class="job-list__action"
-                @click="router.push(`/apply/${job.id}`)"
+                @click="goToDraft(job.id)"
                 :aria-label="`Draft cover letter for ${job.title}`"
               >✨ Draft</button>
               <button
@@ -253,6 +253,18 @@ const jobsStore = useJobsStore()
 const route    = useRoute()
 const router   = useRouter()
 const stackRef = ref<InstanceType<typeof JobCardStack> | null>(null)
+
+// /apply/:id is the mobile-only full-page workspace (see
+// ApplyWorkspaceView.vue's own comment) -- on desktop it lands on a bare
+// workspace with no job list beside it. Same 1024px breakpoint ApplyView.vue
+// itself uses to decide mobile-list vs. desktop-split-pane.
+function goToDraft(jobId: number) {
+  if (window.innerWidth < 1024) {
+    router.push(`/apply/${jobId}`)
+  } else {
+    router.push({ path: '/apply', query: { job: jobId } })
+  }
+}
 
 // ── Move to stage (applied tab) ─────────────────────────────────────────────
 // Mirrors InterviewsView.vue's Move-to-stage flow -- Applied is the only
