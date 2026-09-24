@@ -524,18 +524,20 @@ def job_counts():
 def salary_stats(titles: str | None = None, location: str | None = None):
     """Salary range across the user's own scraped job listings.
 
-    `titles`/`location` are optional query params. They fall back to the
-    saved search profile's `job_titles`/`locations` (same read path as
-    GET /api/settings/search) only when OMITTED from the request entirely
-    — not when present-but-empty. A deliberately-cleared field (e.g.
-    `location=`) must mean "no filter", not "use my saved profile".
+    `titles` is an optional query param that falls back to the saved
+    search profile's `job_titles` (same read path as GET /api/settings/
+    search) only when OMITTED from the request entirely — not when
+    present-but-empty. `location` has no profile fallback (peregrine#201):
+    omitted or blank both mean "no location filter", i.e. every location
+    in the profile, since a profile commonly has multiple locations and
+    narrowing to just one of them by default produced a misleading number.
     """
     from scripts.salary_stats import get_salary_stats
 
     title_list = [t.strip() for t in titles.split(",") if t.strip()] if titles is not None else []
     location_val = location.strip() if location is not None else ""
 
-    if titles is None or location is None:
+    if titles is None:
         try:
             p = _search_prefs_path()
             if p.exists():
@@ -547,13 +549,15 @@ def salary_stats(titles: str | None = None, location: str | None = None):
                 profile = next((pr for pr in profiles if pr.get("name") == "default"), None)
                 if profile is None:
                     profile = data.get("default", {})
-                if titles is None:
-                    title_list = profile.get("job_titles") or profile.get("titles") or []
-                if location is None:
-                    locations = profile.get("locations") or []
-                    location_val = locations[0] if locations else ""
+                title_list = profile.get("job_titles") or profile.get("titles") or []
         except Exception as exc:  # noqa: BLE001 - best-effort default-profile fallback; keep the already-computed defaults on any failure
             _log.debug("salary_stats: failed to load default search profile: %s", exc)
+    # location has no profile fallback (peregrine#201): a saved profile
+    # commonly has multiple locations, and narrowing to just the first one
+    # on an omitted param produced a misleadingly narrow number with no
+    # indication anything had been filtered. Omitted/blank both mean "no
+    # location filter" -- i.e. every location in the profile, consistent
+    # with how titles is never narrowed to a subset either.
 
     db = _get_db()
     try:
