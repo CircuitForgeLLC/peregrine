@@ -84,9 +84,12 @@ def test_salary_stats_honors_titles_and_location_params(tmp_path, monkeypatch):
     assert data["median"] == 100000
 
 
-def test_salary_stats_empty_location_param_not_falls_back_and_not_filtered(tmp_path, monkeypatch):
-    """A deliberately-cleared `location=` param means "no filter", not
-    "use my saved profile's location" — distinct from omitting it entirely."""
+def test_salary_stats_location_never_falls_back_to_profile(tmp_path, monkeypatch):
+    """peregrine#201: location has no profile fallback at all, whether
+    omitted or explicitly blank -- both mean "no location filter" (every
+    location in the profile). A profile commonly has multiple saved
+    locations; silently narrowing to just one of them by default produced
+    a misleadingly narrow number with no indication anything was filtered."""
     db_path = tmp_path / "staging.db"
     _seed_db(db_path, [
         ("Software Engineer", "Austin, TX", "$100,000"),
@@ -104,18 +107,34 @@ def test_salary_stats_empty_location_param_not_falls_back_and_not_filtered(tmp_p
     from dev_api import app
     c = TestClient(app)
 
-    # location explicitly present but empty -> no location filter applied,
-    # profile's "Austin" location must NOT be silently re-applied.
+    # location explicitly present but empty -> no location filter applied.
     resp = c.get("/api/salary-stats", params={"titles": "Software Engineer", "location": ""})
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["count"] == 2
+    assert resp.json()["count"] == 2
 
-    # location omitted entirely -> falls back to the saved profile's "Austin".
+    # location omitted entirely -> ALSO no location filter (no profile
+    # fallback for location, unlike titles).
     resp2 = c.get("/api/salary-stats", params={"titles": "Software Engineer"})
     assert resp2.status_code == 200
-    data2 = resp2.json()
-    assert data2["count"] == 1
+    assert resp2.json()["count"] == 2
+
+
+def test_salary_stats_location_still_filters_when_explicitly_given(tmp_path, monkeypatch):
+    """The location param itself still works as a manual narrowing tool --
+    only the silent default-from-profile behavior was removed."""
+    db_path = tmp_path / "staging.db"
+    _seed_db(db_path, [
+        ("Software Engineer", "Austin, TX", "$100,000"),
+        ("Software Engineer", "New York, NY", "$150,000"),
+    ])
+    monkeypatch.setenv("STAGING_DB", str(db_path))
+    monkeypatch.setattr("dev_api.DB_PATH", str(db_path))
+
+    from dev_api import app
+    c = TestClient(app)
+    resp = c.get("/api/salary-stats", params={"titles": "Software Engineer", "location": "Austin"})
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 1
 
 
 def test_salary_stats_omitting_titles_falls_back_to_search_profile(tmp_path, monkeypatch):
