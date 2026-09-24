@@ -64,7 +64,14 @@ async function recalculate() {
 onMounted(async () => {
   await search.load()
   titlesInput.value = search.job_titles.join(', ')
-  locationInput.value = search.locations[0] ?? ''
+  // Deliberately left blank, not auto-filled from search.locations[0] --
+  // a saved profile commonly has multiple locations (peregrine#201), and
+  // silently narrowing to just the first one produced a misleadingly
+  // narrow number with no indication anything had been filtered. Blank
+  // means "all your search results," consistent with this page's own
+  // framing text below. The field is still there for anyone who wants to
+  // narrow to one metro on purpose.
+  locationInput.value = ''
   await fetchStats()
 })
 </script>
