@@ -68,6 +68,7 @@
                     v-if="sugg.appliable"
                     class="btn-secondary"
                     :disabled="applyingId === sugg.id || appliedIds.has(sugg.id)"
+                    :title="applyTitle"
                     @click="applySuggestion(sugg)"
                   >
                     {{ applyLabel(sugg) }}
@@ -136,6 +137,10 @@ const formatScore = (score: number | null | undefined) => (score === null || sco
 
 const applyLabel = (sugg: Suggestion) =>
   appliedIds.value.has(sugg.id) ? 'Applied ✓' : (applyingId.value === sugg.id ? 'Applying…' : 'Apply')
+
+// peregrine#160: the safety check behind this button only verifies company,
+// title, and dates stay unchanged — it does not fact-check bullet wording.
+const applyTitle = 'Checks that company, title, and dates stay unchanged. Review the bullet wording yourself before applying.'
 
 // Thresholds mirror scoreClass() below — keep the two in sync.
 const scoreLabel = (score: number | null | undefined) => {
