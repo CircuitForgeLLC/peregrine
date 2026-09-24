@@ -25,6 +25,7 @@ const loading     = ref(false)
 const error       = ref<string | null>(null)
 const search      = ref('')
 const direction   = ref<'all' | 'inbound' | 'outbound'>('all')
+const signalFilter = ref('all')
 const searchInput = ref('')
 const syncing     = ref(false)
 const syncStatus  = ref<{ status: string; last_completed_at: string | null } | null>(null)
@@ -36,6 +37,7 @@ async function fetchContacts() {
   const params = new URLSearchParams({ limit: '100' })
   if (direction.value !== 'all') params.set('direction', direction.value)
   if (search.value) params.set('search', search.value)
+  if (signalFilter.value !== 'all') params.set('stage_signal', signalFilter.value)
 
   const { data, error: fetchErr } = await useApiFetch<{ total: number; contacts: Contact[] }>(
     `/api/contacts?${params}`
@@ -47,6 +49,10 @@ async function fetchContacts() {
   }
   contacts.value = data.contacts
   total.value = data.total
+}
+
+function onSignalFilterChange() {
+  fetchContacts()
 }
 
 function onSearchInput() {
@@ -79,7 +85,62 @@ const signalLabel: Record<string, string> = {
   positive_response:   '✅ Positive',
   survey_received:     '📋 Survey',
   event_rescheduled:   '🔄 Rescheduled',
+  unrelated:           '🚫 Unrelated',
+  digest:              '📰 Digest',
   neutral:             '— Neutral',
+}
+
+// Same reclassify options InterviewCard.vue offers, so a signal reads the
+// same way and lands in the same places (digest queue, Avocet training
+// data) no matter which surface it's reclassified from.
+const RECLASSIFY_OPTIONS = [
+  { label: '📅 Interview',  value: 'interview_scheduled' },
+  { label: '✅ Positive',   value: 'positive_response' },
+  { label: '🟢 Offer',      value: 'offer_received' },
+  { label: '📋 Survey',     value: 'survey_received' },
+  { label: '✖ Rejected',    value: 'rejected' },
+  { label: '🚫 Unrelated',  value: 'unrelated' },
+  { label: '📰 Digest',     value: 'digest' },
+  { label: '— Neutral',     value: 'neutral' },
+] as const
+
+const DISMISS_LABELS = new Set(['neutral', 'unrelated', 'digest'])
+const reclassifyingId = ref<number | null>(null)
+
+function startReclassify(contact: Contact) {
+  reclassifyingId.value = contact.id
+}
+
+function cancelReclassify() {
+  reclassifyingId.value = null
+}
+
+async function reclassifyContact(contact: Contact, newLabel: string) {
+  reclassifyingId.value = null
+  const prev = contact.stage_signal
+  contact.stage_signal = newLabel
+  const { error: err } = await useApiFetch(`/api/stage-signals/${contact.id}/reclassify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage_signal: newLabel }),
+  })
+  if (err) {
+    contact.stage_signal = prev
+    return
+  }
+  if (DISMISS_LABELS.has(newLabel)) {
+    // Marks this email as reviewed so it stops surfacing as an undecided
+    // suggestion elsewhere (e.g. InterviewCard's per-job signal chips) --
+    // same two-call pattern InterviewCard.vue uses for the same labels.
+    await useApiFetch(`/api/stage-signals/${contact.id}/dismiss`, { method: 'POST' })
+  }
+  if (newLabel === 'digest') {
+    void useApiFetch('/api/digest-queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_contact_id: contact.id }),
+    })
+  }
 }
 
 async function fetchSyncStatus() {
@@ -163,6 +224,16 @@ onMounted(async () => {
           @click="direction = opt; onDirectionChange()"
         >{{ opt === 'all' ? 'All' : opt === 'inbound' ? 'Inbound' : 'Outbound' }}</button>
       </div>
+      <select
+        v-model="signalFilter"
+        class="contacts-signal-filter"
+        aria-label="Filter by review status"
+        @change="onSignalFilterChange"
+      >
+        <option value="all">All signals</option>
+        <option value="needs_review">Needs review</option>
+        <option v-for="(label, value) in signalLabel" :key="value" :value="value">{{ label }}</option>
+      </select>
     </div>
 
     <div v-if="loading" class="contacts-empty">Loading…</div>
@@ -213,9 +284,29 @@ onMounted(async () => {
               <span v-else class="text-muted">—</span>
             </td>
             <td class="contacts-cell contacts-cell--signal">
-              <span v-if="c.stage_signal && signalLabel[c.stage_signal]" class="signal-chip">
-                {{ signalLabel[c.stage_signal] }}
-              </span>
+              <select
+                v-if="reclassifyingId === c.id"
+                class="signal-reclassify-select"
+                :value="c.stage_signal ?? ''"
+                aria-label="Re-classify this email"
+                autofocus
+                @change="reclassifyContact(c, ($event.target as HTMLSelectElement).value)"
+                @blur="cancelReclassify"
+              >
+                <option value="" disabled>Choose…</option>
+                <option v-for="opt in RECLASSIFY_OPTIONS" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+              <button
+                v-else
+                type="button"
+                class="signal-chip signal-chip--clickable"
+                :class="{ 'signal-chip--unset': !c.stage_signal }"
+                @click="startReclassify(c)"
+              >
+                {{ c.stage_signal && signalLabel[c.stage_signal] ? signalLabel[c.stage_signal] : 'Re-classify' }}
+              </button>
             </td>
             <td class="contacts-cell contacts-cell--date">{{ formatDate(c.received_at) }}</td>
           </tr>
@@ -394,6 +485,46 @@ onMounted(async () => {
 .signal-chip {
   font-size: var(--text-xs);
   white-space: nowrap;
+}
+
+.signal-chip--clickable {
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text);
+  padding: 2px 6px;
+  margin: -2px -6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.signal-chip--clickable:hover,
+.signal-chip--clickable:focus-visible {
+  border-color: var(--color-border);
+  background: var(--color-surface-alt);
+}
+
+.signal-chip--unset {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.signal-reclassify-select {
+  font-size: var(--text-xs);
+  padding: 2px 4px;
+  border: 1px solid var(--app-primary);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.contacts-signal-filter {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
 }
 
 .text-muted {
