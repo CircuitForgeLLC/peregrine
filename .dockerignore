@@ -1,4 +1,5 @@
 .git
+.claude/worktrees/
 __pycache__
 *.pyc
 *.pyo
