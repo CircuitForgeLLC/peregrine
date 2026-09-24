@@ -2130,33 +2130,37 @@ def save_hired_feedback(job_id: int, payload: HiredFeedbackPayload):
 
 @app.get("/api/contacts")
 def list_contacts(job_id: int | None = None, direction: str | None = None,
-                  search: str | None = None, limit: int = 100, offset: int = 0):
+                  search: str | None = None, stage_signal: str | None = None,
+                  limit: int = 100, offset: int = 0):
     db = _get_db()
+    where = " WHERE 1=1"
+    params: list = []
+    if job_id is not None:
+        where += " AND jc.job_id = ?"
+        params.append(job_id)
+    if direction:
+        where += " AND jc.direction = ?"
+        params.append(direction)
+    if search:
+        where += " AND (jc.from_addr LIKE ? OR jc.to_addr LIKE ? OR jc.subject LIKE ?)"
+        like = f"%{search}%"
+        params += [like, like, like]
+    if stage_signal == "needs_review":
+        where += " AND (jc.stage_signal IS NULL OR jc.stage_signal = 'neutral')"
+    elif stage_signal:
+        where += " AND jc.stage_signal = ?"
+        params.append(stage_signal)
+
     query = """
         SELECT jc.id, jc.job_id, jc.direction, jc.subject, jc.from_addr, jc.to_addr,
                jc.received_at, jc.stage_signal,
                j.title AS job_title, j.company AS job_company
         FROM job_contacts jc
         LEFT JOIN jobs j ON j.id = jc.job_id
-        WHERE 1=1
-    """
-    params: list = []
-    if job_id is not None:
-        query += " AND jc.job_id = ?"
-        params.append(job_id)
-    if direction:
-        query += " AND jc.direction = ?"
-        params.append(direction)
-    if search:
-        query += " AND (jc.from_addr LIKE ? OR jc.to_addr LIKE ? OR jc.subject LIKE ?)"
-        like = f"%{search}%"
-        params += [like, like, like]
-    query += " ORDER BY jc.received_at DESC LIMIT ? OFFSET ?"
-    params += [limit, offset]
-    rows = db.execute(query, params).fetchall()
+    """ + where + " ORDER BY jc.received_at DESC LIMIT ? OFFSET ?"
+    rows = db.execute(query, [*params, limit, offset]).fetchall()
     total = db.execute(
-        "SELECT COUNT(*) FROM job_contacts" + (" WHERE job_id = ?" if job_id else ""),
-        ([job_id] if job_id else []),
+        "SELECT COUNT(*) FROM job_contacts jc" + where, params
     ).fetchone()[0]
     db.close()
     return {"total": total, "contacts": [dict(r) for r in rows]}
