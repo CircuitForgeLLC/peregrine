@@ -11,6 +11,7 @@ Usage:
 """
 
 import logging
+import re
 import sqlite3
 from pathlib import Path
 
@@ -26,9 +27,58 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 )
 """
 
+_ADD_COLUMN_RE = re.compile(
+    r"ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)", re.IGNORECASE
+)
+
+
+def _statements(sql: str) -> list[str]:
+    """Split a migration file's SQL into individual statements, stripping
+    leading comment lines from each (a chunk whose first line is a comment
+    would otherwise be skipped whole by a naive startswith("--") check)."""
+    statements = []
+    for raw in sql.split(";"):
+        raw = raw.strip()
+        if not raw:
+            continue
+        stripped_lines = [ln for ln in raw.splitlines() if not ln.strip().startswith("--")]
+        stmt = "\n".join(stripped_lines).strip()
+        if stmt:
+            statements.append(stmt)
+    return statements
+
+
+def _missing_add_columns(con: sqlite3.Connection, statements: list[str]) -> list[tuple[str, str]]:
+    """Return (table, column) pairs from ADD COLUMN statements in `statements`
+    whose column does not actually exist in `con`'s schema."""
+    missing = []
+    for stmt in statements:
+        m = _ADD_COLUMN_RE.match(stmt)
+        if not m:
+            continue
+        tbl, col = m.group(1), m.group(2)
+        try:
+            existing = {row[1] for row in con.execute(f"PRAGMA table_info({tbl})")}
+        except sqlite3.OperationalError:
+            continue  # table doesn't exist yet -- not this function's concern
+        if col not in existing:
+            missing.append((tbl, col))
+    return missing
+
 
 def migrate_db(db_path: Path) -> list[str]:
-    """Apply any pending migrations to db_path. Returns list of applied versions."""
+    """Apply any pending migrations to db_path. Returns list of applied versions.
+
+    A migration already recorded in schema_migrations is normally skipped.
+    But if it added columns via ADD COLUMN and one of those columns is
+    actually missing from the live schema, it's re-applied anyway (found
+    2026-09-24: a tenant DB's schema_migrations can claim a migration ran
+    when its ALTER TABLE never actually took effect -- e.g. from manual/
+    ad-hoc DB state during dev testing -- silently leaving that tenant's
+    schema permanently out of sync with no way to notice short of a runtime
+    error on first use. Re-applying is safe: ADD COLUMN is idempotent here,
+    guarded by the same column-exists check used during normal execution).
+    """
     applied: list[str] = []
 
     con = sqlite3.connect(db_path)
@@ -50,51 +100,43 @@ def migrate_db(db_path: Path) -> list[str]:
 
         for path in migration_files:
             version = path.stem  # e.g. "001_baseline"
-            if version in already_applied:
-                continue
-
             sql = path.read_text(encoding="utf-8")
-            log.info("Applying migration %s to %s", version, db_path.name)
+            statements = _statements(sql)
+
+            was_recorded = version in already_applied
+            if was_recorded:
+                missing = _missing_add_columns(con, statements)
+                if not missing:
+                    continue
+                log.warning(
+                    "Migration %s recorded as applied to %s but %s missing "
+                    "from the live schema — re-applying",
+                    version, db_path.name,
+                    ", ".join(f"{t}.{c}" for t, c in missing),
+                )
+
             try:
                 # Execute statements individually so that ALTER TABLE ADD COLUMN
                 # errors caused by already-existing columns (pre-migration DBs
                 # created from a newer schema) are treated as no-ops rather than
                 # fatal failures.
-                statements = [s.strip() for s in sql.split(";") if s.strip()]
                 for stmt in statements:
-                    # Strip leading SQL comment lines (-- ...) before processing.
-                    # Checking startswith("--") on the raw chunk would skip entire
-                    # multi-line statements whose first line is a comment.
-                    stripped_lines = [
-                        ln for ln in stmt.splitlines()
-                        if not ln.strip().startswith("--")
-                    ]
-                    stmt = "\n".join(stripped_lines).strip()
-                    if not stmt:
-                        continue
                     # Pre-check: if this is ADD COLUMN and the column already exists, skip.
                     # This guards against schema_migrations being ahead of the actual schema
                     # (e.g. DB reset after migrations were recorded).
-                    stmt_upper = stmt.upper()
-                    if "ALTER TABLE" in stmt_upper and "ADD COLUMN" in stmt_upper:
-                        # Extract table name and column name from the statement
-                        import re as _re
-                        m = _re.match(
-                            r"ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)",
-                            stmt, _re.IGNORECASE
-                        )
-                        if m:
-                            tbl, col = m.group(1), m.group(2)
-                            existing = {
-                                row[1]
-                                for row in con.execute(f"PRAGMA table_info({tbl})")
-                            }
-                            if col in existing:
-                                log.info(
-                                    "Migration %s: column %s.%s already exists, skipping",
-                                    version, tbl, col,
-                                )
-                                continue
+                    m = _ADD_COLUMN_RE.match(stmt)
+                    if m:
+                        tbl, col = m.group(1), m.group(2)
+                        existing = {
+                            row[1]
+                            for row in con.execute(f"PRAGMA table_info({tbl})")
+                        }
+                        if col in existing:
+                            log.info(
+                                "Migration %s: column %s.%s already exists, skipping",
+                                version, tbl, col,
+                            )
+                            continue
                     try:
                         con.execute(stmt)
                     except sqlite3.OperationalError as stmt_exc:
@@ -106,9 +148,10 @@ def migrate_db(db_path: Path) -> list[str]:
                             )
                         else:
                             raise
-                con.execute(
-                    "INSERT INTO schema_migrations (version) VALUES (?)", (version,)
-                )
+                if not was_recorded:
+                    con.execute(
+                        "INSERT INTO schema_migrations (version) VALUES (?)", (version,)
+                    )
                 con.commit()
                 applied.append(version)
                 log.info("Migration %s applied successfully", version)
