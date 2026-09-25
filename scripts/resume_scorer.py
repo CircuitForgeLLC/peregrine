@@ -187,6 +187,22 @@ def apply_suggestion(struct: dict[str, Any], suggestion: dict[str, Any]) -> dict
     return _apply_to_copy(struct, suggestion)
 
 
+def _normalize_for_match(s: str) -> str:
+    """Collapse all whitespace runs to single spaces and strip the ends.
+
+    LLM-generated "before" text routinely differs from the live resume
+    struct by whitespace alone (trailing spaces, double spaces, a newline
+    where the struct has a plain space) even when asked to quote verbatim.
+    An exact `==` match against that text is fragile by design and produces
+    false-negative "couldn't find text to replace" errors on cosmetic
+    differences that have nothing to do with whether the target text was
+    actually found. Comparing on whitespace-normalized text (never on the
+    substituted-in `after` value, only on the equality check itself) fixes
+    that without doing anything resembling a fuzzy/semantic match.
+    """
+    return " ".join(s.split())
+
+
 def _apply_to_copy(struct: dict[str, Any], suggestion: dict[str, Any]) -> dict[str, Any]:
     """Return a deep-enough copy of struct with suggestion["after"] substituted
     for suggestion["before"] in the target section/entry.
@@ -196,9 +212,10 @@ def _apply_to_copy(struct: dict[str, Any], suggestion: dict[str, Any]) -> dict[s
     section = suggestion.get("section", "")
     before = suggestion.get("before", "")
     after = suggestion.get("after", "")
+    before_norm = _normalize_for_match(before)
 
     if section == "summary":
-        if rewritten.get("career_summary", "") == before:
+        if _normalize_for_match(rewritten.get("career_summary", "")) == before_norm:
             rewritten["career_summary"] = after
     elif section == "experience":
         # target format is "Company|Title" (see score_resume's prompt spec).
@@ -209,7 +226,10 @@ def _apply_to_copy(struct: dict[str, Any], suggestion: dict[str, Any]) -> dict[s
             if exp.get("title") == title and exp.get("company") == company:
                 matched = True
                 bullets = exp.get("bullets") or []
-                exp["bullets"] = [after if b == before else b for b in bullets]
+                exp["bullets"] = [
+                    after if _normalize_for_match(b) == before_norm else b
+                    for b in bullets
+                ]
         if not matched and (company or title):
             # The suggestion targets an experience entry that does not exist in
             # the original resume. Rather than silently dropping it, record it
@@ -221,7 +241,10 @@ def _apply_to_copy(struct: dict[str, Any], suggestion: dict[str, Any]) -> dict[s
             rewritten.setdefault("experience", []).append(new_entry)
     elif section == "skills":
         skills = rewritten.get("skills") or []
-        rewritten["skills"] = [after if s == before else s for s in skills]
+        rewritten["skills"] = [
+            after if _normalize_for_match(s) == before_norm else s
+            for s in skills
+        ]
 
     return rewritten
 
