@@ -94,3 +94,66 @@ def test_apply_suggestion_no_match_is_a_no_op():
     suggestion = {"section": "summary", "before": "does not match", "after": "new text"}
     result = apply_suggestion(struct, suggestion)
     assert result["career_summary"] == "x"
+
+
+# ── peregrine: apply-suggestion 422 on live cloud (found 2026-09-24) ──────────
+# LLM-generated "before" text routinely differs from the live struct by
+# whitespace alone even when asked to quote verbatim -- an exact `==` match
+# treats that as "not found" and the caller (dev-api.py's apply-suggestion
+# endpoint) turns that into a 422 telling the user to re-score, even though
+# the target text genuinely IS present. These cover the specific classes of
+# whitespace drift that a real LLM round-trip produces.
+
+def test_apply_suggestion_summary_tolerates_trailing_whitespace():
+    struct = {"career_summary": "A developer.  ", "experience": [], "education": [], "skills": [], "achievements": []}
+    suggestion = {"section": "summary", "before": "A developer.", "after": "An experienced developer."}
+    result = apply_suggestion(struct, suggestion)
+    assert result["career_summary"] == "An experienced developer."
+
+
+def test_apply_suggestion_bullet_tolerates_double_spaces():
+    struct = {
+        "career_summary": "x",
+        "experience": [{"title": "Senior Developer", "company": "Acme Corp",
+                         "bullets": ["Responsible for  managing a team"]}],
+        "education": [], "skills": [], "achievements": [],
+    }
+    suggestion = {
+        "section": "experience", "target": "Acme Corp|Senior Developer",
+        "before": "Responsible for managing a team",  # single space, struct has double
+        "after": "Led a team of 6 engineers",
+    }
+    result = apply_suggestion(struct, suggestion)
+    assert result["experience"][0]["bullets"] == ["Led a team of 6 engineers"]
+
+
+def test_apply_suggestion_bullet_tolerates_newline_vs_space():
+    struct = {
+        "career_summary": "x",
+        "experience": [{"title": "Senior Developer", "company": "Acme Corp",
+                         "bullets": ["Responsible for\nmanaging a team"]}],
+        "education": [], "skills": [], "achievements": [],
+    }
+    suggestion = {
+        "section": "experience", "target": "Acme Corp|Senior Developer",
+        "before": "Responsible for managing a team",
+        "after": "Led a team of 6 engineers",
+    }
+    result = apply_suggestion(struct, suggestion)
+    assert result["experience"][0]["bullets"] == ["Led a team of 6 engineers"]
+
+
+def test_apply_suggestion_skills_tolerates_leading_whitespace():
+    struct = {"career_summary": "x", "experience": [], "education": [], "skills": [" Python", "SQL"], "achievements": []}
+    suggestion = {"section": "skills", "before": "Python", "after": "Python (Django, FastAPI)"}
+    result = apply_suggestion(struct, suggestion)
+    assert result["skills"] == ["Python (Django, FastAPI)", "SQL"]
+
+
+def test_apply_suggestion_still_no_op_when_text_genuinely_differs():
+    """Whitespace-only tolerance must not become a fuzzy match -- a real
+    content difference (not just whitespace) still correctly misses."""
+    struct = {"career_summary": "A developer with 5 years experience.", "experience": [], "education": [], "skills": [], "achievements": []}
+    suggestion = {"section": "summary", "before": "A developer with 10 years experience.", "after": "new text"}
+    result = apply_suggestion(struct, suggestion)
+    assert result["career_summary"] == "A developer with 5 years experience."
