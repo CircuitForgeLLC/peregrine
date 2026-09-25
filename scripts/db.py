@@ -182,6 +182,7 @@ _MIGRATIONS = [
     ("date_posted",        "TEXT"),   # Original posting date from job board (shadow listing detection)
     ("hired_feedback",           "TEXT"),   # JSON: optional post-hire "what helped" response
     ("excluded_from_training", "INTEGER DEFAULT 0"),  # opt-out of training export
+    ("resume_final_struct", "TEXT"),  # JSON: approved resume struct (YAML/PDF export round-trip)
 ]
 
 
