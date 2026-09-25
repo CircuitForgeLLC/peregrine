@@ -92,6 +92,24 @@ _JD_BOILERPLATE_NOISE_WORDS: frozenset[str] = frozenset({
     "employees", "company", "team", "teams", "work", "working", "please",
     "including", "include", "includes", "apply", "application",
     "opportunity", "opportunities",
+    # Compensation/benefits section boilerplate (found leaking through live
+    # 2026-09-24: a real gap list came back as ['supply', 'end', 'days',
+    # 'compensation', 'chain', 'time', 'benefits', 'global', 'agentic',
+    # 'backend'] -- 6 of 10 were fragments of the JD's standard "Compensation
+    # & Benefits" section, not ATS keywords. "end"/"time" are tokenizer
+    # fragments of hyphenated compounds like "full-time" splitting apart.
+    "compensation", "benefits", "salary", "pay", "paid", "insurance",
+    "health", "dental", "vision", "401k", "pto", "vacation", "holiday",
+    "holidays", "time", "days", "hours", "hour", "week", "weeks", "year",
+    "years", "annual", "end", "start", "full", "part", "equity", "stock",
+    "bonus", "bonuses",
+    "diversity", "inclusion", "eeo", "disability", "veteran", "status",
+    "background", "check", "care", "addition",
+    # Contraction fragments: sklearn's default tokenizer splits on
+    # apostrophes, so "you'll"/"we've"/"they're" leave a dangling 2-char
+    # fragment ("ll"/"ve"/"re") that's long enough to survive the
+    # token_pattern's 2-char minimum but is never a real word.
+    "ll", "ve", "re",
 })
 
 

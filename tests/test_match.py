@@ -85,6 +85,58 @@ def test_match_score_gaps_exclude_company_name_words():
     assert "python" in gaps or "kubernetes" in gaps
 
 
+def test_match_score_gaps_exclude_compensation_benefits_boilerplate():
+    """Regression test for a live bug found 2026-09-24: gaps consistently
+    included fragments of the JD's standard "Compensation & Benefits" section
+    ("compensation", "benefits", "time", "days", "end" -- the last two from
+    "full-time" splitting into "full"/"time" at the hyphen) instead of real
+    ATS keywords. Same 2-document degenerate-IDF root cause as the section-
+    header boilerplate case above, different section of a typical JD."""
+    from scripts.match import match_score
+
+    job_text = (
+        "We are looking for a Software Engineer with strong Python skills "
+        "and experience with Kubernetes.\n"
+        "Compensation & Benefits\n"
+        "This is a full-time position offering competitive compensation, "
+        "annual bonus, equity, and comprehensive benefits including health, "
+        "dental, and vision insurance, 401k, and unlimited PTO.\n"
+    )
+    _, gaps = match_score(
+        resume_text="Customer Success Manager with Salesforce experience",
+        job_text=job_text,
+    )
+    boilerplate = {
+        "compensation", "benefits", "time", "full", "end", "days", "annual",
+        "bonus", "equity", "health", "dental", "vision", "insurance",
+    }
+    assert not (set(gaps) & boilerplate), f"boilerplate leaked into gaps: {set(gaps) & boilerplate}"
+    assert "python" in gaps or "kubernetes" in gaps
+
+
+def test_match_score_gaps_exclude_contraction_fragments():
+    """sklearn's default tokenizer splits on apostrophes, so "you'll"/"we've"
+    leave dangling 2-char fragments ("ll"/"ve") long enough to survive the
+    token_pattern's 2-char minimum but never a real word. Regression test
+    for a live bug found 2026-09-24: 'll' appeared in a real gap report."""
+    from scripts.match import match_score
+
+    job_text = (
+        "We are looking for a Software Engineer with strong Python skills. "
+        "You'll work with Kubernetes and you'll have real impact -- "
+        "you'll love it here, we've built something special and you'll see "
+        "why once you're on the team.\n"
+    )
+    _, gaps = match_score(
+        resume_text="Customer Success Manager with Salesforce experience",
+        job_text=job_text,
+    )
+    assert "ll" not in gaps
+    assert "ve" not in gaps
+    assert "re" not in gaps
+    assert "python" in gaps or "kubernetes" in gaps
+
+
 def test_write_score_to_notion():
     """write_match_to_notion updates the Notion page with score and gaps."""
     from scripts.match import write_match_to_notion
