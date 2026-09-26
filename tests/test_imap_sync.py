@@ -1188,3 +1188,24 @@ def test_get_all_message_ids_performance(tmp_path):
 
     assert len(ids) == 1000
     assert elapsed < 1.0
+
+
+def test_connect_passes_socket_timeout():
+    """connect() must bound the socket timeout -- imaplib's default is
+    blocking forever, which (combined with email_sync running as a bare
+    unsupervised daemon thread, see peregrine#215) hangs the sync
+    permanently against a slow/unreachable/firewalled IMAP host."""
+    from scripts.imap_sync import _IMAP_CONNECT_TIMEOUT_SECONDS, connect
+
+    with patch("scripts.imap_sync.imaplib.IMAP4_SSL") as mock_ssl_cls:
+        mock_conn = MagicMock()
+        mock_ssl_cls.return_value = mock_conn
+        cfg = {"host": "imap.gmail.com", "port": 993, "use_ssl": True,
+               "username": "u@example.com", "password": "secret"}
+        result = connect(cfg)
+
+    mock_ssl_cls.assert_called_once_with(
+        "imap.gmail.com", 993, timeout=_IMAP_CONNECT_TIMEOUT_SECONDS
+    )
+    mock_conn.login.assert_called_once_with("u@example.com", "secret")
+    assert result is mock_conn
