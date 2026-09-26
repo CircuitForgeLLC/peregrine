@@ -579,6 +579,37 @@ def reset_running_tasks(db_path: Path = DEFAULT_DB) -> int:
     return count
 
 
+def fail_orphaned_queued_tasks(db_path: Path = DEFAULT_DB,
+                               resumable_task_types: frozenset[str] = frozenset()) -> int:
+    """On restart: mark 'queued' tasks failed unless their type is resumable.
+
+    LLM task types routed through TaskScheduler re-enqueue their own 'queued'
+    rows on startup (circuitforge_core.tasks.scheduler.LocalScheduler's
+    `_load_queued_tasks`), so those must be left alone -- reset_running_tasks()
+    already preserves them.
+
+    Every other task type (email_sync, discovery, scrape_url, ...) runs as a
+    bare, unpersisted daemon thread with no equivalent resume path -- a
+    process restart while one was 'queued' orphans that row forever, and
+    insert_task()'s in-flight dedup then permanently returns the dead task_id
+    to every future submission for that job. Regression fix for peregrine#215
+    (a live cloud email_sync task stuck 'queued' since a prior deploy).
+    """
+    if not resumable_task_types:
+        return 0
+    conn = sqlite3.connect(db_path)
+    placeholders = ",".join("?" * len(resumable_task_types))
+    count = conn.execute(
+        "UPDATE background_tasks SET status='failed', error='Interrupted by restart',"
+        f" finished_at=datetime('now') WHERE status='queued'"
+        f" AND task_type NOT IN ({placeholders})",
+        tuple(resumable_task_types),
+    ).rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+
 def purge_email_data(db_path: Path = DEFAULT_DB) -> tuple[int, int]:
     """Delete all job_contacts rows and email-sourced pending jobs.
     Returns (contacts_deleted, jobs_deleted).
