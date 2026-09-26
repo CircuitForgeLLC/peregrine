@@ -735,11 +735,21 @@ def load_config() -> dict:
     return yaml.safe_load(CONFIG_PATH.read_text()) or {}
 
 
+# imaplib's own connect classes default to a blocking socket with no timeout
+# (socket.setdefaulttimeout(None)). A slow, unreachable, or firewalled IMAP
+# host then hangs the sync thread forever -- since email_sync runs as a bare
+# daemon thread with no supervising timeout (see peregrine#215), that hang is
+# permanent and looks identical to "email sync never finishes."
+_IMAP_CONNECT_TIMEOUT_SECONDS = 30
+
+
 def connect(cfg: dict) -> imaplib.IMAP4:
     host = cfg.get("host", "imap.gmail.com")
     port = int(cfg.get("port", 993))
     use_ssl = cfg.get("use_ssl", True)
-    conn = (imaplib.IMAP4_SSL if use_ssl else imaplib.IMAP4)(host, port)
+    conn = (imaplib.IMAP4_SSL if use_ssl else imaplib.IMAP4)(
+        host, port, timeout=_IMAP_CONNECT_TIMEOUT_SECONDS
+    )
     conn.login(cfg["username"], cfg["password"])
     return conn
 

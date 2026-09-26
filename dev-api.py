@@ -156,11 +156,19 @@ async def lifespan(app: FastAPI):
     _load_env(PEREGRINE_ROOT / ".env")
     # Also load wizard-saved keys from the data directory (overrides empty compose vars).
     _load_data_env()
+    from scripts.db import fail_orphaned_queued_tasks, reset_running_tasks
     from scripts.db_migrate import migrate_db
+    from scripts.task_scheduler import LLM_TASK_TYPES
     migrate_db(Path(DB_PATH))
+    reset_running_tasks(Path(DB_PATH))
+    fail_orphaned_queued_tasks(Path(DB_PATH), LLM_TASK_TYPES)
 
     # Cloud mode: sweep all known user DBs at startup so schema changes land
-    # for every user on deploy, not only on their next request.
+    # for every user on deploy, not only on their next request. Also reconciles
+    # background tasks left orphaned by the previous process's death (see
+    # peregrine#215) -- a non-LLM task (email_sync, discovery, ...) that was
+    # still 'queued' when the container was recreated has no resume path of
+    # its own and would otherwise block every future submission for that job.
     if _CLOUD_MODE and _CLOUD_DATA_ROOT.is_dir():
         import logging as _log
         _sweep_log = _log.getLogger("peregrine.startup")
@@ -168,6 +176,8 @@ async def lifespan(app: FastAPI):
             try:
                 migrate_db(user_db)
                 _migrated_db_paths.add(str(user_db))
+                reset_running_tasks(user_db)
+                fail_orphaned_queued_tasks(user_db, LLM_TASK_TYPES)
                 _sweep_log.info("Migrated user DB: %s", user_db)
             except Exception as exc:  # noqa: BLE001 - one bad user DB must not abort the startup sweep
                 _sweep_log.warning("Migration failed for %s: %s", user_db, exc)
