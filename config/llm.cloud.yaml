@@ -34,13 +34,16 @@ backends:
   ollama:
     api_key: ollama
     base_url: http://host.docker.internal:11434/v1
-    # DISABLED 2026-09-26 -- alex-cover-writer was fine-tuned on donated cover
-    # letters that were supposed to be sanitized first but weren't; a real
-    # donor's name ("Meghan") surfaced in another cloud tenant's generated
-    # cover letter (peregrine#219). Do not re-enable until the model is
-    # retrained on the actual sanitized corpus.
-    enabled: false
-    model: alex-cover-writer:latest  # CF's own cover-letter fine-tune (3.2B llama, Q8_0)
+    # 2026-09-26 -- model swapped from alex-cover-writer:latest to llama3.1:8b
+    # (generic, not personally fine-tuned). alex-cover-writer was trained on
+    # donated cover letters that were supposed to be sanitized first but
+    # weren't; a real donor's name ("Meghan") surfaced in another cloud
+    # tenant's generated cover letter (peregrine#219). Do not point this
+    # backend at alex-cover-writer (or any other per-person *-cover-writer
+    # fine-tune on this Ollama host, e.g. meghan-cover-writer) until the
+    # sanitized-corpus retrain work in #219 is done.
+    enabled: true
+    model: llama3.1:8b
     supports_images: false
     type: openai_compat
     cf_orch:
@@ -86,9 +89,9 @@ backends:
         - Qwen2.5-3B-Instruct
       ttl_s: 300
 fallback_order:
+- ollama
 - cf_text
 - vllm
-- ollama
 research_fallback_order:
 - cf_text
 - vllm_research
