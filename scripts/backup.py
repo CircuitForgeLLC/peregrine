@@ -32,10 +32,13 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import tempfile
 import zipfile
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+import yaml
 
 # ---------------------------------------------------------------------------
 # Files included in every backup (relative to repo root)
@@ -244,6 +247,27 @@ def list_backup_contents(zip_bytes: bytes) -> dict:
     }
 
 
+def _safe_dest(base_dir: Path, name: str) -> Path:
+    """Return where a zip member lands under base_dir, or raise if it would escape it.
+
+    Rejects absolute paths, drive letters and any ".." segment (zip-slip), whether the
+    archive used / or \\ as the separator.
+    """
+    normalized = name.replace("\\", "/")
+    parts = PurePosixPath(normalized).parts
+    if (
+        normalized.startswith("/")
+        or ".." in parts
+        or (parts and re.match(r"^[A-Za-z]:$", parts[0]))
+    ):
+        raise ValueError(f"unsafe path in backup: {name!r}")
+    root = base_dir.resolve()
+    dest = (root / normalized).resolve()
+    if dest != root and root not in dest.parents:
+        raise ValueError(f"unsafe path in backup: {name!r}")
+    return dest
+
+
 def restore_backup(
     zip_bytes: bytes,
     base_dir: Path,
@@ -269,13 +293,19 @@ def restore_backup(
     skipped: list[str] = []
 
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        # Validate every member before writing any of them, so a hostile or damaged
+        # archive cannot leave a half-restored instance behind.
         for name in zf.namelist():
-            if name == _MANIFEST_NAME:
+            if name != _MANIFEST_NAME and not name.endswith("/"):
+                _safe_dest(base_dir, name)
+
+        for name in zf.namelist():
+            if name == _MANIFEST_NAME or name.endswith("/"):
                 continue
             if not include_db and name.endswith(".db"):
                 skipped.append(name)
                 continue
-            dest = base_dir / name
+            dest = _safe_dest(base_dir, name)
             if dest.exists() and not overwrite:
                 skipped.append(name)
                 continue
@@ -289,6 +319,98 @@ def restore_backup(
             restored.append(name)
 
     return {"restored": restored, "skipped": skipped}
+
+
+# ---------------------------------------------------------------------------
+# Settings-only restore (Settings > Data, uploaded by the user)
+# ---------------------------------------------------------------------------
+
+class BackupFormatError(ValueError):
+    """The uploaded file is not a usable settings backup. The message is safe to show the user."""
+
+
+class BackupTooLargeError(ValueError):
+    """The uploaded archive is bigger than we are willing to unpack."""
+
+
+# The same files the Settings page writes: top-level config YAML and per-integration YAML.
+_RESTORABLE_RE = re.compile(r"^config/(?:integrations/)?[A-Za-z0-9_.-]+\.ya?ml$")
+# Never restored from an upload: API tokens are excluded from UI backups on purpose.
+_NEVER_RESTORE = frozenset({"config/tokens.yaml"})
+
+
+def restore_config_from_zip(
+    zip_bytes: bytes,
+    config_dir: Path,
+    max_members: int = 500,
+    max_uncompressed_bytes: int = 100 * 1024 * 1024,
+    max_member_bytes: int = 1024 * 1024,
+) -> dict[str, list[str]]:
+    """Restore settings files from a user-uploaded backup into config_dir.
+
+    Deliberately narrower than restore_backup(): only YAML settings files matching an
+    allowlist are written, every one must parse as YAML, and nothing is written unless
+    all of them do. The database, license file, tokens and anything else in the archive
+    are reported as skipped and left alone.
+
+    Returns {"restored": [...], "skipped": [...]} using the names as they appear in the zip.
+    Raises BackupFormatError or BackupTooLargeError with a user-safe message.
+    """
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except zipfile.BadZipFile as exc:
+        raise BackupFormatError("That doesn't look like a Peregrine backup. Choose a .zip made by Create Backup.") from exc
+
+    with zf:
+        infos = [i for i in zf.infolist() if not i.filename.endswith("/")]
+        if len(infos) > max_members:
+            raise BackupTooLargeError("That backup has too many files to restore.")
+        if sum(i.file_size for i in infos) > max_uncompressed_bytes:
+            raise BackupTooLargeError("That backup is too large to restore.")
+
+        restorable: dict[str, bytes] = {}
+        skipped: list[str] = []
+        for info in infos:
+            name = info.filename
+            if name == _MANIFEST_NAME:
+                continue
+            if _RESTORABLE_RE.match(name) and name not in _NEVER_RESTORE:
+                # Settings files are small. Capping each one also bounds what yaml.safe_load
+                # is asked to parse, since YAML alias expansion can multiply memory use.
+                if info.file_size > max_member_bytes:
+                    raise BackupTooLargeError(f"{Path(name).name} in that backup is too large to restore.")
+                restorable[name] = zf.read(name)
+            else:
+                skipped.append(name)
+
+    if not restorable:
+        raise BackupFormatError("No settings files found in that backup, so nothing was restored.")
+
+    for name, raw in restorable.items():
+        try:
+            yaml.safe_load(raw.decode("utf-8"))
+        except (yaml.YAMLError, UnicodeDecodeError) as exc:
+            raise BackupFormatError(
+                f"{Path(name).name} in that backup isn't valid, so nothing was restored."
+            ) from exc
+
+    for name, raw in restorable.items():
+        dest = config_dir / name.removeprefix("config/")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        # A unique temp name (mkstemp is created 0600) so two restores cannot collide,
+        # renamed into place so a reader never sees a half-written file.
+        fd, tmp_name = tempfile.mkstemp(prefix=".restore-", dir=dest.parent)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(raw)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_name, dest)
+        except BaseException:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
+
+    return {"restored": list(restorable), "skipped": skipped}
 
 
 # ---------------------------------------------------------------------------

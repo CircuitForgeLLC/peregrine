@@ -18,6 +18,11 @@ const canSync = config.isCloud && ['paid', 'premium'].includes(config.tier)
 
 onMounted(() => { if (config.isCloud) sync.loadPrefs() })
 
+async function confirmRestore() {
+  showRestoreConfirm.value = false
+  if (restoreFile.value) await store.restore(restoreFile.value)
+}
+
 function formatBytes(b: number) {
   if (b < 1024) return `${b} B`
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
@@ -79,7 +84,7 @@ function formatBytes(b: number) {
             <h3>Restore Backup?</h3>
             <p>This will overwrite your current configuration. This cannot be undone.</p>
             <div class="modal-actions">
-              <button @click="showRestoreConfirm = false" class="btn-danger">Restore</button>
+              <button @click="confirmRestore" class="btn-danger">Restore</button>
               <button @click="showRestoreConfirm = false" class="btn-secondary">Cancel</button>
             </div>
           </div>

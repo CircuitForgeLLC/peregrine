@@ -5,7 +5,7 @@
       <a href="https://docs.circuitforge.tech/peregrine/user-guide/daily-workflow/#managing-your-resume" target="_blank" rel="noopener" class="rv__help-link" aria-label="Resume Library documentation">? Help</a>
       <label class="btn-generate rv__import-btn">
         <span aria-hidden="true">📥</span> Import
-        <input type="file" accept=".txt,.pdf,.docx,.odt,.yaml,.yml"
+        <input type="file" accept=".txt,.md,.html,.htm,.rtf,.pdf,.docx,.odt,.yaml,.yml"
           class="rv__file-input" @change="handleImport" />
       </label>
     </div>
