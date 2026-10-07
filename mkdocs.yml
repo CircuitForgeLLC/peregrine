@@ -50,7 +50,7 @@ nav:
   - Home: index.md
   - Getting Started:
     - Installation: getting-started/installation.md
-    - First-Run Wizard: getting-started/first-run-wizard.md
+    - Your First Setup: getting-started/first-run-wizard.md
     - Docker Profiles: getting-started/docker-profiles.md
   - User Guide:
     - Daily Workflow: user-guide/daily-workflow.md
