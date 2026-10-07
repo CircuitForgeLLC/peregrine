@@ -34,7 +34,10 @@ export const useDataStore = defineStore('settings/data', () => {
     body.append('file', file)
     const { data, error } = await useApiFetch<{restored: string[]; skipped: string[]}>(
       '/api/settings/data/backup/restore',
-      { method: 'POST', body }
+      // The custom header is what stops another website from posting a forged backup
+      // here: browsers will not add one to a cross-site form. Content-Type stays unset
+      // so the browser can add the multipart boundary.
+      { method: 'POST', body, headers: { 'X-Requested-With': 'peregrine' } }
     )
     restoring.value = false
     if (data) { restoreResult.value = data; return }
