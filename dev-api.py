@@ -4477,6 +4477,21 @@ def _integration_class(integration_id: str):
     return cls
 
 
+_INTEGRATION_TIER_RANK = {"free": 0, "paid": 1, "premium": 2}
+
+
+def _require_integration_tier(cls) -> None:
+    """Refuse to test or connect an integration the user's plan does not include.
+
+    The settings page already hides these, but the API is callable directly, so the plan
+    has to be enforced here too. Unknown tier values count as free. Disconnecting is never
+    gated, so someone whose plan lapsed can still remove a connection.
+    """
+    needed = getattr(cls, "tier", "free")
+    if _INTEGRATION_TIER_RANK.get(_get_effective_tier(), 0) < _INTEGRATION_TIER_RANK.get(needed, 0):
+        raise HTTPException(402, detail={"error": "tier_required", "min_tier": needed})
+
+
 def _vet_integration_payload(integration, payload: dict) -> str | None:
     """Check what the user typed before anything is requested with it.
 
@@ -4538,6 +4553,7 @@ def get_integrations():
 def test_integration(integration_id: str, payload: dict):
     _demo_guard()  # test() makes a real outbound request
     cls = _integration_class(integration_id)
+    _require_integration_tier(cls)
     integration = cls()
     problem = _vet_integration_payload(integration, payload)
     if problem:
@@ -4553,6 +4569,7 @@ def test_integration(integration_id: str, payload: dict):
 def connect_integration(integration_id: str, payload: dict):
     _demo_guard()
     cls = _integration_class(integration_id)
+    _require_integration_tier(cls)
     integration = cls()
     problem = _vet_integration_payload(integration, payload)
     if problem:
