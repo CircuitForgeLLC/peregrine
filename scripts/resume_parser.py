@@ -161,6 +161,91 @@ def extract_text_from_odt(file_bytes: bytes) -> str:
     return _clean_cid("\n".join(lines))
 
 
+def extract_text_from_text(file_bytes: bytes) -> str:
+    """Decode a plain text or Markdown file.
+
+    Tries UTF-8 (with or without a byte order mark) first, then Windows-1252, which is
+    what most older editors on Windows save as, so accented names survive either way.
+    """
+    try:
+        text = file_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = file_bytes.decode("cp1252", errors="replace")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+_HTML_BLOCK_TAGS = [
+    "p", "div", "section", "article", "header", "footer", "main", "aside", "nav",
+    "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "dl", "dt", "dd",
+    "table", "thead", "tbody", "tr", "td", "th", "blockquote", "pre", "hr", "address",
+]
+
+
+def extract_text_from_html(file_bytes: bytes) -> str:
+    """Pull the visible text out of an HTML resume, one line per block of text."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(file_bytes, "lxml")
+    for tag in soup(["script", "style", "head", "noscript", "template"]):
+        tag.decompose()
+    # Only block-level elements start a new line, so a link or bold word inside a
+    # sentence does not split it.
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    for block in soup.find_all(_HTML_BLOCK_TAGS):
+        block.insert_before("\n")
+        block.insert_after("\n")
+    lines = (line.strip() for line in soup.get_text().splitlines())
+    return "\n".join(line for line in lines if line)
+
+
+def extract_text_from_markdown(file_bytes: bytes) -> str:
+    """Render Markdown and return its visible text.
+
+    Heading hashes, emphasis stars and link brackets would otherwise stop the section
+    parser from recognising "## Experience" as the Experience section.
+    """
+    import markdown
+
+    rendered = markdown.markdown(extract_text_from_text(file_bytes))
+    return extract_text_from_html(rendered.encode("utf-8"))
+
+
+def extract_text_from_rtf(file_bytes: bytes) -> str:
+    """Strip RTF control codes and return the visible text."""
+    from striprtf.striprtf import rtf_to_text
+
+    # RTF is 7-bit ASCII with escapes for everything else, so latin-1 is lossless here.
+    return rtf_to_text(file_bytes.decode("latin-1")).strip()
+
+
+SUPPORTED_SUFFIXES = (".pdf", ".docx", ".odt", ".rtf", ".html", ".htm", ".md", ".txt")
+
+
+def extract_text(file_bytes: bytes, suffix: str) -> str:
+    """Extract resume text from a file, choosing the reader by file extension.
+
+    Raises ValueError for an extension we cannot read. Any other exception comes from the
+    underlying reader (corrupt, encrypted or mislabelled file) and is for the caller to handle.
+    """
+    suffix = suffix.lower()
+    if suffix == ".pdf":
+        return extract_text_from_pdf(file_bytes)
+    if suffix == ".docx":
+        return extract_text_from_docx(file_bytes)
+    if suffix == ".odt":
+        return extract_text_from_odt(file_bytes)
+    if suffix == ".rtf":
+        return extract_text_from_rtf(file_bytes)
+    if suffix in (".html", ".htm"):
+        return extract_text_from_html(file_bytes)
+    if suffix == ".md":
+        return extract_text_from_markdown(file_bytes)
+    if suffix == ".txt":
+        return extract_text_from_text(file_bytes)
+    raise ValueError(f"Unsupported resume format: {suffix or '(none)'}")
+
+
 # ── Section splitter ──────────────────────────────────────────────────────────
 
 def _split_sections(text: str) -> dict[str, list[str]]:

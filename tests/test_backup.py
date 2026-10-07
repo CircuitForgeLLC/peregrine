@@ -1,9 +1,12 @@
 """Tests for scripts/backup.py — create, list, restore, and multi-instance support."""
 from __future__ import annotations
 
+import io
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from scripts.backup import (
     _decrypt_db_to_bytes,
@@ -366,3 +369,44 @@ class TestCloudBackup:
         assert len(attach_calls) == 1
         assert str(dest) in str(attach_calls[0])
         assert "testkey" in str(attach_calls[0])
+
+
+# ---------------------------------------------------------------------------
+# Zip-slip: a backup must never write outside the directory it restores into
+# ---------------------------------------------------------------------------
+
+def _evil_zip(member: str) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("config/user.yaml", "name: ok\n")
+        zf.writestr(member, "owned")
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("kind", ["parent", "nested", "absolute"])
+def test_restore_refuses_members_that_escape_the_base_dir(tmp_path, kind):
+    base = tmp_path / "instance"
+    base.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    member = {
+        "parent": "../outside/escape.txt",
+        "nested": "config/../../outside/escape.txt",
+        "absolute": str(outside / "escape.txt"),
+    }[kind]
+
+    with pytest.raises(ValueError, match="unsafe"):
+        restore_backup(_evil_zip(member), base)
+
+    assert not (outside / "escape.txt").exists()
+    assert not (base / "config" / "user.yaml").exists(), "nothing should be restored from an unsafe archive"
+
+
+def test_restore_still_works_for_normal_members(tmp_path):
+    base = tmp_path / "instance"
+    base.mkdir()
+
+    result = restore_backup(_evil_zip("config/other.yaml"), base)
+
+    assert sorted(result["restored"]) == ["config/other.yaml", "config/user.yaml"]
+    assert (base / "config" / "other.yaml").read_text() == "owned"

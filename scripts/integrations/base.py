@@ -1,6 +1,7 @@
 """Base class for all Peregrine integrations."""
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -69,7 +70,11 @@ class IntegrationBase(ABC):
         """
         path = self.config_path(config_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(yaml.dump(config, default_flow_style=False, allow_unicode=True))
+        # API keys and webhook URLs live in here, so owner-only from the first byte.
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(yaml.dump(config, default_flow_style=False, allow_unicode=True))
+        os.chmod(path, 0o600)  # os.open's mode only applies when the file is created
 
     def load_config(self, config_dir: Path) -> dict:
         """Load and return this integration's config yaml, or {} if not configured."""
