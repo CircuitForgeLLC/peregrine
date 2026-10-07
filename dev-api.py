@@ -5201,7 +5201,7 @@ _RESTORE_MAX_MEMBER_BYTES = 1024 * 1024
 
 
 @app.post("/api/settings/data/backup/restore")
-async def restore_backup_upload(file: UploadFile):
+async def restore_backup_upload(file: UploadFile, request: Request):
     """Restore settings files from a backup zip the user uploads (peregrine#222).
 
     Settings files only: the database, license file and tokens in an archive are left
@@ -5210,6 +5210,11 @@ async def restore_backup_upload(file: UploadFile):
     _demo_guard()
     if _CLOUD_MODE:
         raise HTTPException(403, "Restoring a backup isn't available on the hosted version.")
+    # A multipart POST needs no CORS preflight, so a web page the user happens to visit
+    # could otherwise submit a forged backup to a self-hosted instance. Browsers cannot
+    # add a custom header to a cross-site form, so requiring one closes that off.
+    if request.headers.get("x-requested-with") != "peregrine":
+        raise HTTPException(403, "Restore must be started from the Peregrine settings page.")
     from scripts.backup import (
         BackupFormatError,
         BackupTooLargeError,

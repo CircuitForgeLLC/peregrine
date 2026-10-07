@@ -35,8 +35,24 @@ def api(tmp_path, monkeypatch):
     return TestClient(dev_api.app), cfg, tmp_path
 
 
-def _post(client, payload: bytes, name: str = "backup.zip"):
-    return client.post(URL, files={"file": (name, payload, "application/zip")})
+def _post(client, payload: bytes, name: str = "backup.zip", headers: dict | None = None):
+    return client.post(
+        URL,
+        files={"file": (name, payload, "application/zip")},
+        headers={"X-Requested-With": "peregrine"} if headers is None else headers,
+    )
+
+
+def test_a_cross_site_form_post_cannot_trigger_a_restore(api):
+    """A multipart POST needs no CORS preflight, so any web page the user visits could submit
+    one to a self-hosted instance. Browsers cannot add a custom header to a cross-site form,
+    so requiring one stops that."""
+    client, cfg, _ = api
+
+    resp = _post(client, _zip({"config/user.yaml": "name: attacker\n"}), headers={})
+
+    assert resp.status_code == 403
+    assert not (cfg / "user.yaml").exists()
 
 
 def test_restores_config_files_and_overwrites_existing(api):
