@@ -1,79 +1,95 @@
 # Apply Workspace
 
-![Peregrine apply workspace with cover letter generator and ATS optimizer](../screenshots/03-apply.png){ .only-light }
-![Peregrine apply workspace with cover letter generator and ATS optimizer](../screenshots/03-apply-dark.png){ .only-dark }
+The **Apply** page is where you write your cover letter, check your resume against a job, and keep track of the jobs you have applied to.
 
-The Apply Workspace is where you generate cover letters, export application documents, and record that you have applied to a job.
+![Apply page with a list of approved jobs on the left and the cover letter workspace on the right](../screenshots/03-apply.png#only-light)
+![Apply page with a list of approved jobs on the left and the cover letter workspace on the right](../screenshots/03-apply-dark.png#only-dark)
 
----
+## What you will do here
 
-## Accessing the Workspace
+1. Click **Apply** in the sidebar. You see the jobs you approved in **Job Review**.
+2. Click a job. On a wide screen it opens beside the list. On a phone or narrow window it opens as its own page.
+3. Under **Cover Letter**, click **Generate with AI** or write your own.
+4. Read it, change anything you like, and click **Save**.
+5. Click **Download PDF** and send your application on the company's own site or email.
+6. Come back and click **Mark as Applied**. The job leaves this list and moves on to your **Interviews** page.
 
-Navigate to page **4 — Apply** in the sidebar. The workspace lists all jobs with status `approved`, sorted by date approved.
+Everything here is a draft until you say it is done. Nothing is sent to an employer for you.
 
----
+## What does the job list show?
 
-## Cover Letter Generation
+Each job shows its match percentage, its company, and a tick if it already has a cover letter. On a phone the list also shows **Draft** or **No draft**. On a wide screen you can tick **Remote only** to hide the rest, and use the arrow button to fold the list away for more room.
 
-Click **Generate Cover Letter** on any job card. Peregrine runs as a background task so you can continue navigating the UI.
+If the list is empty, you see **No approved jobs yet** and a link to **Job Review**.
 
-### What the generator uses
+## How do I write a cover letter?
 
-- Your **career summary** and **resume data** from `config/user.yaml`
-- The **job title** and **job description**
-- **Company name** — used to detect mission-aligned industries
-- **Mission alignment notes** from `config/user.yaml` (e.g. a personal note about why you care about music-industry companies)
+Open a job. Under **Cover Letter** you have two choices:
 
-### Fallback chain
+- **Generate with AI** asks the writing assistant (a large language model, or LLM) for a first draft. It uses your resume, your profile and the job description. It usually takes 20 to 60 seconds. You can keep using Peregrine while you wait.
+- **Paste / write manually** gives you a blank box for your own words.
 
-Cover letters use the cover letter fallback order from `config/llm.yaml`. By default: `ollama → claude_code → vllm → github_copilot → anthropic`. See [LLM Router](../reference/llm-router.md) for details.
+The draft is a starting point. It can get details wrong or sound off. Read all of it and change what does not sound like you.
 
-### Mission alignment
+If generation fails, you see the reason and two buttons: **Retry** and **Write manually instead**.
 
-If the company or job description matches one of your configured mission industries (music, animal welfare, education), the generator injects a personalised paragraph 3 hint into the prompt. This produces a cover letter that reflects authentic alignment rather than generic enthusiasm.
+### How do I edit and save?
 
----
+Click in the text box and type. A word count sits above it. Your changes are not stored until you click **Save**, which then shows **Saved**. **Regenerate** asks for a fresh draft and replaces what is in the box, so save a copy of anything you want to keep first.
 
-## Editing the Cover Letter
+### How do I get a PDF?
 
-After generation, the cover letter appears in an editable text area. Edit freely — changes are saved locally and do not trigger a re-generation.
+Click **Download PDF**. Your browser downloads a file named like `CoverLetter_Acme_2026-10-06.pdf`. If it fails, click **Save** first and try again.
 
-Click **Save** to write the updated text back to the database.
+## How do I check my resume for this job?
 
----
+Open **Resume** on the job. It shows the resume attached to this job. Use **Switch** to pick a different saved resume or **Manage** to open your **Resumes** page.
 
-## PDF Export
+Click **Optimize for ATS**. ATS means applicant tracking system, the software many employers use to filter resumes before a person reads them. The **Resume Optimizer** opens.
 
-Click **Export PDF** to generate a formatted PDF of the cover letter. The PDF is saved to your `docs_dir` (configured in `config/user.yaml`, default: `~/Documents/JobSearch`).
+1. Click **Analyze Keywords**. You get a list of words the job asks for that your resume does not mention.
+2. Untick any that do not honestly apply to you.
+3. Click **Optimize Resume** to have the writing assistant rewrite sections to include the ones you kept.
+4. Click **Review Changes** and go through the proposed edits section by section.
+5. Edit the preview if you want, then click **Approve & Save**. You can tick **Save to Resume Library** to keep it under its own name.
 
-The filename format is: `{Company}_{Title}_{Date}_CoverLetter.pdf`
+After approving you can download the result as text, PDF or YAML (a plain data format some tools read). Earlier versions are kept under **Show previous versions** so you can go back.
 
----
+Only add keywords for skills you really have.
 
-## Marking Applied
+!!! note "Paid feature"
+    The keyword report is free. The full rewrite needs a Paid license, or your own LLM connection (bring your own key, BYOK).
 
-Once you have submitted your application externally, click **Mark Applied**. This:
+### Is there a resume score?
 
-- Sets the job status to `applied`
-- Records `applied_at` timestamp
-- Moves the job out of the Apply Workspace and into the Interviews kanban (in `applied` pre-stage)
+Yes, but it lives on the **Resumes** page, not here. Open a resume there and click **Score this resume**. You get a score out of 10, strengths, areas to improve, and suggested rewording you can apply one at a time. A separate score covers ATS-friendliness.
 
----
+## What is Application Q&A?
 
-## Rejecting a Listing
+Many applications ask extra questions. Under **Application Q&A**, type the question into **Add a question from the application…** and click **Add**. Write your own answer, or click **Suggest** for an LLM draft. Click **Save All** when you are done.
 
-Changed your mind about a job you approved? Click **Reject Listing** to set it to `rejected` status. This removes it from the workspace without affecting your cover letter draft (the text remains in the database).
+## How do I mark a job as applied?
 
----
+After you have submitted your application, click **Mark as Applied**. Peregrine saves your cover letter if you have unsaved changes, records that you applied, and takes the job off this list. You find it again on **Interviews**.
 
-## Cover Letter Background Task Status
+## What if I change my mind?
 
-The sidebar shows a live indicator (updated every 3 seconds) of running and queued background tasks. If a cover letter generation is in progress you will see it there.
+Click **Reject Listing**. Peregrine asks you to confirm because it cannot be undone from here. The job leaves the Apply list.
 
-A task can have these statuses:
-- **queued** — waiting to start
-- **running** — actively generating
-- **completed** — finished; reload the page to see the result
-- **failed** — generation failed; check the logs
+## If something looks wrong
 
-Only one queued or running task per job is allowed at a time. Clicking **Generate Cover Letter** on a job that already has a task in progress is a no-op.
+- **"AI features are disabled in demo mode".** You are in the demo. Writing assistant features are turned off there.
+- **"Save failed".** Try again. Your text is still in the box.
+- **The draft never appears.** Wait a minute, then use **Retry**. If it keeps failing, check that an LLM is set up in **Settings**.
+
+!!! note "Cover letters and your own key"
+    Cover letter generation is not tier-gated in the app's tier list. It needs a working LLM, whether Peregrine's or your own.
+
+??? note "For self-hosters and developers"
+    - Routes: `/apply` (split pane on screens 1024px and wider, list on narrower) and `/apply/:id` (full-page workspace, used on mobile).
+    - The list comes from `GET /api/jobs?status=approved`. **Mark as Applied** calls `POST /api/jobs/{id}/applied`, which sets `status = 'applied'` and `applied_at`. **Reject Listing** calls `POST /api/jobs/{id}/reject`.
+    - Cover letter endpoints: `POST /api/jobs/{id}/cover_letter/generate` (background task), `GET /api/jobs/{id}/cover_letter/task` (polled for status), `PATCH /api/jobs/{id}/cover_letter` (save), `GET /api/jobs/{id}/cover_letter/pdf` (PDF built server-side with ReportLab and downloaded by the browser).
+    - Application Q&A uses `GET` and `PATCH` on `/api/jobs/{id}/qa` and `POST /api/jobs/{id}/qa/suggest`.
+    - The generator uses your career summary, resume data and mission-alignment notes from `config/user.yaml`, plus the job title, description and company. Backends follow the cover letter fallback order in `config/llm.yaml`. By default that is `ollama → claude_code → vllm → github_copilot → anthropic`. See [LLM Router](../reference/llm-router.md).
+    - The ATS rewrite is gated in the UI when `config.tier` is `free`. In `scripts/wizard/tiers.py`, cover letter generation has no entry in `FEATURES`, so it is free. BYOK-unlockable features are listed in `BYOK_UNLOCKABLE`.
+    - The Resume Score modal (`ResumeScoreModal.vue`) is opened from `/resumes`, not from Apply.

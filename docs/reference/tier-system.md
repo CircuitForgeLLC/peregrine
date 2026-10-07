@@ -170,7 +170,7 @@ if not can_use(_get_effective_tier(), "my_new_llm_feature", has_byok=has_configu
     raise HTTPException(402, detail={"error": "tier_required", "min_tier": "paid"})
 ```
 
-3. Guard the feature in the Vue UI too (`config.tier` from `useAppConfigStore()`), so it's disabled/hidden before the user ever hits the tier-gated endpoint — see the Custom Model field in [Settings — Custom Model](../user-guide/settings.md#custom-model-cloud-premium) for the current visible-but-disabled pattern.
+3. Guard the feature in the Vue UI too (`config.tier` from `useAppConfigStore()`), so it's disabled/hidden before the user ever hits the tier-gated endpoint — see the Custom Model field in [Settings](../user-guide/settings.md) (see the Custom Model note in its self-hosters and developers block) for the current visible-but-disabled pattern.
 
 4. Add tests in `tests/test_wizard_tiers.py` covering both the tier gate and BYOK unlock:
 

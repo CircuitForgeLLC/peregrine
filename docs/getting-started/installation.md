@@ -104,7 +104,7 @@ Choose a profile based on your hardware:
 
 Navigate to **http://localhost:8506** (or whatever `VUE_PORT` you set).
 
-The first-run wizard launches automatically. See [First-Run Wizard](first-run-wizard.md) for a step-by-step guide.
+The first-run wizard launches automatically. See [Your First Setup](first-run-wizard.md) for a step-by-step guide.
 
 ---
 

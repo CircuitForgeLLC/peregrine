@@ -4,8 +4,8 @@
 
 Peregrine automates the full job search lifecycle: discovery, matching, cover letter generation, application tracking, and interview preparation. It is privacy-first and local-first — your data never leaves your machine unless you configure an external integration.
 
-![Peregrine dashboard](screenshots/01-dashboard.png){ .only-light }
-![Peregrine dashboard](screenshots/01-dashboard-dark.png){ .only-dark }
+![Peregrine dashboard](screenshots/01-dashboard.png#only-light)
+![Peregrine dashboard](screenshots/01-dashboard-dark.png#only-dark)
 
 ---
 
@@ -26,7 +26,7 @@ make start PROFILE=dual-gpu       # dual GPU (Ollama + vLLM)
 # http://localhost:8501
 ```
 
-The first-run wizard guides you through hardware detection, tier selection, identity, resume, LLM configuration, search profiles, and integrations. See [Installation](getting-started/installation.md) for the full walkthrough.
+The first time you open Peregrine, a short setup checklist walks you through your resume, your profile, and the jobs you want. See [Your First Setup](getting-started/first-run-wizard.md) for a screenshot tour, or [Installation](getting-started/installation.md) for the full install walkthrough.
 
 ---
 
@@ -55,10 +55,11 @@ See [Tier System](reference/tier-system.md) for the full feature gate table.
 
 ## Documentation Sections
 
-- **[Getting Started](getting-started/installation.md)** — Install, configure, and launch Peregrine
-- **[User Guide](user-guide/job-discovery.md)** — How to use every feature in the UI
-- **[Developer Guide](developer-guide/contributing.md)** — Add scrapers, integrations, and contribute code
-- **[Reference](reference/tier-system.md)** — Tier system, LLM router, and config file schemas
+- **[Your First Setup](getting-started/first-run-wizard.md)**: A screenshot tour of the setup checklist, start here if you are new
+- **[Getting Started](getting-started/installation.md)**: Install, configure, and launch Peregrine (self-hosting)
+- **[User Guide](user-guide/daily-workflow.md)**: How to use Peregrine day to day, no technical background needed
+- **[Developer Guide](developer-guide/contributing.md)**: Add scrapers, integrations, and contribute code
+- **[Reference](reference/tier-system.md)**: Tier system, LLM router, and config file schemas
 
 ---
 

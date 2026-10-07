@@ -1,142 +1,108 @@
 # Daily Workflow
 
-This page describes how Peregrine fits into a typical active job search. The core loop is short: find jobs, triage them, generate and send applications, track what happens next.
+This page shows how Peregrine fits into an ordinary day of job searching. The short version: find jobs, decide which ones deserve your time, write your application, then keep track of what happens next.
+
+You do not need to do all of it every day. Ten focused minutes is a good day.
 
 ---
 
-## The Core Loop
+## The loop
 
 ```
-Run Discovery → Review Jobs → Apply Workspace → Track in Interviews
+Find jobs  →  Review them  →  Apply  →  Track what happens
+(Home)        (Job Review)    (Apply)    (Interviews)
 ```
 
-Each stage feeds the next. You can run the full loop in under ten minutes on a good day, or spend longer editing cover letters and doing interview prep when you need to.
+Each stage feeds the next one. Whatever you finish today is waiting for you tomorrow, so there is no pressure to clear everything at once.
+
+![The Peregrine home page showing your job counts and the Primary Workflow buttons](../screenshots/01-dashboard.png#only-light)
+![The Peregrine home page in dark mode showing your job counts and the Primary Workflow buttons](../screenshots/01-dashboard-dark.png#only-dark)
 
 ---
 
-## Starting Your Day
+## A ten-minute day
 
-### 1. Run Discovery
+### 1. Find new jobs
 
-Open the **Home** page and click **Run Discovery**. Peregrine queries all your configured job boards simultaneously and stores results in the local database.
+Open **Home** and click **Run Discovery**. Peregrine searches your job sites in the background, so you can move on to the next step while it works.
 
-- Discovery runs one search profile at a time. Each profile produces results per board, then moves to the next.
-- A summary at the end shows how many new jobs were found vs. already known.
-- Jobs you have already seen (by URL) are skipped automatically.
+Read more in [Job Discovery](job-discovery.md).
 
-If some jobs came back with short descriptions, click **Fill Missing Descriptions** to enrich them in the background while you work.
+### 2. Decide what is worth your time
 
-See [Job Discovery](job-discovery.md) for search profile configuration and board details.
+Open **Job Review**. You see one job at a time, best matches first. Choose **Approve**, **Reject**, or **Skip**. Approving sends the job to the Apply page, and Skip lets you come back to it.
 
----
+You can use buttons, the keyboard, or a swipe, and every choice can be undone. Read more in [Job Review](job-review.md).
 
-### 2. Review the Queue
+### 3. Write and send your applications
 
-Navigate to **Job Review**. New jobs arrive with status `pending` and appear in the review queue.
+Open **Apply**. Every job you approved is listed here. For each one, open it, draft a cover letter, read it, and make it yours. When you have applied on the company's own site or job board, click **Mark as Applied**.
 
-For each job you can:
-- **Approve** — sends it into the application pipeline
-- **Reject** — archives it out of the queue
+A draft is only a starting point. You read it, you edit it, and you decide what goes out. Read more in [Apply Workspace](apply-workspace.md).
 
-Sort by **Match Score** (high to low) to see the best keyword matches first. The match score compares the job description against your resume keywords — a rough signal, not a hard filter.
+### 4. Keep track
 
-Jobs with incoming email leads (a recruiter contacted you about this role) sort to the top automatically.
-
-See [Job Review](job-review.md) for sorting, keyword gaps, and bulk actions.
+Open **Interviews** to see where each application stands. Move a job along as things happen, such as a phone screen or an offer, so the board matches real life. Read more in [Interviews](interviews.md).
 
 ---
 
-### 3. Write and Send Applications
+## Your resume in Peregrine
 
-Navigate to **Apply Workspace**. All approved jobs appear here.
+Peregrine keeps your resume in two places that work together.
 
-For each job:
-1. Click **Generate Cover Letter** — runs as a background task using your resume and career summary.
-2. Read and edit the result. The generator uses your mission alignment notes when it detects company fit.
-3. Click **Export PDF** to save a formatted PDF to your documents directory.
-4. Apply externally (via the company site or board).
-5. Click **Mark Applied** to move the job into the Interviews kanban.
+**Resumes** (in the sidebar) is your library. It holds every version you have, including the original you uploaded and any tailored copies.
 
-See [Apply Workspace](apply-workspace.md) for cover letter configuration, PDF formatting, and ATS optimization.
+- **Import** adds a resume file to the library.
+- **★ Set as Default** marks the version Peregrine uses for drafting letters and matching jobs.
+- **Apply to profile** copies a library version into your Resume Profile, described next.
 
----
+**Settings → Resume Profile** is the structured version: your jobs, schooling, and skills as editable fields. This is the version that letters are drafted from. Saving changes here keeps the linked library entry up to date, so you do not have to do it twice.
 
-### 4. Track Interviews
-
-The **Interviews** page is a kanban board. Jobs move through stages as your search progresses:
-
-```
-applied → phone_screen → interviewing → offer → hired
-```
-
-When a job moves to **phone_screen**, Peregrine automatically kicks off a company research brief in the background — a one-page summary of the company, recent news, leadership, and accessibility signals.
-
-Use **Interview Prep** to review talking points, practice Q&A, and get live reference cards during calls.
-
-See [Interviews](interviews.md) for stage transitions, research briefs, and prep tools.
+A good order for a first time: upload your resume, set it as default, click **Apply to profile**, then fix anything that looks off in Resume Profile.
 
 ---
 
-## Managing Your Resume
+## Keeping your search fresh
 
-Peregrine has two resume views that work together:
+Your results are only as good as what you ask for. Open **Settings → Search Prefs** whenever your goals change.
 
-### Resume Library (`/resumes`)
+| If you see... | Try... |
+|---------------|--------|
+| Too many jobs that do not fit | Add words to **Exclude Keywords**, or add a company or industry to **Blocklists** |
+| Too few jobs | Add more **Job Titles**, widen **Locations**, or switch on another job board |
+| Jobs in the wrong place | Check **Remote Preference** and **Locations** |
 
-An archive of every resume version — uploaded originals, AI-optimised variants, and auto-backups. The starred entry is your **active default**.
-
-- **Import** a PDF, DOCX, ODT, or plain text file to add a version to the library.
-- **★ Set as Default** marks the entry as the active resume used for cover letter generation and keyword matching.
-- **⇩ Apply to profile** pushes a library entry into the structured Resume Profile (see below), and links it so future profile edits sync back automatically.
-
-### Resume Profile (`Settings → Resume Profile`)
-
-A structured editor for personal details, work experience, education, and skills. This is the data the cover letter generator reads directly.
-
-- When content was applied from the library, the view shows a sync status and date.
-- Saving the Resume Profile automatically updates the linked library entry — keeping them in sync without manual effort.
-- You can replace the current profile by uploading a new file directly from this view.
-
-**Recommended flow:** upload to the library → set as default → "Apply to profile" → edit in Resume Profile as needed. Your library stays current automatically.
+Changes apply to the next discovery run. Use **Suggest** beside a field if you want ideas based on your resume.
 
 ---
 
-## Keeping Search Preferences Fresh
+## Once a week
 
-Go to **Settings → Search Prefs** to update what Peregrine searches for.
-
-Key fields:
-
-| Field | What it does |
-|-------|-------------|
-| Job Titles | The roles searched across all boards |
-| Locations | Geographic scope (leave blank for unrestricted) |
-| Remote only | Filter to remote positions only |
-| Exclude Keywords | Drop any job title containing these words before it enters the database |
-| Job Boards | Enable or disable specific sources |
-| Blocklists | Companies, industries, or locations to always skip |
-
-Click **Suggest** next to any field to get AI-generated suggestions based on your resume profile.
-
-Changes take effect on the next discovery run — no restart needed.
+- **Tidy the queue.** Spend a few minutes rejecting jobs in Job Review that no longer interest you, so the queue stays easy to read.
+- **Adjust your search.** If the last week's results felt off, change your Exclude Keywords or titles.
+- **Update your board.** Move any application that has changed in **Interviews** so you do not have to remember what is pending.
+- **Update your profile.** If you gained a new skill or finished a project, add it to Resume Profile. Better information means better drafts.
 
 ---
 
-## Weekly Habits
+## Things worth knowing
 
-**Clean up the queue** — reject stale pending jobs at least once a week so the queue stays scannable.
-
-**Update your search prefs** — if you are getting too many mismatches, add more terms to Exclude Keywords. If the queue is thin, broaden Locations or add boards.
-
-**Check Interviews** — move any stalled jobs to the right stage so the kanban reflects reality. The research brief appears in Interview Prep once a job reaches `phone_screen`.
-
-**Tune your resume keywords** — go to **Settings → Skills** if you want to add or reweight keywords used for match scoring.
+- **The match score is a hint, never a verdict.** A job that scores 40 can be a great fit that uses different words. Read the listing before you decide.
+- **More detail makes better letters.** A specific career summary in **Settings → My Profile** helps far more than a long generic one.
+- **You are always in charge.** Peregrine drafts, suggests, and organises. It never sends an application for you.
+- **A slow day is fine.** If you only get through Job Review, that is still progress.
 
 ---
 
-## Tips
+??? note "For self-hosters and developers"
+    **Where your data lives.** Your job database is `data/staging.db`. Your profile, preferences, and settings are in `data/config/` and `config/`. These are ordinary files, so back them up like any other important file. Nothing leaves your machine unless you connect an outside service.
 
-- **Match score is a triage signal, not a gate.** A score of 40 might be a perfect cultural fit that uses different terminology. Read the description.
-- **Cover letters improve with context.** The richer your career summary and mission alignment notes (Settings → My Profile), the more specific and accurate the generated letters.
-- **Company research auto-runs.** You do not need to request it manually — it starts the moment a job hits `phone_screen`.
-- **Everything is local.** Your database, resume, and application history live in `data/staging.db` and `data/config/`. Back them up like any other important file.
+    **Run discovery from the command line.**
+
+    ```bash
+    conda run -n cf python scripts/discover.py
+    ```
+
+    **Resume library and profile sync.** Library entries are linked to the profile when you use **Apply to profile**, and saving the profile writes back to the linked entry.
+
+    **Related reference.** See [Tier System](../reference/tier-system.md) for which features need a Paid plan, and [Config Files](../reference/config-files.md) for every setting.
