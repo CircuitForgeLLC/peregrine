@@ -17,8 +17,8 @@
         <!-- Upload -->
         <div class="empty-card">
           <h3>Upload & Parse</h3>
-          <p>Upload a PDF, DOCX, or ODT and we'll extract your info automatically.</p>
-          <input type="file" accept=".pdf,.docx,.odt" @change="handleFileSelect" ref="fileInput" />
+          <p>Upload a PDF, DOCX, ODT, RTF, HTML, Markdown, or text file and we'll extract your info automatically.</p>
+          <input type="file" accept=".pdf,.docx,.odt,.rtf,.html,.htm,.md,.txt" @change="handleFileSelect" ref="fileInput" />
           <button
             v-if="pendingFile"
             @click="handleUpload"
@@ -47,8 +47,8 @@
       <!-- Replace resume via upload -->
       <section class="form-section replace-section">
         <h3>Replace Resume</h3>
-        <p class="section-note">Upload a new PDF, DOCX, or ODT to re-parse and overwrite the current data.</p>
-        <input type="file" accept=".pdf,.docx,.odt" @change="handleFileSelect" ref="replaceFileInput" />
+        <p class="section-note">Upload a new PDF, DOCX, ODT, RTF, HTML, Markdown, or text file to re-parse and overwrite the current data.</p>
+        <input type="file" accept=".pdf,.docx,.odt,.rtf,.html,.htm,.md,.txt" @change="handleFileSelect" ref="replaceFileInput" />
         <button
           v-if="pendingFile"
           @click="handleUpload"

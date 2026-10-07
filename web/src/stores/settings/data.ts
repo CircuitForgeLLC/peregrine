@@ -26,5 +26,33 @@ export const useDataStore = defineStore('settings/data', () => {
     backupSizeBytes.value = data.size_bytes
   }
 
-  return { backupPath, backupFileCount, backupSizeBytes, creatingBackup, restoring, restoreResult, backupError, restoreError, createBackup }
+  async function restore(file: File) {
+    restoring.value = true
+    restoreError.value = null
+    restoreResult.value = null
+    const body = new FormData()
+    body.append('file', file)
+    const { data, error } = await useApiFetch<{restored: string[]; skipped: string[]}>(
+      '/api/settings/data/backup/restore',
+      { method: 'POST', body }
+    )
+    restoring.value = false
+    if (data) { restoreResult.value = data; return }
+    if (error?.kind === 'demo-blocked') return  // useApiFetch already showed a toast
+    restoreError.value = error?.kind === 'http'
+      ? (restoreMessage(error.detail) ?? 'Restore failed. Please try again.')
+      : 'Restore failed. Please check your connection and try again.'
+  }
+
+  // The API answers {"detail": "..."} with a message written for people.
+  function restoreMessage(raw: string): string | null {
+    try {
+      const detail = (JSON.parse(raw) as { detail?: unknown }).detail
+      return typeof detail === 'string' && detail ? detail : null
+    } catch {
+      return null
+    }
+  }
+
+  return { backupPath, backupFileCount, backupSizeBytes, creatingBackup, restoring, restoreResult, backupError, restoreError, createBackup, restore }
 })
