@@ -57,6 +57,7 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(dev_api, "_config_dir", lambda: tmp_path)
     monkeypatch.setattr(dev_api, "IS_DEMO", False)
     monkeypatch.setattr(dev_api, "_CLOUD_MODE", False)
+    monkeypatch.setattr(dev_api, "_get_effective_tier", lambda: "premium")
     blocked = {"127.0.0.1", "169.254.169.254", "internal.local"}
     monkeypatch.setattr(dev_api, "_is_ssrf_host", lambda host: host in blocked)
     return TestClient(dev_api.app), dev_api, tmp_path
@@ -136,6 +137,48 @@ def test_failures_do_not_leak_exception_text_to_the_client_or_the_log(api):
     assert "TOKEN-abc123" not in logged
     assert "RuntimeError" in logged
     assert "test_integration" in logged
+
+
+@pytest.mark.parametrize("action", ["test", "connect"])
+def test_paid_integrations_are_refused_server_side_on_the_free_tier(api, monkeypatch, action):
+    """The settings page hides paid integrations from free users, but anyone can call the API
+    directly, so the tier has to be enforced here as well."""
+    client, dev_api, tmp_path = api
+    monkeypatch.setattr(dev_api, "_get_effective_tier", lambda: "free")
+
+    resp = _go(client, action, "https://hooks.example.com/x")
+
+    assert resp.status_code == 402
+    assert resp.json()["detail"] == {"error": "tier_required", "min_tier": "paid"}
+    assert CALLS == []
+    assert not (tmp_path / "integrations").exists()
+
+
+@pytest.mark.parametrize("tier", ["paid", "premium"])
+def test_paid_integrations_work_for_paid_and_premium(api, monkeypatch, tier):
+    client, dev_api, _ = api
+    monkeypatch.setattr(dev_api, "_get_effective_tier", lambda: tier)
+
+    assert _go(client, "test", "https://hooks.example.com/x").json()["ok"] is True
+
+
+def test_unknown_tier_values_are_treated_as_free(api, monkeypatch):
+    client, dev_api, _ = api
+    monkeypatch.setattr(dev_api, "_get_effective_tier", lambda: "something-unexpected")
+
+    assert _go(client, "test", "https://hooks.example.com/x").status_code == 402
+
+
+def test_disconnect_is_always_allowed_so_a_lapsed_plan_can_clean_up(api, monkeypatch):
+    client, dev_api, tmp_path = api
+    _go(client, "connect", "https://hooks.example.com/x")
+    assert (tmp_path / "integrations" / "fake_url.yaml").exists()
+    monkeypatch.setattr(dev_api, "_get_effective_tier", lambda: "free")
+
+    resp = client.post("/api/settings/system/integrations/fake_url/disconnect")
+
+    assert resp.json() == {"ok": True}
+    assert not (tmp_path / "integrations" / "fake_url.yaml").exists()
 
 
 def test_saved_integration_config_is_owner_only(tmp_path):

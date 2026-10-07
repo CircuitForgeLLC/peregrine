@@ -55,6 +55,7 @@ def api(monkeypatch, tmp_path):
     })
     monkeypatch.setattr(dev_api, "_config_dir", lambda: tmp_path)
     monkeypatch.setattr(dev_api, "IS_DEMO", False)  # other test modules reload dev_api in demo mode
+    monkeypatch.setattr(dev_api, "_get_effective_tier", lambda: "premium")  # tier gating has its own tests
     return TestClient(dev_api.app), tmp_path
 
 
