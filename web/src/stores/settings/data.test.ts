@@ -36,6 +36,15 @@ describe('useDataStore restore()', () => {
     expect((opts?.body as FormData).get('file')).toBeInstanceOf(File)
   })
 
+  it('sends the custom header the server requires, and no Content-Type of its own', async () => {
+    mockFetch.mockResolvedValue({ data: { restored: [], skipped: [] }, error: null })
+    await useDataStore().restore(zip())
+
+    const headers = mockFetch.mock.calls[0][1]?.headers as Record<string, string>
+    expect(headers['X-Requested-With']).toBe('peregrine')
+    expect(Object.keys(headers).map(k => k.toLowerCase())).not.toContain('content-type')
+  })
+
   it('stores the result and clears any earlier error on success', async () => {
     const store = useDataStore()
     store.restoreError = 'old problem'
