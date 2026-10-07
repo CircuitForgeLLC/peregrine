@@ -57,6 +57,8 @@ pypdf
 pdfminer-six
 pdfplumber
 python-docx
+markdown       # resume upload: Markdown to text
+striprtf       # resume upload: RTF to text
 json-repair
 pyyaml>=6.0
 python-dotenv

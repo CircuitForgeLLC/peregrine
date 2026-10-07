@@ -20,6 +20,7 @@ Usage:
 """
 import email
 import imaplib
+import os
 import re
 import sys
 from datetime import datetime, timedelta
@@ -31,6 +32,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from scripts.credential_store import get_credential
 from scripts.db import (
     DEFAULT_DB,
     add_contact,
@@ -726,13 +728,43 @@ def _scan_unmatched_leads(conn: imaplib.IMAP4, cfg: dict,
 
 # ── IMAP connection ───────────────────────────────────────────────────────────
 
-def load_config() -> dict:
-    if not CONFIG_PATH.exists():
+_EMAIL_CRED_SERVICE = "peregrine"
+_EMAIL_CRED_KEY = "imap_password"
+
+
+def load_config(
+    config_dir: Path | None = None,
+    cred_dir: Path | None = None,
+    allow_legacy_fallback: bool = True,
+) -> dict:
+    """Load the email settings that Settings > Connections saves.
+
+    The Settings page writes the non-secret fields to <config_dir>/email.yaml and
+    keeps the password in the credential store, so both are read here. A password
+    still sitting in the yaml (older installs) keeps working and is never overridden.
+
+    config_dir: where email.yaml lives. None means the legacy global config/email.yaml.
+    cred_dir: per-tenant credential directory (cloud mode). None uses the default store.
+    allow_legacy_fallback: when the tenant's file is missing, fall back to the global
+        config/email.yaml. Must be False in cloud mode, where that file is shared.
+    """
+    path = (config_dir / "email.yaml") if config_dir is not None else CONFIG_PATH
+    if not path.exists() and config_dir is not None and allow_legacy_fallback:
+        path = CONFIG_PATH
+    if not path.exists():
         raise FileNotFoundError(
-            f"Email config not found: {CONFIG_PATH}\n"
-            f"Copy config/email.yaml.example → config/email.yaml and fill it in."
+            f"Email config not found: {path}\n"
+            f"Set up email under Settings → Connections."
         )
-    return yaml.safe_load(CONFIG_PATH.read_text()) or {}
+    cfg = yaml.safe_load(path.read_text()) or {}
+    if not cfg.get("password"):
+        stored = get_credential(_EMAIL_CRED_SERVICE, _EMAIL_CRED_KEY, cred_dir=cred_dir)
+        if stored:
+            cfg["password"] = stored
+    # Settings saves the SSL flag as `ssl`, sync has always read `use_ssl`.
+    if "use_ssl" not in cfg and "ssl" in cfg:
+        cfg["use_ssl"] = cfg["ssl"]
+    return cfg
 
 
 # imaplib's own connect classes default to a blocking socket with no timeout
@@ -973,7 +1005,16 @@ def sync_all(db_path: Path = DEFAULT_DB,
         if on_stage:
             on_stage(msg)
 
-    cfg = load_config()
+    # Read the same per-user config the Settings page writes: it sits next to the
+    # database (dev-api's _config_dir). Cloud mode is multi-tenant, so there it must
+    # use the tenant's own credential dir and never the shared global file.
+    cloud = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
+    config_dir = Path(db_path).parent / "config"
+    cfg = load_config(
+        config_dir=config_dir,
+        cred_dir=(config_dir / "credentials") if cloud else None,
+        allow_legacy_fallback=not cloud,
+    )
     init_db(db_path)
 
     jobs_by_stage = get_interview_jobs(db_path)
