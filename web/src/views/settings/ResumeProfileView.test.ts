@@ -55,7 +55,8 @@ describe('ResumeProfileView, contact info stays in sync with My Profile', () => 
     const wrapper = mountView()
     await flushPromises()
 
-    expect((wrapper.find('[data-testid="resume-name-input"]').element as HTMLInputElement).value).toBe('Alex Rivera')
+    // My Profile holds the full name; this is the First Name box, so only the first word.
+    expect((wrapper.find('[data-testid="resume-name-input"]').element as HTMLInputElement).value).toBe('Alex')
     expect((wrapper.find('[data-testid="resume-email-input"]').element as HTMLInputElement).value).toBe('alex@example.com')
     expect((wrapper.find('[data-testid="resume-phone-input"]').element as HTMLInputElement).value).toBe('555-1234')
     expect((wrapper.find('[data-testid="resume-linkedin-input"]').element as HTMLInputElement).value).toBe('linkedin.com/in/alex')
@@ -85,9 +86,69 @@ describe('ResumeProfileView, contact info stays in sync with My Profile', () => 
     )
     expect(putCall).toBeDefined()
     const body = JSON.parse((putCall as [string, { body: string }])[1].body)
-    expect(body.name).toBe('Alex Rivera')
+    expect(body.name).toBe('Alex')
     expect(body.email).toBe('alex@example.com')
     expect(body.phone).toBe('555-1234')
     expect(body.linkedin_url).toBe('linkedin.com/in/alex')
+  })
+
+  // A locked field that looks editable is the failure a beta tester hit: she could
+  // only type in the boxes without the orange "from My Profile" text and never found
+  // out where to change the others. Each one now says so and links there.
+  it('gives every read-only field a visible link to where it can be edited', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    for (const testid of ['resume-name-input', 'resume-email-input', 'resume-phone-input', 'resume-linkedin-input']) {
+      const row = wrapper.find(`[data-testid="${testid}"]`).element.closest('.field-row') as HTMLElement
+      const link = row.querySelector('a.sync-link')
+      expect(link, testid).not.toBeNull()
+      expect(link?.getAttribute('href')).toBe('/settings/my-profile')
+      expect(link?.textContent).toContain('Edit in My Profile')
+    }
+  })
+
+  it('marks the read-only inputs so they can be styled as locked', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    for (const testid of ['resume-name-input', 'resume-email-input', 'resume-phone-input', 'resume-linkedin-input']) {
+      expect(wrapper.find(`[data-testid="${testid}"]`).classes()).toContain('synced-input')
+    }
+  })
+
+  // The library convention is the full name in `name`, but this page keeps first name
+  // and surname apart. Saving the full name next to a surname joined them into
+  // "Nikki Wilson Wilson" when the page was synced back to the library.
+  it('saves only the first name in name, and keeps the surname already entered', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('.btn-primary').trigger('click')
+    await flushPromises()
+
+    const putCall = mockFetch.mock.calls.find(
+      call => call[0] === '/api/settings/resume' && (call[1] as { method?: string })?.method === 'PUT',
+    )
+    const body = JSON.parse((putCall as [string, { body: string }])[1].body)
+    expect(body.name).toBe('Alex')
+    expect(body.surname).toBe('Rivera')
+  })
+
+  it('fills an empty surname from the rest of the profile name, without overwriting one', () => {
+    setActivePinia(createPinia())
+    const store = useResumeStore()
+
+    store.surname = ''
+    store.syncFromProfile({ name: 'Nikki Wilson', email: 'n@example.com', phone: '1', linkedin_url: '' })
+    expect(store.name).toBe('Nikki')
+    expect(store.surname).toBe('Wilson')
+
+    store.surname = 'Smith-Jones'
+    store.syncFromProfile({ name: 'Nikki Wilson', email: 'n@example.com', phone: '1', linkedin_url: '' })
+    expect(store.surname).toBe('Smith-Jones')
+
+    store.syncFromProfile({ name: 'Cher', email: 'c@example.com', phone: '1', linkedin_url: '' })
+    expect(store.name).toBe('Cher')
   })
 })
