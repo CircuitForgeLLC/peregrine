@@ -85,24 +85,36 @@
           so this page can't drift out of sync with what your cover letters actually use.
         </p>
         <div class="field-row">
-          <label>First Name <span class="sync-label">← from My Profile</span></label>
-          <input :value="profileStore.name" readonly aria-readonly="true" data-testid="resume-name-input" />
+          <div class="field-label-line">
+            <label for="resume-first-name">First Name</label>
+            <RouterLink to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
+          </div>
+          <input id="resume-first-name" class="synced-input" :value="firstName" readonly aria-readonly="true" data-testid="resume-name-input" />
         </div>
         <div class="field-row">
           <label>Last Name</label>
           <input v-model="store.surname" />
         </div>
         <div class="field-row">
-          <label>Email <span class="sync-label">← from My Profile</span></label>
-          <input :value="profileStore.email" type="email" readonly aria-readonly="true" data-testid="resume-email-input" />
+          <div class="field-label-line">
+            <label for="resume-email">Email</label>
+            <RouterLink to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
+          </div>
+          <input id="resume-email" class="synced-input" :value="profileStore.email" type="email" readonly aria-readonly="true" data-testid="resume-email-input" />
         </div>
         <div class="field-row">
-          <label>Phone <span class="sync-label">← from My Profile</span></label>
-          <input :value="profileStore.phone" type="tel" readonly aria-readonly="true" data-testid="resume-phone-input" />
+          <div class="field-label-line">
+            <label for="resume-phone">Phone</label>
+            <RouterLink to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
+          </div>
+          <input id="resume-phone" class="synced-input" :value="profileStore.phone" type="tel" readonly aria-readonly="true" data-testid="resume-phone-input" />
         </div>
         <div class="field-row">
-          <label>LinkedIn URL <span class="sync-label">← from My Profile</span></label>
-          <input :value="profileStore.linkedin_url" type="url" readonly aria-readonly="true" data-testid="resume-linkedin-input" />
+          <div class="field-label-line">
+            <label for="resume-linkedin">LinkedIn URL</label>
+            <RouterLink to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
+          </div>
+          <input id="resume-linkedin" class="synced-input" :value="profileStore.linkedin_url" type="url" readonly aria-readonly="true" data-testid="resume-linkedin-input" />
         </div>
         <div class="field-row">
           <label>Address</label>
@@ -341,7 +353,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useResumeStore } from '../../stores/settings/resume'
@@ -353,6 +365,8 @@ const store = useResumeStore()
 const profileStore = useProfileStore()
 const config = useAppConfigStore()
 const { loadError } = storeToRefs(store)
+// My Profile keeps one full name; the First Name box shows just its first word.
+const firstName = computed(() => profileStore.name.trim().split(/\s+/)[0] ?? '')
 const showSelfId = ref(false)
 const skillInput = ref('')
 const domainInput = ref('')
@@ -440,7 +454,22 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
   width: 100%;
   box-sizing: border-box;
 }
-.sync-label { font-size: 0.72rem; color: var(--color-accent); margin-left: 6px; }
+.field-label-line { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px var(--space-3); }
+.sync-link {
+  font-size: 0.78rem;
+  color: var(--color-accent-hover, var(--color-accent));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sync-link:hover, .sync-link:focus-visible { text-decoration-thickness: 2px; }
+/* Read-only copies of My Profile fields: visibly different from the editable boxes
+   around them, so nobody types into one and wonders why nothing happens. */
+.field-row input.synced-input {
+  background: var(--color-surface-alt, var(--color-surface));
+  color: var(--color-text-muted);
+  border-style: dashed;
+  cursor: not-allowed;
+}
 .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 0.88rem; color: var(--color-text); cursor: pointer; }
 .experience-card { border: 1px solid var(--color-border); border-radius: 8px; padding: var(--space-4); margin-bottom: var(--space-4); }
 .remove-btn {
