@@ -56,8 +56,14 @@ export const useResumeStore = defineStore('settings/resume', () => {
     skills: null, domains: null, keywords: null,
   })
 
+  // My Profile holds one full name; this resume keeps first name and surname apart
+  // (the library joins them again). Saving the full name here next to a surname made
+  // "Nikki Wilson Wilson". The surname is only filled when empty, never overwritten.
   function syncFromProfile(p: { name: string; email: string; phone: string; linkedin_url: string }) {
-    name.value = p.name; email.value = p.email
+    const [first = '', ...rest] = p.name.trim().split(/\s+/)
+    name.value = first
+    if (!surname.value && rest.length > 0) surname.value = rest.join(' ')
+    email.value = p.email
     phone.value = p.phone; linkedin_url.value = p.linkedin_url
   }
 
