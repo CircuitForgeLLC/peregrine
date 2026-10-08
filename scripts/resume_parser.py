@@ -8,6 +8,7 @@ Falls back to empty dict on unrecoverable errors — caller shows the form build
 """
 from __future__ import annotations
 
+import bisect
 import io
 import logging
 import re
@@ -45,23 +46,30 @@ _DEGREE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Date patterns for experience entries: "Jan 2020", "2020", "01/2020", "2019 - 2022"
+# Month/two-digit-year ("5/23"). The guards keep it from matching inside a full date
+# ("10/11/2027") or a ratio ("24/7"), which a bare \d{1,2}/\d{2} would.
+_MONTH_YY = r"(?<![\d/])(?:0?[1-9]|1[0-2])/\d{2}(?![\d/])"
+
+# Date patterns for experience entries: "Jan 2020", "2020", "01/2020", "5/23", "2019 - 2022"
 _DATE_RE = re.compile(
     r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|"
     r"july|august|september|october|november|december)?\s*\d{4}\b"
-    r"|\b\d{1,2}/\d{4}\b",
+    r"|\b\d{1,2}/\d{4}\b"
+    r"|" + _MONTH_YY,
     re.IGNORECASE,
 )
 _DATE_RANGE_RE = re.compile(
     r"("
     r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}"
     r"|\d{1,2}/\d{4}"
+    r"|" + _MONTH_YY +
     r"|\d{4}"
     r")"
     r"\s*[-–—to]+\s*"
     r"("
     r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}"
     r"|\d{1,2}/\d{4}"
+    r"|" + _MONTH_YY +
     r"|\d{4}"
     r"|present|current|now"
     r")",
@@ -70,34 +78,96 @@ _DATE_RANGE_RE = re.compile(
 
 # Contact info
 _EMAIL_RE    = re.compile(r"[\w.+\-]+@[\w\-]+\.[\w.\-]+")
-_PHONE_RE    = re.compile(r"(?:\+1[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}")
+_PHONE_RE    = re.compile(r"(?:\+1[\s.\-]?)?\(?\d{3}\)?(?:\s*[-.]\s*|\s+)?\d{3}(?:\s*[-.]\s*|\s+)?\d{4}")
 _LINKEDIN_RE = re.compile(r"linkedin\.com/in/[\w\-]+", re.IGNORECASE)
 
 
 # ── Text extraction ───────────────────────────────────────────────────────────
 
-def _find_column_split(page) -> float | None:
-    """Return the x-coordinate of the gutter between two columns, or None if single-column.
+# A resume page holds a few hundred words. Far beyond that is not a resume, and the
+# scan below does work proportional to words x page width, so refuse rather than stall.
+_MAX_GUTTER_WORDS = 5000
 
-    Finds the largest horizontal gap between word x0 positions in the middle 40%
-    of the page width — that gap is the column gutter.
+
+def _find_gutter(page) -> tuple[float, float] | None:
+    """Return the (left, right) x-edges of the gutter between two columns, or None.
+
+    The gutter is the widest empty vertical band in the middle half of the page. A
+    few words may still cross it (a name or headline spanning both columns), so a
+    small number of crossings is tolerated rather than disqualifying the band.
+
+    Looking for an empty band, rather than the biggest gap between word start
+    positions, matters: start positions are sparse near the end of a column's lines,
+    so a gap between starts can land in the middle of a long word.
     """
     words = page.extract_words()
-    if len(words) < 10:
+    if len(words) < 10 or len(words) > _MAX_GUTTER_WORDS:
         return None
-    lo, hi = page.width * 0.25, page.width * 0.75
-    # Collect unique left-edge positions of words that start in the middle band
-    xs = sorted({int(w["x0"]) for w in words if lo <= w["x0"] <= hi})
-    if len(xs) < 2:
-        return None
-    # Find the biggest consecutive gap
-    best_gap, split_x = 0.0, None
-    for i in range(len(xs) - 1):
-        gap = xs[i + 1] - xs[i]
-        if gap > best_gap:
-            best_gap, split_x = gap, (xs[i] + xs[i + 1]) / 2
-    # Only treat as two-column if the gap is substantial (> 3% of page width)
-    return split_x if split_x and best_gap > page.width * 0.03 else None
+    page_x0, _, page_x1, _ = page.bbox
+    width = page_x1 - page_x0
+    lo, hi = int(page_x0 + width * 0.25), int(page_x0 + width * 0.75)
+    cover = [0] * (hi - lo + 1)
+    for w in words:
+        for x in range(max(lo, int(w["x0"])), min(hi, int(w["x1"])) + 1):
+            cover[x - lo] += 1
+    # Prefer a band nothing crosses. A name or headline spanning both columns can
+    # block that, so allow one or two crossing words, but no more: a looser limit
+    # swallows the ragged right edge of the left column into the "gutter".
+    # Only treat as two-column if the gutter is substantial. An empty band must be wider
+    # (3%) than one a header crosses (2%): a narrow band nothing crosses is as likely to
+    # be a gap lining up between words as a real gutter.
+    for tolerance in (0, 1, 2):
+        min_width = width * (0.03 if tolerance == 0 else 0.02)
+        best_len, best_start, run_start = 0, None, None
+        for i, count in enumerate([*cover, tolerance + 1]):  # sentinel closes a trailing run
+            if count <= tolerance:
+                if run_start is None:
+                    run_start = i
+            elif run_start is not None:
+                if i - run_start > best_len:
+                    best_len, best_start = i - run_start, run_start
+                run_start = None
+        if best_start is not None and best_len > min_width:
+            return float(lo + best_start), float(lo + best_start + best_len)
+    return None
+
+
+def _line_bands(words: list[dict]) -> list[tuple[float, float]]:
+    """Merge the vertical extents of `words` into sorted, non-overlapping bands."""
+    bands: list[tuple[float, float]] = []
+    for top, bottom in sorted((w["top"], w["bottom"]) for w in words):
+        if bands and top < bands[-1][1]:
+            bands[-1] = (bands[-1][0], max(bands[-1][1], bottom))
+        else:
+            bands.append((top, bottom))
+    return bands
+
+
+def _on_a_band(word: dict, bands: list[tuple[float, float]]) -> bool:
+    """True if `word` overlaps any band vertically. Bisects rather than scanning, so a
+    page crammed with words cannot make this quadratic."""
+    i = bisect.bisect_right(bands, (word["top"], float("inf")))
+    return any(
+        word["top"] < bottom and word["bottom"] > top
+        for top, bottom in bands[max(0, i - 1): i + 1]
+    )
+
+
+def _collapse_letter_spacing(line: str) -> str:
+    """Rejoin letter-spaced text such as "E X P E R I E N C E" or "N i k k i W i l s o n".
+
+    Design-template resumes space out headings and names, so no section header
+    pattern matches them. Only lines made entirely of single letters (four or more)
+    are touched, so ordinary text is never altered.
+    """
+    tokens = line.split()
+    if len(tokens) < 4 or not all(len(t) == 1 and t.isalpha() for t in tokens):
+        return line
+    joined = "".join(tokens)
+    if joined.isupper():
+        return joined
+    # Mixed case: a capital after a lowercase letter starts a new word.
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", joined)
 
 
 _CID_BULLETS = {127, 149, 183}  # common bullet CIDs across ATS-reembedded fonts
@@ -121,22 +191,34 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         pages: list[str] = []
         for page in pdf.pages:
-            w, h = page.width, page.height
-            split_x = _find_column_split(page)
-            if split_x:
+            # Crop against the page's real box, not (0, 0, width, height): design-tool
+            # exports (Canva) offset the page box from the origin, and a crop that
+            # overshoots it raises ValueError and fails the whole upload.
+            x0, top, x1, bottom = page.bbox
+            gutter = _find_gutter(page)
+            if gutter:
+                split_x = (gutter[0] + gutter[1]) / 2
+                words = page.extract_words()
+                # A line with a word reaching the gutter's core spans both columns (a
+                # name or headline), so it belongs to the full-width header, not a
+                # column. Only the core counts: column text may graze the band's edges.
+                margin = (gutter[1] - gutter[0]) / 4
+                spanning = [wd for wd in words if wd["x0"] < gutter[1] - margin and wd["x1"] > gutter[0] + margin]
+
                 # Find y-coordinate where right-column content starts.
                 # Everything above that belongs to the full-width header.
-                words = page.extract_words()
-                right_words = [wd for wd in words if wd["x0"] >= split_x]
-                col_start_y = min(wd["top"] for wd in right_words) if right_words else 0
-                header_text = page.within_bbox((0,       0,       w,       col_start_y)).extract_text() or ""
-                left_text   = page.within_bbox((0,       col_start_y, split_x, h)).extract_text() or ""
-                right_text  = page.within_bbox((split_x, col_start_y, w,       h)).extract_text() or ""
+                bands = _line_bands(spanning)
+                right_words = [wd for wd in words if wd["x0"] >= split_x and not _on_a_band(wd, bands)]
+                col_start_y = max(top, min(wd["top"] for wd in right_words)) if right_words else top
+                header_text = page.within_bbox((x0,      top,         x1,      col_start_y)).extract_text() or ""
+                left_text   = page.within_bbox((x0,      col_start_y, split_x, bottom)).extract_text() or ""
+                right_text  = page.within_bbox((split_x, col_start_y, x1,      bottom)).extract_text() or ""
                 if len(left_text.strip()) > 60 and len(right_text.strip()) > 60:
                     pages.append("\n".join(filter(None, [header_text, left_text, right_text])))
                     continue
             pages.append(page.extract_text() or "")
-    return _clean_cid("\n".join(pages))
+    text = _clean_cid("\n".join(pages))
+    return "\n".join(_collapse_letter_spacing(line) for line in text.splitlines())
 
 
 def extract_text_from_docx(file_bytes: bytes) -> str:
@@ -254,10 +336,15 @@ def _split_sections(text: str) -> dict[str, list[str]]:
     sections: dict[str, list[str]] = {"header": []}
     current = "header"
     for line in text.splitlines():
-        stripped = line.strip()
+        stripped = _collapse_letter_spacing(line.strip())
         if not stripped:
             continue
         if _BROWSER_ARTIFACT_RE.match(stripped):
+            continue
+        # A phone or email on its own line is contact info, read separately from the
+        # whole text. In a two-column template it follows the last job's dates and
+        # would otherwise be taken for part of that job.
+        if current != "header" and (_EMAIL_RE.fullmatch(stripped) or _PHONE_RE.fullmatch(stripped)):
             continue
         matched = False
         for section, pattern in _SECTION_NAMES.items():
@@ -335,6 +422,34 @@ def _parse_header(lines: list[str]) -> dict:
 
 # ── Experience ────────────────────────────────────────────────────────────────
 
+_SENTENCE_END = (".", "!", "?")
+_MAX_HEADER_LINES = 4  # a title plus a company wrapped over up to three lines
+
+
+def _is_sentence(line: str) -> bool:
+    """A line that reads as a sentence, as opposed to a name that happens to end in
+    punctuation ("BevMo!", "Acme Inc.")."""
+    text = line.rstrip()
+    if not text.endswith(_SENTENCE_END):
+        return False
+    return len(text.split()) >= (3 if text.endswith(".") else 4)
+
+
+def _header_block(tail: list[str]) -> list[str]:
+    """Pick the job header lines (title, then company) off the end of the plain lines
+    above a date line.
+
+    Bullets drawn as shapes carry no marker, so when the lines above are sentences the
+    header is whatever follows the last one. With no such boundary there is nothing to
+    tell description from header, so only the last two lines (title, company) are used.
+    """
+    for i in range(len(tail) - 1, -1, -1):
+        if _is_sentence(tail[i]):
+            block = tail[i + 1:]
+            return block if len(block) <= _MAX_HEADER_LINES else tail[-2:]
+    return tail[-2:]
+
+
 def _parse_experience(lines: list[str]) -> list[dict]:
     """Parse work experience entries from section lines.
 
@@ -350,6 +465,9 @@ def _parse_experience(lines: list[str]) -> list[dict]:
     current: dict | None = None
     prev_line = ""
     seen_bullets = False  # True once we've appended the first bullet to current
+    # Plain (non-bullet, non-date) lines seen since the last bullet or date line. A
+    # date line on its own usually closes a "Title / Company / Dates" header block.
+    plain_tail: list[str] = []
 
     for line in lines:
         date_match = _DATE_RANGE_RE.search(line)
@@ -364,7 +482,23 @@ def _parse_experience(lines: list[str]) -> list[dict]:
             # Remove residual punctuation-only fragments like "()" left after date removal
             same_line = re.sub(r"[()[\]{}\s]+$", "", same_line).strip(" –—|-•")
             # Only use prev_line as title if it isn't bullet text (cleared after bullets)
-            if prev_line and same_line.strip():
+            tail_company = tail_title = None
+            if not same_line.strip() and plain_tail and "|" not in plain_tail[-1]:
+                header = _header_block(plain_tail)
+                if len(header) >= 2:
+                    # Layout D: Title, Company and Dates each on their own line, the
+                    # company possibly wrapped over several lines.
+                    tail_title, tail_company, consumed = header[0], " ".join(header[1:]), len(header)
+                elif current and current["title"] and len(current["bullets"]) == 1:
+                    # Layout E: one title shared by several employers, each with its
+                    # own dates. The previous entry had no description of its own, so
+                    # the lone line above these dates is another employer, same title.
+                    tail_title, tail_company, consumed = current["title"], plain_tail[-1], 1
+                if tail_company is not None and current:
+                    del current["bullets"][len(current["bullets"]) - consumed:]
+            if tail_company is not None:
+                title, company = tail_title.strip(), tail_company.strip()
+            elif prev_line and same_line.strip():
                 # Layout A: title = prev_line, company = first segment of same_line
                 title   = prev_line.strip()
                 co_part = re.split(r"\s{2,}|[|,]\s*", same_line.strip(), maxsplit=1)[0]
@@ -384,6 +518,7 @@ def _parse_experience(lines: list[str]) -> list[dict]:
             }
             prev_line = ""
             seen_bullets = False
+            plain_tail = []
         elif current is not None:
             is_bullet = bool(re.match(r"^[•\-–—*◦▪▸►]\s*", line))
 
@@ -404,16 +539,20 @@ def _parse_experience(lines: list[str]) -> list[dict]:
             if looks_like_header:
                 # Likely the title/company of the next entry — hold it as prev_line
                 prev_line = line
+                plain_tail = []
             else:
                 clean = re.sub(r"^[•\-–—*◦▪▸►]\s*", "", line).strip()
                 if clean:
                     current["bullets"].append(clean)
                     seen_bullets = True
+                    plain_tail = [] if is_bullet else [*plain_tail, clean]
                 # Clear prev_line after non-header content so the next date match
                 # doesn't mistake a bullet as a job title (Layout A false-positive).
                 prev_line = ""
         else:
             prev_line = line
+            is_bullet = bool(re.match(r"^[•\-–—*◦▪▸►]\s*", line))
+            plain_tail = [] if is_bullet else [*plain_tail, line.strip()]
 
     if current:
         entries.append(current)
@@ -528,9 +667,33 @@ def _split_skill_tokens(line: str) -> list[str]:
     return tokens
 
 
+_SKILL_CONJUNCTION_RE = re.compile(r"(^|,\s*)(and|or|but)\s", re.IGNORECASE)
+
+
+def _is_sentence_skill(line: str) -> bool:
+    """True for a descriptive skill ("Fast, efficient, and highly adaptable in dynamic
+    environments") that must not be shredded on its commas like a keyword list."""
+    chunks = line.split(",")
+    return any(len(c.split()) > 4 for c in chunks) or bool(_SKILL_CONJUNCTION_RE.search(line))
+
+
 def _parse_skills(lines: list[str]) -> list[str]:
-    skills: list[str] = []
+    # A line starting lowercase continues the line above (descriptive skills wrap).
+    merged: list[str] = []
     for line in lines:
+        stripped = line.strip()
+        if merged and stripped[:1].islower():
+            merged[-1] = f"{merged[-1]} {stripped}"
+        else:
+            merged.append(stripped)
+
+    skills: list[str] = []
+    for line in merged:
+        if _is_sentence_skill(line) and not re.search(r"[|•·\t]", line):
+            clean = line.strip(" -–—*◦▪▸►")
+            if 1 < len(clean) <= 160:
+                skills.append(clean)
+            continue
         for item in _split_skill_tokens(line):
             # Strip only bullet/dash markers and whitespace, NOT parentheses —
             # many skills contain parens, e.g. "C++ (Arduino / Embedded)"
@@ -541,6 +704,17 @@ def _parse_skills(lines: list[str]) -> list[str]:
 
 
 # ── Main parser ───────────────────────────────────────────────────────────────
+
+def _merge_validity_lines(lines: list[str]) -> list[str]:
+    """Attach "Valid until 3/14/2029" to the certification above it."""
+    merged: list[str] = []
+    for line in lines:
+        if merged and re.match(r"valid\b", line, re.IGNORECASE):
+            merged[-1] = f"{merged[-1]}, {line[0].lower()}{line[1:]}"
+        else:
+            merged.append(line)
+    return merged
+
 
 def parse_resume(raw_text: str) -> tuple[dict, str]:
     """Parse resume text into a structured dict using section detection + regex.
@@ -553,13 +727,19 @@ def parse_resume(raw_text: str) -> tuple[dict, str]:
     try:
         sections = _split_sections(raw_text)
         contact  = _parse_header(sections.get("header", []))
+        # Two-column templates put the phone and email at the top of the right column,
+        # which reads after the left column and so lands in a later section.
+        if not contact["email"] and (m := _EMAIL_RE.search(raw_text)):
+            contact["email"] = m.group(0)
+        if not contact["phone"] and (m := _PHONE_RE.search(raw_text)):
+            contact["phone"] = m.group(0)
         result = {
             **contact,
             "career_summary": " ".join(sections.get("summary", [])),
             "experience":     _parse_experience(sections.get("experience", [])),
             "education":      _parse_education(sections.get("education", [])),
             "skills":         _parse_skills(sections.get("skills", [])),
-            "achievements":   sections.get("achievements", []),
+            "achievements":   _merge_validity_lines(sections.get("achievements", [])),
         }
         return result, ""
     except Exception as e:  # noqa: BLE001 - section-splitting + regex/dict parsing of
