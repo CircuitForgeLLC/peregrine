@@ -121,17 +121,20 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         pages: list[str] = []
         for page in pdf.pages:
-            w, h = page.width, page.height
+            # Crop against the page's real box, not (0, 0, width, height): design-tool
+            # exports (Canva) offset the page box from the origin, and a crop that
+            # overshoots it raises ValueError and fails the whole upload.
+            x0, top, x1, bottom = page.bbox
             split_x = _find_column_split(page)
             if split_x:
                 # Find y-coordinate where right-column content starts.
                 # Everything above that belongs to the full-width header.
                 words = page.extract_words()
                 right_words = [wd for wd in words if wd["x0"] >= split_x]
-                col_start_y = min(wd["top"] for wd in right_words) if right_words else 0
-                header_text = page.within_bbox((0,       0,       w,       col_start_y)).extract_text() or ""
-                left_text   = page.within_bbox((0,       col_start_y, split_x, h)).extract_text() or ""
-                right_text  = page.within_bbox((split_x, col_start_y, w,       h)).extract_text() or ""
+                col_start_y = max(top, min(wd["top"] for wd in right_words)) if right_words else top
+                header_text = page.within_bbox((x0,      top,         x1,      col_start_y)).extract_text() or ""
+                left_text   = page.within_bbox((x0,      col_start_y, split_x, bottom)).extract_text() or ""
+                right_text  = page.within_bbox((split_x, col_start_y, x1,      bottom)).extract_text() or ""
                 if len(left_text.strip()) > 60 and len(right_text.strip()) > 60:
                     pages.append("\n".join(filter(None, [header_text, left_text, right_text])))
                     continue

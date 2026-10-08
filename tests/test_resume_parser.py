@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def test_extract_pdf_returns_string():
     """PDF extraction returns a string containing the expected text."""
     mock_page = MagicMock()
+    mock_page.bbox = (0, 0, 612, 792)
     mock_page.extract_text.return_value = "Jane Doe\nSoftware Engineer"
     mock_pdf_context = MagicMock()
     mock_pdf_context.pages = [mock_page]
@@ -134,6 +135,7 @@ def test_structure_resume_llm_failure_still_returns_result():
 def test_extract_pdf_empty_page_returns_string():
     """PDF with empty pages still returns a string (not None or crash)."""
     mock_page = MagicMock()
+    mock_page.bbox = (0, 0, 612, 792)
     mock_page.extract_text.return_value = None  # pdfplumber can return None for empty pages
     mock_pdf_context = MagicMock()
     mock_pdf_context.pages = [mock_page]
@@ -147,3 +149,47 @@ def test_extract_pdf_empty_page_returns_string():
         result = extract_text_from_pdf(b"%PDF-empty")
 
     assert isinstance(result, str)
+
+
+def _two_column_pdf_with_offset_page_box() -> bytes:
+    """Two-column PDF whose page box is shifted off the origin, as Canva exports are."""
+    import io
+
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setFont("Helvetica", 11)
+    c.drawString(180, 740, "Jane Example")
+    left = ["Profile", "Customer service specialist with five years of", "restaurant and retail experience, calm under pressure."]
+    right = ["Skills", "Fast, efficient, and highly adaptable in busy", "dynamic environments with strong communication."]
+    for i, line in enumerate(left):
+        c.drawString(40, 690 - i * 16, line)
+    for i, line in enumerate(right):
+        c.drawString(360, 690 - i * 16, line)
+    c.save()
+
+    writer = PdfWriter()
+    writer.add_page(PdfReader(io.BytesIO(buf.getvalue())).pages[0])
+    page = writer.pages[0]
+    page.mediabox.lower_left = (0, 8)
+    page.mediabox.upper_right = (612, 800)
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def test_extract_pdf_two_column_with_offset_page_box_does_not_raise():
+    """Regression: a page box offset from the origin made the two-column crop
+    fall outside the page and raise ValueError, failing the whole upload."""
+    from scripts.resume_parser import extract_text_from_pdf
+
+    text = extract_text_from_pdf(_two_column_pdf_with_offset_page_box())
+
+    assert "Jane Example" in text
+    assert "Customer service specialist" in text
+    assert "dynamic environments" in text
+    # Left column is read in full before the right column starts.
+    assert text.index("restaurant and retail") < text.index("Skills")
