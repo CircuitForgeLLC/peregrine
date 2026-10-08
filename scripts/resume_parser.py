@@ -8,6 +8,7 @@ Falls back to empty dict on unrecoverable errors — caller shows the form build
 """
 from __future__ import annotations
 
+import bisect
 import io
 import logging
 import re
@@ -83,6 +84,11 @@ _LINKEDIN_RE = re.compile(r"linkedin\.com/in/[\w\-]+", re.IGNORECASE)
 
 # ── Text extraction ───────────────────────────────────────────────────────────
 
+# A resume page holds a few hundred words. Far beyond that is not a resume, and the
+# scan below does work proportional to words x page width, so refuse rather than stall.
+_MAX_GUTTER_WORDS = 5000
+
+
 def _find_gutter(page) -> tuple[float, float] | None:
     """Return the (left, right) x-edges of the gutter between two columns, or None.
 
@@ -95,7 +101,7 @@ def _find_gutter(page) -> tuple[float, float] | None:
     so a gap between starts can land in the middle of a long word.
     """
     words = page.extract_words()
-    if len(words) < 10:
+    if len(words) < 10 or len(words) > _MAX_GUTTER_WORDS:
         return None
     page_x0, _, page_x1, _ = page.bbox
     width = page_x1 - page_x0
@@ -126,9 +132,25 @@ def _find_gutter(page) -> tuple[float, float] | None:
     return None
 
 
-def _shares_a_line(word: dict, others: list[dict]) -> bool:
-    """True if `word` overlaps any of `others` vertically, i.e. sits on the same line."""
-    return any(word["top"] < o["bottom"] and word["bottom"] > o["top"] for o in others)
+def _line_bands(words: list[dict]) -> list[tuple[float, float]]:
+    """Merge the vertical extents of `words` into sorted, non-overlapping bands."""
+    bands: list[tuple[float, float]] = []
+    for top, bottom in sorted((w["top"], w["bottom"]) for w in words):
+        if bands and top < bands[-1][1]:
+            bands[-1] = (bands[-1][0], max(bands[-1][1], bottom))
+        else:
+            bands.append((top, bottom))
+    return bands
+
+
+def _on_a_band(word: dict, bands: list[tuple[float, float]]) -> bool:
+    """True if `word` overlaps any band vertically. Bisects rather than scanning, so a
+    page crammed with words cannot make this quadratic."""
+    i = bisect.bisect_right(bands, (word["top"], float("inf")))
+    return any(
+        word["top"] < bottom and word["bottom"] > top
+        for top, bottom in bands[max(0, i - 1): i + 1]
+    )
 
 
 def _collapse_letter_spacing(line: str) -> str:
@@ -185,7 +207,8 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
                 # Find y-coordinate where right-column content starts.
                 # Everything above that belongs to the full-width header.
-                right_words = [wd for wd in words if wd["x0"] >= split_x and not _shares_a_line(wd, spanning)]
+                bands = _line_bands(spanning)
+                right_words = [wd for wd in words if wd["x0"] >= split_x and not _on_a_band(wd, bands)]
                 col_start_y = max(top, min(wd["top"] for wd in right_words)) if right_words else top
                 header_text = page.within_bbox((x0,      top,         x1,      col_start_y)).extract_text() or ""
                 left_text   = page.within_bbox((x0,      col_start_y, split_x, bottom)).extract_text() or ""
