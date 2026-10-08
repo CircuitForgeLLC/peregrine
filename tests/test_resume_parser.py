@@ -527,3 +527,45 @@ def test_parse_resume_attaches_validity_dates_to_their_certification():
         "ABC Responsible Beverage Service Certificate, valid until 3/14/2029",
         "CA Food Handler Card, valid until 10/11/2027",
     ]
+
+
+def test_line_bands_check_stays_fast_with_many_spanning_words():
+    """A crafted PDF can put tens of thousands of words in the gutter; comparing each
+    word against each of those was quadratic."""
+    import time
+
+    from scripts.resume_parser import _line_bands, _on_a_band
+
+    spanning = [{"top": float(i), "bottom": float(i) + 1.0} for i in range(0, 40000, 2)]
+    bands = _line_bands(spanning)
+
+    start = time.monotonic()
+    hits = sum(_on_a_band({"top": float(i) + 0.2, "bottom": float(i) + 0.8}, bands) for i in range(40000))
+
+    assert time.monotonic() - start < 1.0
+    assert hits == 20000  # only words overlapping a spanning word's line
+
+
+def test_line_bands_merge_overlapping_lines_and_ignore_other_rows():
+    from scripts.resume_parser import _line_bands, _on_a_band
+
+    bands = _line_bands([{"top": 10.0, "bottom": 20.0}, {"top": 18.0, "bottom": 30.0}])
+
+    assert bands == [(10.0, 30.0)]
+    assert _on_a_band({"top": 25.0, "bottom": 28.0}, bands)
+    assert not _on_a_band({"top": 31.0, "bottom": 40.0}, bands)
+    assert not _on_a_band({"top": 0.0, "bottom": 9.0}, bands)
+
+
+def test_find_gutter_gives_up_on_a_page_with_an_absurd_number_of_words():
+    """No resume page has this many words; scanning them all is only a way to stall
+    an upload worker."""
+    from unittest.mock import MagicMock
+
+    from scripts.resume_parser import _MAX_GUTTER_WORDS, _find_gutter
+
+    page = MagicMock()
+    page.bbox = (0, 0, 612, 792)
+    page.extract_words.return_value = [{"x0": 10.0, "x1": 20.0, "top": 0.0, "bottom": 1.0}] * (_MAX_GUTTER_WORDS + 1)
+
+    assert _find_gutter(page) is None
