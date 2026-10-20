@@ -9,7 +9,7 @@ backends:
     cf_orch:
       service: cf-text
       model_candidates:
-        - granite-4.2-8b
+        - granite-4.1-8b
       ttl_s: 300
   anthropic:
     api_key_env: ANTHROPIC_API_KEY
@@ -34,8 +34,13 @@ backends:
   ollama:
     api_key: ollama
     base_url: http://host.docker.internal:11434/v1
+    # Generic fallback only. This backend used to run alex-cover-writer, a personal
+    # fine-tune trained on donated cover letters that were meant to be sanitized first
+    # but were not; a real donor's name surfaced in another tenant's cover letter
+    # (peregrine#219). Never point it at alex-cover-writer or any other per-person
+    # *-cover-writer model unless the sanitized-corpus retrain in #219 is done.
     enabled: true
-    model: alex-cover-writer:latest  # CF's own cover-letter fine-tune (3.2B llama, Q8_0) — cloud default for the "primary" task category
+    model: llama3.1:8b
     supports_images: false
     type: openai_compat
     cf_orch:
@@ -80,10 +85,12 @@ backends:
       model_candidates:
         - Qwen2.5-3B-Instruct
       ttl_s: 300
+# The first entry is the default model for the "primary" task (cover letters) when a
+# tenant has not chosen one: granite-4.1-8b via cf-text.
 fallback_order:
-- ollama
 - cf_text
 - vllm
+- ollama
 research_fallback_order:
 - cf_text
 - vllm_research
