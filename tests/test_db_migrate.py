@@ -133,6 +133,76 @@ def test_migration_failure_raises(tmp_path):
         m._MIGRATIONS_DIR = orig
 
 
+def test_reapplies_add_column_when_recorded_but_missing(tmp_path):
+    """peregrine (found 2026-09-24): a live tenant DB had schema_migrations
+    recording 004_resume_final_struct as applied, but the actual ALTER TABLE
+    had never taken effect -- jobs.resume_final_struct was missing, breaking
+    resume-optimizer save/export for that tenant with no way to notice short
+    of the runtime error. migrate_db() must verify the column actually
+    exists, not just trust the tracking table, and self-heal if it doesn't."""
+    db = tmp_path / "test.db"
+    mdir = tmp_path / "migrations"
+    mdir.mkdir()
+    (mdir / "001_widgets.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS widgets (id INTEGER PRIMARY KEY);"
+    )
+    (mdir / "002_add_name.sql").write_text(
+        "ALTER TABLE widgets ADD COLUMN name TEXT;"
+    )
+
+    import scripts.db_migrate as m
+    orig = m._MIGRATIONS_DIR
+    m._MIGRATIONS_DIR = mdir
+    try:
+        migrate_db(db)  # normal first run: both migrations apply correctly
+
+        # Simulate the exact broken state found in production: schema_migrations
+        # says 002_add_name ran, but the column doesn't actually exist (e.g.
+        # from ad-hoc/manual DB state that never went through the real runner).
+        con = sqlite3.connect(db)
+        con.execute("DROP TABLE widgets")
+        con.execute("CREATE TABLE widgets (id INTEGER PRIMARY KEY)")  # no `name` column
+        con.commit()
+        con.close()
+
+        cols_before = {r[1] for r in sqlite3.connect(db).execute("PRAGMA table_info(widgets)")}
+        assert "name" not in cols_before  # sanity: broken state reproduced
+
+        applied = migrate_db(db)
+        assert applied == ["002_add_name"]  # re-applied despite being recorded
+
+        cols_after = {r[1] for r in sqlite3.connect(db).execute("PRAGMA table_info(widgets)")}
+        assert "name" in cols_after
+
+        # schema_migrations still has exactly one row for this version --
+        # re-applying must not create a duplicate or violate the PRIMARY KEY.
+        assert _applied(db).count("002_add_name") == 1
+    finally:
+        m._MIGRATIONS_DIR = orig
+
+
+def test_does_not_reapply_when_recorded_and_column_present(tmp_path):
+    """The normal, healthy case: recorded + column present -> skipped, same
+    as before this fix. Guards against the self-healing check becoming a
+    performance regression that re-runs every migration on every call."""
+    db = tmp_path / "test.db"
+    mdir = tmp_path / "migrations"
+    mdir.mkdir()
+    (mdir / "001_widgets.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS widgets (id INTEGER PRIMARY KEY, name TEXT);"
+    )
+
+    import scripts.db_migrate as m
+    orig = m._MIGRATIONS_DIR
+    m._MIGRATIONS_DIR = mdir
+    try:
+        migrate_db(db)
+        applied = migrate_db(db)
+        assert applied == []
+    finally:
+        m._MIGRATIONS_DIR = orig
+
+
 def test_baseline_migration_runs(tmp_path):
     """The real 001_baseline.sql applies cleanly to a fresh database."""
     db = tmp_path / "test.db"

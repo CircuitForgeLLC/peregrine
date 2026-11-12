@@ -113,6 +113,67 @@ def test_discover_skips_duplicate_urls(tmp_path):
     assert len(jobs) == 1  # only the pre-existing one, not a duplicate
 
 
+def test_discover_isolates_broken_board_via_per_board_retry(tmp_path):
+    """One board whose scraper is broken (e.g. BDJobs' constructor mismatch with
+    the installed JobSpy version) must not zero out results from the other,
+    working boards in the same batched scrape_jobs() call (peregrine#168)."""
+    from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
+
+    profile = {
+        "profiles": [{"name": "cs", "titles": ["Customer Success Manager"],
+                      "locations": ["Remote"], "boards": ["linkedin", "bdjobs"],
+                      "results_per_board": 5, "hours_old": 72}]
+    }
+
+    def _scrape_jobs_side_effect(**kwargs):
+        sites = kwargs["site_name"]
+        if sites == ["linkedin"]:
+            return make_jobs_df()
+        if sites == ["bdjobs"]:
+            raise TypeError("BDJobs.__init__() got an unexpected keyword argument 'user_agent'")
+        # The initial batched call with both boards together.
+        raise TypeError("BDJobs.__init__() got an unexpected keyword argument 'user_agent'")
+
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(profile, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", side_effect=_scrape_jobs_side_effect), \
+         patch("scripts.discover.Client"):
+        run_discovery(db_path=db_path)
+
+    jobs = get_jobs_by_status(db_path, "pending")
+    assert len(jobs) == 1
+    assert jobs[0]["title"] == "Customer Success Manager"
+
+
+def test_discover_per_board_retry_yields_empty_when_every_board_fails(tmp_path, capsys):
+    """If every board fails individually too, discovery must still finish cleanly
+    with zero results rather than raising."""
+    from scripts.db import get_jobs_by_status
+    from scripts.discover import run_discovery
+
+    profile = {
+        "profiles": [{"name": "cs", "titles": ["Customer Success Manager"],
+                      "locations": ["Remote"], "boards": ["linkedin", "bdjobs"],
+                      "results_per_board": 5, "hours_old": 72}]
+    }
+
+    def _scrape_jobs_side_effect(**kwargs):
+        raise TypeError("boom")
+
+    db_path = tmp_path / "test.db"
+    with patch("scripts.discover.load_config", return_value=(profile, SAMPLE_NOTION_CFG)), \
+         patch("scripts.discover.scrape_jobs", side_effect=_scrape_jobs_side_effect), \
+         patch("scripts.discover.Client"):
+        run_discovery(db_path=db_path)
+
+    jobs = get_jobs_by_status(db_path, "pending")
+    assert jobs == []
+    out = capsys.readouterr().out
+    assert "board 'linkedin' failed" in out
+    assert "board 'bdjobs' failed" in out
+
+
 def test_discover_pushes_new_jobs(tmp_path):
     """Legacy: discover still calls push_to_notion when notion_push=True."""
     from scripts.discover import run_discovery

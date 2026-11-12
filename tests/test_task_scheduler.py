@@ -6,7 +6,7 @@ from collections import deque
 
 import pytest
 
-from scripts.db import init_db, reset_running_tasks
+from scripts.db import fail_orphaned_queued_tasks, init_db, reset_running_tasks
 
 
 @pytest.fixture
@@ -54,6 +54,80 @@ def test_reset_running_tasks_returns_zero_when_nothing_running(tmp_db):
     conn.close()
 
     assert reset_running_tasks(tmp_db) == 0
+
+
+def test_fail_orphaned_queued_tasks_fails_non_resumable_types(tmp_db):
+    """A 'queued' email_sync task (no resume path of its own) is failed, but a
+    'queued' cover_letter task (resumed by TaskScheduler's own startup scan)
+    is left alone. Regression test for peregrine#215."""
+    conn = sqlite3.connect(tmp_db)
+    conn.execute(
+        "INSERT INTO background_tasks (task_type, job_id, status) VALUES (?,?,?)",
+        ("email_sync", 0, "queued"),
+    )
+    conn.execute(
+        "INSERT INTO background_tasks (task_type, job_id, status) VALUES (?,?,?)",
+        ("cover_letter", 1, "queued"),
+    )
+    conn.commit()
+    conn.close()
+
+    count = fail_orphaned_queued_tasks(tmp_db, frozenset({"cover_letter"}))
+
+    conn = sqlite3.connect(tmp_db)
+    rows = {r[0]: r[1] for r in conn.execute(
+        "SELECT task_type, status FROM background_tasks"
+    ).fetchall()}
+    conn.close()
+
+    assert count == 1
+    assert rows["email_sync"] == "failed"
+    assert rows["cover_letter"] == "queued"
+
+
+def test_fail_orphaned_queued_tasks_noop_with_empty_resumable_set(tmp_db):
+    """An empty resumable_task_types set is treated as 'nothing configured yet'
+    rather than 'fail everything' -- a defensive default, not a real deployment
+    state (LLM_TASK_TYPES is always non-empty)."""
+    conn = sqlite3.connect(tmp_db)
+    conn.execute(
+        "INSERT INTO background_tasks (task_type, job_id, status) VALUES (?,?,?)",
+        ("email_sync", 0, "queued"),
+    )
+    conn.commit()
+    conn.close()
+
+    assert fail_orphaned_queued_tasks(tmp_db, frozenset()) == 0
+
+    conn = sqlite3.connect(tmp_db)
+    status = conn.execute("SELECT status FROM background_tasks").fetchone()[0]
+    conn.close()
+    assert status == "queued"
+
+
+def test_fail_orphaned_queued_tasks_leaves_running_and_completed_alone(tmp_db):
+    """Only 'queued' rows are touched -- 'running'/'completed' rows are out of
+    scope for this function (reset_running_tasks handles 'running')."""
+    conn = sqlite3.connect(tmp_db)
+    conn.execute(
+        "INSERT INTO background_tasks (task_type, job_id, status) VALUES (?,?,?)",
+        ("email_sync", 0, "running"),
+    )
+    conn.execute(
+        "INSERT INTO background_tasks (task_type, job_id, status) VALUES (?,?,?)",
+        ("email_sync", 0, "completed"),
+    )
+    conn.commit()
+    conn.close()
+
+    count = fail_orphaned_queued_tasks(tmp_db, frozenset({"cover_letter"}))
+
+    conn = sqlite3.connect(tmp_db)
+    rows = [r[0] for r in conn.execute("SELECT status FROM background_tasks").fetchall()]
+    conn.close()
+
+    assert count == 0
+    assert set(rows) == {"running", "completed"}
 
 
 from scripts.task_scheduler import (

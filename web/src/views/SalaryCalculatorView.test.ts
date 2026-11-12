@@ -47,17 +47,24 @@ describe('SalaryCalculatorView', () => {
     vi.clearAllMocks()
   })
 
-  it('auto-fills titles/location from the search store and fires the initial fetch', async () => {
-    mockApi({ job_titles: ['Backend Developer', 'SRE'], locations: ['Remote'] }, FULL_STATS)
+  it('auto-fills titles from the search store, leaves location blank, and fires the initial fetch', async () => {
+    // peregrine#201: location is deliberately NOT auto-filled from
+    // search.locations[0] -- a profile commonly has multiple saved
+    // locations, and silently narrowing to just the first one produced a
+    // misleadingly narrow number. Blank means "every location," matching
+    // how titles already includes the whole profile, never a subset.
+    mockApi({ job_titles: ['Backend Developer', 'SRE'], locations: ['Remote', 'Boston MA'] }, FULL_STATS)
     const w = await mountView()
 
     const titlesInput = w.find('#salary-titles').element as HTMLInputElement
     const locationInput = w.find('#salary-location').element as HTMLInputElement
     expect(titlesInput.value).toBe('Backend Developer, SRE')
-    expect(locationInput.value).toBe('Remote')
+    expect(locationInput.value).toBe('')
 
-    const calls = vi.mocked(useApiFetch).mock.calls.map(c => c[0])
-    expect(calls.some(u => (u as string).startsWith('/api/salary-stats'))).toBe(true)
+    const calls = vi.mocked(useApiFetch).mock.calls.map(c => c[0]) as string[]
+    const statsCall = calls.find(u => u.startsWith('/api/salary-stats'))
+    expect(statsCall).toBeDefined()
+    expect(statsCall).not.toContain('location=')
   })
 
   it('re-fetches with overridden titles/location when Recalculate is clicked', async () => {

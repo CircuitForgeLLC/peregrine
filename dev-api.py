@@ -15,6 +15,7 @@ import sqlite3
 import ssl as ssl_mod
 import subprocess
 import sys
+import traceback
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -75,6 +76,18 @@ _PRIVATE_NETS = [
     ipaddress.ip_network("fc00::/7"),
     ipaddress.ip_network("fe80::/10"),
 ]
+
+
+def _exc_summary(exc: BaseException) -> str:
+    """Where an exception came from, without its message.
+
+    Exception messages can quote what the code was handling: resume text from a parser,
+    a webhook URL with its token from an HTTP client. Logs get the type and the innermost
+    call site, which is enough to find the bug and carries no user data.
+    """
+    frames = traceback.extract_tb(exc.__traceback__)
+    where = f" at {Path(frames[-1].filename).name}:{frames[-1].lineno} in {frames[-1].name}" if frames else ""
+    return f"{type(exc).__name__}{where}"
 
 
 def _is_ssrf_host(host: str) -> bool:
@@ -156,11 +169,19 @@ async def lifespan(app: FastAPI):
     _load_env(PEREGRINE_ROOT / ".env")
     # Also load wizard-saved keys from the data directory (overrides empty compose vars).
     _load_data_env()
+    from scripts.db import fail_orphaned_queued_tasks, reset_running_tasks
     from scripts.db_migrate import migrate_db
+    from scripts.task_scheduler import LLM_TASK_TYPES
     migrate_db(Path(DB_PATH))
+    reset_running_tasks(Path(DB_PATH))
+    fail_orphaned_queued_tasks(Path(DB_PATH), LLM_TASK_TYPES)
 
     # Cloud mode: sweep all known user DBs at startup so schema changes land
-    # for every user on deploy, not only on their next request.
+    # for every user on deploy, not only on their next request. Also reconciles
+    # background tasks left orphaned by the previous process's death (see
+    # peregrine#215) -- a non-LLM task (email_sync, discovery, ...) that was
+    # still 'queued' when the container was recreated has no resume path of
+    # its own and would otherwise block every future submission for that job.
     if _CLOUD_MODE and _CLOUD_DATA_ROOT.is_dir():
         import logging as _log
         _sweep_log = _log.getLogger("peregrine.startup")
@@ -168,6 +189,8 @@ async def lifespan(app: FastAPI):
             try:
                 migrate_db(user_db)
                 _migrated_db_paths.add(str(user_db))
+                reset_running_tasks(user_db)
+                fail_orphaned_queued_tasks(user_db, LLM_TASK_TYPES)
                 _sweep_log.info("Migrated user DB: %s", user_db)
             except Exception as exc:  # noqa: BLE001 - one bad user DB must not abort the startup sweep
                 _sweep_log.warning("Migration failed for %s: %s", user_db, exc)
@@ -338,6 +361,9 @@ async def cloud_session_middleware(request: Request, call_next):
             user_db = str(_CLOUD_DATA_ROOT / user_id / "peregrine" / "staging.db")
             if user_db not in _migrated_db_paths:
                 from scripts.db_migrate import migrate_db
+                # sqlite3.connect cannot create directories, and nothing provisions
+                # a new tenant's folder ahead of its first request (peregrine#221).
+                Path(user_db).parent.mkdir(parents=True, exist_ok=True)
                 migrate_db(Path(user_db))
                 _migrated_db_paths.add(user_db)
             _auth_log(
@@ -524,18 +550,20 @@ def job_counts():
 def salary_stats(titles: str | None = None, location: str | None = None):
     """Salary range across the user's own scraped job listings.
 
-    `titles`/`location` are optional query params. They fall back to the
-    saved search profile's `job_titles`/`locations` (same read path as
-    GET /api/settings/search) only when OMITTED from the request entirely
-    — not when present-but-empty. A deliberately-cleared field (e.g.
-    `location=`) must mean "no filter", not "use my saved profile".
+    `titles` is an optional query param that falls back to the saved
+    search profile's `job_titles` (same read path as GET /api/settings/
+    search) only when OMITTED from the request entirely — not when
+    present-but-empty. `location` has no profile fallback (peregrine#201):
+    omitted or blank both mean "no location filter", i.e. every location
+    in the profile, since a profile commonly has multiple locations and
+    narrowing to just one of them by default produced a misleading number.
     """
     from scripts.salary_stats import get_salary_stats
 
     title_list = [t.strip() for t in titles.split(",") if t.strip()] if titles is not None else []
     location_val = location.strip() if location is not None else ""
 
-    if titles is None or location is None:
+    if titles is None:
         try:
             p = _search_prefs_path()
             if p.exists():
@@ -547,13 +575,15 @@ def salary_stats(titles: str | None = None, location: str | None = None):
                 profile = next((pr for pr in profiles if pr.get("name") == "default"), None)
                 if profile is None:
                     profile = data.get("default", {})
-                if titles is None:
-                    title_list = profile.get("job_titles") or profile.get("titles") or []
-                if location is None:
-                    locations = profile.get("locations") or []
-                    location_val = locations[0] if locations else ""
+                title_list = profile.get("job_titles") or profile.get("titles") or []
         except Exception as exc:  # noqa: BLE001 - best-effort default-profile fallback; keep the already-computed defaults on any failure
             _log.debug("salary_stats: failed to load default search profile: %s", exc)
+    # location has no profile fallback (peregrine#201): a saved profile
+    # commonly has multiple locations, and narrowing to just the first one
+    # on an omitted param produced a misleadingly narrow number with no
+    # indication anything had been filtered. Omitted/blank both mean "no
+    # location filter" -- i.e. every location in the profile, consistent
+    # with how titles is never narrowed to a subset either.
 
     db = _get_db()
     try:
@@ -1101,33 +1131,18 @@ async def import_resume_endpoint(file: UploadFile, name: str = ""):
 
     from scripts.db import create_resume as _create
     db_path = Path(_request_db.get() or DB_PATH)
-    content = await file.read()
-    MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 MB
-    if len(content) > MAX_IMPORT_BYTES:
-        raise HTTPException(413, "File too large — 5 MB maximum")
+    content = await file.read(_RESUME_UPLOAD_MAX_BYTES + 1)
+    if len(content) > _RESUME_UPLOAD_MAX_BYTES:
+        raise HTTPException(413, "File too large: 5 MB maximum")
     filename = file.filename or ""
     ext = Path(filename).suffix.lower()
     struct_json: str | None = None
 
-    if ext in (".txt", ".md"):
-        text = content.decode("utf-8", errors="replace")
+    from scripts.resume_parser import SUPPORTED_SUFFIXES
+    from scripts.resume_parser import extract_text as _extract_text
 
-    elif ext in (".pdf", ".docx", ".odt"):
-        from scripts.resume_parser import (
-            extract_text_from_docx as _extract_docx,
-        )
-        from scripts.resume_parser import (
-            extract_text_from_odt as _extract_odt,
-        )
-        from scripts.resume_parser import (
-            extract_text_from_pdf as _extract_pdf,
-        )
-        if ext == ".pdf":
-            text = _extract_pdf(content)
-        elif ext == ".docx":
-            text = _extract_docx(content)
-        else:
-            text = _extract_odt(content)
+    if ext in SUPPORTED_SUFFIXES:
+        text = _extract_text(content, ext)
 
     elif ext in (".yaml", ".yml"):
         import yaml as _yaml
@@ -1147,7 +1162,7 @@ async def import_resume_endpoint(file: UploadFile, name: str = ""):
     else:
         raise HTTPException(
             400,
-            f"Unsupported file type: {ext}. Accepted: .txt .md .pdf .docx .odt .yaml .yml",
+            f"Unsupported file type: {ext}. Accepted: .txt .md .html .htm .rtf .pdf .docx .odt .yaml .yml",
         )
 
     resume_name = name.strip() or Path(filename).stem or "Imported Resume"
@@ -2130,33 +2145,37 @@ def save_hired_feedback(job_id: int, payload: HiredFeedbackPayload):
 
 @app.get("/api/contacts")
 def list_contacts(job_id: int | None = None, direction: str | None = None,
-                  search: str | None = None, limit: int = 100, offset: int = 0):
+                  search: str | None = None, stage_signal: str | None = None,
+                  limit: int = 100, offset: int = 0):
     db = _get_db()
+    where = " WHERE 1=1"
+    params: list = []
+    if job_id is not None:
+        where += " AND jc.job_id = ?"
+        params.append(job_id)
+    if direction:
+        where += " AND jc.direction = ?"
+        params.append(direction)
+    if search:
+        where += " AND (jc.from_addr LIKE ? OR jc.to_addr LIKE ? OR jc.subject LIKE ?)"
+        like = f"%{search}%"
+        params += [like, like, like]
+    if stage_signal == "needs_review":
+        where += " AND (jc.stage_signal IS NULL OR jc.stage_signal = 'neutral')"
+    elif stage_signal:
+        where += " AND jc.stage_signal = ?"
+        params.append(stage_signal)
+
     query = """
         SELECT jc.id, jc.job_id, jc.direction, jc.subject, jc.from_addr, jc.to_addr,
                jc.received_at, jc.stage_signal,
                j.title AS job_title, j.company AS job_company
         FROM job_contacts jc
         LEFT JOIN jobs j ON j.id = jc.job_id
-        WHERE 1=1
-    """
-    params: list = []
-    if job_id is not None:
-        query += " AND jc.job_id = ?"
-        params.append(job_id)
-    if direction:
-        query += " AND jc.direction = ?"
-        params.append(direction)
-    if search:
-        query += " AND (jc.from_addr LIKE ? OR jc.to_addr LIKE ? OR jc.subject LIKE ?)"
-        like = f"%{search}%"
-        params += [like, like, like]
-    query += " ORDER BY jc.received_at DESC LIMIT ? OFFSET ?"
-    params += [limit, offset]
-    rows = db.execute(query, params).fetchall()
+    """ + where + " ORDER BY jc.received_at DESC LIMIT ? OFFSET ?"
+    rows = db.execute(query, [*params, limit, offset]).fetchall()
     total = db.execute(
-        "SELECT COUNT(*) FROM job_contacts" + (" WHERE job_id = ?" if job_id else ""),
-        ([job_id] if job_id else []),
+        "SELECT COUNT(*) FROM job_contacts jc" + where, params
     ).fetchone()[0]
     db.close()
     return {"total": total, "contacts": [dict(r) for r in rows]}
@@ -3589,24 +3608,52 @@ def create_blank_resume():
     except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
+_RESUME_UNSUPPORTED_MSG = (
+    "That file type isn't supported. Please upload a PDF, DOCX, ODT, RTF, HTML, Markdown, "
+    "or plain text file, or fill in your resume by hand."
+)
+# Older Word and Apple Pages files have no reliable reader here, so point people at
+# the export that works instead of just saying no.
+_RESUME_EXPORT_HINT_MSG = (
+    "Older Word (.doc) and Apple Pages files can't be read yet. In your word processor, "
+    "use Save As or Export to make a PDF or DOCX, then upload that."
+)
+_RESUME_EXPORT_HINT_TYPES = (".doc", ".pages")
+_RESUME_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+_RESUME_TOO_LARGE_MSG = "That file is too large. The limit is 5 MB."
+_RESUME_UNREADABLE_MSG = (
+    "We couldn't read that file. It may be damaged, password protected, or a scanned image. "
+    "Try exporting it again as a PDF or DOCX, or fill in your resume by hand."
+)
+
+
 @app.post("/api/settings/resume/upload")
 async def upload_resume(file: UploadFile):
     try:
         from scripts.resume_parser import (
-            extract_text_from_docx,
-            extract_text_from_odt,
-            extract_text_from_pdf,
+            SUPPORTED_SUFFIXES,
+            extract_text,
             structure_resume,
         )
-        suffix = Path(file.filename).suffix.lower()
-        file_bytes = await file.read()
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix in _RESUME_EXPORT_HINT_TYPES:
+            return {"ok": False, "error": _RESUME_EXPORT_HINT_MSG}
+        if suffix not in SUPPORTED_SUFFIXES:
+            return {"ok": False, "error": _RESUME_UNSUPPORTED_MSG}
+        file_bytes = await file.read(_RESUME_UPLOAD_MAX_BYTES + 1)
+        if len(file_bytes) > _RESUME_UPLOAD_MAX_BYTES:
+            return {"ok": False, "error": _RESUME_TOO_LARGE_MSG}
 
-        if suffix == ".pdf":
-            raw_text = extract_text_from_pdf(file_bytes)
-        elif suffix == ".odt":
-            raw_text = extract_text_from_odt(file_bytes)
-        else:
-            raw_text = extract_text_from_docx(file_bytes)
+        # Only the extension, size and error origin are logged: filenames carry people's
+        # names, and contents (even inside exception messages) are personal data.
+        try:
+            raw_text = extract_text(file_bytes, suffix)
+        except Exception as exc:  # noqa: BLE001 - corrupt, encrypted or mislabelled files raise varied library errors; all mean "couldn't read it"
+            _log.warning(
+                "upload_resume: couldn't read a %s file (%d bytes): %s",
+                suffix, len(file_bytes), _exc_summary(exc),
+            )
+            return {"ok": False, "error": _RESUME_UNREADABLE_MSG}
 
         result, err = structure_resume(raw_text)
         if err and not result:
@@ -3665,8 +3712,12 @@ async def upload_resume(file: UploadFile):
         result["exists"] = True
         result["library_id"] = library_entry["id"]
         return {"ok": True, "data": result}
-    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        _log.error("upload_resume failed unexpectedly: %s", _exc_summary(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Something went wrong reading your resume. Please try again.",
+        ) from e
 
 
 # ── Settings: Search Preferences endpoints ────────────────────────────────────
@@ -4413,73 +4464,138 @@ def test_email(payload: dict):
 
 # ── Settings: System — Integrations ──────────────────────────────────────────
 
+def _integration_class(integration_id: str):
+    """Look up an integration class by its machine key, or raise a 404.
+
+    scripts.integrations.REGISTRY maps name -> class (not a list of instances),
+    so lookups are by key and each request builds its own instance (peregrine#223).
+    """
+    from scripts.integrations import REGISTRY
+    cls = REGISTRY.get(integration_id)
+    if cls is None:
+        raise HTTPException(404, "Unknown integration")
+    return cls
+
+
+_INTEGRATION_TIER_RANK = {"free": 0, "paid": 1, "premium": 2}
+
+
+def _require_integration_tier(cls) -> None:
+    """Refuse to test or connect an integration the user's plan does not include.
+
+    The settings page already hides these, but the API is callable directly, so the plan
+    has to be enforced here too. Unknown tier values count as free. Disconnecting is never
+    gated, so someone whose plan lapsed can still remove a connection.
+    """
+    needed = getattr(cls, "tier", "free")
+    if _INTEGRATION_TIER_RANK.get(_get_effective_tier(), 0) < _INTEGRATION_TIER_RANK.get(needed, 0):
+        raise HTTPException(402, detail={"error": "tier_required", "min_tier": needed})
+
+
+def _vet_integration_payload(integration, payload: dict) -> str | None:
+    """Check what the user typed before anything is requested with it.
+
+    Raises 400 for values that are not plain text, numbers or booleans. Returns a message
+    for the user when an address is not allowed, else None. On the hosted version every
+    address field must be a public https URL, because test() makes a server-side request
+    to it, which would otherwise let a tenant probe the internal network.
+    """
+    if not all(v is None or isinstance(v, (str, bool, int, float)) for v in payload.values()):
+        raise HTTPException(400, "Connection details must be text.")
+    if not _CLOUD_MODE:
+        return None
+    for field in integration.fields():
+        value = payload.get(field["key"])
+        if field.get("type") != "url" or not isinstance(value, str) or not value.strip():
+            continue
+        parsed = urlparse(value.strip())
+        if parsed.scheme != "https" or not parsed.hostname or _is_ssrf_host(parsed.hostname):
+            return "That address must be a public https web address."
+    return None
+
+
+def _check_integration(integration, payload: dict) -> dict:
+    """Run the connection test the way the Settings page expects: {ok, error}.
+
+    Never logs the payload, it holds API keys and webhook URLs.
+    """
+    if not integration.connect(payload):
+        return {"ok": False, "error": "Some required fields are missing."}
+    if integration.test():
+        return {"ok": True, "error": None}
+    return {"ok": False, "error": "Couldn't connect. Check the details and try again."}
+
+
 @app.get("/api/settings/system/integrations")
 def get_integrations():
     try:
         from scripts.integrations import REGISTRY
-        result = []
-        for integration in REGISTRY:
-            result.append({
-                "id": integration.id,
-                "name": integration.name,
-                "connected": integration.is_connected(),
-                "tier_required": getattr(integration, "tier_required", "free"),
+        config_dir = _config_dir()
+        return [
+            {
+                "id": cls.name,
+                "name": cls.label,
+                "connected": cls.is_configured(config_dir),
+                "tier_required": getattr(cls, "tier", "free"),
                 "fields": [{"key": f["key"], "label": f["label"], "type": f.get("type", "text")}
-                           for f in integration.fields()],
-            })
-        return result
+                           for f in cls().fields()],
+            }
+            for cls in REGISTRY.values()
+        ]
     except ImportError:
         return []  # integrations module not yet implemented
-    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        _log.warning("get_integrations failed: %s", _exc_summary(e))
+        raise HTTPException(status_code=500, detail="Couldn't load your connections. Please try again.") from e
 
 
 @app.post("/api/settings/system/integrations/{integration_id}/test")
 def test_integration(integration_id: str, payload: dict):
+    _demo_guard()  # test() makes a real outbound request
+    cls = _integration_class(integration_id)
+    _require_integration_tier(cls)
+    integration = cls()
+    problem = _vet_integration_payload(integration, payload)
+    if problem:
+        return {"ok": False, "error": problem}
     try:
-        from scripts.integrations import REGISTRY
-        integration = next((i for i in REGISTRY if i.id == integration_id), None)
-        if not integration:
-            raise HTTPException(404, "Unknown integration")
-        ok, error = integration.test(payload)
-        return {"ok": ok, "error": error}
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
-        raise HTTPException(status_code=500, detail=str(e))
+        return _check_integration(integration, payload)
+    except Exception as e:
+        _log.warning("test_integration(%s) failed: %s", integration_id, _exc_summary(e))
+        raise HTTPException(status_code=500, detail="Something went wrong testing that connection.") from e
 
 
 @app.post("/api/settings/system/integrations/{integration_id}/connect")
 def connect_integration(integration_id: str, payload: dict):
+    _demo_guard()
+    cls = _integration_class(integration_id)
+    _require_integration_tier(cls)
+    integration = cls()
+    problem = _vet_integration_payload(integration, payload)
+    if problem:
+        return {"ok": False, "error": problem}
     try:
-        from scripts.integrations import REGISTRY
-        integration = next((i for i in REGISTRY if i.id == integration_id), None)
-        if not integration:
-            raise HTTPException(404, "Unknown integration")
-        ok, error = integration.test(payload)
-        if not ok:
-            return {"ok": False, "error": error}
-        integration.save_credentials(payload)
+        result = _check_integration(integration, payload)
+        if not result["ok"]:
+            return result
+        declared = {f["key"] for f in integration.fields()}
+        integration.save_config({k: v for k, v in payload.items() if k in declared}, _config_dir())
         return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        _log.warning("connect_integration(%s) failed: %s", integration_id, _exc_summary(e))
+        raise HTTPException(status_code=500, detail="Something went wrong saving that connection.") from e
 
 
 @app.post("/api/settings/system/integrations/{integration_id}/disconnect")
 def disconnect_integration(integration_id: str):
+    _demo_guard()
+    cls = _integration_class(integration_id)
     try:
-        from scripts.integrations import REGISTRY
-        integration = next((i for i in REGISTRY if i.id == integration_id), None)
-        if not integration:
-            raise HTTPException(404, "Unknown integration")
-        integration.remove_credentials()
+        cls.config_path(_config_dir()).unlink(missing_ok=True)
         return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        _log.warning("disconnect_integration(%s) failed: %s", integration_id, _exc_summary(e))
+        raise HTTPException(status_code=500, detail="Something went wrong removing that connection.") from e
 
 
 # ── Settings: System — File Paths ─────────────────────────────────────────────
@@ -5111,6 +5227,53 @@ def create_backup(payload: BackupCreatePayload):
         return {"path": str(dest), "file_count": file_count, "size_bytes": size_bytes}
     except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
+
+
+_RESTORE_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+_RESTORE_MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+_RESTORE_MAX_MEMBERS = 500
+_RESTORE_MAX_MEMBER_BYTES = 1024 * 1024
+
+
+@app.post("/api/settings/data/backup/restore")
+async def restore_backup_upload(file: UploadFile, request: Request):
+    """Restore settings files from a backup zip the user uploads (peregrine#222).
+
+    Settings files only: the database, license file and tokens in an archive are left
+    alone. Self-hosted only, the hosted version has per-tenant storage this must not touch.
+    """
+    _demo_guard()
+    if _CLOUD_MODE:
+        raise HTTPException(403, "Restoring a backup isn't available on the hosted version.")
+    # A multipart POST needs no CORS preflight, so a web page the user happens to visit
+    # could otherwise submit a forged backup to a self-hosted instance. Browsers cannot
+    # add a custom header to a cross-site form, so requiring one closes that off.
+    if request.headers.get("x-requested-with") != "peregrine":
+        raise HTTPException(403, "Restore must be started from the Peregrine settings page.")
+    from scripts.backup import (
+        BackupFormatError,
+        BackupTooLargeError,
+        restore_config_from_zip,
+    )
+
+    data = await file.read(_RESTORE_MAX_UPLOAD_BYTES + 1)
+    if len(data) > _RESTORE_MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "That backup is too large to restore.")
+    try:
+        return restore_config_from_zip(
+            data,
+            _config_dir(),
+            max_members=_RESTORE_MAX_MEMBERS,
+            max_uncompressed_bytes=_RESTORE_MAX_UNCOMPRESSED_BYTES,
+            max_member_bytes=_RESTORE_MAX_MEMBER_BYTES,
+        )
+    except BackupTooLargeError as e:
+        raise HTTPException(413, str(e)) from e
+    except BackupFormatError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        _log.error("restore_backup_upload failed unexpectedly: %s", _exc_summary(e))
+        raise HTTPException(status_code=500, detail="Restore failed. Nothing was changed if the file was invalid.") from e
 
 
 # ── Settings: Privacy ─────────────────────────────────────────────────────────
