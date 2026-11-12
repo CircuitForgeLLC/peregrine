@@ -11,7 +11,9 @@
 # deployed directly on Heimdall from Dockerfile.cfcore with sibling repos.
 #
 # Required secrets:
-#   FORGEJO_RELEASE_TOKEN    — Forgejo API token for creating releases
+#   CF_RELEASE_TOKEN         — Forgejo API token for creating releases
+#                              (not FORGEJO_*: Forgejo reserves that prefix, so the API
+#                              refuses to create or rotate secrets named that way)
 #   GH_GHCR_TOKEN            — GitHub PAT with packages:write for GHCR push
 #   FORGEJO_CF_ORCH_TOKEN    — Forgejo token to install private circuitforge-orch
 #                              during the API image build (BSL client for paid tier)
@@ -111,7 +113,7 @@ jobs:
       # ── Forgejo Release ───────────────────────────────────────────────────────
       - name: Create Forgejo release
         env:
-          FORGEJO_TOKEN: ${{ secrets.FORGEJO_RELEASE_TOKEN }}
+          FORGEJO_TOKEN: ${{ secrets.CF_RELEASE_TOKEN }}
           REPO: ${{ github.event.repository.name }}
           TAG: ${{ github.ref_name }}
           NOTES: ${{ steps.cliff.outputs.content }}
