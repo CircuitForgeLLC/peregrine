@@ -287,6 +287,41 @@ def test_extract_pdf_does_not_cut_words_or_the_header_at_the_gutter():
     assert text.index("cash-handling-experience") < text.index("(334) 791-8613")
 
 
+def _two_column_pdf_with_an_almost_empty_right_column() -> bytes:
+    """A later page of a two-column resume: long left-column lines that stop short of a
+    gutter, and one word that starts just left of the gutter's midpoint and runs across
+    it. The gutter is found, but no word starts in the right column, so there is no
+    column start to crop a header against."""
+    import io
+
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setFont("Helvetica", 11)
+    lines = [
+        "Steris Point Richmond CA sustaining engineer 7/2017 to 10/2022 working on products",
+        "Designed testing modules and fixtures using 3D printing and custom circuit boards",
+        "Created automation workflows to reduce human error and speed up configuration work",
+        "Provided circuit level diagnostic and rework support to the production groups here",
+    ]
+    for i, line in enumerate(lines):
+        c.drawString(40, 700 - i * 16, line)
+    c.drawString(446, 700, "Engineer")
+    c.save()
+    return buf.getvalue()
+
+
+def test_extract_pdf_survives_a_gutter_with_an_almost_empty_right_column():
+    from scripts.resume_parser import extract_text_from_pdf
+
+    text = extract_text_from_pdf(_two_column_pdf_with_an_almost_empty_right_column())
+
+    assert "Steris Point Richmond" in text
+    assert "diagnostic and rework support" in text
+
+
 def test_phone_pattern_accepts_spaces_around_the_hyphen():
     from scripts.resume_parser import _PHONE_RE
 
