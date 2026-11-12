@@ -210,7 +210,12 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
                 bands = _line_bands(spanning)
                 right_words = [wd for wd in words if wd["x0"] >= split_x and not _on_a_band(wd, bands)]
                 col_start_y = max(top, min(wd["top"] for wd in right_words)) if right_words else top
-                header_text = page.within_bbox((x0,      top,         x1,      col_start_y)).extract_text() or ""
+                # No room above the columns means no full-width header. pdfplumber
+                # raises on a zero-height crop, which failed the whole upload.
+                if col_start_y - top > 1:
+                    header_text = page.within_bbox((x0, top, x1, col_start_y)).extract_text() or ""
+                else:
+                    header_text, col_start_y = "", top
                 left_text   = page.within_bbox((x0,      col_start_y, split_x, bottom)).extract_text() or ""
                 right_text  = page.within_bbox((split_x, col_start_y, x1,      bottom)).extract_text() or ""
                 if len(left_text.strip()) > 60 and len(right_text.strip()) > 60:
