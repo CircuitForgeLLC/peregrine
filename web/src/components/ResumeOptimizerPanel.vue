@@ -229,7 +229,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useApiFetch } from '../composables/useApi'
+import { apiUrl, useApiFetch } from '../composables/useApi'
 import { useAppConfigStore } from '../stores/appConfig'
 import ResumeReviewModal from './ResumeReviewModal.vue'
 
@@ -527,11 +527,11 @@ function downloadTxt() {
 }
 
 function downloadPdf() {
-  window.open(`/api/jobs/${props.jobId}/resume_optimizer/export-pdf`, '_blank')
+  window.open(apiUrl(`/api/jobs/${props.jobId}/resume_optimizer/export-pdf`), '_blank')
 }
 
 function downloadYaml() {
-  window.open(`/api/jobs/${props.jobId}/resume_optimizer/export-yaml`, '_blank')
+  window.open(apiUrl(`/api/jobs/${props.jobId}/resume_optimizer/export-yaml`), '_blank')
 }
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────

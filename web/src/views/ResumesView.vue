@@ -143,7 +143,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { useApiFetch } from '../composables/useApi'
+import { apiUrl, useApiFetch } from '../composables/useApi'
 import ResumeSyncConfirmModal from '../components/ResumeSyncConfirmModal.vue'
 import ResumeScoreModal from '../components/ResumeScoreModal.vue'
 
@@ -310,13 +310,13 @@ function downloadTxt() {
 
 function downloadPdf() {
   if (!selected.value) return
-  window.open(`/api/resumes/${selected.value.id}/export-pdf`, '_blank')
+  window.open(apiUrl(`/api/resumes/${selected.value.id}/export-pdf`), '_blank')
   showDownloadMenu.value = false
 }
 
 function downloadYaml() {
   if (!selected.value) return
-  window.open(`/api/resumes/${selected.value.id}/export-yaml`, '_blank')
+  window.open(apiUrl(`/api/resumes/${selected.value.id}/export-yaml`), '_blank')
   showDownloadMenu.value = false
 }
 

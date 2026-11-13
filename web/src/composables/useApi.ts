@@ -8,6 +8,16 @@ export type ApiError =
 // Strip trailing slash so '/peregrine/' + '/api/...' → '/peregrine/api/...'
 const _apiBase = import.meta.env.BASE_URL.replace(/\/$/, '')
 
+/**
+ * Build a URL for something the browser opens itself (window.open, <a href>, downloads).
+ * fetch() calls go through useApiFetch, which adds the base path. Anything that bypasses
+ * it must use this, or in cloud the request skips the /peregrine/ route, arrives without
+ * the user's session, and is answered from the wrong database.
+ */
+export function apiUrl(path: string): string {
+  return _apiBase + path
+}
+
 export async function useApiFetch<T>(
   url: string,
   opts?: RequestInit,
