@@ -636,6 +636,47 @@ def _extract_anchors(resume: dict[str, Any]) -> frozenset[str]:
     return frozenset(anchors)
 
 
+# ── Identity (name and contact) ──────────────────────────────────────────────
+
+_IDENTITY_FIELDS = ("name", "email", "phone", "linkedin")
+
+
+def format_phone(raw: str | None) -> str:
+    """Format a ten-digit US number as (555) 123-4567, tolerating a leading 1 or +1.
+
+    Anything else (international numbers, extensions, free text) is returned as typed.
+    """
+    text = (raw or "").strip()
+    digits = re.sub(r"\D", "", text)
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    elif text.startswith("+"):
+        return text  # an international number with some other country code
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    return text
+
+
+def with_identity(resume: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of a resume with name, email, phone and linkedin filled in from the profile.
+
+    The LLM draft carries only summary, experience, education, skills and achievements, so
+    without this the PDF, text and YAML exports have no header (peregrine#242). A value already
+    on the resume wins, empty profile values are skipped, and neither input is mutated.
+    """
+    merged = dict(resume)
+    for field in _IDENTITY_FIELDS:
+        if merged.get(field):
+            continue
+        raw = profile.get(field)
+        value = "" if raw is None else str(raw).strip()  # YAML loads an unquoted phone as an int
+        if value:
+            merged[field] = value
+    if merged.get("phone"):
+        merged["phone"] = format_phone(merged["phone"])
+    return merged
+
+
 # ── Resume → plain text renderer ─────────────────────────────────────────────
 
 def render_resume_text(resume: dict[str, Any]) -> str:
