@@ -895,6 +895,24 @@ def get_resume_review(job_id: int):
     return {"draft": draft}
 
 
+def _profile_identity() -> dict[str, str]:
+    """Name, email, phone and linkedin from the requester's profile, or {} when there is none.
+
+    Reads the same file Settings > My Profile edits (_user_yaml_path, per-tenant in cloud).
+    """
+    from scripts.user_profile import UserProfile
+
+    path = Path(_user_yaml_path())
+    if not UserProfile.exists(path):
+        return {}
+    try:
+        profile = UserProfile(path)
+    except Exception:  # noqa: BLE001 - a malformed profile must not block an export, it just has no identity
+        _log.warning("_profile_identity: could not read %s", path, exc_info=True)
+        return {}
+    return {"name": profile.name, "email": profile.email, "phone": profile.phone, "linkedin": profile.linkedin}
+
+
 class GapFramingDecision(BaseModel):
     skill: str
     # "adjacent" — has related experience, inject bridging sentence into bullets
@@ -932,6 +950,7 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
         apply_review_decisions,
         frame_skill_gaps,
         render_resume_text,
+        with_identity,
     )
 
     db_path = Path(_request_db.get() or DB_PATH)
@@ -972,6 +991,8 @@ def preview_resume_review(job_id: int, body: ResumeReviewBody):
 
         struct = frame_skill_gaps(struct, framings, job, candidate_voice)
 
+    # The draft has no name or contact info, so add it before previewing (peregrine#242).
+    struct = with_identity(struct, _profile_identity())
     preview_text = render_resume_text(struct)
     return {"preview_text": preview_text, "preview_struct": struct}
 
@@ -1005,7 +1026,8 @@ def approve_resume(job_id: int, body: dict):
     if not struct:
         raise HTTPException(400, "preview_struct is required")
 
-    from scripts.resume_optimizer import render_resume_text
+    from scripts.resume_optimizer import render_resume_text, with_identity
+    struct = with_identity(struct, _profile_identity())
     override = (body.get("preview_text_override") or "").strip()
     final_text = override if override else render_resume_text(struct)
 
@@ -1053,7 +1075,9 @@ def _get_final_struct(job_id: int) -> dict:
     db.close()
     if not row or not row[0]:
         raise HTTPException(404, "No approved resume struct for this job — approve first")
-    return _json.loads(row[0])
+    # Resumes approved before peregrine#242 were stored without name or contact info.
+    from scripts.resume_optimizer import with_identity
+    return with_identity(_json.loads(row[0]), _profile_identity())
 
 
 @app.get("/api/jobs/{job_id}/resume_optimizer/export-pdf")
