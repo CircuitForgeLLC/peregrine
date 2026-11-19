@@ -46,8 +46,10 @@ sync_one() {
         return
     fi
     echo "[$name] pushing main and tags to $url ${DRY_RUN:+(dry run)}"
+    # credential.helper= turns off every configured helper for this push. Without it a helper such
+    # as `store` is told the credentials worked and writes the token to ~/.git-credentials.
     if GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 SYNC_USER="$user" SYNC_TOKEN_FILE="$token_file" \
-        git push $DRY_RUN "$url" refs/remotes/origin/main:refs/heads/main --tags; then
+        git -c credential.helper= push $DRY_RUN "$url" refs/remotes/origin/main:refs/heads/main --tags; then
         echo "[$name] ok"
     else
         echo "[$name] FAILED, see the git output above" >&2
