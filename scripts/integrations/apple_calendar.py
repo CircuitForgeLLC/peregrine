@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from scripts import safe_net
 from scripts.integrations.base import IntegrationBase
 
 
@@ -37,14 +38,28 @@ class AppleCalendarIntegration(IntegrationBase):
             config.get("app_password")
         )
 
+    def _client(self):
+        """A CalDAV client for the configured address.
+
+        Not available on the hosted version (peregrine#228). The caldav client keeps its own HTTP
+        session and replaces it with an unguarded one of its own after repeated 401 answers, so
+        swapping in the safe session is not a guard: a server that answers 401 twice and then
+        redirects would be followed anywhere. The module is not installed in the hosted image, so
+        nothing is lost, and this keeps it from becoming an open path if it ever is. Self-hosted
+        installs are unaffected.
+        """
+        if safe_net.cloud_mode():
+            raise RuntimeError("CalDAV is not available on the hosted version.")
+        import caldav
+        return caldav.DAVClient(
+            url=self._config["caldav_url"],
+            username=self._config["username"],
+            password=self._config["app_password"],
+        )
+
     def test(self) -> bool:
         try:
-            import caldav
-            client = caldav.DAVClient(
-                url=self._config["caldav_url"],
-                username=self._config["username"],
-                password=self._config["app_password"],
-            )
+            client = self._client()
             principal = client.principal()
             return principal is not None
         except Exception:  # noqa: BLE001 - this is a connectivity test function whose
@@ -57,12 +72,7 @@ class AppleCalendarIntegration(IntegrationBase):
 
     def _get_calendar(self):
         """Return the configured caldav Calendar object."""
-        import caldav
-        client = caldav.DAVClient(
-            url=self._config["caldav_url"],
-            username=self._config["username"],
-            password=self._config["app_password"],
-        )
+        client = self._client()
         principal = client.principal()
         cal_name = self._config.get("calendar_name", "Interviews")
         for cal in principal.calendars():

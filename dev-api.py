@@ -4,8 +4,6 @@ Reads directly from /devl/job-seeker/staging.db.
 Run with:
     conda run -n job-seeker uvicorn dev-api:app --port 8600 --reload
 """
-import imaplib
-import ipaddress
 import json
 import logging
 import os
@@ -53,30 +51,24 @@ from circuitforge_core.config.settings import load_env as _load_env
 from circuitforge_core.sync import SyncConfig, make_sync_router
 from slowapi.errors import RateLimitExceeded
 
+from scripts import safe_net
 from scripts.credential_store import get_credential, set_credential
 from scripts.rate_limit import limiter, rate_limit_exceeded_handler
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
 
-_CLOUD_MODE       = os.environ.get("CLOUD_MODE", "").lower() in ("1", "true")
+def _cloud_mode_from_env() -> bool:
+    """One definition of "hosted" for the whole app. safe_net decides it, so the address checks here
+    and the guarded connections there can never disagree about which mode they are in."""
+    return safe_net.cloud_mode()
+
+
+_CLOUD_MODE       = _cloud_mode_from_env()
 _CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
 _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
 
 # Allowlist for cloud user_id values — UUID format only (prevents path traversal)
 _VALID_USER_ID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
-
-# RFC-1918 + loopback + link-local blocks blocked from IMAP SSRF
-_PRIVATE_NETS = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-    ipaddress.ip_network("fe80::/10"),
-]
-
 
 def _exc_summary(exc: BaseException) -> str:
     """Where an exception came from, without its message.
@@ -91,12 +83,44 @@ def _exc_summary(exc: BaseException) -> str:
 
 
 def _is_ssrf_host(host: str) -> bool:
-    """Return True if host resolves to a private/loopback address (SSRF guard)."""
+    """True if host is not a public address (SSRF guard). Fails closed.
+
+    Every address the name resolves to, IPv4 and IPv6, must be public. This is the early check made
+    when an address is typed. The connection itself is pinned to the checked address by
+    scripts.safe_net, because a lookup made here cannot see what the name resolves to later
+    (peregrine#228).
+    """
     try:
-        addr = ipaddress.ip_address(socket.gethostbyname(host))
-        return any(addr in net for net in _PRIVATE_NETS)
-    except Exception:  # noqa: BLE001 - SSRF guard must fail closed on ANY resolution error
-        return True  # fail closed on resolution errors
+        safe_net.resolve_public(host, 0)
+    except safe_net.BlockedAddress:
+        return True
+    return False
+
+
+def _outbound_get(url: str, **kwargs):
+    """GET an address a user typed. Hosted: the safe session. Self-hosted: plain requests, so LAN
+    addresses keep working."""
+    if _CLOUD_MODE:
+        return safe_net.SafeSession().get(url, **kwargs)
+    return requests.get(url, **kwargs)
+
+
+def _outbound_post(url: str, **kwargs):
+    """POST counterpart of _outbound_get."""
+    if _CLOUD_MODE:
+        return safe_net.SafeSession().post(url, **kwargs)
+    return requests.post(url, **kwargs)
+
+
+def _require_public_host(host: str | None) -> None:
+    """On the hosted version refuse to SAVE a host that is not public (400). Requests to a saved
+    host are guarded as well when they are made, but a host that can never be used should be
+    refused at the form, not saved and silently failing later. Self-hosted installs may save any
+    address, a local Ollama or SearXNG is the normal case there."""
+    if _CLOUD_MODE and host and _is_ssrf_host(host):
+        raise HTTPException(status_code=400, detail="That address must be a public address.")
+
+
 IS_DEMO: bool = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
 # ── Rate limiting (LLM generation endpoints) ──────────────────────────────────
@@ -2653,6 +2677,28 @@ class AddJobsBody(BaseModel):
     skip_review: bool = True
 
 
+def _job_link_refused(url: str, verdicts: dict) -> bool:
+    """True when a job link must not be fetched. Only the hosted version restricts anything: its API
+    container can reach the internal network, so a link has to point at a public http(s) host
+    (peregrine#250). Self-hosted installs keep accepting local network addresses. `verdicts` caches
+    one answer per host so a long CSV does not resolve the same name over and over."""
+    if not _CLOUD_MODE:
+        return False
+    from scripts import safe_net
+    parsed = urlparse(url)
+    key = (parsed.scheme, parsed.netloc.lower())
+    if key not in verdicts:
+        verdicts[key] = safe_net.public_url_error(url, ("http", "https")) is not None
+    return verdicts[key]
+
+
+def _precompute_link_verdicts(urls: list[str], verdicts: dict) -> None:
+    """Fill the per-host cache for a batch of links. Name lookups block and have no timeout, so an
+    async handler runs this in a worker thread instead of on the event loop."""
+    for url in urls:
+        _job_link_refused(url, verdicts)
+
+
 @app.post("/api/jobs/add", status_code=202)
 def add_jobs_by_url(body: AddJobsBody):
     try:
@@ -2665,8 +2711,13 @@ def add_jobs_by_url(body: AddJobsBody):
         existing = get_existing_urls(db_path)
         status = "approved" if body.skip_review else "pending"
         queued = 0
+        rejected = 0
+        verdicts: dict = {}
         for raw_url in body.urls:
             url = canonicalize_url(raw_url.strip())
+            if _job_link_refused(url, verdicts):
+                rejected += 1
+                continue
             if not url.startswith("http") or url in existing:
                 continue
             job_id = insert_job(db_path, {
@@ -2678,7 +2729,7 @@ def add_jobs_by_url(body: AddJobsBody):
             if job_id:
                 submit_task(db_path, "scrape_url", job_id)
                 queued += 1
-        return {"queued": queued}
+        return {"queued": queued, "rejected": rejected}
     except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2704,8 +2755,16 @@ async def upload_jobs_csv(file: UploadFile):
         db_path = _db_path()
         existing = get_existing_urls(db_path)
         queued = 0
+        rejected = 0
+        verdicts: dict = {}
+        if _CLOUD_MODE:
+            from starlette.concurrency import run_in_threadpool
+            await run_in_threadpool(_precompute_link_verdicts, [canonicalize_url(u) for u in urls], verdicts)
         for raw_url in urls:
             url = canonicalize_url(raw_url)
+            if _job_link_refused(url, verdicts):
+                rejected += 1
+                continue
             if not url.startswith("http") or url in existing:
                 continue
             job_id = insert_job(db_path, {
@@ -2716,7 +2775,7 @@ async def upload_jobs_csv(file: UploadFile):
             if job_id:
                 submit_task(db_path, "scrape_url", job_id)
                 queued += 1
-        return {"queued": queued, "total": len(urls)}
+        return {"queued": queued, "total": len(urls), "rejected": rejected}
     except Exception as e:  # noqa: BLE001 - top-level handler: convert any failure into a clean 500 response
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -4257,7 +4316,7 @@ def get_ollama_models(host: str | None = None, port: int | None = None):
     host's models immediately, before the user has saved it."""
     try:
         base_url = f"http://{host}:{port or 11434}" if host else _configured_ollama_base_url()
-        resp = requests.get(f"{base_url}/api/tags", timeout=3)
+        resp = _outbound_get(f"{base_url}/api/tags", timeout=3)
         if resp.status_code == 200:
             models = [m["name"] for m in resp.json().get("models", [])]
             return {"models": models}
@@ -4288,7 +4347,7 @@ def get_vllm_models(host: str | None = None, port: int | None = None):
     endpoint, from the configured host or an explicit override."""
     try:
         base_url = f"http://{host}:{port or 8000}" if host else _configured_vllm_base_url()
-        resp = requests.get(f"{base_url}/v1/models", timeout=3)
+        resp = _outbound_get(f"{base_url}/v1/models", timeout=3)
         if resp.status_code == 200:
             models = [m["id"] for m in resp.json().get("data", [])]
             return {"models": models}
@@ -4444,6 +4503,11 @@ def get_email_config():
 @app.put("/api/settings/system/email")
 def save_email_config(payload: dict):
     try:
+        # Email sync later connects to this host with the saved password, so a hosted tenant cannot
+        # save an internal one. The test button checks it too, but saving must not rely on it.
+        mail_host = payload.get("host", "")
+        if _CLOUD_MODE and isinstance(mail_host, str) and mail_host and _is_ssrf_host(mail_host):
+            return {"ok": False, "error": "IMAP host must be a public address"}
         ep = _config_dir() / "email.yaml"
         ep.parent.mkdir(parents=True, exist_ok=True)
         # Extract password before writing yaml; discard the sentinel boolean regardless
@@ -4474,11 +4538,13 @@ def test_email(payload: dict):
             return {"ok": False, "error": "Missing host, username, or password"}
         if _is_ssrf_host(host):
             return {"ok": False, "error": "IMAP host must be a public address"}
+        # The pinned classes connect to the address that was just checked instead of resolving the
+        # name again, and a timeout stops a silent host from holding the request open.
         if use_ssl:
             ctx = ssl_mod.create_default_context()
-            conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
+            conn = safe_net.PinnedIMAP4_SSL(host, port, ssl_context=ctx, timeout=15)
         else:
-            conn = imaplib.IMAP4(host, port)
+            conn = safe_net.PinnedIMAP4(host, port, timeout=15)
         conn.login(username, password)
         conn.logout()
         return {"ok": True}
@@ -4532,8 +4598,15 @@ def _vet_integration_payload(integration, payload: dict) -> str | None:
         value = payload.get(field["key"])
         if field.get("type") != "url" or not isinstance(value, str) or not value.strip():
             continue
-        parsed = urlparse(value.strip())
-        if parsed.scheme != "https" or not parsed.hostname or _is_ssrf_host(parsed.hostname):
+        try:
+            parsed = urlparse(value.strip())
+            hostname = parsed.hostname
+            parsed.port  # noqa: B018 - raises ValueError for a malformed port
+        except ValueError:
+            return "That address must be a public https web address."
+        # Credentials in the address are never needed (they have their own fields) and are how
+        # parsers get confused about which host is meant.
+        if parsed.scheme != "https" or not hostname or parsed.username or parsed.password or _is_ssrf_host(hostname):
             return "That address must be a public https web address."
     return None
 
@@ -4684,6 +4757,8 @@ def get_orch_url():
 @app.post("/api/settings/system/orch-url")
 def save_orch_url(payload: OrchUrlPayload):
     """Persist the Orchard coordinator URL to user.yaml."""
+    if _CLOUD_MODE and payload.orch_url.strip() and safe_net.public_url_error(payload.orch_url, ("http", "https")):
+        raise HTTPException(status_code=400, detail="That address must be a public address.")
     cfg = _load_wizard_yaml()
     cfg["cf_orch_url"] = payload.orch_url.strip()
     _save_wizard_yaml(cfg)
@@ -4820,6 +4895,9 @@ def save_llm_backend_settings(payload: LlmBackendPayload):
     """Persist LLM backend configuration: API keys/URL to .env, host/port
     to user.yaml's services map. A blank key field means "leave unchanged",
     not "clear it" -- same semantics as the wizard's inference step."""
+    # Refused before anything is written. Hosted tenants cannot save an internal address.
+    for host in (payload.ollama_host, payload.vllm_host, payload.searxng_host):
+        _require_public_host(host)
     for field_name, value in (
         ("anthropic_key", payload.anthropic_key),
         ("openai_url", payload.openai_url),
@@ -4899,7 +4977,7 @@ def pull_ollama_model(payload: OllamaPullPayload, background_tasks: BackgroundTa
 
     def _do_pull():
         try:
-            requests.post(f"{base_url}/api/pull", json={"name": model, "stream": False}, timeout=1800)
+            _outbound_post(f"{base_url}/api/pull", json={"name": model, "stream": False}, timeout=1800)
         except Exception:  # noqa: BLE001 - best-effort background pull; frontend polling detects success/failure by presence, not by this call's result
             _log.warning("Background ollama pull failed for model=%s", model)
 
@@ -5792,9 +5870,9 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
                 return {"ok": False, "message": "Orchard URL must be a public, non-internal address."}
         orch_url = _container_safe_url(payload.orch_url.rstrip("/"))
         try:
-            resp = requests.get(f"{orch_url}/api/nodes", timeout=5,
-                                headers={"Accept": "application/json"},
-                                allow_redirects=False)
+            resp = _outbound_get(f"{orch_url}/api/nodes", timeout=5,
+                                 headers={"Accept": "application/json"},
+                                 allow_redirects=False)
             if resp.status_code == 200:
                 nodes = resp.json().get("nodes", [])
                 n = len(nodes)
@@ -5845,7 +5923,7 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
             return {"ok": False, "message": "Ollama host must be a public, non-internal address."}
         ollama_url = _container_safe_url(f"http://{host}:{payload.ollama_port}")
         try:
-            resp = requests.get(f"{ollama_url}/api/tags", timeout=5, allow_redirects=False)
+            resp = _outbound_get(f"{ollama_url}/api/tags", timeout=5, allow_redirects=False)
             ok = resp.status_code == 200
             message = "Ollama is running." if ok else f"Ollama returned HTTP {resp.status_code}."
         except Exception:  # noqa: BLE001 - connectivity test is a soft warning by design; any failure surfaces as a friendly "not responding" message so the wizard isn't blocked
