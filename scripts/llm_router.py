@@ -193,6 +193,9 @@ def router_for_tenant(db_path: "Path", cloud_mode: bool) -> "LLMRouter":
 def complete_cold(router: Any, prompt: str, *, temperature: float = 0.2) -> str:
     """Complete `prompt`, asking for a low temperature when the router allows it.
 
+    Currently a no-op for circuitforge-core's LLMRouter, because core's
+    complete() does not accept a temperature.
+
     Best effort: `temperature` is passed only if `router.complete` has a
     parameter of that name. A router that cannot take it is called with the
     prompt alone, never an error.

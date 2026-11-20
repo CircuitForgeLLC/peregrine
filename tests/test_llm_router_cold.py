@@ -1,5 +1,9 @@
 """complete_cold asks for a low temperature only when the router can take it."""
+from unittest.mock import patch
+
+from scripts.experience_facts import ExperienceFact
 from scripts.llm_router import complete_cold
+from scripts.resume_optimizer import frame_skill_gaps, rewrite_for_ats
 
 
 class _WithTemp:
@@ -41,3 +45,46 @@ def test_default_temperature_is_0_2():
     router = _WithTemp()
     complete_cold(router, "x")
     assert router.seen["temperature"] == 0.2
+
+
+# Call sites: the real functions must ask the router for 0.2.
+
+
+class _RecordingRouter(_WithTemp):
+    """Stands in for the LLMRouter class the optimizer constructs."""
+
+    last = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        type(self).last = self
+
+
+def _usable_fact(term):
+    return ExperienceFact(
+        id=1, kind="experience", requirement=term, text=f"I used {term} daily.",
+        visibility="document", status="active", source="user",
+        origin_job_id=None, created_at="2026-01-01", updated_at="2026-01-01",
+    )
+
+
+def test_rewrite_for_ats_asks_the_router_for_a_low_temperature():
+    _RecordingRouter.last = None
+    resume = {"career_summary": "Engineer who ships software.", "skills": [], "experience": []}
+    gaps = [{"term": "kubernetes", "section": "summary"}]
+    with patch("scripts.llm_router.LLMRouter", _RecordingRouter):
+        rewrite_for_ats(
+            resume, gaps, {"title": "SRE", "company": "Acme", "description": ""},
+            facts={"kubernetes": _usable_fact("kubernetes")},
+        )
+    assert _RecordingRouter.last.seen["temperature"] == 0.2
+
+
+def test_frame_skill_gaps_asks_the_router_for_a_low_temperature():
+    _RecordingRouter.last = None
+    struct = {"experience": [{"title": "Dev", "company": "X", "start_date": "2020",
+                              "end_date": "2022", "bullets": ["Built services."]}]}
+    framings = [{"skill": "kubernetes", "mode": "adjacent", "context": "I ran Docker Swarm."}]
+    with patch("scripts.llm_router.LLMRouter", _RecordingRouter):
+        frame_skill_gaps(struct, framings, {"title": "SRE", "company": "Acme"})
+    assert _RecordingRouter.last.seen["temperature"] == 0.2
