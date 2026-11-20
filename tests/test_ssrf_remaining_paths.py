@@ -268,6 +268,7 @@ def hosted_scraper(monkeypatch):
     ("_scrape_indeed", "https://www.indeed.com/viewjob?jk=abc"),
     ("_scrape_linkedin", "https://www.linkedin.com/jobs/view/123456/"),
     ("_scrape_greenhouse", "https://job-boards.greenhouse.io/acme/jobs/123"),
+    ("_scrape_ultipro", "https://recruiting2.ultipro.com/ACM1000/JobBoard/11111111-2222/OpportunityDetail?opportunityId=9"),
 ])
 def test_the_hosted_board_scrapers_fetch_through_the_safe_session(hosted_scraper, function, url):
     getattr(hosted_scraper, function)(url)

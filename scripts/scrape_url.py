@@ -566,7 +566,9 @@ def _scrape_ultipro(url: str) -> dict:
     posting gives, which is what the page itself shows. A closed posting (404) or a page without a
     readable payload falls back to the generic scraper.
     """
-    resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+    # _fetch, not requests.get: on the hosted version it goes through the guarded session
+    # (peregrine#228), so a redirect or changed DNS answer cannot aim this at an internal address.
+    resp = _fetch(url, headers=_HEADERS, timeout=_TIMEOUT)
     if resp.status_code == 404:
         return _scrape_generic(url)
     resp.raise_for_status()
