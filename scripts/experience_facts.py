@@ -31,7 +31,7 @@ _STOP_WORDS = frozenset({
     "a", "an", "and", "the", "of", "for", "to", "in", "on", "at", "with",
     "or", "by", "as", "is", "are", "be", "from", "into", "using", "use",
 })
-_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_TOKEN_RE = re.compile(r"(?<![a-z0-9])\.[a-z0-9]+[+#]*|[a-z0-9]+[+#]*")
 _SUFFIXES = ("ing", "ed", "es", "s")
 
 
@@ -51,8 +51,16 @@ class ExperienceFact:
 
 def normalize_term(term: str) -> str:
     """Lowercase, collapse whitespace, strip leading and trailing punctuation."""
-    collapsed = " ".join(term.lower().split())
-    return re.sub(r"^[^\w]+|[^\w]+$", "", collapsed)
+    # A trailing "+" or "#" and a leading "." that is part of a name are kept,
+    # so "c", "c++", "c#" and ".net" vs "net" stay distinct terms.
+    result = " ".join(term.lower().split())
+    result = re.sub(r"^(?:(?!\.\w)[^\w])+", "", result)
+    while True:
+        stripped = re.sub(r"[^\w+#]+$", "", result)
+        stripped = re.sub(r"(?<!\w)[+#]+$", "", stripped)
+        if stripped == result:
+            return result
+        result = stripped
 
 
 def _stem(token: str) -> str:
@@ -66,7 +74,10 @@ def _stem(token: str) -> str:
 
 
 def _tokens(term: str) -> frozenset[str]:
-    raw = _TOKEN_RE.findall(term.lower())
+    raw = [
+        "dot" + t[1:] if t.startswith(".") else t
+        for t in _TOKEN_RE.findall(term.lower())
+    ]
     return frozenset(_stem(t) for t in raw if t not in _STOP_WORDS)
 
 
@@ -178,8 +189,13 @@ def update_fact(
 ) -> bool:
     sets: list[str] = []
     params: list[str | int] = []
+    existing = get_fact(db_path, fact_id)
+    if existing is None:
+        return False
     if text is not None:
         _check_text(text)
+        if existing.kind != "none" and not text.strip():
+            raise ValueError("text must not be empty")
         sets.append("text = ?")
         params.append(text)
     if visibility is not None:

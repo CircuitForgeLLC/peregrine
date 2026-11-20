@@ -127,3 +127,62 @@ def test_usable_facts_excludes_private_none_and_retired(db_path):
     result = usable_facts_for_prompt(db_path, ["Scheduling"])
     assert list(result) == ["Scheduling"]
     assert result["Scheduling"].id == ok
+
+
+def test_c_sharp_c_plus_plus_and_c_are_different_terms(db_path):
+    sharp = add_fact(db_path, kind="experience", requirement="C#", text="t")
+    plus = add_fact(db_path, kind="experience", requirement="C++", text="t")
+    plain = add_fact(db_path, kind="experience", requirement="C", text="t")
+    assert find_matching_fact(db_path, "c#").id == sharp
+    assert find_matching_fact(db_path, "C++").id == plus
+    assert find_matching_fact(db_path, "c").id == plain
+    assert len({normalize_term("C++"), normalize_term("C#"), normalize_term("C")}) == 3
+    update_fact(db_path, plus, status="retired")
+    update_fact(db_path, plain, status="retired")
+    assert find_matching_fact(db_path, "C++") is None
+    assert find_matching_fact(db_path, "C") is None
+
+
+def test_dot_net_is_not_net(db_path):
+    dot = add_fact(db_path, kind="experience", requirement=".NET", text="t")
+    assert find_matching_fact(db_path, ".net").id == dot
+    assert find_matching_fact(db_path, "net") is None
+    net = add_fact(db_path, kind="experience", requirement="net", text="t")
+    assert find_matching_fact(db_path, "NET").id == net
+    assert find_matching_fact(db_path, ".NET").id == dot
+
+
+def test_usable_facts_does_not_back_cplusplus_with_a_csharp_fact(db_path):
+    add_fact(db_path, kind="experience", requirement="C#", text="I wrote C# services")
+    assert usable_facts_for_prompt(db_path, ["C++", "C"]) == {}
+    assert "C#" in usable_facts_for_prompt(db_path, ["C#"])
+
+
+def test_update_rejects_blanking_an_experience_fact(db_path):
+    fid = add_fact(db_path, kind="experience", requirement="r", text="orig")
+    for blank in ("", "   "):
+        with pytest.raises(ValueError):
+            update_fact(db_path, fid, text=blank)
+    adj = add_fact(db_path, kind="adjacent", requirement="r2", text="orig")
+    with pytest.raises(ValueError):
+        update_fact(db_path, adj, text=" ")
+    assert get_fact(db_path, fid).text == "orig"
+
+
+def test_update_rejects_oversized_text(db_path):
+    fid = add_fact(db_path, kind="experience", requirement="r", text="orig")
+    with pytest.raises(ValueError):
+        update_fact(db_path, fid, text="a" * 2001)
+    assert update_fact(db_path, 9999, text="") is False
+
+
+def test_update_allows_empty_text_on_a_none_fact(db_path):
+    fid = add_fact(db_path, kind="none", requirement="r", text="")
+    assert update_fact(db_path, fid, text="") is True
+
+
+def test_blanked_fact_never_reaches_usable_facts(db_path):
+    fid = add_fact(db_path, kind="experience", requirement="scheduling", text="orig")
+    with pytest.raises(ValueError):
+        update_fact(db_path, fid, text="  ")
+    assert usable_facts_for_prompt(db_path, ["scheduling"])["scheduling"].text == "orig"
