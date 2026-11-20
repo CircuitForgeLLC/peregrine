@@ -32,8 +32,7 @@
                 {{ job.match_score }}%
               </span>
               <span v-if="job.is_remote" class="remote-badge">Remote</span>
-              <span v-if="job.has_cover_letter" class="cl-badge cl-badge--done">✓ Draft</span>
-              <span v-else class="cl-badge cl-badge--pending">○ No draft</span>
+              <DocumentStatus :has-letter="job.has_cover_letter" :has-resume="job.has_optimized_resume" />
             </div>
             <span class="job-row__title">{{ job.title }}</span>
             <span class="job-row__company">
@@ -119,8 +118,13 @@
               >{{ job.match_score }}%</span>
             </div>
             <div class="narrow-row__company">
-              {{ job.company }}<span v-if="job.has_cover_letter" class="narrow-row__cl-tick"> ✓</span>
+              {{ job.company }}
             </div>
+            <DocumentStatus
+              compact
+              :has-letter="job.has_cover_letter"
+              :has-resume="job.has_optimized_resume"
+            />
           </button>
         </li>
       </ul>
@@ -162,6 +166,7 @@ import { useStorage } from '@vueuse/core'
 import { useApiFetch } from '../composables/useApi'
 import ApplyWorkspace from '../components/ApplyWorkspace.vue'
 import HintChip from '../components/HintChip.vue'
+import DocumentStatus from '../components/DocumentStatus.vue'
 import { useAppConfigStore } from '../stores/appConfig'
 
 const config = useAppConfigStore()
@@ -197,6 +202,7 @@ interface ApprovedJob {
   salary:          string | null
   match_score:     number | null
   has_cover_letter: boolean
+  has_optimized_resume: boolean
 }
 
 const jobs    = ref<ApprovedJob[]>([])
@@ -206,7 +212,7 @@ async function fetchJobs() {
   loading.value = true
   try {
     const { data } = await useApiFetch<ApprovedJob[]>(
-      '/api/jobs?status=approved&limit=100&fields=id,title,company,location,is_remote,salary,match_score,has_cover_letter'
+      '/api/jobs?status=approved&limit=100&fields=id,title,company,location,is_remote,salary,match_score,has_cover_letter,has_optimized_resume'
     )
     if (data) jobs.value = data
   } finally {
@@ -412,9 +418,6 @@ function fireSpeedDemon() {
 .job-row__salary { font-size: var(--text-xs); color: var(--color-success); font-weight: 600; white-space: nowrap; }
 .job-row__arrow  { font-size: 1.25rem; color: var(--color-text-muted); line-height: 1; }
 .job-row__sep    { color: var(--color-border); }
-.cl-badge { padding: 1px var(--space-2); border-radius: 999px; font-size: var(--text-xs); font-weight: 600; }
-.cl-badge--done    { background: rgba(39,174,96,0.10); color: var(--color-success); }
-.cl-badge--pending { background: var(--color-surface-alt); color: var(--color-text-muted); }
 
 /* ── Desktop split pane ──────────────────────────────────────────── */
 .apply-split {
@@ -601,11 +604,6 @@ function fireSpeedDemon() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.narrow-row__cl-tick {
-  color: var(--color-success);
-  font-weight: 700;
 }
 
 /* ── Right: workspace panel ──────────────────────────────────────── */
