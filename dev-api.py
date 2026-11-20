@@ -482,6 +482,18 @@ def _row_to_job(row) -> dict:
     return d
 
 
+def _add_document_status(job: dict) -> None:
+    """Replace the letter and resume text on a job dict with two separate done-flags.
+
+    has_cover_letter: a letter has been generated.
+    has_optimized_resume: a tailored resume has been APPROVED. A gap report or a review draft that
+    is still waiting does not count, because optimized_resume is only set when the user approves.
+    The text itself is dropped so the list stays small and the documents are not sent needlessly
+    (peregrine#256)."""
+    job["has_cover_letter"] = bool(job.pop("cover_letter", None))
+    job["has_optimized_resume"] = bool((job.pop("optimized_resume", None) or "").strip())
+
+
 def _shadow_score(date_posted: str | None, date_found: str | None) -> str | None:
     """Return 'shadow', 'stale', or None based on posting age when discovered.
 
@@ -511,7 +523,8 @@ def list_jobs(status: str = "pending", limit: int = 50, fields: str = ""):
     db = _get_db()
     rows = db.execute(
         "SELECT id, title, company, url, source, location, is_remote, salary, "
-        "description, match_score, keyword_gaps, date_found, date_posted, status, cover_letter "
+        "description, match_score, keyword_gaps, date_found, date_posted, status, cover_letter, "
+        "optimized_resume "
         "FROM jobs WHERE status = ? ORDER BY match_score DESC NULLS LAST LIMIT ?",
         (status, limit),
     ).fetchall()
@@ -519,9 +532,8 @@ def list_jobs(status: str = "pending", limit: int = 50, fields: str = ""):
     result = []
     for r in rows:
         d = _row_to_job(r)
-        d["has_cover_letter"] = bool(d.get("cover_letter"))
+        _add_document_status(d)
         d["shadow_score"] = _shadow_score(d.get("date_posted"), d.get("date_found"))
-        d.pop("cover_letter", None)
         result.append(d)
     return result
 
@@ -655,7 +667,7 @@ def get_job(job_id: int):
     db = _get_db()
     row = db.execute(
         "SELECT id, title, company, url, source, location, is_remote, salary, "
-        "description, match_score, keyword_gaps, date_found, status, cover_letter "
+        "description, match_score, keyword_gaps, date_found, status, cover_letter, optimized_resume "
         "FROM jobs WHERE id = ?",
         (job_id,),
     ).fetchone()
@@ -663,7 +675,7 @@ def get_job(job_id: int):
     if not row:
         raise HTTPException(404, "Job not found")
     d = _row_to_job(row)
-    d["has_cover_letter"] = bool(d.get("cover_letter"))
+    _add_document_status(d)
     return d
 
 

@@ -365,12 +365,17 @@ def update_cover_letter(db_path: Path = DEFAULT_DB, job_id: int | None = None, t
 
 def save_optimized_resume(db_path: Path = DEFAULT_DB, job_id: int | None = None,
                           text: str = "", gap_report: str = "") -> None:
-    """Persist ATS-optimized resume text and/or gap report for a job."""
+    """Persist ATS-optimized resume text and/or gap report for a job.
+
+    Empty text means "leave the resume alone", not "clear it". Re-running the gap analysis saves a
+    gap report with no text, and that used to write NULL over an already approved resume: the Apply
+    status flipped back to "not tailored" and the next approval had nothing to archive, so the
+    earlier version was lost (peregrine#256). Approval goes through finalize_resume() instead."""
     if job_id is None:
         return
     conn = sqlite3.connect(db_path)
     conn.execute(
-        "UPDATE jobs SET optimized_resume = ?, ats_gap_report = ? WHERE id = ?",
+        "UPDATE jobs SET optimized_resume = COALESCE(?, optimized_resume), ats_gap_report = ? WHERE id = ?",
         (text or None, gap_report or None, job_id),
     )
     conn.commit()
