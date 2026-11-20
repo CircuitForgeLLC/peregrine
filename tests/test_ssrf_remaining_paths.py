@@ -282,6 +282,19 @@ def test_oracle_hcm_needs_the_hcmui_path_not_just_the_word_in_the_query():
     assert _detect_board("https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1") == "oracle_hcm"
 
 
+@pytest.mark.parametrize("url", [
+    # hcmUI somewhere in the path is not enough, it has to be where the app is served from.
+    "https://acme.fa.us2.oraclecloud.com/uploads/hcmUI/job.html",
+    # an oraclecloud.com host that is not an HCM career site (no "fa" label).
+    "https://bucket.objectstorage.us-phoenix-1.oraclecloud.com/hcmUI/CandidateExperience/x",
+    "https://oraclecloud.com/hcmUI/CandidateExperience/x",
+])
+def test_oracle_hcm_needs_an_hcm_host_and_the_app_path(url):
+    from scripts.scrape_url import _detect_board
+
+    assert _detect_board(url) == "generic"
+
+
 # ── The browser resolves names and follows links itself ────────────────────────────────────────
 
 class _FakeContext:

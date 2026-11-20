@@ -76,9 +76,14 @@ def _detect_board(url: str) -> str:
         return "glassdoor"
     if on("jobgether.com"):
         return "jobgether"
-    # hcmUI has to be in the path. In the query string it would let any page hosted under
-    # oraclecloud.com (object storage, say) be loaded into the browser scraper by appending it.
-    if on("oraclecloud.com") and "hcmui" in (urlparse(url).path or "").lower():
+    # Oracle HCM career sites live on <tenant>.fa.<region>.oraclecloud.com and serve under /hcmUI/.
+    # Both are required: the "fa" label keeps other oraclecloud.com hosts (object storage, say) out
+    # of the browser scraper, and the path must START with /hcmUI/, not merely contain it somewhere.
+    if (
+        on("oraclecloud.com")
+        and "fa" in host.split(".")[1:-2]
+        and (urlparse(url).path or "").lower().startswith("/hcmui/")
+    ):
         return "oracle_hcm"
     if on("theladders.com"):
         return "theladders"
