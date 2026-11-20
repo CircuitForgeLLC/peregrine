@@ -12,6 +12,7 @@ Usage:
         conda run -n job-seeker python scripts/generate_cover_letter.py --job-id 42
 """
 import argparse
+import functools
 import os
 import re
 import sys
@@ -112,9 +113,23 @@ def detect_mission_alignment(
     notes = mission_notes if mission_notes is not None else _MISSION_NOTES
     text = f"{company} {description}".lower()
     for domain, signals in _MISSION_SIGNALS.items():
-        if any(sig in text for sig in signals):
+        if any(_signal_pattern(sig).search(text) for sig in signals):
             return notes.get(domain)
     return None
+
+
+@functools.cache
+def _signal_pattern(signal: str) -> re.Pattern:
+    """Whole-word matcher for one mission signal, allowing a plural (cat, cats).
+
+    A plain `signal in text` test matched short signals inside longer words ("cat" in
+    "communicate", "zoo" in "Zoom", "ngo" in "ongoing"), which added an interest in a cause the
+    employer has nothing to do with (peregrine#255). Signals written with a trailing space such as
+    "vet " already meant "the whole word", so the spaces are stripped and the boundary does the job.
+    """
+    return re.compile(
+        r"(?<![a-z0-9])" + re.escape(signal.strip().lower()) + r"(?:s|es)?(?![a-z0-9])"
+    )
 
 
 def load_corpus() -> list[dict]:
