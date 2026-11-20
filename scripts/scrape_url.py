@@ -89,6 +89,8 @@ def _detect_board(url: str) -> str:
         return "theladders"
     if _parse_greenhouse_url(url):
         return "greenhouse"
+    if _is_ultipro_job_url(url):
+        return "ultipro"
     return "generic"
 
 
@@ -519,6 +521,82 @@ def _format_greenhouse_pay(ranges: list | None) -> str:
     return " | ".join(formatted)
 
 
+_ULTIPRO_PAYLOAD_RE = re.compile(r"CandidateOpportunityDetail\(\s*(\{.*?\})\s*\)\s*;", re.DOTALL)
+
+
+def _is_ultipro_job_url(url: str) -> bool:
+    """True for an UltiPro (UKG) job page: <host>.ultipro.com/<tenant>/JobBoard/<board>/OpportunityDetail.
+    The host is matched as a suffix of the parsed hostname, so a lookalike such as
+    ultipro.com.evil.example or the name in a query string does not count."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host != "ultipro.com" and not host.endswith(".ultipro.com"):
+        return False
+    return bool(re.search(r"/JobBoard/[^/]+/OpportunityDetail/?$", parsed.path, re.IGNORECASE))
+
+
+def _ultipro_html_to_text(markup: str) -> str:
+    """Posting descriptions are plain HTML. Break lines at block elements and <br>, bullet list items."""
+    markup = re.sub(r"<li[^>]*>", "- ", markup or "", flags=re.IGNORECASE)
+    markup = re.sub(r"</(p|div|h[1-6]|ul|ol|li|tr|table|section)>|<br\s*/?>", "\n", markup, flags=re.IGNORECASE)
+    text = BeautifulSoup(markup, "html.parser").get_text()
+    lines = [re.sub(r"[ \t ]+", " ", line).strip() for line in text.splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _format_ultipro_pay(data: dict) -> str:
+    """'$18.50 - $22.00 USD', only when the posting marks its pay range visible and fills it in."""
+    pay = data.get("PayRange") or {}
+    low, high = pay.get("PayRangeMinimum"), pay.get("PayRangeMaximum")
+    if not data.get("PayRangeVisible") or (low is None and high is None):
+        return ""
+    currency = (data.get("PayRangeCurrencyCode") or "").upper()
+    amounts = [a for a in (low, high) if a is not None]
+    if currency == "USD":
+        return " - ".join(f"${a:,.2f}" for a in dict.fromkeys(amounts)) + " USD"
+    return f"{currency} " + " - ".join(f"{a:,.2f}" for a in dict.fromkeys(amounts))
+
+
+def _scrape_ultipro(url: str) -> dict:
+    """Read a posting from an UltiPro (UKG) job page (peregrine#253).
+
+    The page has no JSON-LD, so the generic scraper only got a placeholder title. The whole posting is
+    embedded in the HTML as JSON in a CandidateOpportunityDetail({...}) call, so no browser is needed.
+    The employer's name is not in that payload: the company is the branch or location name the
+    posting gives, which is what the page itself shows. A closed posting (404) or a page without a
+    readable payload falls back to the generic scraper.
+    """
+    resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+    if resp.status_code == 404:
+        return _scrape_generic(url)
+    resp.raise_for_status()
+    match = _ULTIPRO_PAYLOAD_RE.search(resp.text or "")
+    try:
+        data = json.loads(match.group(1)) if match else None
+    except ValueError:
+        data = None
+    if not isinstance(data, dict) or not data.get("Title"):
+        return _scrape_generic(url)
+
+    location = (data.get("Locations") or [{}])[0] or {}
+    address = location.get("Address") or {}
+    state = (address.get("State") or {}).get("Code") or ""
+    description = _ultipro_html_to_text(data.get("Description") or "")
+    equal_opportunity = _ultipro_html_to_text(data.get("EqualOpportunityEmployerDescription") or "")
+    if equal_opportunity:
+        description = f"{description}\n\n{equal_opportunity}".strip()
+
+    fields = {
+        "title": data["Title"].strip(),
+        "company": (location.get("LocalizedName") or "").strip(),
+        "location": ", ".join(part for part in (address.get("City"), state) if part),
+        "description": description,
+        "salary": _format_ultipro_pay(data),
+        "source": "ultipro",
+    }
+    return {key: value for key, value in fields.items() if value}
+
+
 def _scrape_greenhouse(url: str) -> dict:
     """Fetch a posting from Greenhouse's public boards API.
 
@@ -693,6 +771,8 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dic
             fields = _scrape_theladders(url)
         elif board == "greenhouse":
             fields = _scrape_greenhouse(url)
+        elif board == "ultipro":
+            fields = _scrape_ultipro(url)
         else:
             fields = _scrape_generic(url)
     except requests.RequestException as exc:

@@ -40,7 +40,7 @@ jobs:
       # vs actions/checkout and all docker/* actions used below, which resolve
       # fine. Installing the git-cliff binary directly sidesteps the Action
       # wrapper entirely and only needs outbound access to github.com release
-      # assets, which this runner already has (see mirror.yml's GitHub push).
+      # assets, which this runner already has (the GHCR push below needs the same reach).
       - name: Generate changelog
         id: cliff
         run: |
