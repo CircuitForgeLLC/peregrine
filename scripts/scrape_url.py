@@ -3,15 +3,17 @@
 Scrape a job listing from its URL and update the job record.
 
 Supports:
-  - LinkedIn  (guest jobs API — no auth required)
-  - Indeed    (HTML parse)
-  - Glassdoor (JobSpy internal scraper, same as enrich_descriptions.py)
-  - Generic   (JSON-LD → og:tags fallback)
+  - LinkedIn   (guest jobs API — no auth required)
+  - Indeed     (HTML parse)
+  - Glassdoor  (JobSpy internal scraper, same as enrich_descriptions.py)
+  - Greenhouse (public boards JSON API — the board pages are client-rendered)
+  - Generic    (JSON-LD → og:tags fallback)
 
 Usage (background task — called by task_runner):
     from scripts.scrape_url import scrape_job_url
     scrape_job_url(db_path, job_id)
 """
+import html as html_lib
 import json
 import re
 import sqlite3
@@ -56,7 +58,7 @@ _TIMEOUT = 12
 
 
 def _detect_board(url: str) -> str:
-    """Return 'linkedin', 'indeed', 'glassdoor', 'jobgether', 'oracle_hcm', 'theladders', or 'generic'."""
+    """Return 'linkedin', 'indeed', 'glassdoor', 'jobgether', 'oracle_hcm', 'theladders', 'greenhouse', or 'generic'."""
     url_lower = url.lower()
     if "linkedin.com" in url_lower:
         return "linkedin"
@@ -70,6 +72,8 @@ def _detect_board(url: str) -> str:
         return "oracle_hcm"
     if "theladders.com" in url_lower:
         return "theladders"
+    if _parse_greenhouse_url(url):
+        return "greenhouse"
     return "generic"
 
 
@@ -435,6 +439,97 @@ def _parse_json_ld_or_og(html: str) -> dict:
     return {k: v for k, v in {"title": title, "description": description}.items() if v}
 
 
+_GREENHOUSE_API = "https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{job_id}"
+_GREENHOUSE_PATH_RE = re.compile(r"^/(?P<board>[^/?#]+)/jobs/(?P<job_id>\d+)")
+
+
+def _parse_greenhouse_url(url: str) -> tuple[str, str] | None:
+    """Return (board, job_id) for a Greenhouse job URL, or None.
+
+    Handles job-boards.greenhouse.io/<board>/jobs/<id>, boards.greenhouse.io/<board>/jobs/<id>
+    (EU boards included) and the embed form boards.greenhouse.io/embed/job_app?for=<board>&token=<id>.
+    A company page that only carries ?gh_jid=<id> has no board in the URL, so it is not matched.
+    """
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    if host != "greenhouse.io" and not host.endswith(".greenhouse.io"):
+        return None
+    if parsed.path.startswith("/embed/job_app"):
+        query = dict(parse_qsl(parsed.query))
+        board, job_id = query.get("for", ""), query.get("token", "")
+        return (board, job_id) if board and job_id.isdigit() else None
+    match = _GREENHOUSE_PATH_RE.match(parsed.path)
+    return (match["board"], match["job_id"]) if match else None
+
+
+def _greenhouse_html_to_text(escaped_html: str) -> str:
+    """The API's content field is HTML that has been HTML-escaped. Unescape it once, break lines at
+    block elements, bullet the list items, and let the parser decode the entities left inside."""
+    markup = html_lib.unescape(escaped_html)
+    markup = re.sub(r"<li[^>]*>", "- ", markup, flags=re.IGNORECASE)
+    markup = re.sub(r"</(p|div|h[1-6]|ul|ol|li|tr|table|section)>|<br\s*/?>", "\n", markup, flags=re.IGNORECASE)
+    text = BeautifulSoup(markup, "html.parser").get_text()
+    lines = [re.sub(r"[ \t ]+", " ", line).strip() for line in text.splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _format_greenhouse_pay(ranges: list | None) -> str:
+    """Format published pay ranges, e.g. '$95,000 - $110,000 USD' or 'EUR 60,000 - 70,000'."""
+    formatted = []
+    for pay in ranges or []:
+        low, high = pay.get("min_cents"), pay.get("max_cents")
+        if low is None and high is None:
+            continue
+        currency = (pay.get("currency_type") or "").upper()
+        low_amount = None if low is None else low / 100
+        high_amount = None if high is None else high / 100
+        amounts = [a for a in (low_amount, high_amount) if a is not None]
+        if currency == "USD":
+            span = " - ".join(f"${a:,.0f}" for a in dict.fromkeys(amounts))
+            formatted.append(f"{span} USD")
+        else:
+            span = " - ".join(f"{a:,.0f}" for a in dict.fromkeys(amounts))
+            formatted.append(f"{currency} {span}".strip())
+    return " | ".join(formatted)
+
+
+def _scrape_greenhouse(url: str) -> dict:
+    """Fetch a posting from Greenhouse's public boards API.
+
+    The board pages are client-rendered (no JobPosting JSON-LD, a placeholder <title>), so the
+    generic scraper only ever got the title. The API returns everything. A 404 means the job is
+    closed or unpublished, so fall back to whatever the page itself still shows.
+    """
+    parsed = _parse_greenhouse_url(url)
+    if parsed is None:
+        return _scrape_generic(url)
+    board, job_id = parsed
+    resp = requests.get(
+        _GREENHOUSE_API.format(board=board, job_id=job_id),
+        params={"pay_transparency": "true"},
+        headers=_HEADERS,
+        timeout=_TIMEOUT,
+    )
+    if resp.status_code == 404:
+        return _scrape_generic(url)
+    resp.raise_for_status()
+    data = resp.json()
+
+    location = ((data.get("location") or {}).get("name") or "").strip()
+    fields = {
+        "title": (data.get("title") or "").strip(),
+        "company": (data.get("company_name") or "").strip(),
+        "location": location,
+        "description": _greenhouse_html_to_text(data.get("content") or ""),
+        "salary": _format_greenhouse_pay(data.get("pay_input_ranges")),
+        "source": "greenhouse",
+    }
+    fields = {key: value for key, value in fields.items() if value}
+    if location:
+        fields["is_remote"] = "remote" in location.lower()
+    return fields
+
+
 def _scrape_generic(url: str) -> dict:
     resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
     resp.raise_for_status()
@@ -476,6 +571,8 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dic
             fields = _scrape_oracle_hcm(url)
         elif board == "theladders":
             fields = _scrape_theladders(url)
+        elif board == "greenhouse":
+            fields = _scrape_greenhouse(url)
         else:
             fields = _scrape_generic(url)
     except requests.RequestException as exc:
