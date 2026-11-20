@@ -30,8 +30,7 @@ class HomeAssistantIntegration(IntegrationBase):
 
     def test(self) -> bool:
         try:
-            import requests
-            r = requests.get(
+            r = self._get(
                 f"{self._config['base_url'].rstrip('/')}/api/",
                 headers={"Authorization": f"Bearer {self._config['token']}"},
                 timeout=8,

@@ -33,12 +33,11 @@ class NextcloudIntegration(IntegrationBase):
 
     def test(self) -> bool:
         try:
-            import requests
             host = self._config["host"].rstrip("/")
             username = self._config["username"]
             folder = self._config.get("folder_path", "")
             dav_url = f"{host}/remote.php/dav/files/{username}{folder}"
-            r = requests.request(
+            r = self._request(
                 "PROPFIND", dav_url,
                 auth=(username, self._config["password"]),
                 headers={"Depth": "0"},

@@ -19,13 +19,14 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from scripts import safe_net
 from scripts.db import DEFAULT_DB, update_job_fields
 
 _STRIP_PARAMS = {
@@ -59,18 +60,32 @@ _TIMEOUT = 12
 
 def _detect_board(url: str) -> str:
     """Return 'linkedin', 'indeed', 'glassdoor', 'jobgether', 'oracle_hcm', 'theladders', 'greenhouse', or 'generic'."""
-    url_lower = url.lower()
-    if "linkedin.com" in url_lower:
+    # Match on the host only. Looking for a board's name anywhere in the URL let any other host be
+    # routed to a board scraper (some of them drive a browser to the URL) just by putting that name
+    # in its path or query (peregrine#250).
+    host = (urlparse(url).hostname or "").lower()
+
+    def on(domain: str) -> bool:
+        return host == domain or host.endswith("." + domain)
+
+    if on("linkedin.com"):
         return "linkedin"
-    if "indeed.com" in url_lower:
+    if on("indeed.com"):
         return "indeed"
-    if "glassdoor.com" in url_lower:
+    if on("glassdoor.com"):
         return "glassdoor"
-    if "jobgether.com" in url_lower:
+    if on("jobgether.com"):
         return "jobgether"
-    if "oraclecloud.com" in url_lower and "hcmui" in url_lower:
+    # Oracle HCM career sites live on <tenant>.fa.<region>.oraclecloud.com and serve under /hcmUI/.
+    # Both are required: the "fa" label keeps other oraclecloud.com hosts (object storage, say) out
+    # of the browser scraper, and the path must START with /hcmUI/, not merely contain it somewhere.
+    if (
+        on("oraclecloud.com")
+        and "fa" in host.split(".")[1:-2]
+        and (urlparse(url).path or "").lower().startswith("/hcmui/")
+    ):
         return "oracle_hcm"
-    if "theladders.com" in url_lower:
+    if on("theladders.com"):
         return "theladders"
     if _parse_greenhouse_url(url):
         return "greenhouse"
@@ -108,7 +123,7 @@ def _scrape_linkedin(url: str) -> dict:
     if not job_id:
         return {}
     api_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
-    resp = requests.get(api_url, headers=_HEADERS, timeout=_TIMEOUT)
+    resp = _fetch(api_url, headers=_HEADERS, timeout=_TIMEOUT)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -133,7 +148,7 @@ def _scrape_linkedin(url: str) -> dict:
 
 def _scrape_indeed(url: str) -> dict:
     """Scrape an Indeed job page."""
-    resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+    resp = _fetch(url, headers=_HEADERS, timeout=_TIMEOUT)
     resp.raise_for_status()
     return _parse_json_ld_or_og(resp.text) or {}
 
@@ -185,10 +200,13 @@ def _scrape_jobgether(url: str) -> dict:
             browser = p.chromium.launch(headless=True)
             try:
                 ctx = browser.new_context(user_agent=_HEADERS["User-Agent"])
+                _guard_browser_context(ctx)
                 page = ctx.new_page()
                 page.goto(url, timeout=30_000)
                 page.wait_for_load_state("networkidle", timeout=20_000)
 
+                if _page_left_public_web(page):
+                    return {}
                 result = page.evaluate("""() => {
                     const title = document.querySelector('h1')?.textContent?.trim() || '';
                     const company = document.querySelector('[class*="company"], [class*="employer"], [data-testid*="company"]')
@@ -236,10 +254,13 @@ def _scrape_oracle_hcm(url: str) -> dict:
             browser = p.chromium.launch(headless=True)
             try:
                 ctx = browser.new_context(user_agent=_HEADERS["User-Agent"])
+                _guard_browser_context(ctx)
                 page = ctx.new_page()
                 page.goto(url, timeout=30_000)
                 page.wait_for_load_state("networkidle", timeout=20_000)
 
+                if _page_left_public_web(page):
+                    return {}
                 result = page.evaluate("""() => {
                     const sel = (s) => document.querySelector(s)?.textContent?.trim() || '';
                     const selInner = (s) => document.querySelector(s)?.innerText?.trim() || '';
@@ -321,6 +342,7 @@ def _scrape_theladders(url: str) -> dict:
             browser = p.chromium.launch(headless=True)
             try:
                 ctx = browser.new_context(user_agent=_HEADERS["User-Agent"])
+                _guard_browser_context(ctx)
                 page = ctx.new_page()
                 page.goto(url, timeout=30_000)
                 # The Ladders keeps background network activity (analytics,
@@ -358,12 +380,16 @@ def _scrape_theladders(url: str) -> dict:
                     # a missing title after this wait just means title comes back
                     # empty, not a fatal error for the whole scrape.
                     pass
+                if _page_left_public_web(page):
+                    return {}
                 html = page.content()
 
                 if _is_cloudflare_challenge(html):
                     print(f"[scrape_url] The Ladders: Cloudflare challenge for {url}, skipping")
                     return {}
 
+                if _page_left_public_web(page):
+                    return {}
                 result = page.evaluate("""() => {
                     // The Ladders renders contraction apostrophes through a custom
                     // web font that maps a control/PUA codepoint (observed as the
@@ -540,7 +566,9 @@ def _scrape_ultipro(url: str) -> dict:
     posting gives, which is what the page itself shows. A closed posting (404) or a page without a
     readable payload falls back to the generic scraper.
     """
-    resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+    # _fetch, not requests.get: on the hosted version it goes through the guarded session
+    # (peregrine#228), so a redirect or changed DNS answer cannot aim this at an internal address.
+    resp = _fetch(url, headers=_HEADERS, timeout=_TIMEOUT)
     if resp.status_code == 404:
         return _scrape_generic(url)
     resp.raise_for_status()
@@ -582,7 +610,7 @@ def _scrape_greenhouse(url: str) -> dict:
     if parsed is None:
         return _scrape_generic(url)
     board, job_id = parsed
-    resp = requests.get(
+    resp = _fetch(
         _GREENHOUSE_API.format(board=board, job_id=job_id),
         params={"pay_transparency": "true"},
         headers=_HEADERS,
@@ -608,8 +636,96 @@ def _scrape_greenhouse(url: str) -> dict:
     return fields
 
 
+def _guard_browser_context(context) -> None:
+    """On the hosted version, make the browser abort any request to a non-public address.
+
+    The browser-driven scrapers (Jobgether, Oracle HCM, TheLadders) load a page that runs scripts,
+    follows redirects and loads sub-resources on its own, so checking the first address is not
+    enough: every request the page makes is vetted here before it leaves. Anything that is not
+    http(s) is refused as well (file://, ftp://), except inline data:/blob: content, which makes no
+    network request. The browser resolves names itself, so a name that changes its answer between
+    this check and the browser's own lookup is a residual gap. It is narrowed by detecting these
+    scrapers on the board's own host only, never on a host that merely mentions it.
+    """
+    if not safe_net.cloud_mode():
+        return
+    verdicts: dict = {}
+
+    def allowed(url: str) -> bool:
+        parsed = urlparse(url)
+        key = (parsed.scheme, parsed.netloc.lower())
+        if key not in verdicts:
+            verdicts[key] = safe_net.public_url_error(url, ("http", "https")) is None
+        return verdicts[key]
+
+    def handle(route):
+        request = route.request
+        url = request.url
+        if urlparse(url).scheme in ("data", "blob", "about"):
+            route.continue_()
+            return
+        if not allowed(url):
+            route.abort()
+            return
+        if request.is_navigation_request():
+            # Chromium follows a redirect on its own and does not ask again for the next hop, so a
+            # page on an allowed host could be redirected into an internal service. Fetch the
+            # navigation without following redirects, vet where it points, and hand the browser
+            # the response, which makes it request the next hop through this handler again.
+            try:
+                response = route.fetch(max_redirects=0)
+            except Exception:  # noqa: BLE001 - any failure to fetch means the navigation is refused
+                route.abort()
+                return
+            if 300 <= response.status < 400:
+                location = response.headers.get("location")
+                if not location or not allowed(urljoin(url, location)):
+                    route.abort()
+                    return
+            route.fulfill(response=response)
+            return
+        route.continue_()
+
+    context.route("**/*", handle)
+
+    # WebSockets never reach the request handler above, so a script on the page could open one to
+    # an internal address. Route them too, and close any that is not public before it connects.
+    route_web_socket = getattr(context, "route_web_socket", None)
+    if route_web_socket is None:
+        raise RuntimeError("This Playwright version cannot restrict WebSockets, refusing to run the browser.")
+
+    def handle_web_socket(web_socket):
+        # wss:// -> https://, ws:// -> http://, so the same address check applies.
+        as_http = re.sub(r"^ws(s?)://", r"http\1://", web_socket.url, count=1, flags=re.IGNORECASE)
+        if allowed(as_http):
+            web_socket.connect_to_server()
+        # Otherwise do nothing. A routed WebSocket that never calls connect_to_server() is mocked:
+        # the page sees a socket but nothing leaves the machine. Calling close() here would be
+        # clearer but deadlocks Playwright's sync API inside a handler.
+
+    route_web_socket("**/*", handle_web_socket)
+
+
+def _page_left_public_web(page) -> bool:
+    """True on the hosted version when the page the browser ended up on is not a public http(s) page.
+
+    Checked before anything is read from the page, as a last line behind the request guard: if a
+    redirect or a script managed to land the browser somewhere internal, nothing from that page
+    is returned or stored."""
+    return safe_net.cloud_mode() and safe_net.public_url_error(page.url, ("http", "https")) is not None
+
+
+def _fetch(url: str, **kwargs):
+    """GET an address a user supplied. On the hosted version it goes through the safe session, which
+    cannot be aimed at the internal network (peregrine#250). Self-hosted installs fetch directly, so
+    a job board on the local network keeps working."""
+    if safe_net.cloud_mode():
+        return safe_net.SafeSession().get(url, **kwargs)
+    return requests.get(url, **kwargs)
+
+
 def _scrape_generic(url: str) -> dict:
-    resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+    resp = _fetch(url, headers=_HEADERS, timeout=_TIMEOUT)
     resp.raise_for_status()
     return _parse_json_ld_or_og(resp.text) or {}
 
@@ -633,6 +749,12 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dic
 
     url = row["url"] or ""
     if not url.startswith("http"):
+        return {}
+
+    # Checked again here, not only when the link was added: a name can resolve somewhere else later,
+    # and this is before any fetch or browser launch. The address is deliberately not logged.
+    if safe_net.cloud_mode() and safe_net.public_url_error(url, ("http", "https")):
+        print(f"[scrape_url] job {job_id}: refusing to fetch a non-public address")
         return {}
 
     board = _detect_board(url)

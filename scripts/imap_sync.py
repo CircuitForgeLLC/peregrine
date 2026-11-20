@@ -32,6 +32,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from scripts import safe_net
 from scripts.credential_store import get_credential
 from scripts.db import (
     DEFAULT_DB,
@@ -779,9 +780,13 @@ def connect(cfg: dict) -> imaplib.IMAP4:
     host = cfg.get("host", "imap.gmail.com")
     port = int(cfg.get("port", 993))
     use_ssl = cfg.get("use_ssl", True)
-    conn = (imaplib.IMAP4_SSL if use_ssl else imaplib.IMAP4)(
-        host, port, timeout=_IMAP_CONNECT_TIMEOUT_SECONDS
-    )
+    if safe_net.cloud_mode():
+        # The saved host is typed by a tenant. These classes connect to a vetted public address
+        # instead of letting imaplib resolve the name itself (peregrine#228).
+        connect_cls = safe_net.PinnedIMAP4_SSL if use_ssl else safe_net.PinnedIMAP4
+    else:
+        connect_cls = imaplib.IMAP4_SSL if use_ssl else imaplib.IMAP4
+    conn = connect_cls(host, port, timeout=_IMAP_CONNECT_TIMEOUT_SECONDS)
     conn.login(cfg["username"], cfg["password"])
     return conn
 

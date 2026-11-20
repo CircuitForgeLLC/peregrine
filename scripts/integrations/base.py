@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from scripts import safe_net
+
 
 class IntegrationBase(ABC):
     """All integrations inherit from this class.
@@ -44,6 +46,33 @@ class IntegrationBase(ABC):
     @abstractmethod
     def test(self) -> bool:
         """Verify the stored credentials actually work. Returns True on success."""
+
+    # ── Requests to an address the user typed ─────────────────────────────────────────────────
+    # On the hosted version these go through safe_net's session, which cannot be aimed at the
+    # internal network by an address, a name that changes its answer, or a redirect
+    # (peregrine#228). Self-hosted installs call `requests` directly, so a Home Assistant or a
+    # Nextcloud on the local network keeps working.
+
+    @staticmethod
+    def _post(url: str, **kwargs):
+        if safe_net.cloud_mode():
+            return safe_net.SafeSession().post(url, **kwargs)
+        import requests
+        return requests.post(url, **kwargs)
+
+    @staticmethod
+    def _get(url: str, **kwargs):
+        if safe_net.cloud_mode():
+            return safe_net.SafeSession().get(url, **kwargs)
+        import requests
+        return requests.get(url, **kwargs)
+
+    @staticmethod
+    def _request(method: str, url: str, **kwargs):
+        if safe_net.cloud_mode():
+            return safe_net.SafeSession().request(method, url, **kwargs)
+        import requests
+        return requests.request(method, url, **kwargs)
 
     def sync(self, jobs: list[dict]) -> int:
         """Push jobs to the external service. Returns count synced.

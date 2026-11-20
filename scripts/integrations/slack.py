@@ -27,8 +27,7 @@ class SlackIntegration(IntegrationBase):
 
     def test(self) -> bool:
         try:
-            import requests
-            r = requests.post(
+            r = self._post(
                 self._config["webhook_url"],
                 json={"text": "Peregrine connected successfully."},
                 timeout=8,
