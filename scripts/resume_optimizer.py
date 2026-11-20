@@ -22,7 +22,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from scripts.experience_facts import ExperienceFact
+from scripts.experience_facts import ExperienceFact, is_usable_fact
 from scripts.resume_claims import find_unbacked_terms
 
 log = logging.getLogger(__name__)
@@ -232,15 +232,17 @@ def rewrite_for_ats(
         prioritized_gaps: Output of prioritize_gaps().
         job: Job dict with at minimum {"title": str, "company": str, "description": str}.
         candidate_voice: Free-text personality/style note from user.yaml (may be empty).
-        facts: Maps a gap term to the candidate's own fact for it, as returned by
-            usable_facts_for_prompt. Gaps without a fact are never shown to the model,
-            and a section where the model slips in such a term is left unchanged.
+        facts: Maps a gap term to the candidate's own fact for it, normally from
+            usable_facts_for_prompt. This function enforces usability itself: a fact that
+            is private, kind "none", retired or blank is treated as no fact at all. Gaps
+            without a usable fact are never shown to the model, and a section where the
+            model slips in such a term is left unchanged.
 
     Returns:
         New resume dict (same structure as input) with rewritten sections.
         Sections with no relevant gaps are copied through unchanged.
     """
-    facts = facts or {}
+    facts = {t: f for t, f in (facts or {}).items() if is_usable_fact(f)}
     backed_gaps = [g for g in prioritized_gaps if g["term"] in facts]
     unbacked_terms = [g["term"] for g in prioritized_gaps if g["term"] not in facts]
     prioritized_gaps = backed_gaps

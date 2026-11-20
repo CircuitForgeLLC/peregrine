@@ -1,13 +1,16 @@
+import dataclasses
 import sqlite3
 
 import pytest
 
 from scripts.db_migrate import migrate_db
 from scripts.experience_facts import (
+    ExperienceFact,
     add_fact,
     delete_fact,
     find_matching_fact,
     get_fact,
+    is_usable_fact,
     list_facts,
     normalize_term,
     update_fact,
@@ -186,3 +189,18 @@ def test_blanked_fact_never_reaches_usable_facts(db_path):
     with pytest.raises(ValueError):
         update_fact(db_path, fid, text="  ")
     assert usable_facts_for_prompt(db_path, ["scheduling"])["scheduling"].text == "orig"
+
+
+def test_is_usable_fact_requires_active_document_experience_or_adjacent_with_text():
+    base = ExperienceFact(
+        id=1, kind="experience", requirement="scheduling", text="I built the rota.",
+        visibility="document", status="active", source="card", origin_job_id=None,
+        created_at="", updated_at="",
+    )
+    assert is_usable_fact(base)
+    assert is_usable_fact(dataclasses.replace(base, kind="adjacent"))
+    assert not is_usable_fact(dataclasses.replace(base, visibility="private"))
+    assert not is_usable_fact(dataclasses.replace(base, kind="none"))
+    assert not is_usable_fact(dataclasses.replace(base, status="retired"))
+    assert not is_usable_fact(dataclasses.replace(base, text=""))
+    assert not is_usable_fact(dataclasses.replace(base, text="  \n "))

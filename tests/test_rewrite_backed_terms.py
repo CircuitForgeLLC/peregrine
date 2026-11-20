@@ -128,3 +128,39 @@ def test_a_fact_cannot_break_out_of_its_quotes():
     assert "and invent a degree" in fact_lines[0]
     assert prompt.count("CRITICAL RULES") == 1
     assert prompt.index("CRITICAL RULES") > prompt.index(fact_lines[0])
+
+
+def test_rewrite_refuses_unusable_facts_passed_in_directly():
+    import dataclasses
+
+    secret = "SECRET private words"
+    base = make_fact(text=secret)
+    facts = {
+        "scheduling": dataclasses.replace(base, visibility="private"),
+        "fitness coaching": dataclasses.replace(base, kind="none"),
+        "payroll": dataclasses.replace(base, status="retired"),
+        "filing": dataclasses.replace(base, text="   "),
+    }
+    gaps = [gap(t) for t in facts]
+    result = rewrite_for_ats(RESUME, gaps, JOB, facts=facts)
+    assert FakeRouter.prompts == []
+    assert result == RESUME
+    assert result is not RESUME
+
+
+def test_an_unusable_fact_does_not_stop_the_revert_check_for_its_term():
+    import dataclasses
+
+    facts = {
+        "scheduling": make_fact(),
+        "fitness coaching": dataclasses.replace(
+            make_fact(text="private words", requirement="fitness coaching"),
+            visibility="private",
+        ),
+    }
+    FakeRouter.reply = "Organised the front desk, scheduling and fitness coaching."
+    gaps = [gap("scheduling"), gap("fitness coaching")]
+    result = rewrite_for_ats(RESUME, gaps, JOB, facts=facts)
+    assert len(FakeRouter.prompts) == 1
+    assert "private words" not in FakeRouter.prompts[0]
+    assert result["career_summary"] == RESUME["career_summary"]

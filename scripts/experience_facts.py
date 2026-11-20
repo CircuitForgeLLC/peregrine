@@ -247,6 +247,16 @@ def find_matching_fact(db_path: Path, term: str) -> ExperienceFact | None:
     return _best_match(term, list_facts(db_path, status="active"))
 
 
+def is_usable_fact(fact: ExperienceFact) -> bool:
+    """True only for an active, document-visible experience or adjacent fact with text."""
+    return (
+        fact.status == "active"
+        and fact.kind in _USABLE_KINDS
+        and fact.visibility == "document"
+        and bool(fact.text.strip())
+    )
+
+
 def usable_facts_for_prompt(
     db_path: Path, terms: Sequence[str]
 ) -> dict[str, ExperienceFact]:
@@ -255,11 +265,7 @@ def usable_facts_for_prompt(
     Only active experience or adjacent facts with document visibility are
     considered, resolved with the same matching as find_matching_fact.
     """
-    usable = [
-        f
-        for f in list_facts(db_path, status="active")
-        if f.kind in _USABLE_KINDS and f.visibility == "document"
-    ]
+    usable = [f for f in list_facts(db_path, status="active") if is_usable_fact(f)]
     result: dict[str, ExperienceFact] = {}
     for term in terms:
         match = _best_match(term, usable)
