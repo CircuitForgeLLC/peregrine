@@ -37,6 +37,21 @@ def test_symbol_terms_match_literally():
     assert find_unbacked_terms("x", "Built .NET apps", [".NET"]) == [".NET"]
 
 
+def test_a_bare_c_term_is_not_matched_inside_cplusplus_or_csharp():
+    assert find_unbacked_terms("x", "Wrote C++ services", ["C"]) == []
+    assert find_unbacked_terms("x", "Wrote C# services", ["C"]) == []
+    assert find_unbacked_terms("x", "Wrote C services", ["C"]) == ["C"]
+
+
+def test_a_cplusplus_original_does_not_back_a_bare_c_in_the_rewrite():
+    assert find_unbacked_terms("Wrote C++.", "Wrote C and C++.", ["C"]) == ["C"]
+
+
+def test_dot_net_term_is_found_inside_asp_dot_net():
+    assert find_unbacked_terms("x", "Built ASP.NET apps", [".NET"]) == [".NET"]
+    assert find_unbacked_terms("Built ASP.NET apps", "Built ASP.NET apps", [".NET"]) == []
+
+
 def test_terms_are_returned_once_in_given_order():
     assert find_unbacked_terms("x", "dogs and cats and cat", ["cat", "dog", "cat"]) == ["cat", "dog"]
 

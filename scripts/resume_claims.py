@@ -33,9 +33,13 @@ _STOPWORDS = frozenset(
 
 def _term_pattern(term: str) -> re.Pattern[str]:
     """Whole-word, case-insensitive matcher allowing a plural (cat, cats), symbols literal."""
-    return re.compile(
-        r"(?<![a-z0-9])" + re.escape(term.strip().lower()) + r"(?:s|es)?(?![a-z0-9])"
-    )
+    core = term.strip().lower()
+    # A term starting with a symbol (".NET") may sit inside a longer name ("ASP.NET"), so no
+    # leading boundary. A term ending in a letter or digit ("C") must not match the start of
+    # "C++" or "C#", which are different terms.
+    lead = "" if not core[:1].isalnum() else r"(?<![a-z0-9])"
+    trail = r"(?![a-z0-9+#])" if core[-1:].isalnum() else r"(?![a-z0-9])"
+    return re.compile(lead + re.escape(core) + r"(?:s|es)?" + trail)
 
 
 def find_unbacked_terms(
