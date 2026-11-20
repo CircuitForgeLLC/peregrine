@@ -249,7 +249,7 @@ def rewrite_for_ats(
     if not prioritized_gaps:
         return dict(resume)
 
-    from scripts.llm_router import LLMRouter
+    from scripts.llm_router import LLMRouter, complete_cold
     router = LLMRouter()
 
     # Rerank gaps by JD relevance so the most impactful terms are injected first.
@@ -316,7 +316,7 @@ def rewrite_for_ats(
         )
 
         try:
-            result = router.complete(prompt)
+            result = complete_cold(router, prompt)
             slipped = find_unbacked_terms(original_content, result, unbacked_terms)
             if slipped:
                 log.warning(
@@ -456,7 +456,7 @@ def frame_skill_gaps(
     Returns:
         New resume dict with framing language injected.
     """
-    from scripts.llm_router import LLMRouter
+    from scripts.llm_router import LLMRouter, complete_cold
     router = LLMRouter()
 
     updated = dict(struct)
@@ -500,7 +500,7 @@ def frame_skill_gaps(
         )
 
         try:
-            new_bullet = router.complete(prompt).strip()
+            new_bullet = complete_cold(router, prompt).strip()
             new_bullet = re.sub(r"^[•\-–—*◦▪▸►]\s*", "", new_bullet).strip()
             if new_bullet:
                 bullets.append(new_bullet)
