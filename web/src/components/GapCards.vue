@@ -45,7 +45,7 @@
         </ul>
       </details>
 
-      <div class="gcs__list" :inert="saving">
+      <div class="gcs__list" :inert="saving || undefined">
         <GapCard
           v-for="(card, i) in batch"
           :key="card.term"
@@ -115,6 +115,8 @@ function detailFrom(error: { kind: string; status?: number; detail?: string }): 
 const savedGroup = ref<CardData[]>([])
 /** Keywords with an exact "have not done" or private answer. Listed, never approved unless changed. */
 const notUsable = ref<CardData[]>([])
+/** The not-used keywords in the order they were first shown, so a returned one goes back to its place. */
+const notUsableOrder = ref<string[]>([])
 /** Every keyword that still needs an answer, in priority order. Cards are shown a batch at a time. */
 const queue = ref<CardData[]>([])
 const shownCount = ref(0)
@@ -172,6 +174,7 @@ async function load() {
   if (error || !data) { loadError.value = true; saveDetail.value = error ? detailFrom(error) : ''; loading.value = false; return }
   savedGroup.value = data.cards.filter((c) => groupOf(c) === 'saved')
   notUsable.value = data.cards.filter((c) => groupOf(c) === 'notUsable')
+  notUsableOrder.value = notUsable.value.map((c) => c.term)
   queue.value = data.cards.filter((c) => groupOf(c) === 'unanswered')
   states.value = Object.fromEntries(queue.value.map((c) => [c.term, props.drafts?.[c.term] ?? initialState(c)]))
   useSaved.value = true; savedSent.value = false; approved.value = []; promoted.value = new Set()
@@ -189,6 +192,8 @@ function update(term: string, s: CardState) {
 }
 
 function promote(card: CardData) {
+  // A save in flight owns the batch. A click that gets past the disabled button must not change it.
+  if (saving.value) return
   notUsable.value = notUsable.value.filter((c) => c.term !== card.term)
   states.value = { ...states.value, [card.term]: props.drafts?.[card.term] ?? initialState(card) }
   promoted.value = new Set([...promoted.value, card.term])
@@ -266,7 +271,18 @@ function savedAnswer(card: CardData) {
   return toAnswer(card, state)
 }
 
+/** A changed keyword left as it was is not saved, so it goes back to the not-used list as it was shown. */
+function returnUntouchedPromoted() {
+  const untouched = batch.value.filter(isUntouched)
+  if (untouched.length === 0) return
+  const back = new Set(untouched.map((c) => c.term))
+  const order = notUsableOrder.value
+  notUsable.value = [...notUsable.value, ...untouched].sort((a, b) => order.indexOf(a.term) - order.indexOf(b.term))
+  promoted.value = new Set([...promoted.value].filter((t) => !back.has(t)))
+}
+
 async function showNextBatch() {
+  returnUntouchedPromoted()
   batch.value = queue.value.slice(shownCount.value, shownCount.value + CARD_BATCH_SIZE)
   shownCount.value += batch.value.length
   await nextTick()

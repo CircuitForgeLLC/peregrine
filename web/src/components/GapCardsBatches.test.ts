@@ -40,6 +40,8 @@ const changeButton = (w: W, term: string) =>
   w.findAll('button').find((b) => b.text().startsWith('Change') && b.text().includes(term))!
 const moreButton = (w: W) => w.findAll('button').find((b) => b.text().startsWith('Save and ask about'))
 const legends = (w: W) => w.findAll('fieldset legend').map((l) => l.text())
+/** The more button by position, since its label changes to Saving or Retry saving. */
+const moreButtonAlways = (w: W) => w.findAll('.gcs__actions button')[1]
 const mainButton = (w: W) => w.find('button.gcs__btn--primary')
 function answersCalls() {
   return fetchMock.mock.calls
@@ -350,15 +352,54 @@ describe('GapCards batches and saved answers', () => {
     })
     const w = mount(GapCards, { props: { jobId: 7, terms: all.map((c) => c.term) }, attachTo: document.body })
     await flushPromises()
+    expect(w.find('.gcs__list').attributes('inert')).toBeUndefined()
     await moreButton(w)!.trigger('click')
     await flushPromises()
     expect(changeButton(w, 'Rust').attributes('disabled')).toBeDefined()
     expect(w.find('.gcs__list').attributes('inert')).toBeDefined()
+    // A click that still reaches the disabled button changes nothing.
+    const legendsBefore = legends(w)
+    const notUsedBefore = w.find('.gcs__skipped').text()
+    changeButton(w, 'Rust').element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+    expect(legends(w)).toEqual(legendsBefore)
+    expect(legends(w)).not.toContain('Rust')
+    expect(w.find('.gcs__skipped').text()).toBe(notUsedBefore)
+    expect(w.find('.gcs__skipped summary').text()).toBe('Answered, not used (1)')
     release({ data: { approved_terms: [], saved: 0 }, error: null })
     await flushPromises()
+    expect(w.find('.gcs__list').attributes('inert')).toBeUndefined()
     expect(changeButton(w, 'Rust').attributes('disabled')).toBeUndefined()
     await changeButton(w, 'Rust').trigger('click')
     expect(legends(w)).toContain('Rust')
+  })
+
+  it('test_the_card_list_is_inert_only_while_saving', async () => {
+    const all = unanswered(CARD_BATCH_SIZE + 1)
+    let release: (v: unknown) => void = () => {}
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/gap_cards')) return { data: { cards: all }, error: null } as any
+      return new Promise((r) => { release = r }) as any
+    })
+    const w = mount(GapCards, { props: { jobId: 7, terms: all.map((c) => c.term) }, attachTo: document.body })
+    await flushPromises()
+    const list = () => w.find('.gcs__list')
+    expect(list().attributes('inert')).toBeUndefined()
+    expect(list().html()).not.toContain('inert')
+    await moreButtonAlways(w).trigger('click')
+    await flushPromises()
+    expect(list().attributes('inert')).toBeDefined()
+    release({ data: null, error: { kind: 'network', message: 'x' } })
+    await flushPromises()
+    expect(list().attributes('inert')).toBeUndefined()
+    expect(list().html()).not.toContain('inert')
+    await moreButtonAlways(w).trigger('click')
+    await flushPromises()
+    expect(list().attributes('inert')).toBeDefined()
+    release({ data: { approved_terms: [], saved: 0 }, error: null })
+    await flushPromises()
+    expect(list().attributes('inert')).toBeUndefined()
+    expect(list().html()).not.toContain('inert')
   })
 
   it('test_exactly_the_batch_size_remaining_says_last_and_builds_the_number_from_the_constant', async () => {
@@ -381,7 +422,7 @@ describe('GapCards batches and saved answers', () => {
     const w = await mountCards(cards)
     await w.find('input[value="yes"]').setValue(true)
     await w.find('textarea').setValue('First draft')
-    await moreButton(w)!.trigger('click')
+    await moreButtonAlways(w).trigger('click')
     await flushPromises()
     await w.find('input[value="yes"]').setValue(true)
     await w.find('textarea').setValue('Second draft')
@@ -392,6 +433,109 @@ describe('GapCards batches and saved answers', () => {
     await flushPromises()
     expect(legends(w2)).toEqual([last])
     expect((w2.find('textarea').element as HTMLTextAreaElement).value).toBe('Second draft')
+  })
+
+  it('test_an_untouched_changed_keyword_returns_to_answered_not_used_after_a_more_save', async () => {
+    const all = [...unanswered(CARD_BATCH_SIZE + 1), noAnswer('Rust', 2), noAnswer('Zulu', 3)]
+    const w = await mountCards(all)
+    await changeButton(w, 'Rust').trigger('click')
+    expect(w.find('.gcs__skipped summary').text()).toBe('Answered, not used (1)')
+    await moreButton(w)!.trigger('click')
+    await flushPromises()
+    const body = answersCalls()[0]
+    expect(body.map((a) => a.term)).not.toContain('Rust')
+    expect(legends(w)).toEqual([`T${CARD_BATCH_SIZE + 1}`])
+    expect(legends(w)).not.toContain('Rust')
+    const group = w.find('.gcs__skipped')
+    expect(group.exists()).toBe(true)
+    expect(group.find('summary').text()).toBe('Answered, not used (2)')
+    const terms = group.findAll('.gcs__term').map((t) => t.text())
+    expect(terms).toEqual(['Rust', 'Zulu'])
+    expect(group.text()).toContain('You said you have not done this')
+    expect(changeButton(w, 'Rust')).toBeDefined()
+    // It can be changed again from there.
+    await changeButton(w, 'Rust').trigger('click')
+    expect(legends(w)).toContain('Rust')
+  })
+
+  it('test_a_changed_keyword_stays_saved_and_is_not_returned_to_answered_not_used', async () => {
+    const all = [...unanswered(CARD_BATCH_SIZE + 1), noAnswer('Rust', 2)]
+    const w = await mountCards(all, { data: { approved_terms: ['Rust'], saved: 1 }, error: null })
+    await changeButton(w, 'Rust').trigger('click')
+    const rustSet = w.findAll('fieldset')[CARD_BATCH_SIZE]
+    await rustSet.find('input[value="yes"]').setValue(true)
+    await rustSet.find('textarea').setValue('Wrote services')
+    await moreButton(w)!.trigger('click')
+    await flushPromises()
+    expect(answersCalls()[0].find((a) => a.term === 'Rust')).toMatchObject({ choice: 'yes', text: 'Wrote services' })
+    expect(w.find('.gcs__skipped').exists()).toBe(false)
+    expect(legends(w)).toEqual([`T${CARD_BATCH_SIZE + 1}`])
+  })
+
+  it('test_retry_after_a_failed_main_save_emits_done_after_success', async () => {
+    const all = unanswered(CARD_BATCH_SIZE + 1)
+    let fail = true
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/gap_cards')) return { data: { cards: all }, error: null } as any
+      return (fail ? { data: null, error: { kind: 'network', message: 'x' } } : { data: { approved_terms: ['T1'], saved: 1 }, error: null }) as any
+    })
+    const w = mount(GapCards, { props: { jobId: 7, terms: all.map((c) => c.term) }, attachTo: document.body })
+    await flushPromises()
+    await w.find('input[value="yes"]').setValue(true)
+    await w.find('textarea').setValue('Ran clusters')
+    await mainButton(w).trigger('click')
+    await flushPromises()
+    expect(mainButton(w).text()).toBe('Retry saving')
+    expect(moreButton(w)!.text()).not.toBe('Retry saving')
+    expect(w.emitted('done')).toBeUndefined()
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('Ran clusters')
+    fail = false
+    await mainButton(w).trigger('click')
+    await flushPromises()
+    const calls = answersCalls()
+    expect(calls).toHaveLength(2)
+    expect(calls[1]).toEqual(calls[0])
+    expect(calls[0]).toHaveLength(CARD_BATCH_SIZE)
+    expect(calls[0][0]).toMatchObject({ term: 'T1', choice: 'yes', text: 'Ran clusters' })
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('Ran clusters')
+    expect(w.emitted('done')).toHaveLength(1)
+    expect(w.emitted('done')![0]).toEqual([['T1']])
+    // The more button took no part: the batch did not advance.
+    expect(legends(w)).toEqual(Array.from({ length: CARD_BATCH_SIZE }, (_, i) => `T${i + 1}`))
+  })
+
+  it('test_saving_is_shown_only_on_the_pressed_button', async () => {
+    const all = unanswered(CARD_BATCH_SIZE + 2)
+    const normalMore = `Save and ask about the last 2`
+    async function mountDeferred() {
+      let release: (v: unknown) => void = () => {}
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url.endsWith('/gap_cards')) return { data: { cards: all }, error: null } as any
+        return new Promise((r) => { release = r }) as any
+      })
+      const w = mount(GapCards, { props: { jobId: 7, terms: all.map((c) => c.term) }, attachTo: document.body })
+      await flushPromises()
+      return { w, release: (v: unknown) => release(v) }
+    }
+    const a = await mountDeferred()
+    await mainButton(a.w).trigger('click')
+    await flushPromises()
+    expect(mainButton(a.w).text()).toBe('Saving…')
+    expect(moreButtonAlways(a.w).text()).toBe(normalMore)
+    expect(mainButton(a.w).attributes('disabled')).toBeDefined()
+    expect(moreButtonAlways(a.w).attributes('disabled')).toBeDefined()
+    a.release({ data: { approved_terms: [], saved: 0 }, error: null })
+    await flushPromises()
+
+    const b = await mountDeferred()
+    await moreButtonAlways(b.w).trigger('click')
+    await flushPromises()
+    expect(moreButtonAlways(b.w).text()).toBe('Saving…')
+    expect(mainButton(b.w).text()).toBe('Save answers and continue')
+    expect(mainButton(b.w).attributes('disabled')).toBeDefined()
+    expect(moreButtonAlways(b.w).attributes('disabled')).toBeDefined()
+    b.release({ data: { approved_terms: [], saved: 0 }, error: null })
+    await flushPromises()
   })
 
   it('has no em dashes or semicolons in the new copy', async () => {
