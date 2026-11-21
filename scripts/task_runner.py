@@ -290,11 +290,24 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             from pathlib import Path as _Path
 
             from scripts.discover import run_discovery
+
+            # Catch up on LinkedIn descriptions that an earlier run could not fetch. This runs before
+            # discovery so the throttle has had time to clear and it does not compete with the new burst.
+            linkedin_note = ""
+            try:
+                from scripts.linkedin_backfill import (
+                    backfill_linkedin_descriptions,
+                    completion_note,
+                )
+                linkedin_note = completion_note(backfill_linkedin_descriptions(db_path))
+            except Exception as exc:  # noqa: BLE001 -- the backfill is best-effort, discovery must still run
+                print(f"[task_runner] LinkedIn description backfill failed: {type(exc).__name__}")
+
             new_count = run_discovery(db_path, config_dir=_Path(db_path).parent / "config")
             n = new_count or 0
             update_task_status(
                 db_path, task_id, "completed",
-                error=f"{n} new listing{'s' if n != 1 else ''} added",
+                error=f"{n} new listing{'s' if n != 1 else ''} added{linkedin_note}",
             )
             return
 
