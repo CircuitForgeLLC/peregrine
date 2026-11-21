@@ -74,16 +74,32 @@
         <h3 class="rop__subheading">Optimized Resume</h3>
         <button
           class="btn-generate"
-          :disabled="rewriteState === 'queued' || rewriteState === 'running' || gaps.length === 0"
+          :disabled="rewriteState === 'queued' || rewriteState === 'running' || cardsOpen || gaps.length === 0 || selectedGaps.size === 0"
+          :aria-describedby="gaps.length > 0 && selectedGaps.size === 0 ? 'rop-select-hint' : undefined"
           :title="gaps.length === 0 ? 'Run gap analysis first' : ''"
-          @click="runFullRewrite"
+          @click="openCards"
         >
           <span aria-hidden="true">✨</span>
           {{ rewriteState === 'queued' || rewriteState === 'running' ? 'Rewriting…' : 'Optimize Resume' }}
         </button>
       </div>
 
-      <template v-if="rewriteState === 'queued' || rewriteState === 'running'">
+      <p v-if="gaps.length > 0 && selectedGaps.size === 0" id="rop-select-hint" class="rop__hint">
+        Select at least one keyword above to optimize your resume.
+      </p>
+      <p v-if="nothingToRewrite" class="rop__hint" role="status">
+        Nothing to rewrite yet, because none of these keywords have an answer from you.
+      </p>
+
+      <GapCards
+        v-if="cardsOpen"
+        :job-id="props.jobId"
+        :terms="[...selectedGaps]"
+        @done="onCardsDone"
+        @cancel="cardsOpen = false"
+      />
+
+      <template v-else-if="rewriteState === 'queued' || rewriteState === 'running'">
         <div class="rop__spinner-row" role="status" aria-live="polite">
           <span class="spinner" aria-hidden="true" />
           <span>{{ rewriteStage ?? 'Rewriting resume sections…' }}</span>
@@ -178,7 +194,7 @@
           <button class="btn-download" @click="downloadYaml">
             <span aria-hidden="true">📋</span> Download YAML
           </button>
-          <button class="btn-secondary" @click="runFullRewrite">
+          <button class="btn-secondary" @click="openCards">
             <span aria-hidden="true">🔄</span> Rewrite again
           </button>
         </div>
@@ -232,6 +248,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { apiUrl, useApiFetch } from '../composables/useApi'
 import { useAppConfigStore } from '../stores/appConfig'
 import ResumeReviewModal from './ResumeReviewModal.vue'
+import GapCards from './GapCards.vue'
 
 const props = defineProps<{ jobId: number }>()
 
@@ -273,6 +290,8 @@ const gapState    = ref<TaskState>('none')
 const gapStage    = ref<string | null>(null)
 const gaps        = ref<Array<{ term: string; section: string; priority: number; rationale: string }>>([])
 const selectedGaps = ref<Set<string>>(new Set())
+const cardsOpen = ref(false)
+const nothingToRewrite = ref(false)
 
 // ── Rewrite / review state ────────────────────────────────────────────────────
 
@@ -409,6 +428,18 @@ async function runGapReport() {
   startPolling()
 }
 
+function openCards() {
+  if (selectedGaps.value.size === 0) return
+  nothingToRewrite.value = false
+  cardsOpen.value = true
+}
+
+function onCardsDone(approved: string[]) {
+  cardsOpen.value = false
+  if (approved.length === 0) { nothingToRewrite.value = true; return }
+  runFullRewrite()
+}
+
 async function runFullRewrite() {
   rewriteState.value = 'queued'; rewriteStage.value = null
   optimizedResume.value = ''; reviewDraft.value = null; reviewError.value = ''
@@ -424,6 +455,7 @@ async function runFullRewrite() {
 }
 
 function toggleGap(term: string) {
+  cardsOpen.value = false
   const next = new Set(selectedGaps.value)
   if (next.has(term)) next.delete(term)
   else next.add(term)
@@ -484,7 +516,7 @@ async function handleReviewSubmit(decisions: Record<string, unknown>) {
 
 function handleRewriteAgain() {
   showReviewModal.value = false
-  runFullRewrite()
+  openCards()
 }
 
 async function approveResume() {
