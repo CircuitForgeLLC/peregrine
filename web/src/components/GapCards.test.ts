@@ -204,4 +204,43 @@ describe('GapCards', () => {
     expect(text).toContain('No, not something I have done')
     expect(text.toLowerCase()).not.toMatch(/urgent|hurry|deadline|expires|only \d+ left/)
   })
+
+  it('test_a_failed_save_shows_the_servers_detail_message_as_plain_text', async () => {
+    const w = await mountCards([card('Kubernetes')], { data: null, error: { kind: 'http', status: 422, detail: '<b>too long</b>' } })
+    await w.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    const alert = w.find('[role="alert"]')
+    expect(alert.text()).toContain('<b>too long</b>')
+    expect(alert.find('b').exists()).toBe(false)
+  })
+
+  it('shows a JSON detail string from the server', async () => {
+    const w = await mountCards([card('Kubernetes')], { data: null, error: { kind: 'http', status: 422, detail: '{"detail":"Text is too long"}' } })
+    await w.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    expect(w.find('[role="alert"]').text()).toContain('Text is too long')
+  })
+
+  it('starts from supplied drafts, and a draft wins over a saved suggestion', async () => {
+    fetchMock.mockImplementation(async () => ({
+      data: { cards: [card('Kubernetes', { id: 4, kind: 'experience', text: 'Saved', visibility: 'document' })] }, error: null,
+    }) as any)
+    const w = mount(GapCards, {
+      props: { jobId: 7, terms: ['Kubernetes'], drafts: { Kubernetes: { choice: 'similar', text: 'Typed', private: true } } },
+    })
+    await flushPromises()
+    expect((w.find('input[value="similar"]').element as HTMLInputElement).checked).toBe(true)
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('Typed')
+  })
+
+  it('emits the whole drafts object on every change', async () => {
+    const w = await mountCards([card('Kubernetes'), card('Terraform')])
+    await w.findAll('input[value="yes"]')[1].setValue(true)
+    await w.find('textarea').setValue('Wrote modules')
+    const last = w.emitted('drafts-change')!.at(-1)![0]
+    expect(last).toEqual({
+      Kubernetes: { choice: 'skip', text: '', private: false },
+      Terraform: { choice: 'yes', text: 'Wrote modules', private: false },
+    })
+  })
 })

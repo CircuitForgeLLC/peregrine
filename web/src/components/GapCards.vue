@@ -10,6 +10,7 @@
 
     <div v-else-if="loadError" class="gcs__error" role="alert">
       <p>We could not load the questions. Nothing was lost.</p>
+      <p v-if="saveDetail">{{ saveDetail }}</p>
       <button type="button" class="gcs__btn" @click="load">Retry</button>
     </div>
 
@@ -30,6 +31,7 @@
 
       <div v-if="saveError" class="gcs__error" role="alert">
         <p>We could not save your answers. What you typed is still here.</p>
+        <p v-if="saveDetail">{{ saveDetail }}</p>
       </div>
 
       <div class="gcs__actions">
@@ -49,8 +51,25 @@ import { useApiFetch } from '../composables/useApi'
 import GapCard from './GapCard.vue'
 import type { CardData, CardState, Choice } from './GapCard.vue'
 
-const props = defineProps<{ jobId: number; terms: string[] }>()
-const emit = defineEmits<{ (e: 'done', approved: string[]): void; (e: 'cancel'): void }>()
+const props = defineProps<{ jobId: number; terms: string[]; drafts?: Record<string, CardState> }>()
+const emit = defineEmits<{
+  (e: 'done', approved: string[]): void
+  (e: 'cancel'): void
+  (e: 'drafts-change', drafts: Record<string, CardState>): void
+}>()
+
+const saveDetail = ref('')
+
+// A 422 carries a plain-language message from the server. Other failures use our fixed sentence.
+function detailFrom(error: { kind: string; status?: number; detail?: string }): string {
+  if (error.kind !== 'http' || error.status !== 422 || !error.detail) return ''
+  try {
+    const parsed = JSON.parse(error.detail)
+    return typeof parsed?.detail === 'string' ? parsed.detail : ''
+  } catch {
+    return error.detail.trim().slice(0, 300)
+  }
+}
 
 const cards = ref<CardData[]>([])
 const states = ref<CardState[]>([])
@@ -76,9 +95,9 @@ async function load() {
     body: JSON.stringify({ terms: props.terms }),
     headers: { 'Content-Type': 'application/json' },
   })
-  if (error || !data) { loadError.value = true; loading.value = false; return }
+  if (error || !data) { loadError.value = true; saveDetail.value = error ? detailFrom(error) : ''; loading.value = false; return }
   cards.value = data.cards
-  states.value = data.cards.map(initialState)
+  states.value = data.cards.map((c) => props.drafts?.[c.term] ?? initialState(c))
   loading.value = false
   await nextTick()
   cardRefs.value[0]?.focusLegend()
@@ -86,6 +105,7 @@ async function load() {
 
 function update(i: number, s: CardState) {
   states.value = states.value.map((old, idx) => (idx === i ? s : old))
+  emit('drafts-change', Object.fromEntries(cards.value.map((c, idx) => [c.term, states.value[idx]])))
 }
 
 const answeredCount = computed(() => states.value.filter((s) => s.choice !== 'skip').length)
@@ -109,14 +129,14 @@ function toAnswer(card: CardData, s: CardState) {
 }
 
 async function save() {
-  saving.value = true; saveError.value = false
+  saving.value = true; saveError.value = false; saveDetail.value = ''
   const answers = cards.value.map((c, i) => toAnswer(c, states.value[i]))
   const { data, error } = await useApiFetch<{ approved_terms: string[]; saved: number }>(
     `/api/jobs/${props.jobId}/gap_cards/answers`,
     { method: 'POST', body: JSON.stringify({ answers }), headers: { 'Content-Type': 'application/json' } },
   )
   saving.value = false
-  if (error || !data) { saveError.value = true; return }
+  if (error || !data) { saveError.value = true; saveDetail.value = error ? detailFrom(error) : ''; return }
   emit('done', data.approved_terms)
 }
 

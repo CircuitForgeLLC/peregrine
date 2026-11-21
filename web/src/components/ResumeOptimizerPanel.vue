@@ -9,6 +9,8 @@
       <strong>Paid</strong> license.
     </p>
 
+    <p class="rop__hint rop__select-notice" aria-live="polite">{{ selectNotice }}</p>
+
     <!-- ── Gap report section (all tiers) ────────────────────────────── -->
     <div class="rop__gaps">
       <div class="rop__gaps-header">
@@ -73,6 +75,7 @@
       <div class="rop__gaps-header">
         <h3 class="rop__subheading">Optimized Resume</h3>
         <button
+          ref="rewriteBtn"
           class="btn-generate"
           :disabled="rewriteState === 'queued' || rewriteState === 'running' || cardsOpen || gaps.length === 0 || selectedGaps.size === 0"
           :aria-describedby="gaps.length > 0 && selectedGaps.size === 0 ? 'rop-select-hint' : undefined"
@@ -95,8 +98,10 @@
         v-if="cardsOpen"
         :job-id="props.jobId"
         :terms="[...selectedGaps]"
+        :drafts="drafts"
+        @drafts-change="(d) => (drafts = d)"
         @done="onCardsDone"
-        @cancel="cardsOpen = false"
+        @cancel="closeCards"
       />
 
       <template v-else-if="rewriteState === 'queued' || rewriteState === 'running'">
@@ -244,11 +249,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { apiUrl, useApiFetch } from '../composables/useApi'
 import { useAppConfigStore } from '../stores/appConfig'
 import ResumeReviewModal from './ResumeReviewModal.vue'
 import GapCards from './GapCards.vue'
+import type { CardState } from './GapCard.vue'
 
 const props = defineProps<{ jobId: number }>()
 
@@ -291,6 +297,9 @@ const gapStage    = ref<string | null>(null)
 const gaps        = ref<Array<{ term: string; section: string; priority: number; rationale: string }>>([])
 const selectedGaps = ref<Set<string>>(new Set())
 const cardsOpen = ref(false)
+const drafts = ref<Record<string, CardState>>({})
+const selectNotice = ref('')
+const rewriteBtn = ref<HTMLButtonElement | null>(null)
 const nothingToRewrite = ref(false)
 
 // ── Rewrite / review state ────────────────────────────────────────────────────
@@ -429,13 +438,28 @@ async function runGapReport() {
 }
 
 function openCards() {
-  if (selectedGaps.value.size === 0) return
+  if (selectedGaps.value.size === 0) {
+    selectNotice.value = 'Select at least one keyword to rewrite for.'
+    return
+  }
+  selectNotice.value = ''
   nothingToRewrite.value = false
+  // Keep typed answers only for keywords that are still selected.
+  drafts.value = Object.fromEntries(
+    Object.entries(drafts.value).filter(([term]) => selectedGaps.value.has(term)),
+  )
   cardsOpen.value = true
 }
 
-function onCardsDone(approved: string[]) {
+async function closeCards() {
   cardsOpen.value = false
+  await nextTick()
+  rewriteBtn.value?.focus()
+}
+
+function onCardsDone(approved: string[]) {
+  drafts.value = {}
+  closeCards()
   if (approved.length === 0) { nothingToRewrite.value = true; return }
   runFullRewrite()
 }
@@ -460,6 +484,7 @@ function toggleGap(term: string) {
   if (next.has(term)) next.delete(term)
   else next.add(term)
   selectedGaps.value = next
+  if (next.size > 0) selectNotice.value = ''
 }
 
 function toggleSkill(skill: string) {

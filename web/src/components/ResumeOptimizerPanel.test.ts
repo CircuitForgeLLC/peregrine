@@ -83,4 +83,101 @@ describe('ResumeOptimizerPanel full rewrite flow', () => {
     expect(w.text()).toContain('Nothing to rewrite yet, because none of these keywords have an answer from you.')
     expect(w.find('fieldset').exists()).toBe(false)
   })
+
+  async function openAndType(w: Awaited<ReturnType<typeof mountPanel>>) {
+    await optimizeBtn(w).trigger('click')
+    await flushPromises()
+    await w.find('input[value="yes"]').setValue(true)
+    await w.find('textarea').setValue('Ran clusters')
+  }
+  const typedValue = (w: Awaited<ReturnType<typeof mountPanel>>) =>
+    (w.find('textarea').element as HTMLTextAreaElement).value
+  const backBtn = (w: Awaited<ReturnType<typeof mountPanel>>) =>
+    w.findAll('button').find((b) => b.text() === 'Back')!
+
+  it('test_typed_answers_survive_back_and_reopen', async () => {
+    const w = await mountPanel()
+    await openAndType(w)
+    await backBtn(w).trigger('click')
+    await optimizeBtn(w).trigger('click')
+    await flushPromises()
+    expect(typedValue(w)).toBe('Ran clusters')
+  })
+
+  it('test_typed_answers_survive_toggling_a_gap_checkbox', async () => {
+    const w = await mountPanel()
+    await openAndType(w)
+    await w.findAll('.rop__gap-checkbox')[1].setValue(false)
+    await w.findAll('.rop__gap-checkbox')[1].setValue(true)
+    await optimizeBtn(w).trigger('click')
+    await flushPromises()
+    expect(typedValue(w)).toBe('Ran clusters')
+  })
+
+  it('test_drafts_are_cleared_after_a_successful_save', async () => {
+    approved = []
+    const w = await mountPanel()
+    await openAndType(w)
+    await w.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    await optimizeBtn(w).trigger('click')
+    await flushPromises()
+    expect(w.find('textarea').exists()).toBe(false)
+    expect((w.find('input[value="skip"]').element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('test_a_draft_for_a_term_that_is_no_longer_selected_is_dropped', async () => {
+    const w = await mountPanel()
+    await openAndType(w)
+    await w.findAll('.rop__gap-checkbox')[0].setValue(false)
+    await optimizeBtn(w).trigger('click')
+    await flushPromises()
+    await backBtn(w).trigger('click')
+    await w.findAll('.rop__gap-checkbox')[0].setValue(true)
+    await optimizeBtn(w).trigger('click')
+    await flushPromises()
+    expect(w.find('textarea').exists()).toBe(false)
+  })
+
+  async function deselectAll(w: Awaited<ReturnType<typeof mountPanel>>) {
+    for (const box of w.findAll('.rop__gap-checkbox')) await box.setValue(false)
+  }
+
+  it('test_rewrite_again_with_nothing_selected_shows_a_message_and_does_not_start_a_rewrite', async () => {
+    const w = await mountPanel()
+    await deselectAll(w)
+    ;(w.vm as any).openCards()
+    await flushPromises()
+    const notice = w.find('.rop__select-notice')
+    expect(notice.attributes('aria-live')).toBe('polite')
+    expect(notice.text()).toBe('Select at least one keyword to rewrite for.')
+    expect(w.find('fieldset').exists()).toBe(false)
+    expect(generateCalls()).toHaveLength(0)
+    await w.findAll('.rop__gap-checkbox')[0].setValue(true)
+    expect(w.find('.rop__select-notice').text()).toBe('')
+  })
+
+  it('shows the same message from the review modal rewrite-again path', async () => {
+    const w = await mountPanel()
+    await deselectAll(w)
+    ;(w.vm as any).handleRewriteAgain()
+    await flushPromises()
+    expect(w.find('.rop__select-notice').text()).toBe('Select at least one keyword to rewrite for.')
+    expect(generateCalls()).toHaveLength(0)
+  })
+
+  it('returns focus to the rewrite button when the cards close', async () => {
+    const w = await mountPanel()
+    w.unmount()
+    setActivePinia(createPinia())
+    useAppConfigStore().tier = 'paid'
+    const w2 = mount(ResumeOptimizerPanel, { props: { jobId: 7 }, attachTo: document.body })
+    await flushPromises()
+    await optimizeBtn(w2).trigger('click')
+    await flushPromises()
+    await backBtn(w2).trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(optimizeBtn(w2).element)
+    w2.unmount()
+  })
 })
