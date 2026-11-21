@@ -533,6 +533,50 @@ def update_job_fields(db_path: Path = DEFAULT_DB, job_id: int | None = None,
     conn.close()
 
 
+_FILLABLE_IF_EMPTY_COLS = ("title", "company", "location")
+_IMPORT_PLACEHOLDER_TITLES = ("Importing...", "Importing…")
+
+
+def fill_job_fields_if_empty(db_path: Path = DEFAULT_DB, job_id: int | None = None, *,
+                             description: str = "", fields: dict | None = None,
+                             min_description_chars: int = 50) -> bool:
+    """Fill a job's description and any still-empty title, company and location in ONE statement.
+
+    The description is written only if the stored one is still shorter than min_description_chars
+    after trimming, so text a person added in the meantime is never overwritten. Title, company and
+    location are written only where the stored value is empty (the import placeholder counts as empty
+    for the title). Other keys in fields are ignored. Returns True if the row was written, False if it
+    no longer needed a description."""
+    if job_id is None or not description:
+        return False
+    fields = fields or {}
+    sets, params = ["description = ?"], [description]
+    for col in _FILLABLE_IF_EMPTY_COLS:  # allow-list: column names never come from the caller
+        value = fields.get(col)
+        if not value:
+            continue
+        empty = f"TRIM(COALESCE({col}, '')) = ''"
+        if col == "title":
+            marks = ",".join("?" * len(_IMPORT_PLACEHOLDER_TITLES))
+            empty = f"({empty} OR TRIM({col}) IN ({marks}))"
+            sets.append(f"{col} = CASE WHEN {empty} THEN ? ELSE {col} END")
+            params.extend([*_IMPORT_PLACEHOLDER_TITLES, value])
+        else:
+            sets.append(f"{col} = CASE WHEN {empty} THEN ? ELSE {col} END")
+            params.append(value)
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute(
+            f"UPDATE jobs SET {', '.join(sets)} "
+            "WHERE id = ? AND LENGTH(TRIM(COALESCE(description, ''))) < ?",
+            (*params, job_id, min_description_chars),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
 def mark_applied(db_path: Path = DEFAULT_DB, ids: list[int] | None = None) -> None:
     """Set status='applied' and record today's date for a list of job IDs."""
     if not ids:
