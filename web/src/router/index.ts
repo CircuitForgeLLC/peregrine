@@ -27,6 +27,7 @@ export const router = createRouter({
       redirect: '/settings/my-profile',
       children: [
         { path: 'my-profile',  component: () => import('../views/settings/MyProfileView.vue') },
+        { path: 'my-experience', component: () => import('../views/settings/MyExperienceView.vue') },
         { path: 'resume',      component: () => import('../views/settings/ResumeProfileView.vue') },
         { path: 'search',      component: () => import('../views/settings/SearchPrefsView.vue') },
         { path: 'system',      component: () => import('../views/settings/SystemSettingsView.vue') },

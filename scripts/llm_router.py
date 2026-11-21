@@ -5,8 +5,9 @@ Config lookup order:
   2. ~/.config/circuitforge/llm.yaml  — user-level config (circuitforge-core default)
   3. env-var auto-config (ANTHROPIC_API_KEY, OPENAI_API_KEY, OLLAMA_HOST, …)
 """
+import inspect
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from circuitforge_core.llm import LLMRouter as _CoreLLMRouter
 
@@ -187,6 +188,25 @@ def router_for_tenant(db_path: "Path", cloud_mode: bool) -> "LLMRouter":
     if not cloud_mode:
         return LLMRouter()
     return LLMRouter(_merged_cloud_llm_config(db_path))
+
+
+def complete_cold(router: Any, prompt: str, *, temperature: float = 0.2) -> str:
+    """Complete `prompt`, asking for a low temperature when the router allows it.
+
+    Currently a no-op for circuitforge-core's LLMRouter, because core's
+    complete() does not accept a temperature.
+
+    Best effort: `temperature` is passed only if `router.complete` has a
+    parameter of that name. A router that cannot take it is called with the
+    prompt alone, never an error.
+    """
+    try:
+        accepts = "temperature" in inspect.signature(router.complete).parameters
+    except (TypeError, ValueError):
+        accepts = False
+    if accepts:
+        return router.complete(prompt, temperature=temperature)
+    return router.complete(prompt)
 
 
 # Module-level singleton for convenience

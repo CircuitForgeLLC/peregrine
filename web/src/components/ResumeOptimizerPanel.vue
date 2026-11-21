@@ -9,6 +9,8 @@
       <strong>Paid</strong> license.
     </p>
 
+    <p class="rop__hint rop__select-notice" aria-live="polite">{{ selectNotice }}</p>
+
     <!-- ── Gap report section (all tiers) ────────────────────────────── -->
     <div class="rop__gaps">
       <div class="rop__gaps-header">
@@ -73,18 +75,37 @@
       <div class="rop__gaps-header">
         <h3 class="rop__subheading">Optimized Resume</h3>
         <button
+          ref="rewriteBtn"
           class="btn-generate"
-          :disabled="rewriteState === 'queued' || rewriteState === 'running' || gaps.length === 0"
+          :disabled="rewriteState === 'queued' || rewriteState === 'running' || cardsOpen || gaps.length === 0 || selectedGaps.size === 0"
+          :aria-describedby="gaps.length > 0 && selectedGaps.size === 0 ? 'rop-select-hint' : undefined"
           :title="gaps.length === 0 ? 'Run gap analysis first' : ''"
-          @click="runFullRewrite"
+          @click="openCards"
         >
           <span aria-hidden="true">✨</span>
           {{ rewriteState === 'queued' || rewriteState === 'running' ? 'Rewriting…' : 'Optimize Resume' }}
         </button>
       </div>
 
-      <template v-if="rewriteState === 'queued' || rewriteState === 'running'">
-        <div class="rop__spinner-row" role="status" aria-live="polite">
+      <p v-if="gaps.length > 0 && selectedGaps.size === 0" id="rop-select-hint" class="rop__hint">
+        Select at least one keyword above to optimize your resume.
+      </p>
+      <p v-if="nothingToRewrite" class="rop__hint" role="status">
+        Nothing to rewrite. None of your answers can be used in a resume yet. Choose Optimize Resume to change them.
+      </p>
+
+      <GapCards
+        v-if="cardsOpen"
+        :job-id="props.jobId"
+        :terms="termsByPriority"
+        :drafts="drafts"
+        @drafts-change="(d) => (drafts = d)"
+        @done="onCardsDone"
+        @cancel="closeCards"
+      />
+
+      <template v-else-if="rewriteState === 'queued' || rewriteState === 'running'">
+        <div ref="rewriteStatusEl" class="rop__spinner-row" role="status" aria-live="polite" tabindex="-1">
           <span class="spinner" aria-hidden="true" />
           <span>{{ rewriteStage ?? 'Rewriting resume sections…' }}</span>
         </div>
@@ -178,7 +199,7 @@
           <button class="btn-download" @click="downloadYaml">
             <span aria-hidden="true">📋</span> Download YAML
           </button>
-          <button class="btn-secondary" @click="runFullRewrite">
+          <button class="btn-secondary" @click="openCards">
             <span aria-hidden="true">🔄</span> Rewrite again
           </button>
         </div>
@@ -228,10 +249,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { apiUrl, useApiFetch } from '../composables/useApi'
 import { useAppConfigStore } from '../stores/appConfig'
 import ResumeReviewModal from './ResumeReviewModal.vue'
+import GapCards from './GapCards.vue'
+import type { CardState } from './GapCard.vue'
 
 const props = defineProps<{ jobId: number }>()
 
@@ -265,6 +288,8 @@ type SectionDiff = SkillsDiff | TextDiff | BulletsDiff
 interface ReviewDraft {
   sections: SectionDiff[]
   rewritten_struct: Record<string, unknown>
+  // Absent on drafts saved before the claims report existed.
+  claims_report?: { novel_words?: unknown; unused_terms?: unknown } | null
 }
 
 // ── Gap report state ─────────────────────────────────────────────────────────
@@ -273,6 +298,16 @@ const gapState    = ref<TaskState>('none')
 const gapStage    = ref<string | null>(null)
 const gaps        = ref<Array<{ term: string; section: string; priority: number; rationale: string }>>([])
 const selectedGaps = ref<Set<string>>(new Set())
+// Selected keywords, most important first. Array sort is stable, so ties keep the report order.
+const termsByPriority = computed(() =>
+  gaps.value.filter((g) => selectedGaps.value.has(g.term)).sort((a, b) => a.priority - b.priority).map((g) => g.term),
+)
+const cardsOpen = ref(false)
+const drafts = ref<Record<string, CardState>>({})
+const selectNotice = ref('')
+const rewriteBtn = ref<HTMLButtonElement | null>(null)
+const rewriteStatusEl = ref<HTMLElement | null>(null)
+const nothingToRewrite = ref(false)
 
 // ── Rewrite / review state ────────────────────────────────────────────────────
 
@@ -409,11 +444,43 @@ async function runGapReport() {
   startPolling()
 }
 
-async function runFullRewrite() {
+function openCards() {
+  if (selectedGaps.value.size === 0) {
+    selectNotice.value = 'Select at least one keyword to rewrite for.'
+    return
+  }
+  selectNotice.value = ''
+  nothingToRewrite.value = false
+  // Keep typed answers only for keywords that are still selected.
+  drafts.value = Object.fromEntries(
+    Object.entries(drafts.value).filter(([term]) => selectedGaps.value.has(term)),
+  )
+  cardsOpen.value = true
+}
+
+async function closeCards() {
+  cardsOpen.value = false
+  await nextTick()
+  // The button is disabled once a rewrite starts, so progress becomes the focus target.
+  const btn = rewriteBtn.value
+  if (btn && !btn.disabled) btn.focus()
+  else rewriteStatusEl.value?.focus()
+}
+
+function onCardsDone(approved: string[]) {
+  drafts.value = {}
+  closeCards()
+  if (approved.length === 0) { nothingToRewrite.value = true; return }
+  runFullRewrite(approved)
+}
+
+/** approved is the list of terms the user backed on the cards. Only those may be used. */
+async function runFullRewrite(approved?: string[]) {
   rewriteState.value = 'queued'; rewriteStage.value = null
   optimizedResume.value = ''; reviewDraft.value = null; reviewError.value = ''
   const body: Record<string, unknown> = { full_rewrite: true }
   if (selectedGaps.value.size > 0) body.selected_gaps = [...selectedGaps.value]
+  if (approved) body.approved_terms = [...approved]
   const { error } = await useApiFetch(`/api/jobs/${props.jobId}/resume_optimizer/generate`, {
     method: 'POST',
     body: JSON.stringify(body),
@@ -424,10 +491,12 @@ async function runFullRewrite() {
 }
 
 function toggleGap(term: string) {
+  cardsOpen.value = false
   const next = new Set(selectedGaps.value)
   if (next.has(term)) next.delete(term)
   else next.add(term)
   selectedGaps.value = next
+  if (next.size > 0) selectNotice.value = ''
 }
 
 function toggleSkill(skill: string) {
@@ -484,7 +553,7 @@ async function handleReviewSubmit(decisions: Record<string, unknown>) {
 
 function handleRewriteAgain() {
   showReviewModal.value = false
-  runFullRewrite()
+  openCards()
 }
 
 async function approveResume() {

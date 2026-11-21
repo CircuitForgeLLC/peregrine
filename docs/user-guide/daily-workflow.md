@@ -59,6 +59,8 @@ For each job:
 
 See [Apply Workspace](apply-workspace.md) for cover letter configuration, PDF formatting, and ATS optimization.
 
+The resume optimizer asks you about each keyword gap before rewriting, and saves your answers for reuse. You can review them any time under **Settings → My Experience**.
+
 ---
 
 ### 4. Track Interviews

@@ -178,6 +178,20 @@ def test_rank_jobs_empty_description_falls_back_to_title():
 
 # ── rewrite_for_ats (reranker gap reordering) ─────────────────────────────────
 
+def _facts_for(gaps):
+    """A usable fact for every gap term, built directly (no database)."""
+    from scripts.experience_facts import ExperienceFact
+    return {
+        g["term"]: ExperienceFact(
+            id=i, kind="experience", requirement=g["term"],
+            text=f"I used {g['term']} in my last role.", visibility="document",
+            status="active", source="card", origin_job_id=None,
+            created_at="", updated_at="",
+        )
+        for i, g in enumerate(gaps)
+    }
+
+
 def test_rewrite_for_ats_runs_with_reranker(monkeypatch):
     """rewrite_for_ats completes without error when reranker is active."""
     from scripts.resume_optimizer import rewrite_for_ats
@@ -185,7 +199,9 @@ def test_rewrite_for_ats_runs_with_reranker(monkeypatch):
     with patch("scripts.llm_router.LLMRouter") as MockRouter:
         mock_bullets = '["Built REST APIs and Kubernetes pipelines."]'
         MockRouter.return_value.complete.return_value = mock_bullets
-        result = rewrite_for_ats(SAMPLE_RESUME, PRIORITIZED_GAPS, SAMPLE_JOB)
+        result = rewrite_for_ats(
+            SAMPLE_RESUME, PRIORITIZED_GAPS, SAMPLE_JOB, facts=_facts_for(PRIORITIZED_GAPS)
+        )
 
     assert isinstance(result, dict)
     assert "skills" in result
@@ -201,7 +217,9 @@ def test_rewrite_for_ats_preserves_unrewritten_sections(monkeypatch):
 
     with patch("scripts.llm_router.LLMRouter") as MockRouter:
         MockRouter.return_value.complete.return_value = '["AWS certified engineer."]'
-        result = rewrite_for_ats(SAMPLE_RESUME, skills_only_gaps, SAMPLE_JOB)
+        result = rewrite_for_ats(
+            SAMPLE_RESUME, skills_only_gaps, SAMPLE_JOB, facts=_facts_for(skills_only_gaps)
+        )
 
     assert result["education"] == SAMPLE_RESUME["education"]
 
@@ -218,7 +236,9 @@ def test_rewrite_for_ats_reranker_fallback_on_error(monkeypatch):
         patch("scripts.llm_router.LLMRouter") as MockRouter,
     ):
         MockRouter.return_value.complete.return_value = '["Built pipelines."]'
-        result = rewrite_for_ats(SAMPLE_RESUME, PRIORITIZED_GAPS, SAMPLE_JOB)
+        result = rewrite_for_ats(
+            SAMPLE_RESUME, PRIORITIZED_GAPS, SAMPLE_JOB, facts=_facts_for(PRIORITIZED_GAPS)
+        )
 
     assert isinstance(result, dict)
 

@@ -50,6 +50,47 @@ The filename format is: `{Company}_{Title}_{Date}_CoverLetter.pdf`
 
 ---
 
+## ATS Resume Optimizer
+
+The optimizer helps your resume match a job. ATS means applicant tracking system, the software many employers use to filter resumes by keyword. The optimizer has two steps.
+
+1. Click **Analyze Keywords**. Peregrine lists the keywords from the job that your resume is missing. Use the checkboxes to choose which keywords you want to target. Only the ones you tick are used.
+2. Click **Optimize Resume** to rewrite your resume toward those keywords. This button is not shown on the free tier.
+
+### Questions before the rewrite
+
+Before anything is rewritten, Peregrine asks one short question for the keywords you selected, up to 6 at a time. The most important keywords come first. You pick one answer:
+
+- **Yes, I have done this**: add a few words of your own about it.
+- **Something similar**: add a few words about what you did that is close.
+- **No, not something I have done**: the keyword is left out.
+- **Skip for now**: the keyword is left out this time, and you can answer later.
+
+Your answers are saved in your own account and reused on later jobs. Keywords you already answered with something usable do not get a card. They are gathered into one line, **Use my N saved answers**, which is ticked by default. Open **See my saved answers** to read each one, and untick the box if you do not want them used this time. Keywords you answered before with No, or kept private, are listed under **Answered, not used**. Choose **Change** next to one to answer it again.
+
+If more keywords still need an answer, the extra ones wait. Choose the **Save and ask about...** button to save what you have and see the next group, or **Save answers and continue** to go straight to the rewrite. Keywords you never answered are simply not used.
+
+If you only answered a similar keyword before, that answer is shown as a hint with the keyword it was saved for, and the card starts on **Skip for now** until you choose.
+
+Tick **Keep this private** if you want an answer saved for you but never used in your documents.
+
+### What the rewrite uses
+
+The rewrite only uses keywords you answered "Yes" or "Something similar" to in this round of questions, and only when the answer is not private. Keywords you said No to, kept private, skipped or did not answer are not used. If none of your answers can be used, no rewrite starts and the panel says "Nothing to rewrite. None of your answers can be used in a resume yet." Choose **Optimize Resume** to change your answers.
+
+### Checking the result
+
+On the review step, you may see a short notice called **A few things to check**. It lists:
+
+- Words that appear in the rewritten resume but not in your original resume or your saved answers. Please check that each one is true for you. This list is a rough automatic check, so it can include harmless rewordings.
+- Keywords that were not used, because you said No, kept your answer private, skipped them, or have not answered yet.
+
+You decide what goes into the final resume. Nothing is applied until you approve it.
+
+To look at, edit or remove your saved answers, see **My Experience** in [Settings](settings.md#my-experience).
+
+---
+
 ## Marking Applied
 
 Once you have submitted your application externally, click **Mark Applied**. This:

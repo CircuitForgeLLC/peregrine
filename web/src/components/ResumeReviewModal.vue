@@ -16,6 +16,13 @@
           <button class="rrm__close" aria-label="Close review" @click="handleEscape">✕</button>
         </div>
 
+        <ClaimsNotice
+          v-if="hasClaims"
+          class="rrm__claims"
+          :novel-words="claimsReport.novel_words"
+          :unused-terms="claimsReport.unused_terms"
+        />
+
         <!-- Tab bar -->
         <div class="rrm__tabs" role="tablist" aria-label="Resume sections">
           <button
@@ -130,6 +137,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import ClaimsNotice from './ClaimsNotice.vue'
 import SkillsPage from './resume-review/SkillsPage.vue'
 import SummaryPage from './resume-review/SummaryPage.vue'
 import ExperiencePage from './resume-review/ExperiencePage.vue'
@@ -175,6 +183,8 @@ export interface ReviewDraft {
   sections: SectionDiff[]
   rewritten_struct: Record<string, unknown>
   gap_report?: unknown[]
+  // Absent on drafts saved before the claims report existed.
+  claims_report?: { novel_words?: unknown; unused_terms?: unknown } | null
 }
 
 interface Page {
@@ -190,6 +200,15 @@ const props = defineProps<{
   jobId: number
   draft: ReviewDraft
 }>()
+
+const claimsReport = computed(() => {
+  const r = props.draft.claims_report
+  return {
+    novel_words: (Array.isArray(r?.novel_words) ? r.novel_words : []) as string[],
+    unused_terms: (Array.isArray(r?.unused_terms) ? r.unused_terms : []) as string[],
+  }
+})
+const hasClaims = computed(() => claimsReport.value.novel_words.length > 0 || claimsReport.value.unused_terms.length > 0)
 
 const emit = defineEmits<{
   close: []
@@ -408,6 +427,7 @@ onUnmounted(() => document.removeEventListener('keydown', trapFocus))
   padding: var(--space-4, 1rem);
 }
 
+.rrm__claims { flex: 0 1 auto; max-height: 30vh; overflow-y: auto; margin: var(--space-3, 0.75rem) var(--space-4, 1rem) 0; }
 .rrm-card {
   background: var(--color-surface-raised, #f5f7fc);
   border-radius: var(--radius-lg, 1rem);

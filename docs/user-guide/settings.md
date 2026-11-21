@@ -41,6 +41,22 @@ Controls optional sections in company research briefs. Both are for personal dec
 
 ---
 
+## My Experience
+
+A list of everything you have told the resume optimizer about your experience, in your own words. It is saved only in your own account. See [Apply Workspace](apply-workspace.md#ats-resume-optimizer) for how the questions work.
+
+For each saved answer you can:
+
+- **Edit the wording** to change what you said.
+- **Keep private** to stop it being used in documents. It stays saved for you, and you can switch it back to "Used in documents" at any time.
+- **Delete** to remove it for good. This cannot be undone.
+
+When you change an answer, the new one replaces the old one. Earlier wording is not kept.
+
+Answers saying you have not done something are listed in their own section, so they stay out of the way.
+
+---
+
 ## Resume Profile
 
 A structured editor for your work experience, education, skills, and personal details. This is the primary data source for cover letter generation.

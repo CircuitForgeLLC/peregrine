@@ -455,16 +455,44 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             p = _json.loads(params or "{}")
             selected_gaps = p.get("selected_gaps", None)
             if selected_gaps is not None:
-                selected_set = set(selected_gaps)
-                prioritized = [g for g in prioritized if g.get("term") in selected_set]
+                # The user's own selection decides. A fresh extraction can word a
+                # term differently or miss it, so it is not intersected with.
+                prioritized = prioritize_gaps(selected_gaps, resume_struct)
             if p.get("full_rewrite", False):
                 update_task_stage(db_path, task_id, "rewriting resume sections")
                 candidate_voice = load_user_profile(str(_user_yaml)).get("candidate_voice", "")
-                rewritten = rewrite_for_ats(resume_struct, prioritized, job, candidate_voice)
+                from scripts.experience_facts import (
+                    normalize_term,
+                    usable_facts_for_prompt,
+                )
+                from scripts.resume_claims import find_novel_words
+                from scripts.resume_optimizer import _flatten_resume_text
+                terms = [g["term"] for g in prioritized]
+                approved_terms = p.get("approved_terms", None)
+                if approved_terms is not None:
+                    # Only what the user approved in this session may be backed.
+                    approved_keys = {normalize_term(t) for t in approved_terms}
+                    lookup_terms = [t for t in terms if normalize_term(t) in approved_keys]
+                else:
+                    lookup_terms = terms
+                facts = usable_facts_for_prompt(db_path, lookup_terms)
+                check_terms = list(gaps) + list(selected_gaps or terms)
+                rewritten = rewrite_for_ats(resume_struct, prioritized, job,
+                                            candidate_voice, facts=facts,
+                                            check_terms=check_terms)
                 if hallucination_check(resume_struct, rewritten):
                     from scripts.db import save_resume_draft
                     from scripts.resume_optimizer import build_review_diff
                     draft = build_review_diff(resume_struct, rewritten)
+                    draft["claims_report"] = {
+                        "novel_words": find_novel_words(
+                            _flatten_resume_text(resume_struct),
+                            _flatten_resume_text(rewritten),
+                            [f.text for f in facts.values()]
+                            + [job.get("title", ""), job.get("company", "")],
+                        ),
+                        "unused_terms": [t for t in terms if t not in facts],
+                    }
                     # Attach gap report to draft for reference in the review UI
                     draft["gap_report"] = prioritized
                     save_resume_draft(db_path, job_id=job_id,
