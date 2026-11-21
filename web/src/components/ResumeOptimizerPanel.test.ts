@@ -180,4 +180,22 @@ describe('ResumeOptimizerPanel full rewrite flow', () => {
     expect(document.activeElement).toBe(optimizeBtn(w2).element)
     w2.unmount()
   })
+
+  it('test_focus_moves_to_the_rewrite_progress_status_after_a_save_that_starts_a_rewrite', async () => {
+    approved = ['Kubernetes']
+    const w = await mountPanel()
+    w.unmount()
+    setActivePinia(createPinia())
+    useAppConfigStore().tier = 'paid'
+    const w2 = mount(ResumeOptimizerPanel, { props: { jobId: 7 }, attachTo: document.body })
+    await flushPromises()
+    await optimizeBtn(w2).trigger('click')
+    await flushPromises()
+    await w2.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    const status = w2.find('.rop__rewrite .rop__spinner-row')
+    expect(status.exists()).toBe(true)
+    expect(document.activeElement).toBe(status.element)
+    w2.unmount()
+  })
 })

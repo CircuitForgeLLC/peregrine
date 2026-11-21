@@ -105,7 +105,7 @@
       />
 
       <template v-else-if="rewriteState === 'queued' || rewriteState === 'running'">
-        <div class="rop__spinner-row" role="status" aria-live="polite">
+        <div ref="rewriteStatusEl" class="rop__spinner-row" role="status" aria-live="polite" tabindex="-1">
           <span class="spinner" aria-hidden="true" />
           <span>{{ rewriteStage ?? 'Rewriting resume sections…' }}</span>
         </div>
@@ -300,6 +300,7 @@ const cardsOpen = ref(false)
 const drafts = ref<Record<string, CardState>>({})
 const selectNotice = ref('')
 const rewriteBtn = ref<HTMLButtonElement | null>(null)
+const rewriteStatusEl = ref<HTMLElement | null>(null)
 const nothingToRewrite = ref(false)
 
 // ── Rewrite / review state ────────────────────────────────────────────────────
@@ -454,7 +455,10 @@ function openCards() {
 async function closeCards() {
   cardsOpen.value = false
   await nextTick()
-  rewriteBtn.value?.focus()
+  // The button is disabled once a rewrite starts, so progress becomes the focus target.
+  const btn = rewriteBtn.value
+  if (btn && !btn.disabled) btn.focus()
+  else rewriteStatusEl.value?.focus()
 }
 
 function onCardsDone(approved: string[]) {

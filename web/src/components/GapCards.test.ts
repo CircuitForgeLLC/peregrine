@@ -221,6 +221,44 @@ describe('GapCards', () => {
     expect(w.find('[role="alert"]').text()).toContain('Text is too long')
   })
 
+  it('test_a_restored_draft_on_a_card_with_a_saved_suggestion_sends_the_right_request_body', async () => {
+    const sug = { id: 4, kind: 'experience', text: 'Saved', visibility: 'document' }
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/gap_cards')) return { data: { cards: [card('Kubernetes', sug)] }, error: null } as any
+      return { data: { approved_terms: [], saved: 0 }, error: null } as any
+    })
+    const send = async (draft: { choice: string; text: string; private: boolean }) => {
+      fetchMock.mockClear()
+      const w = mount(GapCards, { props: { jobId: 7, terms: ['Kubernetes'], drafts: { Kubernetes: draft as any } } })
+      await flushPromises()
+      await w.find('button.gcs__btn--primary').trigger('click')
+      await flushPromises()
+      return answersCall()[0]
+    }
+    const edited = await send({ choice: 'reuse', text: 'Saved plus more', private: false })
+    expect(edited).toMatchObject({ choice: 'yes', text: 'Saved plus more' })
+    expect(edited.use_saved_fact_id).toBeNull()
+    const same = await send({ choice: 'reuse', text: 'Saved', private: false })
+    expect(same.use_saved_fact_id).toBe(4)
+  })
+
+  it('does not show a stale server detail after a later failure or a retry', async () => {
+    let calls = 0
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/gap_cards')) return { data: { cards: [card('Kubernetes')] }, error: null } as any
+      calls += 1
+      return { data: null, error: calls === 1 ? { kind: 'http', status: 422, detail: 'Old problem' } : { kind: 'network', message: 'x' } } as any
+    })
+    const w = mount(GapCards, { props: { jobId: 7, terms: ['Kubernetes'] } })
+    await flushPromises()
+    await w.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    expect(w.find('[role="alert"]').text()).toContain('Old problem')
+    await w.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    expect(w.find('[role="alert"]').text()).not.toContain('Old problem')
+  })
+
   it('starts from supplied drafts, and a draft wins over a saved suggestion', async () => {
     fetchMock.mockImplementation(async () => ({
       data: { cards: [card('Kubernetes', { id: 4, kind: 'experience', text: 'Saved', visibility: 'document' })] }, error: null,

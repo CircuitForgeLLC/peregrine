@@ -89,7 +89,7 @@ function initialState(card: CardData): CardState {
 }
 
 async function load() {
-  loading.value = true; loadError.value = false
+  loading.value = true; loadError.value = false; saveDetail.value = ''
   const { data, error } = await useApiFetch<{ cards: CardData[] }>(`/api/jobs/${props.jobId}/gap_cards`, {
     method: 'POST',
     body: JSON.stringify({ terms: props.terms }),
