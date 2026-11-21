@@ -117,15 +117,11 @@ def canonicalize_url(url: str) -> str:
     return parsed._replace(query=clean_qs).geturl()
 
 
-def _scrape_linkedin(url: str) -> dict:
-    """Fetch via LinkedIn guest jobs API (no auth required)."""
-    job_id = _extract_linkedin_job_id(url)
-    if not job_id:
-        return {}
-    api_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
-    resp = _fetch(api_url, headers=_HEADERS, timeout=_TIMEOUT)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+def _parse_linkedin_posting(html: str) -> dict:
+    """Parse the HTML of a LinkedIn guest jobs API posting. Empty fields are left out.
+
+    Shared by the scraper below and the description backfill (scripts/linkedin_backfill.py)."""
+    soup = BeautifulSoup(html, "html.parser")
 
     def _text(selector, **kwargs):
         tag = soup.find(selector, **kwargs)
@@ -144,6 +140,17 @@ def _scrape_linkedin(url: str) -> dict:
         "description": description,
         "source": "linkedin",
     }.items() if v}
+
+
+def _scrape_linkedin(url: str) -> dict:
+    """Fetch via LinkedIn guest jobs API (no auth required)."""
+    job_id = _extract_linkedin_job_id(url)
+    if not job_id:
+        return {}
+    api_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
+    resp = _fetch(api_url, headers=_HEADERS, timeout=_TIMEOUT)
+    resp.raise_for_status()
+    return _parse_linkedin_posting(resp.text)
 
 
 def _scrape_indeed(url: str) -> dict:
