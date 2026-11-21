@@ -66,20 +66,20 @@ Before anything is rewritten, Peregrine asks one short question for each keyword
 - **No, not something I have done**: the keyword is left out.
 - **Skip for now**: the keyword is left out this time, and you can answer later.
 
-Your answers are saved in your own account and reused on later jobs. If you already answered a keyword before, the saved answer is filled in and you can use it again with one click.
+Your answers are saved in your own account and reused on later jobs. If you already answered a keyword before, the saved answer is filled in and you can use it again with one click. If you only answered a similar keyword before, that answer is shown as a hint with the keyword it was saved for, and the card starts on **Skip for now** until you choose.
 
 Tick **Keep this private** if you want an answer saved for you but never used in your documents.
 
 ### What the rewrite uses
 
-The rewrite only uses keywords you answered "Yes" or "Something similar" to, and only when the answer is not private. Keywords with no answer are not used. If none of your keywords have a usable answer, no rewrite starts and the panel tells you so.
+The rewrite only uses keywords you answered "Yes" or "Something similar" to in this round of questions, and only when the answer is not private. Keywords you said No to, kept private, skipped or did not answer are not used. If none of your answers can be used, no rewrite starts and the panel says "Nothing to rewrite. None of your answers can be used in a resume yet." Choose **Optimize Resume** to change your answers.
 
 ### Checking the result
 
 On the review step, you may see a short notice called **A few things to check**. It lists:
 
-- Words that appear in the rewritten resume but not in your original resume or your saved answers. Please check that each one is true for you. Some may just be rewordings.
-- Keywords that were not used because you have not told us about them yet.
+- Words that appear in the rewritten resume but not in your original resume or your saved answers. Please check that each one is true for you. This list is a rough automatic check, so it can include harmless rewordings.
+- Keywords that were not used, because you said No, kept your answer private, skipped them, or have not answered yet.
 
 You decide what goes into the final resume. Nothing is applied until you approve it.
 
