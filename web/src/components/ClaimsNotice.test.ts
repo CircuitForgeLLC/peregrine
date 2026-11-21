@@ -28,7 +28,10 @@ describe('ClaimsNotice', () => {
   it('shows only the unused terms list when new words is empty', () => {
     const w = make([], ['Terraform'])
     expect(w.findAll('ul')).toHaveLength(1)
-    expect(w.text()).toContain('These keywords were not used')
+    expect(w.text()).toContain(
+      'These keywords were not used, because you said No, kept your answer private, skipped them, or have not answered yet.',
+    )
+    expect(w.text()).not.toContain('you have not told us about them')
     expect(w.findAll('li').map((l) => l.text())).toEqual(['Terraform'])
   })
 

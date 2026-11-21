@@ -91,7 +91,7 @@
         Select at least one keyword above to optimize your resume.
       </p>
       <p v-if="nothingToRewrite" class="rop__hint" role="status">
-        Nothing to rewrite yet, because none of these keywords have an answer from you.
+        Nothing to rewrite. None of your answers can be used in a resume yet. Choose Optimize Resume to change them.
       </p>
 
       <GapCards
@@ -467,14 +467,16 @@ function onCardsDone(approved: string[]) {
   drafts.value = {}
   closeCards()
   if (approved.length === 0) { nothingToRewrite.value = true; return }
-  runFullRewrite()
+  runFullRewrite(approved)
 }
 
-async function runFullRewrite() {
+/** approved is the list of terms the user backed on the cards. Only those may be used. */
+async function runFullRewrite(approved?: string[]) {
   rewriteState.value = 'queued'; rewriteStage.value = null
   optimizedResume.value = ''; reviewDraft.value = null; reviewError.value = ''
   const body: Record<string, unknown> = { full_rewrite: true }
   if (selectedGaps.value.size > 0) body.selected_gaps = [...selectedGaps.value]
+  if (approved) body.approved_terms = [...approved]
   const { error } = await useApiFetch(`/api/jobs/${props.jobId}/resume_optimizer/generate`, {
     method: 'POST',
     body: JSON.stringify(body),

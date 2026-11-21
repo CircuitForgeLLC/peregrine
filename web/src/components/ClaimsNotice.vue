@@ -14,7 +14,7 @@
     </div>
 
     <div v-if="unused.shown.length" class="cn__group">
-      <p class="cn__intro">These keywords were not used, because you have not told us about them yet.</p>
+      <p class="cn__intro">These keywords were not used, because you said No, kept your answer private, skipped them, or have not answered yet.</p>
       <ul class="cn__list">
         <li v-for="t in unused.shown" :key="t">{{ t }}</li>
       </ul>
@@ -60,4 +60,6 @@ const hasContent = computed(() => novel.value.shown.length > 0 || unused.value.s
 .cn__group { display: flex; flex-direction: column; gap: var(--space-2); }
 .cn__intro, .cn__more { margin: 0; color: var(--color-text-muted); }
 .cn__list { margin: 0; padding-left: var(--space-5, 1.5rem); display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-5, 1.5rem); color: var(--color-text); }
+/* A long unbroken term wraps instead of scrolling sideways on a phone. */
+.cn__list li { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 </style>

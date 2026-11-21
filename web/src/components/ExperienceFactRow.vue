@@ -39,12 +39,11 @@
         />
         <span>Keep private</span>
       </label>
-      <button type="button" class="fact__btn" :aria-label="`Stop using this: ${fact.requirement}`" :disabled="busy" @click="onRetire">Stop using this</button>
       <button v-if="!confirming" ref="deleteBtn" type="button" class="fact__btn" :aria-label="`Delete: ${fact.requirement}`" :disabled="busy" @click="confirming = true">Delete</button>
     </div>
 
     <div v-if="confirming && !editing" class="fact__confirm" @keydown.esc="cancelConfirm">
-      <p>Delete removes it for good. You cannot undo this. "Stop using this" keeps it but stops it being used.</p>
+      <p>Delete removes it for good. You cannot undo this.</p>
       <div class="fact__actions">
         <button type="button" class="fact__btn fact__btn--danger" :aria-label="`Yes, delete it: ${fact.requirement}`" :disabled="busy" @click="onRemove">Yes, delete it</button>
         <button type="button" class="fact__btn" :aria-label="`Keep it: ${fact.requirement}`" @click="cancelConfirm">Keep it</button>
@@ -72,7 +71,6 @@ const props = defineProps<{
   /** Resolves to an error sentence, or '' when the save worked. */
   save: (fact: ExperienceFact, text: string) => Promise<string>
   toggle: (fact: ExperienceFact, makePrivate: boolean) => Promise<string>
-  retire: (fact: ExperienceFact) => Promise<string>
   remove: (fact: ExperienceFact) => Promise<string>
 }>()
 
@@ -123,12 +121,6 @@ async function cancelConfirm() {
   deleteBtn.value?.focus()
 }
 
-async function onRetire() {
-  error.value = ''
-  const err = await props.retire(props.fact)
-  if (err) error.value = err
-}
-
 async function onRemove() {
   error.value = ''
   const err = await props.remove(props.fact)
@@ -138,7 +130,7 @@ async function onRemove() {
 
 <style scoped>
 .fact { list-style: none; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-raised); }
-.fact__req { margin: 0; font-size: 1rem; color: var(--color-text); }
+.fact__req { margin: 0; min-width: 0; font-size: 1rem; color: var(--color-text); overflow-wrap: anywhere; }
 .fact__text { margin: 0; color: var(--color-text); white-space: pre-wrap; overflow-wrap: anywhere; }
 .fact__badges { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; }
 .fact__badge { padding: 0 var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-full); font-size: 0.85rem; color: var(--color-text-muted); }

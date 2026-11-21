@@ -5,6 +5,10 @@
       <span class="gc__snippet-label">In the job description:</span> {{ card.snippet }}
     </p>
     <p v-if="note" class="gc__note">{{ note }}</p>
+    <div v-if="sug && !sug.exact" class="gc__note gc__hint">
+      <p v-if="sug.text" class="gc__hint-text">{{ sug.text }}</p>
+      <p class="gc__hint-for">You saved this for {{ sug.requirement }}.</p>
+    </div>
 
     <div class="gc__choices">
       <label v-if="canReuse" class="gc__choice">
@@ -56,7 +60,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-export interface CardSuggestion { id: number; kind: string; text: string; visibility: string }
+/** exact is true only when the fact was saved for this card's own keyword. */
+export interface CardSuggestion { id: number; kind: string; text: string; visibility: string; requirement: string; exact: boolean }
 export interface CardData { term: string; snippet: string; suggestion: CardSuggestion | null }
 export type Choice = 'reuse' | 'yes' | 'similar' | 'no' | 'skip'
 export interface CardState { choice: Choice; text: string; private: boolean }
@@ -72,14 +77,19 @@ const hasText = computed(() => ['reuse', 'yes', 'similar'].includes(props.state.
 const textLabel = computed(() =>
   props.state.choice === 'similar' ? 'What is the similar experience?' : 'What did you do? Your own words are best.',
 )
+// The calm notes describe an answer for this exact keyword. A related keyword's answer shows as a hint instead.
 const note = computed(() => {
-  if (!sug.value) return ''
+  if (!sug.value || !sug.value.exact) return ''
   if (sug.value.kind === 'none') return 'You told us before that you have not done this. Change it if that is no longer true.'
   if (sug.value.visibility === 'private') return 'Saved as private'
   return ''
 })
 
-function setChoice(choice: Choice) { emit('update', { ...props.state, choice }) }
+function setChoice(choice: Choice) {
+  // "Use this again" starts from the saved words when nothing is typed yet.
+  const text = choice === 'reuse' && sug.value && !props.state.text.trim() ? sug.value.text : props.state.text
+  emit('update', { ...props.state, choice, text })
+}
 function onText(text: string) { emit('update', { ...props.state, text }) }
 function onPrivate(value: boolean) { emit('update', { ...props.state, private: value }) }
 function focusLegend() { legendEl.value?.focus() }
@@ -99,6 +109,9 @@ defineExpose({ focusLegend })
 .gc__legend:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .gc__snippet, .gc__note, .gc__help { margin: var(--space-2) 0; color: var(--color-text-muted); font-size: 0.9rem; }
 .gc__note { border-left: 3px solid var(--color-info); padding-left: var(--space-2); color: var(--color-text); }
+.gc__hint p { margin: 0 0 var(--space-1); overflow-wrap: anywhere; }
+.gc__hint-text { white-space: pre-wrap; }
+.gc__hint-for { color: var(--color-text-muted); }
 .gc__choices { display: flex; flex-direction: column; gap: var(--space-1); }
 .gc__choice { display: flex; align-items: center; gap: var(--space-2); min-height: 2.25rem; cursor: pointer; color: var(--color-text); }
 .gc__text { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); }

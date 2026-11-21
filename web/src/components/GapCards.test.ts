@@ -10,9 +10,10 @@ import GapCards from './GapCards.vue'
 
 const fetchMock = vi.mocked(useApiFetch)
 
-interface Sug { id: number; kind: string; text: string; visibility: string }
+interface Sug { id: number; kind: string; text: string; visibility: string; requirement?: string; exact?: boolean }
+// A suggestion is for the card's own term unless a test says otherwise.
 function card(term: string, suggestion: Sug | null = null) {
-  return { term, snippet: `We need ${term} skills`, suggestion }
+  return { term, snippet: `We need ${term} skills`, suggestion: suggestion && { requirement: term, exact: true, ...suggestion } }
 }
 
 async function mountCards(cards: ReturnType<typeof card>[], answersResponse: unknown = { data: { approved_terms: [], saved: 0 }, error: null }) {
@@ -269,6 +270,47 @@ describe('GapCards', () => {
     await flushPromises()
     expect((w.find('input[value="similar"]').element as HTMLInputElement).checked).toBe(true)
     expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('Typed')
+  })
+
+  it('test_an_overlap_only_suggestion_is_a_hint_and_defaults_to_skip', async () => {
+    const sug = { id: 9, kind: 'adjacent', text: 'Built two mobile apps', visibility: 'document', requirement: 'React Native', exact: false }
+    const w = await mountCards([card('React', sug)])
+    expect((w.find('input[value="skip"]').element as HTMLInputElement).checked).toBe(true)
+    expect((w.find('input[value="reuse"]').element as HTMLInputElement).checked).toBe(false)
+    expect(w.text()).toContain('Built two mobile apps')
+    await w.find('input[value="yes"]').setValue(true)
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+    await w.find('input[value="similar"]').setValue(true)
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+
+    fetchMock.mockClear()
+    const w2 = await mountCards([card('React', sug)])
+    await w2.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    expect(answersCall()[0]).toMatchObject({ term: 'React', choice: 'skip', use_saved_fact_id: null })
+  })
+
+  it('test_an_exact_suggestion_is_preselected_for_reuse', async () => {
+    const sug = { id: 4, kind: 'experience', text: 'Ran clusters', visibility: 'document', requirement: 'kubernetes', exact: true }
+    const w = await mountCards([card('Kubernetes', sug)])
+    expect((w.find('input[value="reuse"]').element as HTMLInputElement).checked).toBe(true)
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('Ran clusters')
+    expect(w.text()).not.toContain('You saved this for')
+    await w.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    expect(answersCall()[0]).toMatchObject({ term: 'Kubernetes', choice: 'yes', use_saved_fact_id: 4 })
+  })
+
+  it('test_a_non_exact_suggestion_shows_which_keyword_it_was_saved_for', async () => {
+    const w = await mountCards([
+      card('React', { id: 9, kind: 'adjacent', text: 'Built two mobile apps', visibility: 'document', requirement: 'React Native', exact: false }),
+      card('Kubernetes', { id: 4, kind: 'experience', text: 'Ran clusters', visibility: 'document' }),
+    ])
+    const sets = w.findAll('fieldset')
+    expect(sets[0].text()).toContain('You saved this for React Native')
+    expect(sets[1].text()).not.toContain('You saved this for')
+    await sets[0].find('input[value="reuse"]').setValue(true)
+    expect((sets[0].find('textarea').element as HTMLTextAreaElement).value).toBe('Built two mobile apps')
   })
 
   it('emits the whole drafts object on every change', async () => {

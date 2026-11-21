@@ -68,8 +68,22 @@ describe('ResumeOptimizerPanel full rewrite flow', () => {
     await flushPromises()
     const calls = generateCalls()
     expect(calls).toHaveLength(1)
-    expect(JSON.parse(String(calls[0][1]?.body))).toEqual({ full_rewrite: true, selected_gaps: ['Kubernetes', 'Terraform'] })
+    expect(JSON.parse(String(calls[0][1]?.body))).toEqual({
+      full_rewrite: true, selected_gaps: ['Kubernetes', 'Terraform'], approved_terms: ['Kubernetes'],
+    })
     expect(w.find('fieldset').exists()).toBe(false)
+  })
+
+  it('test_the_rewrite_request_carries_approved_terms_and_selected_gaps', async () => {
+    approved = ['Terraform']
+    const w = await mountPanel()
+    await optimizeBtn(w).trigger('click')
+    await flushPromises()
+    await w.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    const body = JSON.parse(String(generateCalls()[0][1]?.body))
+    expect(body.selected_gaps).toEqual(['Kubernetes', 'Terraform'])
+    expect(body.approved_terms).toEqual(['Terraform'])
   })
 
   it('does not start the rewrite when nothing was approved and says so calmly', async () => {
@@ -80,7 +94,8 @@ describe('ResumeOptimizerPanel full rewrite flow', () => {
     await w.find('button.gcs__btn--primary').trigger('click')
     await flushPromises()
     expect(generateCalls()).toHaveLength(0)
-    expect(w.text()).toContain('Nothing to rewrite yet, because none of these keywords have an answer from you.')
+    expect(w.text()).toContain('Nothing to rewrite. None of your answers can be used in a resume yet. Choose Optimize Resume to change them.')
+    expect(w.text()).not.toContain('have an answer from you')
     expect(w.find('fieldset').exists()).toBe(false)
   })
 

@@ -125,8 +125,17 @@ describe('MyExperienceView', () => {
     const w = await mountView()
     expect(w.find('button[aria-label="Edit: Rust"]').exists()).toBe(false)
     expect(w.find('[aria-label="Keep private: Rust"]').exists()).toBe(false)
-    expect(w.find('button[aria-label="Stop using this: Rust"]').exists()).toBe(true)
     expect(w.find('button[aria-label="Delete: Rust"]').exists()).toBe(true)
+  })
+
+  it('test_there_is_no_stop_using_this_button', async () => {
+    const w = await mountView()
+    expect(w.text()).not.toContain('Stop using this')
+    expect(w.text()).not.toMatch(/kept but no longer used/i)
+    expect(w.find('button[aria-label^="Stop using this"]').exists()).toBe(false)
+    await w.find('button[aria-label="Delete: scheduling"]').trigger('click')
+    expect(w.text()).toContain('Delete removes it for good')
+    expect(w.text()).not.toContain('Stop using this')
   })
 
   it('toggling Keep private sends PATCH with the new visibility', async () => {
@@ -144,18 +153,6 @@ describe('MyExperienceView', () => {
     expect(li.text()).toContain('Private')
     const other = w.find('input[aria-label="Keep private: Kubernetes"]')
     expect((other.element as HTMLInputElement).checked).toBe(true)
-  })
-
-  it('Stop using this sends status retired and removes the fact with a note', async () => {
-    const w = await mountView()
-    mockFetch.mockResolvedValueOnce({ data: fact({ status: 'retired' }), error: null } as never)
-    await w.find('button[aria-label="Stop using this: scheduling"]').trigger('click')
-    await flushPromises()
-    expect(lastCall().body).toEqual({ status: 'retired' })
-    expect(lastCall().init.method).toBe('PATCH')
-    expect(w.text()).not.toContain('I ran the rota for 12 nurses.')
-    expect(w.find('[aria-live="polite"]').text()).toContain('Stopped using scheduling')
-    expect(w.findAll('li')).toHaveLength(2)
   })
 
   it('Delete needs a confirm step, explains it is permanent, then calls DELETE', async () => {
@@ -186,7 +183,8 @@ describe('MyExperienceView', () => {
   it('shows a calm demo sentence when writes are blocked and keeps the fact', async () => {
     const w = await mountView()
     mockFetch.mockResolvedValueOnce({ data: null, error: { kind: 'demo-blocked' } } as never)
-    await w.find('button[aria-label="Stop using this: scheduling"]').trigger('click')
+    await w.find('button[aria-label="Delete: scheduling"]').trigger('click')
+    await w.find('button[aria-label="Yes, delete it: scheduling"]').trigger('click')
     await flushPromises()
     expect(w.text()).toContain('This is a demo, so changes are not saved.')
     expect(w.text()).toContain('I ran the rota for 12 nurses.')
@@ -205,19 +203,6 @@ describe('MyExperienceView', () => {
 
   const err422 = (m: string) => ({ data: null, error: { kind: 'http', status: 422, detail: JSON.stringify({ detail: m }) } }) as never
   const rowOf = (w: ReturnType<typeof mount>, req: string) => w.findAll('li').find((l) => l.find('h3').text() === req)!
-
-  it('test_a_failed_retire_leaves_the_fact_in_place_and_shows_the_error_in_its_row', async () => {
-    const w = await mountView()
-    mockFetch.mockResolvedValueOnce(err422('<i>nope</i>'))
-    await w.find('button[aria-label="Stop using this: scheduling"]').trigger('click')
-    await flushPromises()
-    const row = rowOf(w, 'scheduling')
-    expect(row.text()).toContain('<i>nope</i>')
-    expect(row.find('[role="alert"]').exists()).toBe(true)
-    expect(row.find('i').exists()).toBe(false)
-    expect(w.findAll('li')).toHaveLength(3)
-    expect(w.find('.mex > [role="alert"]').exists()).toBe(false)
-  })
 
   it('test_a_failed_delete_leaves_the_fact_in_place_and_shows_the_error_in_its_row', async () => {
     const w = await mountView()
@@ -258,7 +243,8 @@ describe('MyExperienceView', () => {
   it('test_a_non_demo_403_takes_the_failed_path_not_the_demo_path', async () => {
     const w = await mountView()
     mockFetch.mockResolvedValueOnce({ data: null, error: { kind: 'http', status: 403, detail: '{"detail":"Forbidden"}' } } as never)
-    await w.find('button[aria-label="Stop using this: scheduling"]').trigger('click')
+    await w.find('button[aria-label="Delete: scheduling"]').trigger('click')
+    await w.find('button[aria-label="Yes, delete it: scheduling"]').trigger('click')
     await flushPromises()
     const t = rowOf(w, 'scheduling').text()
     expect(t).toContain('That did not work')
@@ -294,31 +280,15 @@ describe('MyExperienceView', () => {
     expect(w.find('button[aria-label="Delete: Kubernetes"]').exists()).toBe(true)
   })
 
-  it('test_stop_using_this_works_on_a_none_fact', async () => {
-    const w = await mountView()
-    mockFetch.mockResolvedValueOnce({ data: fact({ id: 3, kind: 'none', status: 'retired' }), error: null } as never)
-    await w.find('button[aria-label="Stop using this: Rust"]').trigger('click')
-    await flushPromises()
-    expect(lastCall().url).toBe('/api/experience-facts/3')
-    expect(lastCall().body).toEqual({ status: 'retired' })
-    expect(w.findAll('li')).toHaveLength(2)
-    expect(w.findAll('li').some((l) => l.text().includes('Rust'))).toBe(false)
-  })
-
-  it('test_focus_moves_to_the_group_heading_after_retire', async () => {
-    const w = await mountView(FACTS, true)
-    mockFetch.mockResolvedValueOnce({ data: fact({ status: 'retired' }), error: null } as never)
-    await w.find('button[aria-label="Stop using this: scheduling"]').trigger('click')
-    await flushPromises()
-    expect(document.activeElement).toBe(w.findAll('h2')[0].element)
-    w.unmount()
-  })
-
   it('test_focus_moves_to_the_page_heading_when_the_last_fact_in_a_group_is_removed', async () => {
     const w = await mountView(FACTS, true)
-    mockFetch.mockResolvedValueOnce({ data: fact({ id: 3, kind: 'none', status: 'retired' }), error: null } as never)
-    await w.find('button[aria-label="Stop using this: Rust"]').trigger('click')
+    mockFetch.mockResolvedValueOnce({ data: { ok: true }, error: null } as never)
+    await w.find('button[aria-label="Delete: Rust"]').trigger('click')
+    await w.find('button[aria-label="Yes, delete it: Rust"]').trigger('click')
     await flushPromises()
+    expect(lastCall().url).toBe('/api/experience-facts/3')
+    expect(lastCall().init.method).toBe('DELETE')
+    expect(w.findAll('li').some((l) => l.text().includes('Rust'))).toBe(false)
     expect(document.activeElement).toBe(w.find('h1').element)
     w.unmount()
   })

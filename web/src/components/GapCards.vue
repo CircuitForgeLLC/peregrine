@@ -81,7 +81,8 @@ const saveError = ref(false)
 
 function initialState(card: CardData): CardState {
   const s = card.suggestion
-  if (!s) return { choice: 'skip', text: '', private: false }
+  // A fact saved for a related keyword is only a hint. It is never preselected or prefilled.
+  if (!s || !s.exact) return { choice: 'skip', text: '', private: false }
   if (s.kind === 'none') return { choice: 'no', text: '', private: false }
   const isPrivate = s.visibility === 'private'
   const kindChoice: Choice = s.kind === 'adjacent' ? 'similar' : 'yes'

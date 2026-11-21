@@ -4,7 +4,7 @@
     <div class="mex__intro">
       <p>This page lists what you have told us about your experience, in your own words. It is saved only in your own account.</p>
       <p>"Private" means it is saved for you but never used in documents. Nothing here is used in a document unless it is marked "Used in documents".</p>
-      <p>Stopped facts are kept but no longer used.</p>
+      <p>"Keep private" stops an answer being used in documents. "Delete" removes it for good.</p>
     </div>
 
     <p class="sr-only" role="status" aria-live="polite">{{ announcement }}</p>
@@ -29,7 +29,6 @@
             :busy="busyId === f.id"
             :save="saveText"
             :toggle="toggleVisibility"
-            :retire="retireFact"
             :remove="removeFact"
           />
         </ul>
@@ -136,15 +135,6 @@ async function focusGroupHeading(fact: ExperienceFact) {
   await nextTick()
   const stillThere = groups.value.some((g) => g.key === key)
   ;((stillThere ? headings[key] : null) ?? titleEl.value)?.focus()
-}
-
-async function retireFact(fact: ExperienceFact): Promise<string> {
-  const { data, message } = await patch(fact, { status: 'retired' })
-  if (message || !data) return message || FAILED
-  facts.value = facts.value.filter((f) => f.id !== fact.id)
-  announcement.value = `Stopped using ${fact.requirement}. It is kept but no longer used.`
-  await focusGroupHeading(fact)
-  return ''
 }
 
 async function removeFact(fact: ExperienceFact): Promise<string> {
