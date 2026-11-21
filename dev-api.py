@@ -53,6 +53,7 @@ from slowapi.errors import RateLimitExceeded
 
 from scripts import safe_net
 from scripts.credential_store import get_credential, set_credential
+from scripts.experience_routes import build_router as _build_experience_router
 from scripts.rate_limit import limiter, rate_limit_exceeded_handler
 
 DB_PATH = os.environ.get("STAGING_DB", "/devl/job-seeker/staging.db")
@@ -278,6 +279,8 @@ _sync_router = make_sync_router(
     config=SyncConfig.from_env("peregrine"),
 )
 app.include_router(_sync_router, prefix="/sync", tags=["sync"])
+
+app.include_router(_build_experience_router(lambda: Path(_request_db.get() or DB_PATH)))
 
 _log = logging.getLogger("peregrine.session")
 
