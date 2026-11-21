@@ -187,3 +187,50 @@ def test_an_unusable_fact_does_not_stop_the_revert_check_for_its_term():
     assert len(FakeRouter.prompts) == 1
     assert "private words" not in FakeRouter.prompts[0]
     assert result["career_summary"] == RESUME["career_summary"]
+
+
+def test_a_watch_word_inside_a_backed_multi_word_keyword_does_not_revert_the_section():
+    FakeRouter.reply = "Organised the front desk and built React Native apps with React."
+    facts = {"React Native": make_fact(text="I shipped two phone apps.", requirement="React Native")}
+    result = rewrite_for_ats(RESUME, [gap("React Native")], JOB,
+                             facts=facts, check_terms=["React"])
+    assert result["career_summary"] == FakeRouter.reply
+
+
+def test_a_watch_word_inside_a_backed_answers_own_text_does_not_revert_the_section():
+    FakeRouter.reply = "Organised the front desk and ran scheduling in Docker."
+    facts = {"scheduling": make_fact(text="I built the rota tool and ran it in Docker.")}
+    result = rewrite_for_ats(RESUME, [gap("scheduling")], JOB,
+                             facts=facts, check_terms=["Docker"])
+    assert result["career_summary"] == FakeRouter.reply
+
+
+def test_a_watch_word_that_appears_nowhere_the_user_wrote_still_reverts_the_section():
+    FakeRouter.reply = "Organised the front desk, scheduling and fitness coaching."
+    result = rewrite_for_ats(RESUME, [gap("scheduling")], JOB,
+                             facts={"scheduling": make_fact()},
+                             check_terms=["fitness coaching"])
+    assert result["career_summary"] == RESUME["career_summary"]
+
+
+def test_a_private_or_none_facts_text_is_not_used_as_vocabulary():
+    import dataclasses
+
+    base = make_fact(text="I ran Kubernetes clusters.", requirement="kubernetes")
+    for changes in ({"visibility": "private"}, {"kind": "none"}):
+        facts = {
+            "scheduling": make_fact(),
+            "kubernetes": dataclasses.replace(base, **changes),
+        }
+        FakeRouter.reply = "Organised the front desk, scheduling and Kubernetes."
+        result = rewrite_for_ats(RESUME, [gap("scheduling")], JOB,
+                                 facts=facts, check_terms=["Kubernetes"])
+        assert result["career_summary"] == RESUME["career_summary"]
+
+
+def test_check_terms_comparison_uses_normalisation():
+    from scripts.resume_optimizer import _unbacked_check_terms
+
+    facts = {"C++": make_fact(text="I wrote C++ tools.", requirement="C++")}
+    assert _unbacked_check_terms([], facts, ["C++,", "c++", " C++ "]) == []
+    assert _unbacked_check_terms([], facts, ["zumba,"]) == ["zumba,"]

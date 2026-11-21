@@ -303,6 +303,10 @@ def rewrite_for_ats(
 
     rewritten = dict(resume)  # shallow copy — sections replaced below
 
+    # The user's own backed keywords and usable answers are their vocabulary, so a watched
+    # word that appears in them (such as "React" inside "React Native") is not unbacked.
+    vocabulary = [*facts, *(f.text for f in facts.values())]
+
     for section, terms in by_section.items():
         terms_str = "\n".join(
             f'  - "{_quote_safe(t)}": the candidate\'s own words: "{_quote_safe(facts[t].text)}"'
@@ -339,7 +343,9 @@ def rewrite_for_ats(
 
         try:
             result = complete_cold(router, prompt)
-            slipped = find_unbacked_terms(original_content, result, unbacked_terms)
+            slipped = find_unbacked_terms(
+                "\n".join([original_content, *vocabulary]), result, unbacked_terms
+            )
             if slipped:
                 log.warning(
                     "[resume_optimizer] section %r left unchanged: rewrite used unbacked terms %s",
@@ -360,10 +366,10 @@ def _unbacked_check_terms(
     check_terms: Sequence[str],
 ) -> list[str]:
     """Gap terms without a usable fact, then every check term that is not backed."""
-    backed = {t.strip().lower() for t in facts}
+    backed = {normalize_term(t) for t in facts}
     result: list[str] = []
     for term in [g["term"] for g in prioritized_gaps if g["term"] not in facts] + list(check_terms):
-        if term.strip().lower() not in backed and term not in result:
+        if normalize_term(term) not in backed and term not in result:
             result.append(term)
     return result
 
