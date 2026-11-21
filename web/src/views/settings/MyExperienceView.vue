@@ -8,9 +8,6 @@
     </div>
 
     <p class="sr-only" role="status" aria-live="polite">{{ announcement }}</p>
-    <p v-if="actionError" class="mex__error" role="alert">
-      {{ actionError }}<template v-if="actionDetail"> {{ actionDetail }}</template>
-    </p>
 
     <p v-if="loading" class="mex__muted" role="status">Loading your experience...</p>
     <div v-else-if="loadError" class="mex__error" role="alert">
@@ -56,8 +53,6 @@ const loading = ref(true)
 const loadError = ref(false)
 const busyId = ref<number | null>(null)
 const announcement = ref('')
-const actionError = ref('')
-const actionDetail = ref('')
 const titleEl = ref<HTMLElement | null>(null)
 const headings: Record<string, HTMLElement | null> = {}
 
@@ -101,8 +96,6 @@ async function load() {
 /** Runs one write. Returns the parsed result, or null after setting the error message. */
 async function write<T>(fact: ExperienceFact, url: string, init: RequestInit): Promise<{ data: T | null; message: string }> {
   busyId.value = fact.id
-  actionError.value = ''
-  actionDetail.value = ''
   const { data, error } = await useApiFetch<T>(url, init)
   busyId.value = null
   if (!error) return { data, message: '' }
@@ -119,11 +112,6 @@ function patch(fact: ExperienceFact, body: Record<string, string>) {
   })
 }
 
-function fail(message: string) {
-  actionError.value = message
-  return false
-}
-
 async function saveText(fact: ExperienceFact, text: string): Promise<string> {
   const { data, message } = await patch(fact, { text })
   if (message || !data) return message || FAILED
@@ -132,33 +120,40 @@ async function saveText(fact: ExperienceFact, text: string): Promise<string> {
   return ''
 }
 
-async function toggleVisibility(fact: ExperienceFact, makePrivate: boolean): Promise<boolean> {
+async function toggleVisibility(fact: ExperienceFact, makePrivate: boolean): Promise<string> {
   const { data, message } = await patch(fact, { visibility: makePrivate ? 'private' : 'document' })
-  if (message || !data) return fail(message || FAILED)
+  if (message || !data) return message || FAILED
   replaceFact(data)
   announcement.value = makePrivate
     ? `${fact.requirement} is now private.`
     : `${fact.requirement} will be used in documents.`
-  return true
+  return ''
 }
 
-async function retireFact(fact: ExperienceFact): Promise<boolean> {
+/** Moves focus to the heading of the group the fact was in, or the page heading if that group is gone. */
+async function focusGroupHeading(fact: ExperienceFact) {
+  const key = fact.kind === 'none' ? 'none' : 'shared'
+  await nextTick()
+  const stillThere = groups.value.some((g) => g.key === key)
+  ;((stillThere ? headings[key] : null) ?? titleEl.value)?.focus()
+}
+
+async function retireFact(fact: ExperienceFact): Promise<string> {
   const { data, message } = await patch(fact, { status: 'retired' })
-  if (message || !data) return fail(message || FAILED)
+  if (message || !data) return message || FAILED
   facts.value = facts.value.filter((f) => f.id !== fact.id)
   announcement.value = `Stopped using ${fact.requirement}. It is kept but no longer used.`
-  return true
+  await focusGroupHeading(fact)
+  return ''
 }
 
-async function removeFact(fact: ExperienceFact): Promise<boolean> {
-  const groupKey = fact.kind === 'none' ? 'none' : 'shared'
+async function removeFact(fact: ExperienceFact): Promise<string> {
   const { data, message } = await write<unknown>(fact, `/api/experience-facts/${fact.id}`, { method: 'DELETE' })
-  if (message || data === null) return fail(message || FAILED)
+  if (message || data === null) return message || FAILED
   facts.value = facts.value.filter((f) => f.id !== fact.id)
   announcement.value = `Deleted ${fact.requirement}.`
-  await nextTick()
-  ;(headings[groupKey] ?? titleEl.value)?.focus()
-  return true
+  await focusGroupHeading(fact)
+  return ''
 }
 
 onMounted(load)

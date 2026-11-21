@@ -154,8 +154,8 @@ describe('MyExperienceView', () => {
     expect(lastCall().body).toEqual({ status: 'retired' })
     expect(lastCall().init.method).toBe('PATCH')
     expect(w.text()).not.toContain('I ran the rota for 12 nurses.')
-    expect(w.text()).toContain('Stopped facts are kept but no longer used.')
-    expect(w.find('[aria-live="polite"]').text()).toContain('scheduling')
+    expect(w.find('[aria-live="polite"]').text()).toContain('Stopped using scheduling')
+    expect(w.findAll('li')).toHaveLength(2)
   })
 
   it('Delete needs a confirm step, explains it is permanent, then calls DELETE', async () => {
@@ -163,7 +163,7 @@ describe('MyExperienceView', () => {
     await w.find('button[aria-label="Delete: scheduling"]').trigger('click')
     expect(mockFetch).toHaveBeenCalledTimes(1)
     expect(w.text()).toContain('removes it for good')
-    mockFetch.mockResolvedValueOnce({ data: { deleted: true }, error: null } as never)
+    mockFetch.mockResolvedValueOnce({ data: { ok: true }, error: null } as never)
     await w.find('button[aria-label="Yes, delete it: scheduling"]').trigger('click')
     await flushPromises()
     const c = lastCall()
@@ -194,10 +194,143 @@ describe('MyExperienceView', () => {
 
   it('every button and checkbox has an accessible name', async () => {
     const w = await mountView()
-    for (const el of w.findAll('button, input, textarea')) {
-      const name = el.attributes('aria-label') ?? el.text()
-      expect(name.trim().length).toBeGreaterThan(0)
+    for (const li of w.findAll('li')) {
+      const req = li.find('h3').text()
+      for (const el of li.findAll('button, input')) {
+        const name = el.attributes('aria-label') ?? ''
+        expect(name, el.html()).toContain(req)
+      }
     }
+  })
+
+  const err422 = (m: string) => ({ data: null, error: { kind: 'http', status: 422, detail: JSON.stringify({ detail: m }) } }) as never
+  const rowOf = (w: ReturnType<typeof mount>, req: string) => w.findAll('li').find((l) => l.find('h3').text() === req)!
+
+  it('test_a_failed_retire_leaves_the_fact_in_place_and_shows_the_error_in_its_row', async () => {
+    const w = await mountView()
+    mockFetch.mockResolvedValueOnce(err422('<i>nope</i>'))
+    await w.find('button[aria-label="Stop using this: scheduling"]').trigger('click')
+    await flushPromises()
+    const row = rowOf(w, 'scheduling')
+    expect(row.text()).toContain('<i>nope</i>')
+    expect(row.find('[role="alert"]').exists()).toBe(true)
+    expect(row.find('i').exists()).toBe(false)
+    expect(w.findAll('li')).toHaveLength(3)
+    expect(w.find('.mex > [role="alert"]').exists()).toBe(false)
+  })
+
+  it('test_a_failed_delete_leaves_the_fact_in_place_and_shows_the_error_in_its_row', async () => {
+    const w = await mountView()
+    await w.find('button[aria-label="Delete: scheduling"]').trigger('click')
+    mockFetch.mockResolvedValueOnce({ data: null, error: { kind: 'http', status: 404, detail: '{"detail":"Not found"}' } } as never)
+    await w.find('button[aria-label="Yes, delete it: scheduling"]').trigger('click')
+    await flushPromises()
+    const row = rowOf(w, 'scheduling')
+    expect(row.text()).toContain('Not found')
+    expect(row.text()).toContain('I ran the rota for 12 nurses.')
+    expect(w.findAll('li')).toHaveLength(3)
+  })
+
+  it('test_a_failed_visibility_toggle_reverts_the_checkbox_and_shows_the_error_in_its_row', async () => {
+    const w = await mountView()
+    const box = w.find('input[aria-label="Keep private: scheduling"]')
+    mockFetch.mockResolvedValueOnce(err422('Could not change'))
+    await box.setValue(true)
+    await flushPromises()
+    expect((box.element as HTMLInputElement).checked).toBe(false)
+    expect(rowOf(w, 'scheduling').text()).toContain('Could not change')
+    expect(rowOf(w, 'scheduling').text()).toContain('Used in documents')
+  })
+
+  it('test_a_blank_edit_is_refused_and_the_old_text_stays', async () => {
+    const w = await mountView()
+    await w.find('button[aria-label="Edit: scheduling"]').trigger('click')
+    await w.find('textarea').setValue('   ')
+    mockFetch.mockResolvedValueOnce(err422('Please write something'))
+    await w.find('button[aria-label="Save: scheduling"]').trigger('click')
+    await flushPromises()
+    expect(w.find('textarea').exists()).toBe(true)
+    expect(rowOf(w, 'scheduling').text()).toContain('Please write something')
+    await w.find('button[aria-label="Cancel: scheduling"]').trigger('click')
+    expect(rowOf(w, 'scheduling').text()).toContain('I ran the rota for 12 nurses.')
+  })
+
+  it('test_a_non_demo_403_takes_the_failed_path_not_the_demo_path', async () => {
+    const w = await mountView()
+    mockFetch.mockResolvedValueOnce({ data: null, error: { kind: 'http', status: 403, detail: '{"detail":"Forbidden"}' } } as never)
+    await w.find('button[aria-label="Stop using this: scheduling"]').trigger('click')
+    await flushPromises()
+    const t = rowOf(w, 'scheduling').text()
+    expect(t).toContain('That did not work')
+    expect(t).toContain('Forbidden')
+    expect(t).not.toContain('This is a demo')
+  })
+
+  it('test_keep_it_focuses_the_delete_button', async () => {
+    const w = await mountView(FACTS, true)
+    await w.find('button[aria-label="Delete: scheduling"]').trigger('click')
+    await w.find('button[aria-label="Keep it: scheduling"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(w.find('button[aria-label="Delete: scheduling"]').element)
+    w.unmount()
+  })
+
+  it('test_escape_in_the_delete_confirm_cancels_and_focuses_the_delete_button', async () => {
+    const w = await mountView(FACTS, true)
+    await w.find('button[aria-label="Delete: scheduling"]').trigger('click')
+    await w.find('button[aria-label="Keep it: scheduling"]').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(w.find('button[aria-label="Yes, delete it: scheduling"]').exists()).toBe(false)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(w.find('button[aria-label="Delete: scheduling"]').element)
+    w.unmount()
+  })
+
+  it('test_confirm_state_does_not_leak_between_two_facts', async () => {
+    const w = await mountView()
+    await w.find('button[aria-label="Delete: scheduling"]').trigger('click')
+    expect(w.find('button[aria-label="Yes, delete it: scheduling"]').exists()).toBe(true)
+    expect(w.find('button[aria-label="Yes, delete it: Kubernetes"]').exists()).toBe(false)
+    expect(w.find('button[aria-label="Delete: Kubernetes"]').exists()).toBe(true)
+  })
+
+  it('test_stop_using_this_works_on_a_none_fact', async () => {
+    const w = await mountView()
+    mockFetch.mockResolvedValueOnce({ data: fact({ id: 3, kind: 'none', status: 'retired' }), error: null } as never)
+    await w.find('button[aria-label="Stop using this: Rust"]').trigger('click')
+    await flushPromises()
+    expect(lastCall().url).toBe('/api/experience-facts/3')
+    expect(lastCall().body).toEqual({ status: 'retired' })
+    expect(w.findAll('li')).toHaveLength(2)
+    expect(w.findAll('li').some((l) => l.text().includes('Rust'))).toBe(false)
+  })
+
+  it('test_focus_moves_to_the_group_heading_after_retire', async () => {
+    const w = await mountView(FACTS, true)
+    mockFetch.mockResolvedValueOnce({ data: fact({ status: 'retired' }), error: null } as never)
+    await w.find('button[aria-label="Stop using this: scheduling"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(w.findAll('h2')[0].element)
+    w.unmount()
+  })
+
+  it('test_focus_moves_to_the_page_heading_when_the_last_fact_in_a_group_is_removed', async () => {
+    const w = await mountView(FACTS, true)
+    mockFetch.mockResolvedValueOnce({ data: fact({ id: 3, kind: 'none', status: 'retired' }), error: null } as never)
+    await w.find('button[aria-label="Stop using this: Rust"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(w.find('h1').element)
+    w.unmount()
+  })
+
+  it('test_loading_state_is_shown_before_facts_arrive', async () => {
+    let resolve!: (v: never) => void
+    mockFetch.mockReturnValueOnce(new Promise((r) => { resolve = r as never }) as never)
+    const w = mount(MyExperienceView)
+    expect(w.text()).toContain('Loading your experience')
+    resolve({ data: FACTS, error: null } as never)
+    await flushPromises()
+    expect(w.text()).not.toContain('Loading your experience')
   })
 
   it('copy has no em dashes or semicolons', async () => {

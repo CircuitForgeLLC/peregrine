@@ -8,6 +8,8 @@
       <span class="fact__badge">{{ fact.visibility === 'private' ? 'Private' : 'Used in documents' }}</span>
     </p>
 
+    <p v-if="error && !editing" class="fact__error" role="alert">{{ error }}</p>
+
     <div v-if="editing" class="fact__editor">
       <label :for="`fact-text-${fact.id}`" class="sr-only">Your words for {{ fact.requirement }}</label>
       <textarea
@@ -18,7 +20,7 @@
         maxlength="2000"
         rows="4"
       />
-      <p v-if="saveError" class="fact__error" role="alert">{{ saveError }}</p>
+      <p v-if="error" class="fact__error" role="alert">{{ error }}</p>
       <div class="fact__actions">
         <button type="button" class="fact__btn fact__btn--primary" :aria-label="`Save: ${fact.requirement}`" :disabled="busy" @click="doSave">Save</button>
         <button type="button" class="fact__btn" :aria-label="`Cancel: ${fact.requirement}`" @click="closeEditor">Cancel</button>
@@ -38,14 +40,14 @@
         <span>Keep private</span>
       </label>
       <button type="button" class="fact__btn" :aria-label="`Stop using this: ${fact.requirement}`" :disabled="busy" @click="onRetire">Stop using this</button>
-      <button v-if="!confirming" type="button" class="fact__btn" :aria-label="`Delete: ${fact.requirement}`" :disabled="busy" @click="confirming = true">Delete</button>
+      <button v-if="!confirming" ref="deleteBtn" type="button" class="fact__btn" :aria-label="`Delete: ${fact.requirement}`" :disabled="busy" @click="confirming = true">Delete</button>
     </div>
 
-    <div v-if="confirming && !editing" class="fact__confirm">
+    <div v-if="confirming && !editing" class="fact__confirm" @keydown.esc="cancelConfirm">
       <p>Delete removes it for good. You cannot undo this. "Stop using this" keeps it but stops it being used.</p>
       <div class="fact__actions">
         <button type="button" class="fact__btn fact__btn--danger" :aria-label="`Yes, delete it: ${fact.requirement}`" :disabled="busy" @click="onRemove">Yes, delete it</button>
-        <button type="button" class="fact__btn" :aria-label="`Keep it: ${fact.requirement}`" @click="confirming = false">Keep it</button>
+        <button type="button" class="fact__btn" :aria-label="`Keep it: ${fact.requirement}`" @click="cancelConfirm">Keep it</button>
       </div>
     </div>
   </li>
@@ -69,9 +71,9 @@ const props = defineProps<{
   busy: boolean
   /** Resolves to an error sentence, or '' when the save worked. */
   save: (fact: ExperienceFact, text: string) => Promise<string>
-  toggle: (fact: ExperienceFact, makePrivate: boolean) => Promise<boolean>
-  retire: (fact: ExperienceFact) => Promise<boolean>
-  remove: (fact: ExperienceFact) => Promise<boolean>
+  toggle: (fact: ExperienceFact, makePrivate: boolean) => Promise<string>
+  retire: (fact: ExperienceFact) => Promise<string>
+  remove: (fact: ExperienceFact) => Promise<string>
 }>()
 
 const KIND_LABELS = { experience: 'Done it', adjacent: 'Something similar', none: 'Have not done' } as const
@@ -80,13 +82,14 @@ const kindLabel = computed(() => KIND_LABELS[props.fact.kind])
 const editing = ref(false)
 const confirming = ref(false)
 const draft = ref('')
-const saveError = ref('')
+const error = ref('')
+const deleteBtn = ref<HTMLButtonElement | null>(null)
 const textareaEl = ref<HTMLTextAreaElement | null>(null)
 const editBtn = ref<HTMLButtonElement | null>(null)
 
 async function openEditor() {
   draft.value = props.fact.text
-  saveError.value = ''
+  error.value = ''
   confirming.value = false
   editing.value = true
   await nextTick()
@@ -95,25 +98,42 @@ async function openEditor() {
 
 async function closeEditor() {
   editing.value = false
-  saveError.value = ''
+  error.value = ''
   await nextTick()
   editBtn.value?.focus()
 }
 
 async function doSave() {
+  error.value = ''
   const err = await props.save(props.fact, draft.value)
-  if (err) { saveError.value = err; return }
+  if (err) { error.value = err; return }
   await closeEditor()
 }
 
 async function onToggle(e: Event) {
   const el = e.target as HTMLInputElement
-  const ok = await props.toggle(props.fact, el.checked)
-  if (!ok) el.checked = !el.checked
+  error.value = ''
+  const err = await props.toggle(props.fact, el.checked)
+  if (err) { el.checked = !el.checked; error.value = err }
 }
 
-function onRetire() { void props.retire(props.fact) }
-function onRemove() { void props.remove(props.fact) }
+async function cancelConfirm() {
+  confirming.value = false
+  await nextTick()
+  deleteBtn.value?.focus()
+}
+
+async function onRetire() {
+  error.value = ''
+  const err = await props.retire(props.fact)
+  if (err) error.value = err
+}
+
+async function onRemove() {
+  error.value = ''
+  const err = await props.remove(props.fact)
+  if (err) error.value = err
+}
 </script>
 
 <style scoped>
