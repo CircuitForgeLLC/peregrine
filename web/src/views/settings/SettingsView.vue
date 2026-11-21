@@ -58,6 +58,7 @@ const showDeveloper = computed(() => config.isDevMode || devOverride.value)
 const allGroups = [
   { label: 'Profile', items: [
     { key: 'my-profile', path: '/settings/my-profile', label: 'My Profile', show: true },
+    { key: 'my-experience', path: '/settings/my-experience', label: 'My Experience', show: true },
     { key: 'resume', path: '/settings/resume', label: 'Resume Profile', show: true },
   ]},
   { label: 'Search', items: [
