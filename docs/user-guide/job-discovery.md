@@ -114,6 +114,8 @@ The enricher visits each job URL and attempts to extract the full description fr
 
 You can also enrich a specific job from the Job Review page by clicking the refresh icon next to its description.
 
+LinkedIn sometimes refuses to send a job description during a search, which leaves the listing with a title and company but no text. Peregrine fills these in automatically, a few at a time, at the start of the next discovery run. It backs off and tries again later if LinkedIn starts refusing requests.
+
 ---
 
 ## Keyword Matching
