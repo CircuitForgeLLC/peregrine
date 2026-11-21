@@ -460,11 +460,26 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             if p.get("full_rewrite", False):
                 update_task_stage(db_path, task_id, "rewriting resume sections")
                 candidate_voice = load_user_profile(str(_user_yaml)).get("candidate_voice", "")
-                rewritten = rewrite_for_ats(resume_struct, prioritized, job, candidate_voice)
+                from scripts.experience_facts import usable_facts_for_prompt
+                from scripts.resume_claims import find_novel_words
+                from scripts.resume_optimizer import _flatten_resume_text
+                terms = [g["term"] for g in prioritized]
+                facts = usable_facts_for_prompt(db_path, terms)
+                rewritten = rewrite_for_ats(resume_struct, prioritized, job,
+                                            candidate_voice, facts=facts)
                 if hallucination_check(resume_struct, rewritten):
                     from scripts.db import save_resume_draft
                     from scripts.resume_optimizer import build_review_diff
                     draft = build_review_diff(resume_struct, rewritten)
+                    draft["claims_report"] = {
+                        "novel_words": find_novel_words(
+                            _flatten_resume_text(resume_struct),
+                            _flatten_resume_text(rewritten),
+                            [f.text for f in facts.values()]
+                            + [job.get("title", ""), job.get("company", "")],
+                        ),
+                        "unused_terms": [t for t in terms if t not in facts],
+                    }
                     # Attach gap report to draft for reference in the review UI
                     draft["gap_report"] = prioritized
                     save_resume_draft(db_path, job_id=job_id,

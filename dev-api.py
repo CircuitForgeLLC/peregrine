@@ -836,6 +836,8 @@ def get_optimized_resume(job_id: int):
 
 class ResumeOptimizeBody(BaseModel):
     full_rewrite: bool = False
+    # None (field omitted) means every gap. An explicit empty list means none.
+    selected_gaps: list[str] | None = None
 
 
 @app.post("/api/jobs/{job_id}/resume_optimizer/generate")
@@ -848,7 +850,10 @@ def generate_optimized_resume(job_id: int, body: ResumeOptimizeBody):
     import json
     try:
         from scripts.task_runner import submit_task
-        params = json.dumps({"full_rewrite": body.full_rewrite})
+        task_params: dict = {"full_rewrite": body.full_rewrite}
+        if body.selected_gaps is not None:
+            task_params["selected_gaps"] = body.selected_gaps
+        params = json.dumps(task_params)
         task_id, is_new = submit_task(
             db_path=Path(_request_db.get() or DB_PATH),
             task_type="resume_optimize",
