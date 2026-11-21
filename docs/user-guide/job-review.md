@@ -36,6 +36,8 @@ Each job card shows:
 
 A high match score does not guarantee a good fit; use it as a signal to prioritise your review, not as a final filter.
 
+To act on keyword gaps, use the ATS Resume Optimizer in the [Apply Workspace](apply-workspace.md#ats-resume-optimizer). It asks you about each keyword before it rewrites anything.
+
 ---
 
 ## Reviewing Jobs
