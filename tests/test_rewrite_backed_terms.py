@@ -148,6 +148,29 @@ def test_rewrite_refuses_unusable_facts_passed_in_directly():
     assert result is not RESUME
 
 
+def test_an_unticked_keyword_slipped_in_by_the_model_reverts_the_section():
+    FakeRouter.reply = "Organised the front desk, scheduling and Zumba classes."
+    result = rewrite_for_ats(RESUME, [gap("scheduling")], JOB,
+                             facts={"scheduling": make_fact()}, check_terms=["zumba"])
+    assert len(FakeRouter.prompts) == 1
+    assert "zumba" not in FakeRouter.prompts[0].lower()
+    assert result["career_summary"] == RESUME["career_summary"]
+
+
+def test_check_terms_never_include_a_backed_term():
+    result = rewrite_for_ats(RESUME, [gap("scheduling")], JOB,
+                             facts={"scheduling": make_fact()},
+                             check_terms=["SCHEDULING", "Scheduling", "zumba"])
+    assert result["career_summary"] == CLEAN_REPLY
+
+
+def test_rewrite_for_ats_without_check_terms_behaves_as_before():
+    FakeRouter.reply = "Organised the front desk, scheduling and Zumba classes."
+    result = rewrite_for_ats(RESUME, [gap("scheduling")], JOB,
+                             facts={"scheduling": make_fact()})
+    assert result["career_summary"] == FakeRouter.reply
+
+
 def test_an_unusable_fact_does_not_stop_the_revert_check_for_its_term():
     import dataclasses
 

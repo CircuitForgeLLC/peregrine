@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -35,7 +35,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Allow importing peregrine scripts for cover letter generation.
 # Resolved from __file__ so it works both in Docker (/app) and on the dev
@@ -53,6 +53,7 @@ from slowapi.errors import RateLimitExceeded
 
 from scripts import safe_net
 from scripts.credential_store import get_credential, set_credential
+from scripts.experience_facts import MAX_TERM_LEN
 from scripts.experience_routes import build_router as _build_experience_router
 from scripts.rate_limit import limiter, rate_limit_exceeded_handler
 
@@ -842,10 +843,17 @@ def get_optimized_resume(job_id: int):
     }
 
 
+_GapTerm = Annotated[str, Field(min_length=1, max_length=MAX_TERM_LEN)]
+_MAX_GAP_TERMS = 100
+
+
 class ResumeOptimizeBody(BaseModel):
     full_rewrite: bool = False
     # None (field omitted) means every gap. An explicit empty list means none.
-    selected_gaps: list[str] | None = None
+    selected_gaps: list[_GapTerm] | None = Field(default=None, max_length=_MAX_GAP_TERMS)
+    # The terms the user approved on the gap cards in this session. None (an older
+    # client) looks facts up for every selected term. An empty list means none.
+    approved_terms: list[_GapTerm] | None = Field(default=None, max_length=_MAX_GAP_TERMS)
 
 
 @app.post("/api/jobs/{job_id}/resume_optimizer/generate")
@@ -861,6 +869,8 @@ def generate_optimized_resume(job_id: int, body: ResumeOptimizeBody):
         task_params: dict = {"full_rewrite": body.full_rewrite}
         if body.selected_gaps is not None:
             task_params["selected_gaps"] = body.selected_gaps
+        if body.approved_terms is not None:
+            task_params["approved_terms"] = body.approved_terms
         params = json.dumps(task_params)
         task_id, is_new = submit_task(
             db_path=Path(_request_db.get() or DB_PATH),

@@ -13,6 +13,7 @@ from pathlib import Path
 from scripts.experience_facts import (
     MAX_TERM_LEN,
     MAX_TEXT_LEN,
+    ExperienceFact,
     find_matching_fact,
     get_fact,
     is_usable_fact,
@@ -37,20 +38,31 @@ def jd_snippet(description: str, term: str) -> str:
     return ""
 
 
+def _suggestion(term: str, fact: ExperienceFact | None) -> dict | None:
+    """The saved fact for a card, with the keyword it was saved for.
+
+    exact is true only when that keyword is the card's own term, so a fact
+    saved for a related keyword is shown as a hint and never preselected.
+    """
+    if fact is None:
+        return None
+    return {
+        "id": fact.id,
+        "kind": fact.kind,
+        "text": fact.text,
+        "visibility": fact.visibility,
+        "requirement": fact.requirement,
+        "exact": normalize_term(fact.requirement) == normalize_term(term),
+    }
+
+
 def build_cards(db_path: Path, description: str, terms: Sequence[str]) -> list[dict]:
+    """One card per term. Terms with no letters or numbers are skipped, not refused."""
     cards: list[dict] = []
     for term in terms:
-        fact = find_matching_fact(db_path, term)
-        suggestion = (
-            {
-                "id": fact.id,
-                "kind": fact.kind,
-                "text": fact.text,
-                "visibility": fact.visibility,
-            }
-            if fact
-            else None
-        )
+        if not normalize_term(term):
+            continue
+        suggestion = _suggestion(term, find_matching_fact(db_path, term))
         cards.append(
             {"term": term, "snippet": jd_snippet(description, term), "suggestion": suggestion}
         )
@@ -86,18 +98,18 @@ def apply_answers(db_path: Path, job_id: int, answers: Sequence[dict]) -> dict:
     """Save the answers and return the terms the user approved for this job.
 
     Every answer is checked before anything is written, so a bad answer
-    saves nothing from the batch.
+    saves nothing from the batch. A skipped answer is never saved, so it is
+    dropped before checking and its term cannot reject the batch.
     """
-    for answer in answers:
+    to_save = [a for a in answers if a.get("choice") != "skip"]
+    for answer in to_save:
         _validate(db_path, answer)
 
     approved: list[str] = []
     saved = 0
-    for answer in answers:
+    for answer in to_save:
         term = answer["term"]
         choice = answer["choice"]
-        if choice == "skip":
-            continue
         if answer.get("use_saved_fact_id") is not None and choice in ("yes", "similar"):
             approved.append(term)
             continue

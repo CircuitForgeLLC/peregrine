@@ -161,6 +161,19 @@ def test_cards_route_refuses_an_oversized_term_with_422(client):
     assert r.status_code == 422
 
 
+def test_cards_route_skips_unusable_terms_instead_of_failing(client):
+    job = _add_job(client.db, "You will use Kubernetes daily.")
+    r = client.post(f"/api/jobs/{job}/gap_cards", json={"terms": ["Kubernetes", "???", "   ", "-"]})
+    assert r.status_code == 200, r.text
+    assert [c["term"] for c in r.json()["cards"]] == ["Kubernetes"]
+    r = client.post(f"/api/jobs/{job}/gap_cards/answers", json={"answers": [
+        {"term": "???", "choice": "skip"},
+        {"term": "Kubernetes", "choice": "yes", "text": "Ran clusters"},
+    ]})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"approved_terms": ["Kubernetes"], "saved": 1}
+
+
 def test_write_routes_are_refused_in_demo_mode_and_read_routes_still_work(client, monkeypatch):
     import dev_api
 

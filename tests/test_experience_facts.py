@@ -213,7 +213,7 @@ def test_add_fact_refuses_a_requirement_that_normalises_to_empty(db_path):
     assert list_facts(db_path, status=None) == []
 
 
-def test_replace_fact_retires_exact_matches_only_and_returns_the_new_id(db_path):
+def test_replace_fact_deletes_the_superseded_exact_match_facts(db_path):
     from scripts.experience_facts import replace_fact
 
     same = add_fact(db_path, kind="experience", requirement="Go", text="old")
@@ -226,8 +226,10 @@ def test_replace_fact_retires_exact_matches_only_and_returns_the_new_id(db_path)
     assert new_id not in (same, other, retired)
     assert get_fact(db_path, new_id).status == "active"
     assert get_fact(db_path, new_id).origin_job_id == 3
-    assert get_fact(db_path, same).status == "retired"
+    assert get_fact(db_path, same) is None
+    assert get_fact(db_path, retired) is None
     assert get_fact(db_path, other).status == "active"
+    assert sorted(f.id for f in list_facts(db_path, status=None)) == sorted([other, new_id])
     with pytest.raises(ValueError):
         replace_fact(db_path, kind="experience", requirement="???", text="t")
     with pytest.raises(ValueError):
@@ -241,7 +243,7 @@ def test_replace_fact_rolls_back_if_the_insert_fails(db_path):
     old = add_fact(db_path, kind="experience", requirement="Go", text="old")
     conn = sqlite3.connect(db_path)
     conn.execute(
-        "CREATE TRIGGER boom BEFORE UPDATE ON experience_facts "
+        "CREATE TRIGGER boom BEFORE DELETE ON experience_facts "
         "BEGIN SELECT RAISE(ABORT, 'boom'); END"
     )
     conn.commit()
@@ -267,6 +269,39 @@ def test_normalize_term_keeps_cplusplus_and_csharp_intact():
     assert normalize_term("C++") == "c++"
     assert normalize_term("C#") == "c#"
     assert normalize_term("C") == "c"
+
+
+# Final review C1: the user's own answer for a term decides, even when it is not usable.
+
+
+def test_a_newer_none_fact_beats_an_older_overlapping_usable_fact(db_path):
+    add_fact(db_path, kind="adjacent", requirement="React Native", text="Built two apps")
+    assert "React" in usable_facts_for_prompt(db_path, ["React"])
+    add_fact(db_path, kind="none", requirement="React Hooks")
+    assert usable_facts_for_prompt(db_path, ["React"]) == {}
+    add_fact(db_path, kind="none", requirement="React")
+    assert usable_facts_for_prompt(db_path, ["React"]) == {}
+
+
+def test_a_private_fact_for_the_exact_term_beats_an_older_overlapping_usable_fact(db_path):
+    add_fact(db_path, kind="experience", requirement="Kubernetes operators", text="Wrote two")
+    add_fact(db_path, kind="experience", requirement="Kubernetes", text="secret",
+             visibility="private")
+    assert usable_facts_for_prompt(db_path, ["Kubernetes"]) == {}
+    assert find_matching_fact(db_path, "Kubernetes").visibility == "private"
+
+
+def test_a_retired_exact_fact_does_not_block_a_usable_overlap_match(db_path):
+    native = add_fact(db_path, kind="adjacent", requirement="React Native", text="Built apps")
+    gone = add_fact(db_path, kind="none", requirement="React")
+    update_fact(db_path, gone, status="retired")
+    assert usable_facts_for_prompt(db_path, ["React"])["React"].id == native
+
+
+def test_an_exact_usable_fact_still_wins_over_a_newer_overlap_none_fact(db_path):
+    exact = add_fact(db_path, kind="experience", requirement="React", text="Built a site")
+    add_fact(db_path, kind="none", requirement="React Native")
+    assert usable_facts_for_prompt(db_path, ["react"])["react"].id == exact
     assert normalize_term(" C++, ") == "c++"
     assert normalize_term(".NET") == ".net"
     assert normalize_term("Scheduling!") == "scheduling"

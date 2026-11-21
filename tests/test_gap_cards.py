@@ -34,8 +34,25 @@ def test_build_cards_prefills_from_a_saved_fact(db):
     assert cards[0]["snippet"] == "You will use Kubernetes."
     assert cards[0]["suggestion"] == {
         "id": fid, "kind": "experience", "text": "Ran clusters", "visibility": "document",
+        "requirement": "Kubernetes", "exact": True,
     }
     assert cards[1]["suggestion"] is None
+
+
+def test_cards_suggestion_includes_requirement_and_exact_flag(db):
+    add_fact(db, kind="adjacent", requirement="React Native", text="Built apps")
+    add_fact(db, kind="experience", requirement="Go", text="Built services")
+    cards = build_cards(db, "", ["React", " go ", "Rust"])
+    assert cards[0]["suggestion"]["requirement"] == "React Native"
+    assert cards[0]["suggestion"]["exact"] is False
+    assert cards[1]["suggestion"]["requirement"] == "Go"
+    assert cards[1]["suggestion"]["exact"] is True
+    assert cards[2]["suggestion"] is None
+
+
+def test_build_cards_skips_terms_with_no_letters_or_numbers(db):
+    cards = build_cards(db, "", ["Go", "???", "   ", "-"])
+    assert [c["term"] for c in cards] == ["Go"]
 
 
 def test_yes_similar_no_skip_save_the_right_kinds(db):
@@ -60,7 +77,26 @@ def test_repeating_an_answer_replaces_it_instead_of_duplicating(db):
     active = list_facts(db, status="active")
     assert len(active) == 1
     assert (active[0].kind, active[0].text) == ("adjacent", "second")
-    assert len(list_facts(db, status="retired")) == 1
+    assert list_facts(db, status="retired") == []
+
+
+def test_a_changed_answer_leaves_exactly_one_row_for_that_term(db):
+    apply_answers(db, 1, [{"term": "Go", "choice": "yes", "text": "first"}])
+    apply_answers(db, 2, [{"term": "GO", "choice": "yes", "text": "secret", "private": True}])
+    apply_answers(db, 3, [{"term": "go", "choice": "no"}])
+    rows = list_facts(db, status=None)
+    assert len(rows) == 1
+    assert (rows[0].kind, rows[0].text, rows[0].status) == ("none", "", "active")
+
+
+def test_a_skip_answer_with_a_bad_term_does_not_reject_the_batch(db):
+    result = apply_answers(db, 1, [
+        {"term": "???", "choice": "skip"},
+        {"term": "   ", "choice": "skip"},
+        {"term": "Go", "choice": "yes", "text": "Built services"},
+    ])
+    assert result == {"approved_terms": ["Go"], "saved": 1}
+    assert [f.requirement for f in list_facts(db, status=None)] == ["Go"]
 
 
 def test_private_answers_are_saved_but_never_approved(db):
@@ -117,7 +153,7 @@ def test_a_failed_answer_never_leaves_the_old_fact_retired(db):
     fid = add_fact(db, kind="experience", requirement="Go", text="old")
     conn = sqlite3.connect(db)
     conn.execute(
-        "CREATE TRIGGER boom BEFORE UPDATE ON experience_facts "
+        "CREATE TRIGGER boom BEFORE DELETE ON experience_facts "
         "BEGIN SELECT RAISE(ABORT, 'boom'); END"
     )
     conn.commit()

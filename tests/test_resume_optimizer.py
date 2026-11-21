@@ -99,6 +99,32 @@ def test_extract_jd_signals_handles_malformed_llm_json():
     assert isinstance(result, list)
 
 
+def test_overlong_and_punctuation_only_terms_are_dropped_from_the_gap_list():
+    """Terms over 120 characters or with no letters or numbers never become gaps."""
+    from scripts.resume_optimizer import extract_jd_signals, prioritize_gaps
+
+    long_term = "x" * 121
+    llm_response = json.dumps(["Gainsight", long_term, "???", "-", "gainsight", "GAINSIGHT "])
+    with patch("scripts.llm_router.LLMRouter") as MockRouter:
+        MockRouter.return_value.complete.return_value = llm_response
+        result = extract_jd_signals(SAMPLE_JD)
+    assert result == ["Gainsight"]
+
+    gaps = prioritize_gaps(["Kafka", long_term, "...", "  ", "kafka", "x" * 120], SAMPLE_RESUME)
+    assert [g["term"] for g in gaps] == ["Kafka", "x" * 120]
+
+
+def test_the_gap_list_is_capped_at_100():
+    from scripts.resume_optimizer import extract_jd_signals, prioritize_gaps
+
+    many = [f"term{i}" for i in range(150)]
+    with patch("scripts.llm_router.LLMRouter") as MockRouter:
+        MockRouter.return_value.complete.return_value = json.dumps(many)
+        result = extract_jd_signals(SAMPLE_JD)
+    assert result == many[:100]
+    assert len(prioritize_gaps(many, SAMPLE_RESUME)) == 100
+
+
 # ── prioritize_gaps ───────────────────────────────────────────────────────────
 
 def test_prioritize_gaps_skips_existing_terms():

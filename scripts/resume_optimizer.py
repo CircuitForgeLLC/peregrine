@@ -19,10 +19,15 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
-from scripts.experience_facts import ExperienceFact, is_usable_fact
+from scripts.experience_facts import (
+    MAX_TERM_LEN,
+    ExperienceFact,
+    is_usable_fact,
+    normalize_term,
+)
 from scripts.resume_claims import find_unbacked_terms
 
 log = logging.getLogger(__name__)
@@ -87,15 +92,28 @@ def extract_jd_signals(description: str, resume_text: str = "", company_name: st
         log.warning("[resume_optimizer] LLM signal extraction failed", exc_info=True)
 
     # Merge: LLM signals first (richer phrasing), TF-IDF fills gaps
-    seen: set[str] = set()
-    merged: list[str] = []
-    for term in llm_signals + tfidf_gaps:
-        key = term.lower()
-        if key not in seen:
-            seen.add(key)
-            merged.append(term)
+    return clean_gap_terms(llm_signals + tfidf_gaps)
 
-    return merged
+
+MAX_GAP_TERMS = 100
+
+
+def clean_gap_terms(terms: Sequence[str]) -> list[str]:
+    """Usable gap terms in their given order: at most MAX_TERM_LEN characters, with
+    letters or numbers, de-duplicated case-insensitively, at most MAX_GAP_TERMS."""
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for term in terms:
+        if not isinstance(term, str) or len(term) > MAX_TERM_LEN:
+            continue
+        key = normalize_term(term)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(term)
+        if len(cleaned) == MAX_GAP_TERMS:
+            break
+    return cleaned
 
 
 # ── Gap prioritization ────────────────────────────────────────────────────────
@@ -149,7 +167,7 @@ def prioritize_gaps(gaps: list[str], resume_sections: dict[str, Any]) -> list[di
     existing_text = _flatten_resume_text(resume_sections).lower()
 
     prioritized: list[dict] = []
-    for term in gaps:
+    for term in clean_gap_terms(gaps):
         # Skip terms already present anywhere in the resume
         if term.lower() in existing_text:
             continue
@@ -219,6 +237,7 @@ def rewrite_for_ats(
     job: dict[str, Any],
     candidate_voice: str = "",
     facts: Mapping[str, ExperienceFact] | None = None,
+    check_terms: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Rewrite resume sections to use only the ATS keywords the candidate has backed.
 
@@ -237,6 +256,9 @@ def rewrite_for_ats(
             is private, kind "none", retired or blank is treated as no fact at all. Gaps
             without a usable fact are never shown to the model, and a section where the
             model slips in such a term is left unchanged.
+        check_terms: More keywords to watch for, such as ones the user unticked or did not
+            answer. A section where the model adds one that is not backed (compared
+            case-insensitively) is left unchanged. Backed terms are never watched.
 
     Returns:
         New resume dict (same structure as input) with rewritten sections.
@@ -244,7 +266,7 @@ def rewrite_for_ats(
     """
     facts = {t: f for t, f in (facts or {}).items() if is_usable_fact(f)}
     backed_gaps = [g for g in prioritized_gaps if g["term"] in facts]
-    unbacked_terms = [g["term"] for g in prioritized_gaps if g["term"] not in facts]
+    unbacked_terms = _unbacked_check_terms(prioritized_gaps, facts, check_terms)
     prioritized_gaps = backed_gaps
     if not prioritized_gaps:
         return dict(resume)
@@ -330,6 +352,20 @@ def rewrite_for_ats(
             # Leave section unchanged on failure
 
     return rewritten
+
+
+def _unbacked_check_terms(
+    prioritized_gaps: list[dict],
+    facts: Mapping[str, ExperienceFact],
+    check_terms: Sequence[str],
+) -> list[str]:
+    """Gap terms without a usable fact, then every check term that is not backed."""
+    backed = {t.strip().lower() for t in facts}
+    result: list[str] = []
+    for term in [g["term"] for g in prioritized_gaps if g["term"] not in facts] + list(check_terms):
+        if term.strip().lower() not in backed and term not in result:
+            result.append(term)
+    return result
 
 
 def _quote_safe(text: str) -> str:

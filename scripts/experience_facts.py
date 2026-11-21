@@ -177,8 +177,12 @@ def replace_fact(
     source: str = "card",
     origin_job_id: int | None = None,
 ) -> int:
-    """Insert a fact and retire every other active fact with the same
-    normalised requirement, in one transaction. Returns the new id."""
+    """Insert a fact and delete every other fact with the same normalised
+    requirement, in one transaction. Returns the new id.
+
+    Superseded answers are deleted, not kept, so no earlier wording stays
+    stored where the user cannot see or remove it.
+    """
     _validate_new_fact(kind, requirement, text, visibility, source)
     norm = normalize_term(requirement)
     with closing(_connect(db_path)) as conn:
@@ -189,17 +193,12 @@ def replace_fact(
             )
             new_id = int(cur.lastrowid)
             rows = conn.execute(
-                "SELECT id, requirement FROM experience_facts "
-                "WHERE status = 'active' AND id != ?",
+                "SELECT id, requirement FROM experience_facts WHERE id != ?",
                 (new_id,),
             ).fetchall()
             old_ids = [r["id"] for r in rows if normalize_term(r["requirement"]) == norm]
             for old_id in old_ids:
-                conn.execute(
-                    "UPDATE experience_facts SET status = 'retired', "
-                    "updated_at = datetime('now') WHERE id = ?",
-                    (old_id,),
-                )
+                conn.execute("DELETE FROM experience_facts WHERE id = ?", (old_id,))
             conn.commit()
         except BaseException:
             conn.rollback()
@@ -320,13 +319,15 @@ def usable_facts_for_prompt(
 ) -> dict[str, ExperienceFact]:
     """Facts safe to put in a prompt, keyed by the term as passed in.
 
-    Only active experience or adjacent facts with document visibility are
-    considered, resolved with the same matching as find_matching_fact.
+    Each term is resolved against every active fact with the same matching as
+    find_matching_fact, and the match is kept only if it is usable. So the
+    user's own "none" or private answer for a term always wins over a loosely
+    related usable fact, and that term gets no backing at all.
     """
-    usable = [f for f in list_facts(db_path, status="active") if is_usable_fact(f)]
+    active = list_facts(db_path, status="active")
     result: dict[str, ExperienceFact] = {}
     for term in terms:
-        match = _best_match(term, usable)
-        if match is not None:
+        match = _best_match(term, active)
+        if match is not None and is_usable_fact(match):
             result[term] = match
     return result
