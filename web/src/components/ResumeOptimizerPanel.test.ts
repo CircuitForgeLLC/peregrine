@@ -198,4 +198,59 @@ describe('ResumeOptimizerPanel full rewrite flow', () => {
     expect(document.activeElement).toBe(status.element)
     w2.unmount()
   })
+
+  describe('claims notice on the review step', () => {
+    const baseDraft = {
+      sections: [
+        { section: 'skills', type: 'skills', original: ['Python'], proposed: ['Python', 'Docker'], added: ['Docker'], removed: [], gap_terms: [] },
+      ],
+      rewritten_struct: {},
+    }
+
+    async function mountReview(draft: Record<string, unknown>) {
+      setActivePinia(createPinia())
+      useAppConfigStore().tier = 'paid'
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url.endsWith('/resume_optimizer/review')) return { data: { draft }, error: null } as any
+        if (url.endsWith('/resume_optimizer/task')) return { data: { status: 'awaiting_review', stage: null }, error: null } as any
+        if (url.endsWith('/resume_optimizer')) return { data: { optimized_resume: '', ats_gap_report: [] }, error: null } as any
+        return { data: {}, error: null } as any
+      })
+      const w = mount(ResumeOptimizerPanel, { props: { jobId: 7 }, attachTo: document.body })
+      await flushPromises()
+      return w
+    }
+    const openReview = async (w: Awaited<ReturnType<typeof mountReview>>) => {
+      await w.find('.rop__review-trigger button').trigger('click')
+      await flushPromises()
+    }
+
+    it('test_the_review_modal_shows_the_claims_notice_for_a_draft_with_a_claims_report', async () => {
+      const w = await mountReview({ ...baseDraft, claims_report: { novel_words: ['kubernetes'], unused_terms: ['Terraform'] } })
+      await openReview(w)
+      const dialog = document.body.querySelector('[role="dialog"]')!
+      expect(dialog).not.toBeNull()
+      const notice = dialog.querySelector('section[aria-labelledby="cn-heading"]')!
+      expect(notice).not.toBeNull()
+      expect(notice.textContent).toContain('kubernetes')
+      expect(notice.textContent).toContain('Terraform')
+      w.unmount()
+    })
+
+    it('test_the_review_modal_shows_no_notice_for_a_draft_without_a_claims_report', async () => {
+      const w = await mountReview({ ...baseDraft })
+      await openReview(w)
+      expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+      expect(document.body.querySelector('#cn-heading')).toBeNull()
+      w.unmount()
+    })
+
+    it('test_the_trigger_card_no_longer_shows_the_claims_notice', async () => {
+      const w = await mountReview({ ...baseDraft, claims_report: { novel_words: ['kubernetes'], unused_terms: ['Terraform'] } })
+      expect(w.find('.rop__review-trigger').exists()).toBe(true)
+      expect(w.find('.rop__review-trigger').text()).not.toContain('kubernetes')
+      expect(document.body.querySelector('#cn-heading')).toBeNull()
+      w.unmount()
+    })
+  })
 })

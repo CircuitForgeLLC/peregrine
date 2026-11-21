@@ -118,10 +118,6 @@
       <!-- ── awaiting_review: modal trigger ──────────────────────────── -->
       <template v-else-if="rewriteState === 'awaiting_review' && reviewDraft">
         <div class="rop__review-trigger">
-          <ClaimsNotice
-            :novel-words="claimsReport.novel_words"
-            :unused-terms="claimsReport.unused_terms"
-          />
           <p class="rop__hint">Your resume has been rewritten. Review the proposed changes section by section.</p>
           <button class="btn-generate" @click="showReviewModal = true">
             <span aria-hidden="true">📋</span> Review Changes
@@ -258,7 +254,6 @@ import { apiUrl, useApiFetch } from '../composables/useApi'
 import { useAppConfigStore } from '../stores/appConfig'
 import ResumeReviewModal from './ResumeReviewModal.vue'
 import GapCards from './GapCards.vue'
-import ClaimsNotice from './ClaimsNotice.vue'
 import type { CardState } from './GapCard.vue'
 
 const props = defineProps<{ jobId: number }>()
@@ -318,13 +313,6 @@ const optimizedResume = ref('')
 
 // Review draft and user decisions
 const reviewDraft       = ref<ReviewDraft | null>(null)
-const claimsReport = computed(() => {
-  const r = reviewDraft.value?.claims_report
-  return {
-    novel_words: (Array.isArray(r?.novel_words) ? r.novel_words : []) as string[],
-    unused_terms: (Array.isArray(r?.unused_terms) ? r.unused_terms : []) as string[],
-  }
-})
 const approvedSkills    = ref<Set<string>>(new Set())
 // For each unapproved skill: how to frame the gap honestly
 const skillFramings     = ref<Map<string, GapFraming>>(new Map())
