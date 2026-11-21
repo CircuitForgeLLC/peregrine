@@ -22,7 +22,7 @@ const gapData = {
   ],
 }
 
-async function mountPanel() {
+async function mountPanel(report = gapData) {
   setActivePinia(createPinia())
   useAppConfigStore().tier = 'paid'
   fetchMock.mockImplementation(async (url: string) => {
@@ -30,7 +30,7 @@ async function mountPanel() {
       return { data: { cards: [{ term: 'Kubernetes', snippet: 's', suggestion: null }] }, error: null } as any
     }
     if (url.endsWith('/gap_cards/answers')) return { data: { approved_terms: approved, saved: approved.length }, error: null } as any
-    if (url.endsWith('/resume_optimizer')) return { data: gapData, error: null } as any
+    if (url.endsWith('/resume_optimizer')) return { data: report, error: null } as any
     if (url.endsWith('/resume_optimizer/task')) return { data: { status: 'none', stage: null }, error: null } as any
     return { data: {}, error: null } as any
   })
@@ -72,6 +72,24 @@ describe('ResumeOptimizerPanel full rewrite flow', () => {
       full_rewrite: true, selected_gaps: ['Kubernetes', 'Terraform'], approved_terms: ['Kubernetes'],
     })
     expect(w.find('fieldset').exists()).toBe(false)
+  })
+
+  it('the panel passes terms in priority order', async () => {
+    const w = await mountPanel({
+      optimized_resume: '',
+      ats_gap_report: [
+        { term: 'Alpha', section: 'skills', priority: 3, rationale: 'r' },
+        { term: 'Bravo', section: 'skills', priority: 1, rationale: 'r' },
+        { term: 'Charlie', section: 'skills', priority: 2, rationale: 'r' },
+        { term: 'Delta', section: 'skills', priority: 1, rationale: 'r' },
+        { term: 'Echo', section: 'skills', priority: 3, rationale: 'r' },
+      ],
+    })
+    await w.findAll('.rop__gap-checkbox')[2].setValue(false)
+    await optimizeBtn(w).trigger('click')
+    await flushPromises()
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/gap_cards'))!
+    expect(JSON.parse(String(call[1]?.body)).terms).toEqual(['Bravo', 'Delta', 'Alpha', 'Echo'])
   })
 
   it('test_the_rewrite_request_carries_approved_terms_and_selected_gaps', async () => {

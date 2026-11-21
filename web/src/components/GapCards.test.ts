@@ -72,10 +72,11 @@ describe('GapCards', () => {
     expect(save().attributes('disabled')).toBeUndefined()
   })
 
-  it('opens a suggested card with Use this again selected and editable saved text', async () => {
-    const w = await mountCards([card('Kubernetes', { id: 4, kind: 'experience', text: 'Ran clusters', visibility: 'document' })])
-    expect((w.find('input[value="reuse"]').element as HTMLInputElement).checked).toBe(true)
+  it('offers Use this again on a related answer and fills the saved text for editing', async () => {
+    const w = await mountCards([card('Kubernetes', { id: 4, kind: 'experience', text: 'Ran clusters', visibility: 'document', exact: false })])
+    expect((w.find('input[value="skip"]').element as HTMLInputElement).checked).toBe(true)
     expect(w.text()).toContain('Use this again')
+    await w.find('input[value="reuse"]').setValue(true)
     const ta = w.find('textarea')
     expect((ta.element as HTMLTextAreaElement).value).toBe('Ran clusters')
     await ta.setValue('Ran clusters at scale')
@@ -83,14 +84,16 @@ describe('GapCards', () => {
   })
 
   it('sends use_saved_fact_id when the saved text is untouched, a new answer when edited', async () => {
-    const sug = { id: 4, kind: 'adjacent', text: 'Used Nomad', visibility: 'document' }
+    const sug = { id: 4, kind: 'adjacent', text: 'Used Nomad', visibility: 'document', exact: false }
     const w = await mountCards([card('Kubernetes', sug)])
+    await w.find('input[value="reuse"]').setValue(true)
     await w.find('button.gcs__btn--primary').trigger('click')
     await flushPromises()
     expect(answersCall()[0]).toMatchObject({ term: 'Kubernetes', choice: 'similar', use_saved_fact_id: 4 })
 
     fetchMock.mockClear()
     const w2 = await mountCards([card('Kubernetes', sug)])
+    await w2.find('input[value="reuse"]').setValue(true)
     await w2.find('textarea').setValue('Used Nomad daily')
     await w2.find('button.gcs__btn--primary').trigger('click')
     await flushPromises()
@@ -104,6 +107,10 @@ describe('GapCards', () => {
       card('Rust', { id: 1, kind: 'none', text: '', visibility: 'document' }),
       card('Go', { id: 2, kind: 'experience', text: 'Wrote services', visibility: 'private' }),
     ])
+    // Answered keywords are listed, not carded, until the person chooses Change.
+    const change = (term: string) => w.findAll('button').find((b) => b.text().startsWith('Change') && b.text().includes(term))!
+    await change('Rust').trigger('click')
+    await change('Go').trigger('click')
     expect((w.findAll('input[value="no"]')[0].element as HTMLInputElement).checked).toBe(true)
     expect(w.text()).toContain('You told us before that you have not done this. Change it if that is no longer true.')
     expect(w.text()).toContain('Saved as private')
@@ -223,7 +230,7 @@ describe('GapCards', () => {
   })
 
   it('test_a_restored_draft_on_a_card_with_a_saved_suggestion_sends_the_right_request_body', async () => {
-    const sug = { id: 4, kind: 'experience', text: 'Saved', visibility: 'document' }
+    const sug = { id: 4, kind: 'experience', text: 'Saved', visibility: 'document', exact: false }
     fetchMock.mockImplementation(async (url: string) => {
       if (url.endsWith('/gap_cards')) return { data: { cards: [card('Kubernetes', sug)] }, error: null } as any
       return { data: { approved_terms: [], saved: 0 }, error: null } as any
@@ -262,7 +269,7 @@ describe('GapCards', () => {
 
   it('starts from supplied drafts, and a draft wins over a saved suggestion', async () => {
     fetchMock.mockImplementation(async () => ({
-      data: { cards: [card('Kubernetes', { id: 4, kind: 'experience', text: 'Saved', visibility: 'document' })] }, error: null,
+      data: { cards: [card('Kubernetes', { id: 4, kind: 'experience', text: 'Saved', visibility: 'document', exact: false })] }, error: null,
     }) as any)
     const w = mount(GapCards, {
       props: { jobId: 7, terms: ['Kubernetes'], drafts: { Kubernetes: { choice: 'similar', text: 'Typed', private: true } } },
@@ -290,11 +297,11 @@ describe('GapCards', () => {
     expect(answersCall()[0]).toMatchObject({ term: 'React', choice: 'skip', use_saved_fact_id: null })
   })
 
-  it('test_an_exact_suggestion_is_preselected_for_reuse', async () => {
+  it('test_an_exact_suggestion_is_reused_without_a_card', async () => {
     const sug = { id: 4, kind: 'experience', text: 'Ran clusters', visibility: 'document', requirement: 'kubernetes', exact: true }
     const w = await mountCards([card('Kubernetes', sug)])
-    expect((w.find('input[value="reuse"]').element as HTMLInputElement).checked).toBe(true)
-    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('Ran clusters')
+    expect(w.find('fieldset').exists()).toBe(false)
+    expect(w.text()).toContain('Ran clusters')
     expect(w.text()).not.toContain('You saved this for')
     await w.find('button.gcs__btn--primary').trigger('click')
     await flushPromises()
@@ -304,7 +311,7 @@ describe('GapCards', () => {
   it('test_a_non_exact_suggestion_shows_which_keyword_it_was_saved_for', async () => {
     const w = await mountCards([
       card('React', { id: 9, kind: 'adjacent', text: 'Built two mobile apps', visibility: 'document', requirement: 'React Native', exact: false }),
-      card('Kubernetes', { id: 4, kind: 'experience', text: 'Ran clusters', visibility: 'document' }),
+      card('Kubernetes'),
     ])
     const sets = w.findAll('fieldset')
     expect(sets[0].text()).toContain('You saved this for React Native')

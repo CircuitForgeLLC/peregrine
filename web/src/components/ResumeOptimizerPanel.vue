@@ -97,7 +97,7 @@
       <GapCards
         v-if="cardsOpen"
         :job-id="props.jobId"
-        :terms="[...selectedGaps]"
+        :terms="termsByPriority"
         :drafts="drafts"
         @drafts-change="(d) => (drafts = d)"
         @done="onCardsDone"
@@ -298,6 +298,10 @@ const gapState    = ref<TaskState>('none')
 const gapStage    = ref<string | null>(null)
 const gaps        = ref<Array<{ term: string; section: string; priority: number; rationale: string }>>([])
 const selectedGaps = ref<Set<string>>(new Set())
+// Selected keywords, most important first. Array sort is stable, so ties keep the report order.
+const termsByPriority = computed(() =>
+  gaps.value.filter((g) => selectedGaps.value.has(g.term)).sort((a, b) => a.priority - b.priority).map((g) => g.term),
+)
 const cardsOpen = ref(false)
 const drafts = ref<Record<string, CardState>>({})
 const selectNotice = ref('')

@@ -15,19 +15,52 @@
     </div>
 
     <template v-else>
+      <div v-if="savedGroup.length > 0" class="gcs__saved">
+        <div class="gcs__toggle">
+          <input id="gcs-use-saved" v-model="useSaved" type="checkbox" :disabled="savedSent || saving" />
+          <label for="gcs-use-saved">{{ savedLabel }}</label>
+        </div>
+        <p v-if="savedSent" class="gcs__note">These are already saved for this job.</p>
+        <details class="gcs__details">
+          <summary>See my saved answers</summary>
+          <ul class="gcs__rows">
+            <li v-for="c in savedGroup" :key="c.term" class="gcs__row">
+              <span class="gcs__term">{{ c.term }}</span>
+              <span class="gcs__wording">{{ c.suggestion?.text }}</span>
+            </li>
+          </ul>
+        </details>
+      </div>
+
+      <details v-if="notUsable.length > 0" class="gcs__details gcs__skipped">
+        <summary>Answered, not used ({{ notUsable.length }})</summary>
+        <ul class="gcs__rows">
+          <li v-for="c in notUsable" :key="c.term" class="gcs__row">
+            <span class="gcs__term">{{ c.term }}</span>
+            <span class="gcs__wording">{{ plainAnswer(c) }}</span>
+            <button type="button" class="gcs__btn gcs__btn--small" @click="promote(c)">
+              Change<span class="sr-only"> {{ c.term }}</span>
+            </button>
+          </li>
+        </ul>
+      </details>
+
       <div class="gcs__list">
         <GapCard
-          v-for="(card, i) in cards"
+          v-for="(card, i) in batch"
           :key="card.term"
-          ref="cardRefs"
+          :ref="(el) => setCardRef(card.term, el)"
           :card="card"
           :index="i"
-          :state="states[i]"
-          @update="(s: CardState) => update(i, s)"
+          :state="states[card.term]"
+          @update="(s: CardState) => update(card.term, s)"
         />
       </div>
 
-      <p class="gcs__progress" role="status" aria-live="polite">{{ answeredCount }} of {{ cards.length }} answered</p>
+      <p class="gcs__progress" role="status" aria-live="polite">
+        {{ answeredCount }} of {{ batch.length }} answered
+        <span v-if="remaining > 0" class="gcs__more-note">{{ moreSentence }}</span>
+      </p>
 
       <div v-if="saveError" class="gcs__error" role="alert">
         <p>We could not save your answers. What you typed is still here.</p>
@@ -35,8 +68,11 @@
       </div>
 
       <div class="gcs__actions">
-        <button type="button" class="gcs__btn gcs__btn--primary" :disabled="!canSave || saving" @click="save">
+        <button type="button" class="gcs__btn gcs__btn--primary" :disabled="!canSave || saving" @click="save(false)">
           {{ saveError ? 'Retry saving' : saving ? 'Saving…' : 'Save answers and continue' }}
+        </button>
+        <button v-if="remaining > 0" type="button" class="gcs__btn" :disabled="!canSave || saving" @click="save(true)">
+          {{ moreLabel }}
         </button>
         <button type="button" class="gcs__btn" @click="emit('cancel')">Back</button>
       </div>
@@ -50,6 +86,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useApiFetch } from '../composables/useApi'
 import GapCard from './GapCard.vue'
 import type { CardData, CardState, Choice } from './GapCard.vue'
+import { CARD_BATCH_SIZE } from './gapCardsConfig'
 
 const props = defineProps<{ jobId: number; terms: string[]; drafts?: Record<string, CardState> }>()
 const emit = defineEmits<{
@@ -71,13 +108,30 @@ function detailFrom(error: { kind: string; status?: number; detail?: string }): 
   }
 }
 
-const cards = ref<CardData[]>([])
-const states = ref<CardState[]>([])
-const cardRefs = ref<Array<{ focusLegend: () => void }>>([])
+/** Keywords with an exact saved answer that documents may use. They get one toggle, not a card each. */
+const savedGroup = ref<CardData[]>([])
+/** Keywords with an exact "have not done" or private answer. Listed, never approved unless changed. */
+const notUsable = ref<CardData[]>([])
+/** Every keyword that still needs an answer, in priority order. Cards are shown a batch at a time. */
+const queue = ref<CardData[]>([])
+const shownCount = ref(0)
+/** The cards on screen now: the current batch, plus any keyword the person chose to change. */
+const batch = ref<CardData[]>([])
+/** Typed answers by keyword, for every keyword that can get a card. */
+const states = ref<Record<string, CardState>>({})
+const useSaved = ref(true)
+const savedSent = ref(false)
+const approved = ref<string[]>([])
+const cardEls = new Map<string, { focusLegend: () => void }>()
 const loading = ref(true)
 const loadError = ref(false)
 const saving = ref(false)
 const saveError = ref(false)
+
+function setCardRef(term: string, el: unknown) {
+  if (el) cardEls.set(term, el as { focusLegend: () => void })
+  else cardEls.delete(term)
+}
 
 function initialState(card: CardData): CardState {
   const s = card.suggestion
@@ -89,6 +143,19 @@ function initialState(card: CardData): CardState {
   return { choice: isPrivate ? kindChoice : 'reuse', text: s.text, private: isPrivate }
 }
 
+type Group = 'saved' | 'notUsable' | 'unanswered'
+function groupOf(card: CardData): Group {
+  const s = card.suggestion
+  if (!s || !s.exact) return 'unanswered'
+  if (s.kind === 'none' || s.visibility === 'private') return 'notUsable'
+  if ((s.kind === 'experience' || s.kind === 'adjacent') && s.visibility === 'document') return 'saved'
+  return 'unanswered'
+}
+
+function focusCard(term: string) {
+  nextTick(() => cardEls.get(term)?.focusLegend())
+}
+
 async function load() {
   loading.value = true; loadError.value = false; saveDetail.value = ''
   const { data, error } = await useApiFetch<{ cards: CardData[] }>(`/api/jobs/${props.jobId}/gap_cards`, {
@@ -97,22 +164,57 @@ async function load() {
     headers: { 'Content-Type': 'application/json' },
   })
   if (error || !data) { loadError.value = true; saveDetail.value = error ? detailFrom(error) : ''; loading.value = false; return }
-  cards.value = data.cards
-  states.value = data.cards.map((c) => props.drafts?.[c.term] ?? initialState(c))
+  savedGroup.value = data.cards.filter((c) => groupOf(c) === 'saved')
+  notUsable.value = data.cards.filter((c) => groupOf(c) === 'notUsable')
+  queue.value = data.cards.filter((c) => groupOf(c) === 'unanswered')
+  states.value = Object.fromEntries(queue.value.map((c) => [c.term, props.drafts?.[c.term] ?? initialState(c)]))
+  useSaved.value = true; savedSent.value = false; approved.value = []
+  batch.value = queue.value.slice(0, CARD_BATCH_SIZE)
+  shownCount.value = batch.value.length
   loading.value = false
   await nextTick()
-  cardRefs.value[0]?.focusLegend()
+  if (batch.value.length > 0) cardEls.get(batch.value[0].term)?.focusLegend()
 }
 
-function update(i: number, s: CardState) {
-  states.value = states.value.map((old, idx) => (idx === i ? s : old))
-  emit('drafts-change', Object.fromEntries(cards.value.map((c, idx) => [c.term, states.value[idx]])))
+function update(term: string, s: CardState) {
+  states.value = { ...states.value, [term]: s }
+  emit('drafts-change', { ...states.value })
 }
 
-const answeredCount = computed(() => states.value.filter((s) => s.choice !== 'skip').length)
+function promote(card: CardData) {
+  notUsable.value = notUsable.value.filter((c) => c.term !== card.term)
+  states.value = { ...states.value, [card.term]: props.drafts?.[card.term] ?? initialState(card) }
+  batch.value = [...batch.value, card]
+  focusCard(card.term)
+}
+
+const remaining = computed(() => queue.value.length - shownCount.value)
+const answeredCount = computed(() => batch.value.filter((c) => states.value[c.term]?.choice !== 'skip').length)
 const canSave = computed(() =>
-  states.value.every((s) => !['reuse', 'yes', 'similar'].includes(s.choice) || s.text.trim().length > 0),
+  batch.value.every((c) => {
+    const s = states.value[c.term]
+    return !s || !['reuse', 'yes', 'similar'].includes(s.choice) || s.text.trim().length > 0
+  }),
 )
+
+const savedLabel = computed(() => {
+  const n = savedGroup.value.length
+  return `Use my ${n} saved ${n === 1 ? 'answer' : 'answers'}`
+})
+const moreLabel = computed(() =>
+  remaining.value < CARD_BATCH_SIZE
+    ? `Save and ask about the last ${remaining.value}`
+    : `Save and ask about the next ${CARD_BATCH_SIZE} (${remaining.value} more)`,
+)
+const moreSentence = computed(() =>
+  remaining.value === 1
+    ? 'There is 1 more keyword you can answer after this.'
+    : `There are ${remaining.value} more keywords you can answer after this.`,
+)
+
+function plainAnswer(card: CardData): string {
+  return card.suggestion?.kind === 'none' ? 'You said you have not done this' : 'Saved as private'
+}
 
 function toAnswer(card: CardData, s: CardState) {
   const base = { term: card.term, text: '', private: false, use_saved_fact_id: null as number | null }
@@ -129,16 +231,46 @@ function toAnswer(card: CardData, s: CardState) {
   return { ...base, choice, text: s.text.trim(), private: s.private }
 }
 
-async function save() {
+/** The saved group is an unedited reused card when the toggle is on, and a skip when it is off. */
+function savedAnswer(card: CardData) {
+  const state: CardState = useSaved.value
+    ? { choice: 'reuse', text: card.suggestion?.text ?? '', private: false }
+    : { choice: 'skip', text: '', private: false }
+  return toAnswer(card, state)
+}
+
+async function showNextBatch() {
+  batch.value = queue.value.slice(shownCount.value, shownCount.value + CARD_BATCH_SIZE)
+  shownCount.value += batch.value.length
+  await nextTick()
+  if (batch.value.length > 0) cardEls.get(batch.value[0].term)?.focusLegend()
+}
+
+/** advance true saves the batch and shows the next one. false saves and hands every approved term on. */
+async function save(advance: boolean) {
   saving.value = true; saveError.value = false; saveDetail.value = ''
-  const answers = cards.value.map((c, i) => toAnswer(c, states.value[i]))
-  const { data, error } = await useApiFetch<{ approved_terms: string[]; saved: number }>(
-    `/api/jobs/${props.jobId}/gap_cards/answers`,
-    { method: 'POST', body: JSON.stringify({ answers }), headers: { 'Content-Type': 'application/json' } },
-  )
+  const sendSaved = !savedSent.value && savedGroup.value.length > 0
+  const answers = [
+    ...(sendSaved ? savedGroup.value.map(savedAnswer) : []),
+    ...batch.value.map((c) => toAnswer(c, states.value[c.term])),
+  ]
+  let returned: string[] = []
+  if (answers.length > 0) {
+    const { data, error } = await useApiFetch<{ approved_terms: string[]; saved: number }>(
+      `/api/jobs/${props.jobId}/gap_cards/answers`,
+      { method: 'POST', body: JSON.stringify({ answers }), headers: { 'Content-Type': 'application/json' } },
+    )
+    if (error || !data) {
+      saving.value = false; saveError.value = true; saveDetail.value = error ? detailFrom(error) : ''
+      return
+    }
+    returned = data.approved_terms
+  }
   saving.value = false
-  if (error || !data) { saveError.value = true; saveDetail.value = error ? detailFrom(error) : ''; return }
-  emit('done', data.approved_terms)
+  if (sendSaved) savedSent.value = true
+  approved.value = [...new Set([...approved.value, ...returned])]
+  if (advance) await showNextBatch()
+  else emit('done', approved.value)
 }
 
 onMounted(load)
@@ -150,11 +282,24 @@ onMounted(load)
 .gcs__intro, .gcs__hint, .gcs__status { margin: 0; color: var(--color-text-muted); }
 .gcs__list { display: flex; flex-direction: column; gap: var(--space-3); }
 .gcs__progress { margin: 0; font-weight: 600; color: var(--color-text); }
+.gcs__more-note { font-weight: 400; color: var(--color-text-muted); }
 .gcs__error { border: 1px solid var(--color-error); border-left-width: 4px; border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); color: var(--color-text); }
 .gcs__error p { margin: 0 0 var(--space-2); }
+.gcs__saved { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-left: 4px solid var(--color-info); border-radius: var(--radius-md); background: var(--color-surface-raised); }
+.gcs__toggle { display: flex; align-items: center; gap: var(--space-2); min-height: 2.25rem; font-weight: 600; color: var(--color-text); }
+.gcs__toggle label { cursor: pointer; }
+.gcs__note { margin: 0; color: var(--color-text-muted); font-size: 0.9rem; }
+.gcs__details { color: var(--color-text); }
+.gcs__details summary { cursor: pointer; min-height: 2.25rem; display: flex; align-items: center; }
+.gcs__skipped { padding: var(--space-2) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-raised); }
+.gcs__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.gcs__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+.gcs__term { font-weight: 700; overflow-wrap: anywhere; }
+.gcs__wording { color: var(--color-text-muted); white-space: pre-wrap; overflow-wrap: anywhere; flex: 1 1 12rem; min-width: 0; }
 .gcs__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .gcs__btn { min-height: 2.5rem; padding: var(--space-2) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-raised); color: var(--color-text); font: inherit; cursor: pointer; }
+.gcs__btn--small { min-height: 2.25rem; padding: var(--space-1) var(--space-3); }
 .gcs__btn--primary { background: var(--color-primary); color: var(--color-text-inverse); border-color: var(--color-primary); font-weight: 600; }
 .gcs__btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.gcs__btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.gcs__btn:focus-visible, .gcs__details summary:focus-visible, .gcs__toggle input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 </style>
