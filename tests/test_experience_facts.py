@@ -204,3 +204,71 @@ def test_is_usable_fact_requires_active_document_experience_or_adjacent_with_tex
     assert not is_usable_fact(dataclasses.replace(base, status="retired"))
     assert not is_usable_fact(dataclasses.replace(base, text=""))
     assert not is_usable_fact(dataclasses.replace(base, text="  \n "))
+
+
+def test_add_fact_refuses_a_requirement_that_normalises_to_empty(db_path):
+    for bad in ("???", "...", "  --  ", "+"):
+        with pytest.raises(ValueError):
+            add_fact(db_path, kind="experience", requirement=bad, text="t")
+    assert list_facts(db_path, status=None) == []
+
+
+def test_replace_fact_retires_exact_matches_only_and_returns_the_new_id(db_path):
+    from scripts.experience_facts import replace_fact
+
+    same = add_fact(db_path, kind="experience", requirement="Go", text="old")
+    other = add_fact(db_path, kind="experience", requirement="Go lang", text="o")
+    retired = add_fact(db_path, kind="experience", requirement="go", text="r")
+    update_fact(db_path, retired, status="retired")
+    new_id = replace_fact(
+        db_path, kind="adjacent", requirement=" GO ", text="new", origin_job_id=3
+    )
+    assert new_id not in (same, other, retired)
+    assert get_fact(db_path, new_id).status == "active"
+    assert get_fact(db_path, new_id).origin_job_id == 3
+    assert get_fact(db_path, same).status == "retired"
+    assert get_fact(db_path, other).status == "active"
+    with pytest.raises(ValueError):
+        replace_fact(db_path, kind="experience", requirement="???", text="t")
+    with pytest.raises(ValueError):
+        replace_fact(db_path, kind="experience", requirement="Go", text=" ")
+    assert get_fact(db_path, new_id).status == "active"
+
+
+def test_replace_fact_rolls_back_if_the_insert_fails(db_path):
+    from scripts.experience_facts import replace_fact
+
+    old = add_fact(db_path, kind="experience", requirement="Go", text="old")
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TRIGGER boom BEFORE UPDATE ON experience_facts "
+        "BEGIN SELECT RAISE(ABORT, 'boom'); END"
+    )
+    conn.commit()
+    conn.close()
+    with pytest.raises(sqlite3.Error):
+        replace_fact(db_path, kind="experience", requirement="Go", text="new")
+    facts = list_facts(db_path, status=None)
+    assert [f.id for f in facts] == [old]
+    assert facts[0].status == "active"
+
+
+def test_normalize_term_is_linear_time_on_a_long_run_of_plus_signs():
+    import time
+
+    start = time.perf_counter()
+    normalize_term("+" * 200000 + "x")
+    normalize_term("x" + "+" * 200000 + " ")
+    normalize_term("x" + "!" * 200000 + "+")
+    assert time.perf_counter() - start < 1.0
+
+
+def test_normalize_term_keeps_cplusplus_and_csharp_intact():
+    assert normalize_term("C++") == "c++"
+    assert normalize_term("C#") == "c#"
+    assert normalize_term("C") == "c"
+    assert normalize_term(" C++, ") == "c++"
+    assert normalize_term(".NET") == ".net"
+    assert normalize_term("Scheduling!") == "scheduling"
+    assert normalize_term("???") == ""
+    assert normalize_term("+") == ""

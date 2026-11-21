@@ -55,12 +55,17 @@ def normalize_term(term: str) -> str:
     # so "c", "c++", "c#" and ".net" vs "net" stay distinct terms.
     result = " ".join(term.lower().split())
     result = re.sub(r"^(?:(?!\.\w)[^\w])+", "", result)
+    # Trailing cleanup is a linear scan: drop punctuation, then keep a run of
+    # "+" or "#" only when the character before it is a word character.
     while True:
-        stripped = re.sub(r"[^\w+#]+$", "", result)
-        stripped = re.sub(r"(?<!\w)[+#]+$", "", stripped)
-        if stripped == result:
-            return result
-        result = stripped
+        end = len(result)
+        while end > 0 and not (result[end - 1].isalnum() or result[end - 1] in "_+#"):
+            end -= 1
+        trimmed = result[:end]
+        core = trimmed.rstrip("+#")
+        if core == trimmed or (core and (core[-1].isalnum() or core[-1] == "_")):
+            return trimmed
+        result = core
 
 
 def _stem(token: str) -> str:
@@ -118,6 +123,30 @@ def _check_text(text: str) -> None:
         raise ValueError(f"text must be at most {MAX_TEXT_LEN} characters")
 
 
+def _validate_new_fact(
+    kind: str, requirement: str, text: str, visibility: str, source: str
+) -> None:
+    _check_choice("kind", kind, KINDS)
+    _check_choice("visibility", visibility, VISIBILITIES)
+    _check_choice("source", source, SOURCES)
+    if not requirement or not requirement.strip():
+        raise ValueError("requirement must not be empty")
+    if len(requirement) > MAX_TERM_LEN:
+        raise ValueError(f"requirement must be at most {MAX_TERM_LEN} characters")
+    if not normalize_term(requirement):
+        raise ValueError("requirement must contain letters or numbers")
+    _check_text(text)
+    if kind != "none" and not text.strip():
+        raise ValueError("text must not be empty")
+
+
+_INSERT_SQL = (
+    "INSERT INTO experience_facts "
+    "(kind, requirement, text, visibility, source, origin_job_id) "
+    "VALUES (?, ?, ?, ?, ?, ?)"
+)
+
+
 def add_fact(
     db_path: Path,
     *,
@@ -128,25 +157,54 @@ def add_fact(
     source: str = "card",
     origin_job_id: int | None = None,
 ) -> int:
-    _check_choice("kind", kind, KINDS)
-    _check_choice("visibility", visibility, VISIBILITIES)
-    _check_choice("source", source, SOURCES)
-    if not requirement or not requirement.strip():
-        raise ValueError("requirement must not be empty")
-    if len(requirement) > MAX_TERM_LEN:
-        raise ValueError(f"requirement must be at most {MAX_TERM_LEN} characters")
-    _check_text(text)
-    if kind != "none" and not text.strip():
-        raise ValueError("text must not be empty")
+    _validate_new_fact(kind, requirement, text, visibility, source)
     with closing(_connect(db_path)) as conn:
         cur = conn.execute(
-            "INSERT INTO experience_facts "
-            "(kind, requirement, text, visibility, source, origin_job_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            _INSERT_SQL,
             (kind, requirement, text, visibility, source, origin_job_id),
         )
         conn.commit()
         return int(cur.lastrowid)
+
+
+def replace_fact(
+    db_path: Path,
+    *,
+    kind: str,
+    requirement: str,
+    text: str = "",
+    visibility: str = "document",
+    source: str = "card",
+    origin_job_id: int | None = None,
+) -> int:
+    """Insert a fact and retire every other active fact with the same
+    normalised requirement, in one transaction. Returns the new id."""
+    _validate_new_fact(kind, requirement, text, visibility, source)
+    norm = normalize_term(requirement)
+    with closing(_connect(db_path)) as conn:
+        try:
+            cur = conn.execute(
+                _INSERT_SQL,
+                (kind, requirement, text, visibility, source, origin_job_id),
+            )
+            new_id = int(cur.lastrowid)
+            rows = conn.execute(
+                "SELECT id, requirement FROM experience_facts "
+                "WHERE status = 'active' AND id != ?",
+                (new_id,),
+            ).fetchall()
+            old_ids = [r["id"] for r in rows if normalize_term(r["requirement"]) == norm]
+            for old_id in old_ids:
+                conn.execute(
+                    "UPDATE experience_facts SET status = 'retired', "
+                    "updated_at = datetime('now') WHERE id = ?",
+                    (old_id,),
+                )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        return new_id
 
 
 def get_fact(db_path: Path, fact_id: int) -> ExperienceFact | None:

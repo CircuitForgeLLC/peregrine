@@ -280,7 +280,12 @@ _sync_router = make_sync_router(
 )
 app.include_router(_sync_router, prefix="/sync", tags=["sync"])
 
-app.include_router(_build_experience_router(lambda: Path(_request_db.get() or DB_PATH)))
+app.include_router(
+    _build_experience_router(
+        lambda: Path(_request_db.get() or DB_PATH),
+        lambda: _demo_guard(),
+    )
+)
 
 _log = logging.getLogger("peregrine.session")
 

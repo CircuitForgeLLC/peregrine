@@ -138,3 +138,73 @@ def test_two_tenants_never_see_each_others_facts(tmp_path, monkeypatch):
     assert c.get("/api/experience-facts").json() == []
     holder["db"] = str(db_a)
     assert len(c.get("/api/experience-facts").json()) == 1
+
+
+def test_a_punctuation_only_term_is_refused_by_the_service_and_the_route_with_422_and_saves_nothing(client):
+    job = _add_job(client.db, "Role.")
+    r = client.post(f"/api/jobs/{job}/gap_cards/answers", json={"answers": [
+        {"term": "???", "choice": "yes", "text": "x"},
+    ]})
+    assert r.status_code == 422
+    r = client.post("/api/experience-facts", json={
+        "kind": "experience", "requirement": "...", "text": "x",
+    })
+    assert r.status_code == 422
+    assert client.get("/api/experience-facts", params={"status": "all"}).json() == []
+
+
+def test_cards_route_refuses_an_oversized_term_with_422(client):
+    job = _add_job(client.db, "Role.")
+    r = client.post(f"/api/jobs/{job}/gap_cards", json={"terms": ["x" * 121]})
+    assert r.status_code == 422
+    r = client.post(f"/api/jobs/{job}/gap_cards", json={"terms": [""]})
+    assert r.status_code == 422
+
+
+def test_write_routes_are_refused_in_demo_mode_and_read_routes_still_work(client, monkeypatch):
+    import dev_api
+
+    job = _add_job(client.db, "You use Go.")
+    fid = client.post("/api/experience-facts", json={
+        "kind": "experience", "requirement": "Go", "text": "keep",
+    }).json()["id"]
+    monkeypatch.setattr(dev_api, "IS_DEMO", True)
+    body = {"kind": "experience", "requirement": "Rust", "text": "x"}
+    assert client.post("/api/experience-facts", json=body).status_code == 403
+    assert client.patch(f"/api/experience-facts/{fid}", json={"text": "y"}).status_code == 403
+    assert client.delete(f"/api/experience-facts/{fid}").status_code == 403
+    r = client.post(f"/api/jobs/{job}/gap_cards/answers", json={"answers": [
+        {"term": "Rust", "choice": "yes", "text": "x"},
+    ]})
+    assert r.status_code == 403
+    listed = client.get("/api/experience-facts").json()
+    assert [(f["id"], f["text"]) for f in listed] == [(fid, "keep")]
+    assert client.post(f"/api/jobs/{job}/gap_cards", json={"terms": ["Go"]}).status_code == 200
+
+
+def test_tenant_b_cannot_patch_delete_or_read_tenant_as_job_or_facts(tmp_path, monkeypatch):
+    import dev_api
+
+    db_a, db_b = tmp_path / "a.db", tmp_path / "b.db"
+    migrate_db(db_a)
+    migrate_db(db_b)
+    monkeypatch.setattr(dev_api, "DB_PATH", str(tmp_path / "staging.db"))
+    holder = {"db": str(db_a)}
+    _wire(monkeypatch, holder)
+    c = TestClient(dev_api.app)
+    fid = c.post("/api/experience-facts", json={
+        "kind": "experience", "requirement": "Go", "text": "A's",
+    }).json()["id"]
+    job_a = _add_job(db_a, "Only A has this job.")
+    holder["db"] = str(db_b)
+    assert c.patch(f"/api/experience-facts/{fid}", json={"text": "hacked"}).status_code == 404
+    assert c.delete(f"/api/experience-facts/{fid}").status_code == 404
+    assert c.post(f"/api/jobs/{job_a}/gap_cards", json={"terms": ["Go"]}).status_code == 404
+    r = c.post(f"/api/jobs/{job_a}/gap_cards/answers", json={"answers": [
+        {"term": "Rust", "choice": "yes", "text": "B's"},
+    ]})
+    assert r.status_code == 200
+    assert [f["requirement"] for f in c.get("/api/experience-facts").json()] == ["Rust"]
+    holder["db"] = str(db_a)
+    facts = c.get("/api/experience-facts").json()
+    assert [(f["requirement"], f["text"]) for f in facts] == [("Go", "A's")]

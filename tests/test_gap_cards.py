@@ -109,3 +109,28 @@ def test_a_bad_answer_saves_nothing_from_the_batch(db):
             {"term": "Rust", "choice": "yes", "text": ""},
         ])
     assert list_facts(db, status=None) == []
+
+
+def test_a_failed_answer_never_leaves_the_old_fact_retired(db):
+    import sqlite3
+
+    fid = add_fact(db, kind="experience", requirement="Go", text="old")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TRIGGER boom BEFORE UPDATE ON experience_facts "
+        "BEGIN SELECT RAISE(ABORT, 'boom'); END"
+    )
+    conn.commit()
+    conn.close()
+    with pytest.raises(sqlite3.Error):
+        apply_answers(db, 1, [{"term": "Go", "choice": "yes", "text": "new"}])
+    assert get_fact(db, fid).status == "active"
+    assert len(list_facts(db, status=None)) == 1
+
+
+def test_punctuation_only_terms_are_refused_by_the_service(db):
+    add_fact(db, kind="experience", requirement="Go", text="keep")
+    for term in ("???", "...", "-"):
+        with pytest.raises(ValueError):
+            apply_answers(db, 1, [{"term": term, "choice": "no"}])
+    assert [f.requirement for f in list_facts(db)] == ["Go"]

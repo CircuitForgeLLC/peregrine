@@ -10,7 +10,7 @@ from collections.abc import Callable
 from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -44,7 +44,9 @@ class FactPatch(BaseModel):
 
 
 class CardsRequest(BaseModel):
-    terms: list[str] = Field(max_length=100)
+    terms: list[Annotated[str, Field(min_length=1, max_length=MAX_TERM_LEN)]] = Field(
+        max_length=100
+    )
 
 
 class AnswerItem(BaseModel):
@@ -63,7 +65,9 @@ def _fact_json(fact: ExperienceFact) -> dict:
     return asdict(fact)
 
 
-def build_router(get_db_path: Callable[[], Path]) -> APIRouter:
+def build_router(
+    get_db_path: Callable[[], Path], demo_guard: Callable[[], None]
+) -> APIRouter:
     router = APIRouter()
 
     @router.get("/api/experience-facts")
@@ -74,6 +78,7 @@ def build_router(get_db_path: Callable[[], Path]) -> APIRouter:
 
     @router.post("/api/experience-facts")
     def create_experience_fact(body: FactCreate):
+        demo_guard()
         db = get_db_path()
         try:
             fact_id = add_fact(db, **body.model_dump())
@@ -83,6 +88,7 @@ def build_router(get_db_path: Callable[[], Path]) -> APIRouter:
 
     @router.patch("/api/experience-facts/{fact_id}")
     def patch_experience_fact(fact_id: int, body: FactPatch):
+        demo_guard()
         db = get_db_path()
         try:
             found = update_fact(db, fact_id, **body.model_dump())
@@ -94,6 +100,7 @@ def build_router(get_db_path: Callable[[], Path]) -> APIRouter:
 
     @router.delete("/api/experience-facts/{fact_id}")
     def remove_experience_fact(fact_id: int):
+        demo_guard()
         if not delete_fact(get_db_path(), fact_id):
             raise HTTPException(status_code=404, detail="Fact not found")
         return {"ok": True}
@@ -111,6 +118,7 @@ def build_router(get_db_path: Callable[[], Path]) -> APIRouter:
 
     @router.post("/api/jobs/{job_id}/gap_cards/answers")
     def gap_card_answers(job_id: int, body: AnswersRequest):
+        demo_guard()
         try:
             return apply_answers(
                 get_db_path(), job_id, [a.model_dump() for a in body.answers]

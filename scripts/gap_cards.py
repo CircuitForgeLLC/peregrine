@@ -13,13 +13,11 @@ from pathlib import Path
 from scripts.experience_facts import (
     MAX_TERM_LEN,
     MAX_TEXT_LEN,
-    add_fact,
     find_matching_fact,
     get_fact,
     is_usable_fact,
-    list_facts,
     normalize_term,
-    update_fact,
+    replace_fact,
 )
 
 SNIPPET_MAX_LEN = 240
@@ -62,8 +60,8 @@ def build_cards(db_path: Path, description: str, terms: Sequence[str]) -> list[d
 def _validate(db_path: Path, answer: dict) -> None:
     """Raise ValueError for any answer that must not be saved."""
     term = answer.get("term")
-    if not isinstance(term, str) or not term.strip():
-        raise ValueError("term must not be empty")
+    if not isinstance(term, str) or not normalize_term(term):
+        raise ValueError("term must contain letters or numbers")
     if len(term) > MAX_TERM_LEN:
         raise ValueError(f"term must be at most {MAX_TERM_LEN} characters")
     choice = answer.get("choice")
@@ -103,12 +101,8 @@ def apply_answers(db_path: Path, job_id: int, answers: Sequence[dict]) -> dict:
         if answer.get("use_saved_fact_id") is not None and choice in ("yes", "similar"):
             approved.append(term)
             continue
-        norm = normalize_term(term)
-        for old in list_facts(db_path, status="active"):
-            if normalize_term(old.requirement) == norm:
-                update_fact(db_path, old.id, status="retired")
         private = bool(answer.get("private"))
-        add_fact(
+        replace_fact(
             db_path,
             kind=_KIND_FOR_CHOICE[choice],
             requirement=term.strip(),
