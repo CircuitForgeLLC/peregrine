@@ -92,6 +92,31 @@ describe('ResumeOptimizerPanel full rewrite flow', () => {
     expect(JSON.parse(String(call[1]?.body)).terms).toEqual(['Bravo', 'Delta', 'Alpha', 'Echo'])
   })
 
+  it('test_all_answered_not_usable_reaches_nothing_to_rewrite', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/gap_cards')) {
+        return { data: { cards: [
+          { term: 'Kubernetes', snippet: 's', suggestion: { id: 1, kind: 'none', text: '', visibility: 'document', requirement: 'Kubernetes', exact: true } },
+          { term: 'Terraform', snippet: 's', suggestion: { id: 2, kind: 'experience', text: 'x', visibility: 'private', requirement: 'Terraform', exact: true } },
+        ] }, error: null } as any
+      }
+      if (url.endsWith('/resume_optimizer')) return { data: gapData, error: null } as any
+      if (url.endsWith('/resume_optimizer/task')) return { data: { status: 'none', stage: null }, error: null } as any
+      return { data: {}, error: null } as any
+    })
+    setActivePinia(createPinia())
+    useAppConfigStore().tier = 'paid'
+    const w = mount(ResumeOptimizerPanel, { props: { jobId: 7 } })
+    await flushPromises()
+    await optimizeBtn(w).trigger('click')
+    await flushPromises()
+    expect(w.find('fieldset').exists()).toBe(false)
+    await w.find('button.gcs__btn--primary').trigger('click')
+    await flushPromises()
+    expect(generateCalls()).toHaveLength(0)
+    expect(w.text()).toContain('Nothing to rewrite. None of your answers can be used in a resume yet.')
+  })
+
   it('test_the_rewrite_request_carries_approved_terms_and_selected_gaps', async () => {
     approved = ['Terraform']
     const w = await mountPanel()

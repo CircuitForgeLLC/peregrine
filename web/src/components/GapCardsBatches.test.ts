@@ -74,7 +74,7 @@ describe('GapCards batches and saved answers', () => {
     expect(w.findAll('fieldset')).toHaveLength(CARD_BATCH_SIZE)
     expect(legends(w)[0]).toBe('T1')
     expect(moreButton(w)!.text()).toBe(`Save and ask about the next ${CARD_BATCH_SIZE} (${extra} more)`)
-    expect(w.find('.gcs__progress').text()).toBe(`0 of ${CARD_BATCH_SIZE} answered There are ${extra} more keywords you can answer after this.`)
+    expect(w.find('.gcs__progress').text()).toBe(`0 of ${CARD_BATCH_SIZE} answered. There are ${extra} more keywords you can answer after this.`)
   })
 
   it('no more button when the unanswered fit in one batch', async () => {
@@ -262,6 +262,136 @@ describe('GapCards batches and saved answers', () => {
     expect(w.find('[role="alert"]').text()).toContain('Too long')
     expect(w.findAll('fieldset')).toHaveLength(CARD_BATCH_SIZE)
     expect(w.emitted('done')).toBeUndefined()
+  })
+
+  it('test_retry_after_a_failed_more_save_retries_the_more_save_and_does_not_start_the_rewrite', async () => {
+    const all = unanswered(CARD_BATCH_SIZE + 2)
+    let fail = true
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/gap_cards')) return { data: { cards: all }, error: null } as any
+      return (fail ? { data: null, error: { kind: 'network', message: 'x' } } : { data: { approved_terms: ['T1'], saved: 1 }, error: null }) as any
+    })
+    const w = mount(GapCards, { props: { jobId: 7, terms: all.map((c) => c.term) }, attachTo: document.body })
+    await flushPromises()
+    await w.find('input[value="yes"]').setValue(true)
+    await w.find('textarea').setValue('Ran clusters')
+    await moreButton(w)!.trigger('click')
+    await flushPromises()
+    const retry = w.findAll('button').find((b) => b.text() === 'Retry saving')!
+    expect(retry.classes()).not.toContain('gcs__btn--primary')
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('Ran clusters')
+    fail = false
+    await retry.trigger('click')
+    await flushPromises()
+    expect(w.emitted('done')).toBeUndefined()
+    expect(answersCalls()).toHaveLength(2)
+    expect(legends(w)).toEqual([`T${CARD_BATCH_SIZE + 1}`, `T${CARD_BATCH_SIZE + 2}`])
+  })
+
+  it('test_the_main_button_keeps_its_normal_label_after_a_failed_more_save', async () => {
+    const w = await mountCards(unanswered(CARD_BATCH_SIZE + 1), { data: null, error: { kind: 'network', message: 'x' } })
+    await moreButton(w)!.trigger('click')
+    await flushPromises()
+    expect(mainButton(w).text()).toBe('Save answers and continue')
+  })
+
+  it('test_promoting_without_changing_sends_nothing_for_that_keyword', async () => {
+    const w = await mountCards([card('Go'), noAnswer('Rust')])
+    await changeButton(w, 'Rust').trigger('click')
+    await mainButton(w).trigger('click')
+    await flushPromises()
+    expect(answersCalls()[0].map((a) => a.term)).toEqual(['Go'])
+  })
+
+  it('test_promoting_without_changing_sends_no_request_when_nothing_else_is_there', async () => {
+    const w = await mountCards([noAnswer('Rust')])
+    await changeButton(w, 'Rust').trigger('click')
+    await mainButton(w).trigger('click')
+    await flushPromises()
+    expect(answersCalls()).toHaveLength(0)
+    expect(w.emitted('done')![0]).toEqual([[]])
+  })
+
+  it('test_a_promoted_keyword_that_was_changed_is_sent', async () => {
+    const w = await mountCards([card('Go'), noAnswer('Rust')])
+    await changeButton(w, 'Rust').trigger('click')
+    await w.findAll('fieldset')[1].find('input[value="skip"]').setValue(true)
+    await mainButton(w).trigger('click')
+    await flushPromises()
+    expect(answersCalls()[0].find((a) => a.term === 'Rust')).toMatchObject({ choice: 'skip' })
+  })
+
+  it('test_focus_goes_to_the_heading_when_there_are_no_cards', async () => {
+    const w = await mountCards([saved('Alpha', 4)])
+    expect(w.find('fieldset').exists()).toBe(false)
+    expect(document.activeElement).toBe(w.find('#gcs-heading').element)
+  })
+
+  it('test_the_saved_group_note_says_not_used_when_the_toggle_was_off', async () => {
+    const all = [saved('Alpha', 4), ...unanswered(CARD_BATCH_SIZE + 1)]
+    const w = await mountCards(all)
+    await w.find('.gcs__saved input[type="checkbox"]').setValue(false)
+    await moreButton(w)!.trigger('click')
+    await flushPromises()
+    expect(w.find('.gcs__saved').text()).toContain('Not used for this job.')
+    expect(w.find('.gcs__saved').text()).not.toContain('already saved')
+    const w2 = await mountCards(all)
+    await moreButton(w2)!.trigger('click')
+    await flushPromises()
+    expect(w2.find('.gcs__saved').text()).toContain('These are already saved for this job.')
+  })
+
+  it('test_change_is_disabled_while_saving_and_no_keyword_is_lost', async () => {
+    const all = [...unanswered(CARD_BATCH_SIZE + 1), noAnswer('Rust')]
+    let release: (v: unknown) => void = () => {}
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/gap_cards')) return { data: { cards: all }, error: null } as any
+      return new Promise((r) => { release = r }) as any
+    })
+    const w = mount(GapCards, { props: { jobId: 7, terms: all.map((c) => c.term) }, attachTo: document.body })
+    await flushPromises()
+    await moreButton(w)!.trigger('click')
+    await flushPromises()
+    expect(changeButton(w, 'Rust').attributes('disabled')).toBeDefined()
+    expect(w.find('.gcs__list').attributes('inert')).toBeDefined()
+    release({ data: { approved_terms: [], saved: 0 }, error: null })
+    await flushPromises()
+    expect(changeButton(w, 'Rust').attributes('disabled')).toBeUndefined()
+    await changeButton(w, 'Rust').trigger('click')
+    expect(legends(w)).toContain('Rust')
+  })
+
+  it('test_exactly_the_batch_size_remaining_says_last_and_builds_the_number_from_the_constant', async () => {
+    const w = await mountCards(unanswered(CARD_BATCH_SIZE * 2))
+    expect(moreButton(w)!.text()).toBe(`Save and ask about the last ${CARD_BATCH_SIZE}`)
+    const w2 = await mountCards(unanswered(CARD_BATCH_SIZE * 2 + 1))
+    expect(moreButton(w2)!.text()).toBe(`Save and ask about the next ${CARD_BATCH_SIZE} (${CARD_BATCH_SIZE + 1} more)`)
+  })
+
+  it('test_no_progress_line_when_there_are_no_cards', async () => {
+    const w = await mountCards([saved('Alpha', 4)])
+    expect(w.find('.gcs__progress').exists()).toBe(false)
+    expect(w.text()).not.toContain('0 of 0')
+    expect(w.text()).not.toContain('For each keyword')
+  })
+
+  it('test_drafts_survive_going_back_and_reopening_across_batches', async () => {
+    const cards = unanswered(CARD_BATCH_SIZE + 1)
+    const last = `T${CARD_BATCH_SIZE + 1}`
+    const w = await mountCards(cards)
+    await w.find('input[value="yes"]').setValue(true)
+    await w.find('textarea').setValue('First draft')
+    await moreButton(w)!.trigger('click')
+    await flushPromises()
+    await w.find('input[value="yes"]').setValue(true)
+    await w.find('textarea').setValue('Second draft')
+    const drafts = w.emitted('drafts-change')!.at(-1)![0] as Record<string, any>
+    const w2 = await mountCards(cards, emptyOk, drafts)
+    expect((w2.find('textarea').element as HTMLTextAreaElement).value).toBe('First draft')
+    await moreButton(w2)!.trigger('click')
+    await flushPromises()
+    expect(legends(w2)).toEqual([last])
+    expect((w2.find('textarea').element as HTMLTextAreaElement).value).toBe('Second draft')
   })
 
   it('has no em dashes or semicolons in the new copy', async () => {

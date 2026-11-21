@@ -1,7 +1,7 @@
 <template>
   <section class="gcs" aria-labelledby="gcs-heading">
-    <h4 id="gcs-heading" class="gcs__heading">A few questions before the rewrite</h4>
-    <p class="gcs__intro">
+    <h4 id="gcs-heading" ref="headingEl" tabindex="-1" class="gcs__heading">A few questions before the rewrite</h4>
+    <p v-if="loading || loadError || batch.length > 0" class="gcs__intro">
       For each keyword, tell us in your own words if you have done it. We only write about what you back up.
       "No" and "Skip for now" are fine answers.
     </p>
@@ -20,7 +20,7 @@
           <input id="gcs-use-saved" v-model="useSaved" type="checkbox" :disabled="savedSent || saving" />
           <label for="gcs-use-saved">{{ savedLabel }}</label>
         </div>
-        <p v-if="savedSent" class="gcs__note">These are already saved for this job.</p>
+        <p v-if="savedSent" class="gcs__note">{{ useSaved ? 'These are already saved for this job.' : 'Not used for this job.' }}</p>
         <details class="gcs__details">
           <summary>See my saved answers</summary>
           <ul class="gcs__rows">
@@ -38,14 +38,14 @@
           <li v-for="c in notUsable" :key="c.term" class="gcs__row">
             <span class="gcs__term">{{ c.term }}</span>
             <span class="gcs__wording">{{ plainAnswer(c) }}</span>
-            <button type="button" class="gcs__btn gcs__btn--small" @click="promote(c)">
+            <button type="button" class="gcs__btn gcs__btn--small" :disabled="saving" @click="promote(c)">
               Change<span class="sr-only"> {{ c.term }}</span>
             </button>
           </li>
         </ul>
       </details>
 
-      <div class="gcs__list">
+      <div class="gcs__list" :inert="saving">
         <GapCard
           v-for="(card, i) in batch"
           :key="card.term"
@@ -57,8 +57,8 @@
         />
       </div>
 
-      <p class="gcs__progress" role="status" aria-live="polite">
-        {{ answeredCount }} of {{ batch.length }} answered
+      <p v-if="batch.length > 0" class="gcs__progress" role="status" aria-live="polite">
+        {{ answeredCount }} of {{ batch.length }} answered.
         <span v-if="remaining > 0" class="gcs__more-note">{{ moreSentence }}</span>
       </p>
 
@@ -69,10 +69,10 @@
 
       <div class="gcs__actions">
         <button type="button" class="gcs__btn gcs__btn--primary" :disabled="!canSave || saving" @click="save(false)">
-          {{ saveError ? 'Retry saving' : saving ? 'Saving…' : 'Save answers and continue' }}
+          {{ mainLabel }}
         </button>
         <button v-if="remaining > 0" type="button" class="gcs__btn" :disabled="!canSave || saving" @click="save(true)">
-          {{ moreLabel }}
+          {{ moreButtonLabel }}
         </button>
         <button type="button" class="gcs__btn" @click="emit('cancel')">Back</button>
       </div>
@@ -96,6 +96,9 @@ const emit = defineEmits<{
 }>()
 
 const saveDetail = ref('')
+const headingEl = ref<HTMLElement | null>(null)
+/** Which button the person last pressed, so Retry and Saving show on that one only. */
+const lastAdvance = ref(false)
 
 // A 422 carries a plain-language message from the server. Other failures use our fixed sentence.
 function detailFrom(error: { kind: string; status?: number; detail?: string }): string {
@@ -119,6 +122,7 @@ const shownCount = ref(0)
 const batch = ref<CardData[]>([])
 /** Typed answers by keyword, for every keyword that can get a card. */
 const states = ref<Record<string, CardState>>({})
+const promoted = ref<Set<string>>(new Set())
 const useSaved = ref(true)
 const savedSent = ref(false)
 const approved = ref<string[]>([])
@@ -138,6 +142,8 @@ function initialState(card: CardData): CardState {
   // A fact saved for a related keyword is only a hint. It is never preselected or prefilled.
   if (!s || !s.exact) return { choice: 'skip', text: '', private: false }
   if (s.kind === 'none') return { choice: 'no', text: '', private: false }
+  // Only a keyword the person chose to change reaches here with an exact answer, and that answer is
+  // "no" or private. An exact usable answer is never a card, so the 'reuse' choice below stays unused.
   const isPrivate = s.visibility === 'private'
   const kindChoice: Choice = s.kind === 'adjacent' ? 'similar' : 'yes'
   return { choice: isPrivate ? kindChoice : 'reuse', text: s.text, private: isPrivate }
@@ -168,12 +174,13 @@ async function load() {
   notUsable.value = data.cards.filter((c) => groupOf(c) === 'notUsable')
   queue.value = data.cards.filter((c) => groupOf(c) === 'unanswered')
   states.value = Object.fromEntries(queue.value.map((c) => [c.term, props.drafts?.[c.term] ?? initialState(c)]))
-  useSaved.value = true; savedSent.value = false; approved.value = []
+  useSaved.value = true; savedSent.value = false; approved.value = []; promoted.value = new Set()
   batch.value = queue.value.slice(0, CARD_BATCH_SIZE)
   shownCount.value = batch.value.length
   loading.value = false
   await nextTick()
   if (batch.value.length > 0) cardEls.get(batch.value[0].term)?.focusLegend()
+  else headingEl.value?.focus()
 }
 
 function update(term: string, s: CardState) {
@@ -184,12 +191,22 @@ function update(term: string, s: CardState) {
 function promote(card: CardData) {
   notUsable.value = notUsable.value.filter((c) => c.term !== card.term)
   states.value = { ...states.value, [card.term]: props.drafts?.[card.term] ?? initialState(card) }
+  promoted.value = new Set([...promoted.value, card.term])
   batch.value = [...batch.value, card]
   focusCard(card.term)
 }
 
 const remaining = computed(() => queue.value.length - shownCount.value)
-const answeredCount = computed(() => batch.value.filter((c) => states.value[c.term]?.choice !== 'skip').length)
+/** A changed keyword whose answer is still the old one is left out of the save and the count. */
+function isUntouched(card: CardData): boolean {
+  if (!promoted.value.has(card.term)) return false
+  const a = states.value[card.term]
+  const b = initialState(card)
+  return !!a && a.choice === b.choice && a.text === b.text && a.private === b.private
+}
+const answeredCount = computed(() =>
+  batch.value.filter((c) => states.value[c.term]?.choice !== 'skip' && !isUntouched(c)).length,
+)
 const canSave = computed(() =>
   batch.value.every((c) => {
     const s = states.value[c.term]
@@ -202,10 +219,20 @@ const savedLabel = computed(() => {
   return `Use my ${n} saved ${n === 1 ? 'answer' : 'answers'}`
 })
 const moreLabel = computed(() =>
-  remaining.value < CARD_BATCH_SIZE
+  remaining.value <= CARD_BATCH_SIZE
     ? `Save and ask about the last ${remaining.value}`
     : `Save and ask about the next ${CARD_BATCH_SIZE} (${remaining.value} more)`,
 )
+const mainLabel = computed(() => {
+  if (!lastAdvance.value && saveError.value) return 'Retry saving'
+  if (!lastAdvance.value && saving.value) return 'Saving…'
+  return 'Save answers and continue'
+})
+const moreButtonLabel = computed(() => {
+  if (lastAdvance.value && saveError.value) return 'Retry saving'
+  if (lastAdvance.value && saving.value) return 'Saving…'
+  return moreLabel.value
+})
 const moreSentence = computed(() =>
   remaining.value === 1
     ? 'There is 1 more keyword you can answer after this.'
@@ -248,11 +275,12 @@ async function showNextBatch() {
 
 /** advance true saves the batch and shows the next one. false saves and hands every approved term on. */
 async function save(advance: boolean) {
+  lastAdvance.value = advance
   saving.value = true; saveError.value = false; saveDetail.value = ''
   const sendSaved = !savedSent.value && savedGroup.value.length > 0
   const answers = [
     ...(sendSaved ? savedGroup.value.map(savedAnswer) : []),
-    ...batch.value.map((c) => toAnswer(c, states.value[c.term])),
+    ...batch.value.filter((c) => !isUntouched(c)).map((c) => toAnswer(c, states.value[c.term])),
   ]
   let returned: string[] = []
   if (answers.length > 0) {

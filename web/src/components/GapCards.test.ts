@@ -158,11 +158,11 @@ describe('GapCards', () => {
   it('shows progress as plain text and moves focus to the first card heading', async () => {
     const w = await mountCards([card('Kubernetes'), card('Terraform')])
     const progress = w.find('.gcs__progress')
-    expect(progress.text()).toBe('0 of 2 answered')
+    expect(progress.text()).toBe('0 of 2 answered.')
     expect(progress.attributes('aria-live')).toBe('polite')
     expect(document.activeElement).toBe(w.find('legend').element)
     await w.findAll('input[value="no"]')[1].setValue(true)
-    expect(w.find('.gcs__progress').text()).toBe('1 of 2 answered')
+    expect(w.find('.gcs__progress').text()).toBe('1 of 2 answered.')
   })
 
   it('keeps typed text and offers a retry when saving fails', async () => {

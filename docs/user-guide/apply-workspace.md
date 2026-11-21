@@ -68,7 +68,7 @@ Before anything is rewritten, Peregrine asks one short question for the keywords
 
 Your answers are saved in your own account and reused on later jobs. Keywords you already answered with something usable do not get a card. They are gathered into one line, **Use my N saved answers**, which is ticked by default. Open **See my saved answers** to read each one, and untick the box if you do not want them used this time. Keywords you answered before with No, or kept private, are listed under **Answered, not used**. Choose **Change** next to one to answer it again.
 
-If more keywords still need an answer, the extra ones wait. Choose the **Save and ask about the next** button to save what you have and see the next group, or **Save answers and continue** to go straight to the rewrite. Keywords you never answered are simply not used.
+If more keywords still need an answer, the extra ones wait. Choose the **Save and ask about...** button to save what you have and see the next group, or **Save answers and continue** to go straight to the rewrite. Keywords you never answered are simply not used.
 
 If you only answered a similar keyword before, that answer is shown as a hint with the keyword it was saved for, and the card starts on **Skip for now** until you choose.
 
