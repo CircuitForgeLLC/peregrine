@@ -46,14 +46,14 @@
           emoji="🚀"
           label="Run Discovery"
           description="Scan job boards for new listings"
-          :loading="taskRunning === 'discovery'"
+          :loading="isBusy('discovery')"
           @click="runDiscovery"
         />
         <WorkflowButton
           emoji="📧"
           label="Sync Emails"
           description="Fetch and classify inbox"
-          :loading="taskRunning === 'email'"
+          :loading="isBusy('email')"
           @click="syncEmails"
         />
         <WorkflowButton
@@ -67,9 +67,13 @@
           emoji="🔍"
           label="Fill Missing Descriptions"
           description="Re-fetch truncated job descriptions"
-          :loading="taskRunning === 'enrich'"
+          :loading="isBusy('enrich')"
           @click="runEnrich"
         />
+      </div>
+
+      <div class="home__task-status" role="status" aria-live="polite" data-testid="task-status">
+        <p v-for="line in taskStatusLines" :key="line" class="home__task-status-line">{{ line }}</p>
       </div>
 
       <button
@@ -438,10 +442,80 @@ function formatRelative(isoStr: string) {
 const taskRunning = ref<string | null>(null)
 const stoopToast  = ref(false)
 
+// Buttons whose POST only queues a background task. Their busy state follows the
+// task's real status (from the active-task poll), not the length of the POST, so it
+// survives a refresh or leaving the page. Score and sync run inside the POST itself,
+// so for those the POST duration is the real duration.
+const BACKGROUND_TASKS: Record<string, { type: string; name: string }> = {
+  discovery: { type: 'discovery',           name: 'Discovery' },
+  email:     { type: 'email_sync',          name: 'Email sync' },
+  enrich:    { type: 'enrich_descriptions', name: 'Description fill' },
+}
+
+const trackedTasks = ref<Record<string, number>>({})
+const taskResults  = ref<Record<string, string>>({})
+
+const isBusy = (key: string) => taskRunning.value === key || key in trackedTasks.value
+
+const taskStatusLines = computed(() => {
+  const lines: string[] = []
+  for (const [key, { name }] of Object.entries(BACKGROUND_TASKS)) {
+    if (key in trackedTasks.value) {
+      lines.push(`${name} is running. It keeps going if you leave this page.`)
+    } else if (taskResults.value[key]) {
+      lines.push(taskResults.value[key])
+    }
+  }
+  return lines
+})
+
+async function finishTask(key: string, taskId: number) {
+  const { name } = BACKGROUND_TASKS[key]
+  const { data } = await useApiFetch<{ status: string; message?: string | null }>(`/api/tasks/${taskId}`)
+  if (data && (data.status === 'queued' || data.status === 'running')) {
+    // A stale list said the task ended, but it is still going. Keep following it.
+    trackedTasks.value = { ...trackedTasks.value, [key]: taskId }
+    return
+  }
+  // The wording comes from the server, which never sends raw error text.
+  taskResults.value = {
+    ...taskResults.value,
+    [key]: data
+      ? (data.message || `${name} finished.`)
+      : `${name} has stopped. Refresh to see new listings.`,
+  }
+  store.refresh()
+}
+
+// Keep trackedTasks in step with the server's list of queued/running tasks.
+function reconcileTasks(rows: TaskRow[]) {
+  for (const [key, { type }] of Object.entries(BACKGROUND_TASKS)) {
+    const row = rows.find(r => r.task_type === type && r.job_id === 0)
+    if (row) {
+      if (trackedTasks.value[key] !== row.id) trackedTasks.value = { ...trackedTasks.value, [key]: row.id }
+    } else if (key in trackedTasks.value) {
+      const { [key]: taskId, ...rest } = trackedTasks.value
+      trackedTasks.value = rest
+      void finishTask(key, taskId)
+    }
+  }
+}
+
 async function runTask(key: string, endpoint: string) {
+  if (isBusy(key)) return
   taskRunning.value = key
-  await useApiFetch(endpoint, { method: 'POST' })
+  const { data, error } = await useApiFetch<{ task_id?: number }>(endpoint, { method: 'POST' })
   taskRunning.value = null
+  const background = BACKGROUND_TASKS[key]
+  if (background) {
+    if (error || !data?.task_id) {
+      taskResults.value = { ...taskResults.value, [key]: `${background.name} could not start. You can try again.` }
+    } else {
+      const { [key]: _old, ...rest } = taskResults.value
+      taskResults.value = rest
+      trackedTasks.value = { ...trackedTasks.value, [key]: data.task_id }
+    }
+  }
   store.refresh()
   fetchActiveTasks()
 }
@@ -503,8 +577,11 @@ const banners       = ref<Banner[]>([])
 let taskPollInterval: ReturnType<typeof setInterval> | null = null
 
 async function fetchActiveTasks() {
-  const { data } = await useApiFetch<TaskRow[]>('/api/tasks')
+  const { data, error } = await useApiFetch<TaskRow[]>('/api/tasks')
+  // A failed request says nothing about the tasks. Keep what we know and try again next poll.
+  if (error) return
   activeTasks.value = data ?? []
+  reconcileTasks(activeTasks.value)
   // Metric counts otherwise only refresh on mount or after an explicit user
   // action (archive/purge) -- while a discovery/scoring task is actively
   // running, new hits land silently until the user navigates away and back.
@@ -699,6 +776,12 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--space-3);
+}
+
+.home__task-status-line {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
 }
 
 .home__actions--secondary { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
