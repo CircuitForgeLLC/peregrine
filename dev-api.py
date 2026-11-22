@@ -709,7 +709,33 @@ def get_job(job_id: int):
         raise HTTPException(404, "Job not found")
     d = _row_to_job(row)
     _add_document_status(d)
+    from scripts.db import get_import_state
+    d["import_state"] = get_import_state(Path(_request_db.get() or DB_PATH), job_id)
     return d
+
+
+class JobDetailsBody(BaseModel):
+    title: str
+    company: str = ""
+    description: str
+
+
+@app.patch("/api/jobs/{job_id}/details")
+def save_job_details(job_id: int, body: JobDetailsBody):
+    """Fill in a job by hand when the page could not be read automatically (peregrine#254)."""
+    title, description = body.title.strip(), body.description.strip()
+    if not title or not description:
+        raise HTTPException(422, "A title and a description are needed")
+    db = _get_db()
+    cur = db.execute(
+        "UPDATE jobs SET title = ?, company = ?, description = ? WHERE id = ?",
+        (title, body.company.strip(), description, job_id),
+    )
+    db.commit()
+    db.close()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "Job not found")
+    return get_job(job_id)
 
 
 # ── POST /api/jobs/:id/applied ────────────────────────────────────────────────

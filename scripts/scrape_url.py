@@ -798,6 +798,10 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dic
         print(f"[scrape_url] Error scraping job {job_id} ({url}): {exc}")
         return {}
 
+    if not fields.get("description"):
+        # One line per empty scrape: job id and board only, never the address or any page content.
+        print(f"[scrape_url] job {job_id}: board '{board}' returned no description")
+
     if fields:
         fields.pop("url", None)
         update_job_fields(db_path, job_id, fields)

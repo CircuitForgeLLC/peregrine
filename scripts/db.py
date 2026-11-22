@@ -1057,6 +1057,44 @@ def get_active_tasks(db_path: Path = DEFAULT_DB) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# Task result recorded when a scrape finished but found no job description (peregrine#254).
+# It lives in background_tasks.error, the same free-text column other completed tasks use for their
+# summary, so no migration is needed.
+SCRAPE_EMPTY_RESULT = "empty_result"
+
+
+def _is_placeholder_title(title: str | None) -> bool:
+    value = (title or "").strip()
+    return value == "" or value in _IMPORT_PLACEHOLDER_TITLES
+
+
+def get_import_state(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> str | None:
+    """Where an add-by-URL job stands: "importing", "needs_manual_entry" or None.
+
+    "importing": a scrape is queued or running and the job still has no real title.
+    "needs_manual_entry": no scrape is active and the page could not be read, meaning the title is
+    still the import placeholder, or the last scrape finished empty and there is still no
+    description. Both are derived from existing rows, so nothing extra is stored."""
+    if job_id is None:
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    job = conn.execute("SELECT title, description FROM jobs WHERE id=?", (job_id,)).fetchone()
+    conn.close()
+    if not job:
+        return None
+    task = get_task_for_job(db_path, "scrape_url", job_id)
+    placeholder = _is_placeholder_title(job["title"])
+    has_description = bool((job["description"] or "").strip())
+    if task and task["status"] in ("queued", "running"):
+        return "importing" if placeholder else None
+    if placeholder and not has_description:
+        return "needs_manual_entry"
+    if task and task["error"] == SCRAPE_EMPTY_RESULT and not has_description:
+        return "needs_manual_entry"
+    return None
+
+
 def get_task_for_job(db_path: Path = DEFAULT_DB, task_type: str = "",
                      job_id: int | None = None) -> dict | None:
     """Return the most recent task row for a (task_type, job_id) pair, or None."""
