@@ -31,9 +31,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from scripts import scrape_url
-from scripts.db import fill_job_fields_if_empty
+from scripts.db import MIN_DESCRIPTION_CHARS, fill_job_fields_if_empty
 
-MIN_DESCRIPTION_CHARS = 50       # a description shorter than this counts as missing
 DEFAULT_LIMIT = 25               # max jobs attempted per run
 MAX_AGE_DAYS = 30                # ignore jobs first found longer ago than this
 PAUSE_RANGE = (2.0, 4.0)         # seconds between requests, uniform random

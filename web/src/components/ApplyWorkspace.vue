@@ -11,7 +11,8 @@
 
     <template v-else>
       <!-- Link import status: still reading, or could not read (peregrine#254) -->
-      <div v-if="job.import_state === 'importing'" class="import-note" data-test="importing" role="status">
+      <div class="import-live" data-test="import-live" aria-live="polite">
+      <div v-if="job.import_state === 'importing'" class="import-note" data-test="importing">
         <span class="spinner" aria-hidden="true" />
         <span>Reading this page. The details will appear here when it is done.</span>
       </div>
@@ -40,6 +41,8 @@
           </button>
         </form>
       </section>
+      <p v-if="detailsSaved" class="sr-only">Details saved</p>
+      </div>
 
       <!-- Two-panel layout: job details | cover letter + resume optimizer -->
       <div class="workspace__panels" :class="{ 'workspace__panels--collapsed': jobPanelCollapsed }">
@@ -78,7 +81,7 @@
               <div v-if="job.salary" class="job-details__salary">{{ job.salary }}</div>
             </template>
 
-            <h2 class="job-details__title">{{ job.title }}</h2>
+            <h2 ref="titleEl" class="job-details__title" tabindex="-1">{{ job.title }}</h2>
 
             <template v-if="!jobPanelCollapsed">
               <!-- Description -->
@@ -676,6 +679,16 @@ const manualCompany     = ref('')
 const manualDescription = ref('')
 const manualSaving      = ref(false)
 const manualError       = ref<string | null>(null)
+const detailsSaved      = ref(false)
+const titleEl           = ref<HTMLElement | null>(null)
+
+// Start the form from what the job already has, so saving cannot blank a real title or company.
+watch(() => job.value?.import_state, (state) => {
+  if (state !== 'needs_manual_entry' || !job.value) return
+  const title = (job.value.title ?? '').trim()
+  if (!manualTitle.value && title && title !== 'Importing...' && title !== 'Importing…') manualTitle.value = title
+  if (!manualCompany.value) manualCompany.value = job.value.company ?? ''
+}, { immediate: true })
 
 async function saveManualDetails() {
   if (!manualTitle.value.trim() || !manualDescription.value.trim()) {
@@ -695,10 +708,23 @@ async function saveManualDetails() {
   })
   manualSaving.value = false
   if (error || !data) {
-    manualError.value = 'That did not save. Please try again.'
+    manualError.value = savedErrorMessage(error)
     return
   }
   job.value = data
+  detailsSaved.value = true
+  await nextTick()
+  titleEl.value?.focus()
+}
+
+function savedErrorMessage(error: { kind: string; detail?: string } | null): string {
+  if (error?.kind === 'http' && error.detail) {
+    try {
+      const msg = (JSON.parse(error.detail) as { detail?: unknown }).detail
+      if (typeof msg === 'string' && msg) return msg
+    } catch { /* not JSON: use the general message */ }
+  }
+  return 'That did not save. Please try again.'
 }
 
 // While a link is still being read, check back quietly until it finishes.

@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+LONG = ("Pasted description. " * 5).strip()
 URL = "https://secret-board.example.com/jobs/12345?token=abc"
 
 
@@ -108,18 +109,108 @@ def test_manual_details_fill_the_job_and_clear_the_state(db, client):
     path, job_id = db
     _run(path, job_id, {})
     resp = client.patch(f"/api/jobs/{job_id}/details", json={
-        "title": "  Engineer ", "company": "Acme", "description": "Pasted text."})
+        "title": "  Engineer ", "company": "Acme", "description": LONG})
     assert resp.status_code == 200
     body = resp.json()
-    assert (body["title"], body["company"], body["description"]) == ("Engineer", "Acme", "Pasted text.")
+    assert (body["title"], body["company"], body["description"]) == ("Engineer", "Acme", LONG)
     assert body["import_state"] is None
 
 
 def test_manual_details_require_title_and_description(db, client):
     _, job_id = db
     assert client.patch(f"/api/jobs/{job_id}/details",
-                        json={"title": " ", "company": "", "description": "x"}).status_code == 422
+                        json={"title": " ", "company": "", "description": LONG}).status_code == 422
     assert client.patch(f"/api/jobs/{job_id}/details",
                         json={"title": "T", "company": "", "description": " "}).status_code == 422
     assert client.patch("/api/jobs/9999/details",
-                        json={"title": "T", "company": "", "description": "d"}).status_code == 404
+                        json={"title": "T", "company": "", "description": LONG}).status_code == 404
+
+
+def _lines(capsys):
+    return [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+
+
+def test_title_only_scrape_logs_one_line_without_page_content(db, capsys):
+    from scripts import scrape_url
+    path, job_id = db
+    with patch.object(scrape_url, "_scrape_generic", return_value={"title": "SecretTitle", "company": "SecretCo"}):
+        scrape_url.scrape_job_url(path, job_id)
+    lines = _lines(capsys)
+    assert len(lines) == 1
+    assert "SecretTitle" not in lines[0] and "SecretCo" not in lines[0]
+
+
+def test_http_error_log_has_board_but_never_the_url(db, capsys):
+    import requests
+
+    from scripts import scrape_url
+    path, job_id = db
+    exc = requests.HTTPError(f"403 Client Error for url: {URL}")
+    with patch.object(scrape_url, "_scrape_generic", side_effect=exc):
+        scrape_url.scrape_job_url(path, job_id)
+    lines = _lines(capsys)
+    assert len(lines) == 1 and "generic" in lines[0]
+    assert "secret-board" not in lines[0] and "token" not in lines[0]
+
+
+def test_unexpected_error_log_has_board_but_never_the_url(db, capsys):
+    from scripts import scrape_url
+    path, job_id = db
+    with patch.object(scrape_url, "_scrape_generic", side_effect=ValueError(f"bad {URL}")):
+        scrape_url.scrape_job_url(path, job_id)
+    lines = _lines(capsys)
+    assert len(lines) == 1 and "generic" in lines[0] and "ValueError" in lines[0]
+    assert "secret-board" not in lines[0] and "token" not in lines[0]
+
+
+def _patch(client, job_id, **body):
+    payload = {"title": "T", "company": "C", "description": LONG}
+    payload.update(body)
+    return client.patch(f"/api/jobs/{job_id}/details", json=payload)
+
+
+def test_details_have_length_limits(db, client):
+    _, job_id = db
+    assert _patch(client, job_id, title="t" * 301).status_code == 422
+    assert _patch(client, job_id, company="c" * 201).status_code == 422
+    assert _patch(client, job_id, description="d" * 100001).status_code == 422
+    assert _patch(client, job_id, title="t" * 300, company="c" * 200).status_code == 200
+
+
+def test_short_description_is_refused_calmly(db, client):
+    from scripts.db import MIN_DESCRIPTION_CHARS
+    _, job_id = db
+    resp = _patch(client, job_id, description="d" * (MIN_DESCRIPTION_CHARS - 1))
+    assert resp.status_code == 422
+    assert "paste the whole job description" in resp.json()["detail"]
+    assert _patch(client, job_id, description="d" * MIN_DESCRIPTION_CHARS).status_code == 200
+
+
+def test_backfill_minimum_is_the_shared_constant():
+    from scripts import linkedin_backfill
+    from scripts.db import MIN_DESCRIPTION_CHARS
+    assert linkedin_backfill.MIN_DESCRIPTION_CHARS == MIN_DESCRIPTION_CHARS
+
+
+def test_blank_company_keeps_the_stored_one(db, client):
+    from scripts.db import update_job_fields
+    path, job_id = db
+    update_job_fields(path, job_id, {"company": "Acme"})
+    body = _patch(client, job_id, company="  ").json()
+    assert body["company"] == "Acme"
+
+
+def test_details_refused_while_a_scrape_is_running(db, client):
+    from scripts.db import insert_task
+    path, job_id = db
+    insert_task(path, "scrape_url", job_id)
+    resp = _patch(client, job_id)
+    assert resp.status_code == 409
+    assert "still reading" in resp.json()["detail"]
+
+
+def test_short_pasted_text_is_not_a_description_for_import_state(db, client):
+    from scripts.db import update_job_fields
+    path, job_id = db
+    update_job_fields(path, job_id, {"description": "short"})
+    assert _state(client, job_id) == "needs_manual_entry"

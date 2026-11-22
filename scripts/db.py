@@ -533,13 +533,15 @@ def update_job_fields(db_path: Path = DEFAULT_DB, job_id: int | None = None,
     conn.close()
 
 
+# A description shorter than this counts as missing (the LinkedIn backfill and the import state both use it).
+MIN_DESCRIPTION_CHARS = 50
 _FILLABLE_IF_EMPTY_COLS = ("title", "company", "location")
 _IMPORT_PLACEHOLDER_TITLES = ("Importing...", "Importing…")
 
 
 def fill_job_fields_if_empty(db_path: Path = DEFAULT_DB, job_id: int | None = None, *,
                              description: str = "", fields: dict | None = None,
-                             min_description_chars: int = 50) -> bool:
+                             min_description_chars: int = MIN_DESCRIPTION_CHARS) -> bool:
     """Fill a job's description and any still-empty title, company and location in ONE statement.
 
     The description is written only if the stored one is still shorter than min_description_chars
@@ -1085,7 +1087,7 @@ def get_import_state(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> s
         return None
     task = get_task_for_job(db_path, "scrape_url", job_id)
     placeholder = _is_placeholder_title(job["title"])
-    has_description = bool((job["description"] or "").strip())
+    has_description = len((job["description"] or "").strip()) >= MIN_DESCRIPTION_CHARS
     if task and task["status"] in ("queued", "running"):
         return "importing" if placeholder else None
     if placeholder and not has_description:

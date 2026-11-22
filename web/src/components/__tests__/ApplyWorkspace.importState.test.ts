@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
@@ -115,5 +115,107 @@ describe('ApplyWorkspace import state', () => {
     await flushPromises()
     expect(w.find('[data-test="importing"]').exists()).toBe(false)
     expect(w.find('[data-test="manual-entry"]').exists()).toBe(false)
+  })
+})
+
+describe('ApplyWorkspace import state: fixes from review', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    mockFetch.mockReset()
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('pre-fills the form from a real title and company but not from the placeholder', async () => {
+    respondWith({ ...BASE_JOB, title: 'Staff Engineer', company: 'Acme', import_state: 'needs_manual_entry' })
+    const w = factory()
+    await flushPromises()
+    expect((w.find('input[name="title"]').element as HTMLInputElement).value).toBe('Staff Engineer')
+    expect((w.find('input[name="company"]').element as HTMLInputElement).value).toBe('Acme')
+
+    respondWith({ ...BASE_JOB, import_state: 'needs_manual_entry' })
+    const w2 = factory()
+    await flushPromises()
+    expect((w2.find('input[name="title"]').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('keeps one polite live region mounted across the importing to form switch', async () => {
+    respondWith({ ...BASE_JOB, import_state: 'importing' })
+    const w = factory()
+    await flushPromises()
+    const region = w.find('[data-test="import-live"]')
+    expect(region.attributes('aria-live')).toBe('polite')
+    expect(region.find('[data-test="importing"]').exists()).toBe(true)
+    expect(w.find('[data-test="importing"]').attributes('role')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('announces Details saved and moves focus to the job title after saving', async () => {
+    respondWith({ ...BASE_JOB, import_state: 'needs_manual_entry' })
+    const w = mount(ApplyWorkspace, {
+      props: { jobId: 1 },
+      attachTo: document.body,
+      global: {
+        plugins: [createRouter({ history: createWebHistory(), routes: [{ path: '/:p*', component: { template: '<div/>' } }] })],
+        stubs: { Teleport: true },
+      },
+    })
+    await flushPromises()
+    await w.find('input[name="title"]').setValue('Engineer')
+    await w.find('textarea[name="description"]').setValue('Pasted')
+    await w.find('[data-test="manual-entry"] form').trigger('submit')
+    await flushPromises()
+    expect(w.find('[data-test="import-live"]').text()).toContain('Details saved')
+    expect(document.activeElement?.classList.contains('job-details__title')).toBe(true)
+    w.unmount()
+  })
+
+  it('shows the server message when the save is refused', async () => {
+    mockFetch.mockImplementation(async (url: string, opts?: RequestInit) => {
+      if (opts?.method === 'PATCH') {
+        return { data: null, error: { kind: 'http', status: 422, detail: JSON.stringify({ detail: 'Please paste the whole job description, at least a few sentences.' }) } }
+      }
+      return { data: { ...BASE_JOB, import_state: 'needs_manual_entry' }, error: null }
+    })
+    const w = factory()
+    await flushPromises()
+    await w.find('input[name="title"]').setValue('Engineer')
+    await w.find('textarea[name="description"]').setValue('short')
+    await w.find('[data-test="manual-entry"] form').trigger('submit')
+    await flushPromises()
+    expect(w.find('[role="alert"]').text()).toContain('Please paste the whole job description')
+  })
+
+  it('re-checks every 3 seconds while importing and stops after the state changes', async () => {
+    vi.useFakeTimers()
+    let state: string | null = 'importing'
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/jobs/1') return { data: { ...BASE_JOB, import_state: state }, error: null }
+      return { data: null, error: null }
+    })
+    const w = factory()
+    await flushPromises()
+    const jobCalls = () => mockFetch.mock.calls.filter(c => c[0] === '/api/jobs/1').length
+    const before = jobCalls()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(jobCalls()).toBe(before + 1)
+    state = 'needs_manual_entry'
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+    const settled = jobCalls()
+    await vi.advanceTimersByTimeAsync(9000)
+    expect(jobCalls()).toBe(settled)
+    w.unmount()
+  })
+
+  it('stops re-checking after unmount', async () => {
+    vi.useFakeTimers()
+    respondWith({ ...BASE_JOB, import_state: 'importing' })
+    const w = factory()
+    await flushPromises()
+    w.unmount()
+    const calls = mockFetch.mock.calls.length
+    await vi.advanceTimersByTimeAsync(9000)
+    expect(mockFetch.mock.calls.length).toBe(calls)
   })
 })
