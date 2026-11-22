@@ -2,14 +2,20 @@
 # Full-stack: FastAPI (Python) + Vue 3 SPA (Node)
 # Adapted from Circuit-Forge/cf-agents workflows/ci.yml (cf-agents#4 tracks the
 # upstream ci-fullstack.yml variant; update this file when that lands).
+#
+# It follows the branch flow in docs/developer-guide/branching-and-releases.md:
+# feature branch -> develop -> freeze/vX.Y.Z -> main. CI runs once per change, on the
+# pull request into main, develop or a freeze branch, and again when develop or main
+# themselves change. It does not also run on every push to a work branch: a push to a
+# branch with an open pull request used to start two full runs (push and pull_request).
 
 name: CI
 
 on:
   push:
-    branches: [main, 'feature/**', 'fix/**', 'freeze/**']
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop, 'freeze/**']
 
 jobs:
   backend:
