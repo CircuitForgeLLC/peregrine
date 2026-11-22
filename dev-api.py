@@ -2609,6 +2609,16 @@ def list_active_tasks_envelope():
     return {"count": len(tasks), "tasks": tasks}
 
 
+@app.get("/api/tasks/{task_id}")
+def get_task_status_by_id(task_id: int):
+    """Read-only status of one background task (queued, running, completed, failed)."""
+    from scripts.db import get_task_by_id
+    task = get_task_by_id(_db_path(), task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
 @app.delete("/api/tasks/{task_id}")
 def cancel_task_by_id(task_id: int):
     from scripts.db import cancel_task
