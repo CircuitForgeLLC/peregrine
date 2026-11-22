@@ -63,6 +63,7 @@ nav:
     - Settings: user-guide/settings.md
   - Developer Guide:
     - Contributing: developer-guide/contributing.md
+    - Branching and Releases: developer-guide/branching-and-releases.md
     - Architecture: developer-guide/architecture.md
     - Cloud Deployment: developer-guide/cloud-deployment.md
     - Adding a Scraper: developer-guide/adding-scrapers.md

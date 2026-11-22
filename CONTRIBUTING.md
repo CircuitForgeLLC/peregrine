@@ -71,7 +71,7 @@ The hook will tell you exactly what went wrong if your message is rejected.
 2. Write tests first (we use `pytest`)
 3. Run `pytest tests/ -v` — all tests must pass
 4. Open a PR on GitHub or Codeberg
-5. PRs are reviewed and cherry-picked to Forgejo (the canonical repo) — you don't need a Forgejo account
+5. PRs are reviewed and cherry-picked to Forgejo (the canonical repo) — you don't need a Forgejo account. Accepted work goes into `develop` and reaches `main` in the next release (see [Branching and Releases](docs/developer-guide/branching-and-releases.md))
 
 ---
 

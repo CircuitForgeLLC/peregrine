@@ -15,10 +15,11 @@ git clone https://git.circuitforge.tech/Circuit-Forge/peregrine
 cd peregrine
 ```
 
-Create a feature branch from `main`:
+Create a feature branch from `develop` (see [Branching and Releases](branching-and-releases.md) for the whole flow):
 
 ```bash
-git checkout -b feat/my-feature
+git fetch origin
+git switch -c feat/my-feature origin/develop
 ```
 
 ---
@@ -125,7 +126,7 @@ SQLite does not support transactional DDL for all statement types. Write forward
 - Do not commit `staging.db`
 - Do not add `torch`, `bitsandbytes`, `transformers`, or `sentence-transformers` to the main environment
 - Do not add `Co-Authored-By:` or AI-attribution lines to commit messages
-- Do not force-push to `main`
+- Do not force-push, and do not push or merge straight into `main` or `develop`. Open a pull request into `develop`, and merge one at a time ([Branching and Releases](branching-and-releases.md))
 
 ---
 
