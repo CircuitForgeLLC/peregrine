@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import DataView from './DataView.vue'
+import { useAppConfigStore } from '../../stores/appConfig'
 
 vi.mock('../../composables/useApi', () => ({ useApiFetch: vi.fn() }))
 import { useApiFetch } from '../../composables/useApi'
@@ -82,5 +83,35 @@ describe('DataView, restore from backup', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('No settings files found in that backup.')
+  })
+})
+
+// Regression for peregrine#247: the hosted API refuses restore with a 403, so the hosted
+// page must not offer a picker, an overwrite warning or a Restore button that cannot work.
+describe('DataView, restore on the hosted version', () => {
+  function mountWith(isCloud: boolean) {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    mockFetch.mockResolvedValue({ data: [], error: null } as never)
+    useAppConfigStore().isCloud = isCloud
+    return mount(DataView, { attachTo: document.body })
+  }
+
+  it('hides the picker, warning and Restore button and explains why on hosted', () => {
+    const wrapper = mountWith(true)
+    expect(wrapper.find('input[type="file"]').exists()).toBe(false)
+    expect(wrapper.find('button.btn-warning').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Existing files will be overwritten')
+    expect(wrapper.text()).toContain("Restoring a backup isn't available on the hosted version.")
+    expect(wrapper.text()).toContain('Create Backup')
+    wrapper.unmount()
+  })
+
+  it('still shows the picker and Restore button when self-hosted', () => {
+    const wrapper = mountWith(false)
+    expect(wrapper.find('input[type="file"]').exists()).toBe(true)
+    expect(wrapper.find('button.btn-warning').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain("isn't available on the hosted version")
+    wrapper.unmount()
   })
 })

@@ -54,7 +54,11 @@ function formatBytes(b: number) {
     </section>
 
     <!-- Restore -->
-    <section class="form-section">
+    <section v-if="config.isCloud" class="form-section">
+      <h3>Restore from Backup</h3>
+      <p class="section-note">Restoring a backup isn't available on the hosted version.</p>
+    </section>
+    <section v-else class="form-section">
       <h3>Restore from Backup</h3>
       <p class="section-note">Upload a backup zip to restore your configuration. Existing files will be overwritten.</p>
       <input

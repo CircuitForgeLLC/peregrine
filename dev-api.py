@@ -2643,6 +2643,53 @@ def list_active_tasks_envelope():
     return {"count": len(tasks), "tasks": tasks}
 
 
+_TASK_NAMES = {
+    "discovery": "Discovery",
+    "email_sync": "Email sync",
+    "enrich_descriptions": "Description fill",
+}
+_DISCOVERY_SUMMARY = re.compile(r"\d+ new listings? added")
+
+
+def _task_message(task: dict) -> str | None:
+    """Calm, user-facing line for a finished task.
+
+    The stored error text can hold file paths, SQL errors or URLs with keys, so it
+    is never returned. Only a few known strings are mapped to fixed wording.
+    """
+    status = task["status"]
+    if status not in ("completed", "failed"):
+        return None
+    name = _TASK_NAMES.get(task["task_type"], "The task")
+    stored = task.get("error") or ""
+    if status == "completed":
+        if task["task_type"] == "discovery" and _DISCOVERY_SUMMARY.fullmatch(stored):
+            return f"{name} finished. {stored}."
+        return f"{name} finished."
+    if stored == "Cancelled by user":
+        return f"{name} was stopped."
+    if stored.startswith("Discovery is disabled in the public demo"):
+        return "Discovery is turned off in the demo."
+    if stored.startswith("Email not configured"):
+        return "Email is not set up yet. You can add it in Settings."
+    return f"{name} did not finish. You can run it again."
+
+
+@app.get("/api/tasks/{task_id}")
+def get_task_status_by_id(task_id: int):
+    """Read-only status of one background task (queued, running, completed, failed)."""
+    from scripts.db import get_task_by_id
+    task = get_task_by_id(_db_path(), task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {
+        "id": task["id"],
+        "task_type": task["task_type"],
+        "status": task["status"],
+        "message": _task_message(task),
+    }
+
+
 @app.delete("/api/tasks/{task_id}")
 def cancel_task_by_id(task_id: int):
     from scripts.db import cancel_task

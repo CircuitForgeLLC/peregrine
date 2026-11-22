@@ -1097,6 +1097,18 @@ def get_import_state(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> s
     return None
 
 
+def get_task_by_id(db_path: Path = DEFAULT_DB, task_id: int | None = None) -> dict | None:
+    """Return one background task row by id, or None."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT id, task_type, status, stage, finished_at, error FROM background_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_task_for_job(db_path: Path = DEFAULT_DB, task_type: str = "",
                      job_id: int | None = None) -> dict | None:
     """Return the most recent task row for a (task_type, job_id) pair, or None."""
