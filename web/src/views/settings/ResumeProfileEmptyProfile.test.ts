@@ -124,9 +124,132 @@ describe('ResumeProfileView, empty My Profile with a parsed resume', () => {
     const empty = wrapper.find('[data-testid="contact-empty"]')
     expect(empty.exists()).toBe(true)
     expect(empty.text()).toContain('Nothing here yet. Add your name and contact details in My Profile.')
-    expect(empty.findAll('a[href="/settings/my-profile"]')).toHaveLength(1)
+    expect(wrapper.findAll('a[href="/settings/my-profile"]')).toHaveLength(1)
+    expect(wrapper.find('#contact-group-note').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="contact-group"]').attributes('aria-describedby')).toBe('contact-empty-note')
     expect(wrapper.findAll('a.sync-link')).toHaveLength(0)
     expect(wrapper.find('[data-testid="use-resume-in-profile"]').exists()).toBe(false)
+  })
+
+  // Fix round 1: the profile save sends EVERY field, so the button must never run
+  // from default values while the profile is loading or after it failed to load.
+  function deferred<T>() {
+    let resolve!: (v: T) => void
+    const promise = new Promise<T>(r => { resolve = r })
+    return { promise, resolve }
+  }
+  const fullProfile = {
+    ...emptyProfile, career_summary: 'Ten years of care work', candidate_voice: 'warm',
+    nda_companies: ['Acme'], accessibility_focus: true, inference_profile: 'single-gpu',
+    mission_preferences: [{ industry: 'Health', note: 'yes' }],
+  }
+
+  it('offers no button and saves nothing when My Profile failed to load', async () => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/settings/profile') return Promise.resolve({ data: null, error: { kind: 'network', message: 'offline' } }) as never
+      if (url === '/api/settings/resume') return Promise.resolve({ data: parsed, error: null }) as never
+      return Promise.resolve({ data: {}, error: null }) as never
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="use-resume-in-profile"]').exists()).toBe(false)
+    expect(putTo('/api/settings/profile')).toBeUndefined()
+  })
+
+  it('offers no button until the profile load has finished', async () => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    const prof = deferred<unknown>()
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/settings/profile') return prof.promise as never
+      if (url === '/api/settings/resume') return Promise.resolve({ data: parsed, error: null }) as never
+      return Promise.resolve({ data: {}, error: null }) as never
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="use-resume-in-profile"]').exists()).toBe(false)
+    prof.resolve({ data: emptyProfile, error: null })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="use-resume-in-profile"]').exists()).toBe(true)
+  })
+
+  it('keeps every non-contact My Profile field in the saved payload', async () => {
+    setup(fullProfile as never, parsed)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('[data-testid="use-resume-in-profile"]').trigger('click')
+    await flushPromises()
+    const body = JSON.parse(putTo('/api/settings/profile')![1].body)
+    expect(body.career_summary).toBe('Ten years of care work')
+    expect(body.candidate_voice).toBe('warm')
+    expect(body.nda_companies).toEqual(['Acme'])
+    expect(body.accessibility_focus).toBe(true)
+    expect(body.inference_profile).toBe('single-gpu')
+    expect(body.mission_preferences).toEqual([{ industry: 'Health', note: 'yes' }])
+  })
+
+  it('puts the fields back and says so calmly when the profile save fails', async () => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (url === '/api/settings/profile' && opts?.method === 'PUT') return Promise.resolve({ data: null, error: { kind: 'http', detail: 'boom' } }) as never
+      if (url === '/api/settings/profile') return Promise.resolve({ data: emptyProfile, error: null }) as never
+      if (url === '/api/settings/resume') return Promise.resolve({ data: parsed, error: null }) as never
+      return Promise.resolve({ data: {}, error: null }) as never
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('[data-testid="use-resume-in-profile"]').trigger('click')
+    await flushPromises()
+    const profile = useProfileStore()
+    expect(profile.email).toBe('')
+    expect(profile.name).toBe('')
+    expect(wrapper.find('[data-testid="use-resume-in-profile"]').exists()).toBe(true)
+    const status = wrapper.find('[data-testid="contact-status"]')
+    expect(status.text()).toBe("We couldn't save to My Profile just now. Your details are still here, so you can try again.")
+    expect(status.text()).not.toContain('—')
+  })
+
+  it('announces success and moves focus to the status line', async () => {
+    setup(emptyProfile, parsed)
+    const wrapper = mount(ResumeProfileView, {
+      attachTo: document.body,
+      global: { plugins: [createRouter({ history: createWebHistory(), routes: [{ path: '/:p*', component: { template: '<div/>' } }] })] },
+    })
+    await flushPromises()
+    const status = wrapper.find('[data-testid="contact-status"]')
+    expect(status.attributes('role')).toBe('status')
+    expect(status.attributes('aria-live')).toBe('polite')
+    expect(status.text()).toBe('')
+    await wrapper.find('[data-testid="use-resume-in-profile"]').trigger('click')
+    await flushPromises()
+    expect(status.text()).toBe('Saved to My Profile.')
+    expect(document.activeElement).toBe(status.element)
+    wrapper.unmount()
+  })
+
+  it('sends one save only when the button is pressed twice quickly', async () => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    const put = deferred<unknown>()
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (url === '/api/settings/profile' && opts?.method === 'PUT') return put.promise as never
+      if (url === '/api/settings/profile') return Promise.resolve({ data: emptyProfile, error: null }) as never
+      if (url === '/api/settings/resume') return Promise.resolve({ data: parsed, error: null }) as never
+      return Promise.resolve({ data: {}, error: null }) as never
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    const btn = wrapper.find('[data-testid="use-resume-in-profile"]')
+    await btn.trigger('click')
+    await btn.trigger('click')
+    const puts = mockFetch.mock.calls.filter(
+      c => c[0] === '/api/settings/profile' && (c[1] as { method?: string })?.method === 'PUT')
+    expect(puts).toHaveLength(1)
+    put.resolve({ data: {}, error: null })
+    await flushPromises()
   })
 
   it('gives the read-only group an accessible description saying where to edit', async () => {
