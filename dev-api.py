@@ -709,7 +709,41 @@ def get_job(job_id: int):
         raise HTTPException(404, "Job not found")
     d = _row_to_job(row)
     _add_document_status(d)
+    from scripts.db import get_import_state
+    d["import_state"] = get_import_state(Path(_request_db.get() or DB_PATH), job_id)
     return d
+
+
+class JobDetailsBody(BaseModel):
+    title: str = Field(max_length=300)
+    company: str = Field(default="", max_length=200)
+    description: str = Field(max_length=100000)
+
+
+@app.patch("/api/jobs/{job_id}/details")
+def save_job_details(job_id: int, body: JobDetailsBody):
+    """Fill in a job by hand when the page could not be read automatically (peregrine#254).
+
+    A blank company keeps the stored one. A description shorter than the shared minimum is refused,
+    because the LinkedIn backfill treats anything shorter as missing and could overwrite it."""
+    from scripts.db import MIN_DESCRIPTION_CHARS, get_import_state
+    title, description = body.title.strip(), body.description.strip()
+    if not title:
+        raise HTTPException(422, "Please add a job title.")
+    if len(description) < MIN_DESCRIPTION_CHARS:
+        raise HTTPException(422, "Please paste the whole job description, at least a few sentences.")
+    if get_import_state(Path(_request_db.get() or DB_PATH), job_id) == "importing":
+        raise HTTPException(409, "We're still reading this page. Please try again in a moment.")
+    db = _get_db()
+    cur = db.execute(
+        "UPDATE jobs SET title = ?, company = COALESCE(NULLIF(?, ''), company), description = ? WHERE id = ?",
+        (title, body.company.strip(), description, job_id),
+    )
+    db.commit()
+    db.close()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "Job not found")
+    return get_job(job_id)
 
 
 # ── POST /api/jobs/:id/applied ────────────────────────────────────────────────

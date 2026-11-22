@@ -785,7 +785,9 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dic
         else:
             fields = _scrape_generic(url)
     except requests.RequestException as exc:
-        print(f"[scrape_url] HTTP error for job {job_id} ({url}): {exc}")
+        # Never the address, the message or the body: job links can carry tokens and logs are shared.
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        print(f"[scrape_url] job {job_id}: board '{board}' failed ({status or type(exc).__name__})")
         return {}
     except Exception as exc:  # noqa: BLE001 -- this dispatches to one of five
         # board-specific scrapers (LinkedIn guest API, Indeed/generic JSON-LD+bs4
@@ -795,12 +797,17 @@ def scrape_job_url(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> dic
         # function's own docstring contract ("does not raise — failures are logged
         # and the job row is left as-is"), any of those must degrade to an empty
         # result rather than crash the background task.
-        print(f"[scrape_url] Error scraping job {job_id} ({url}): {exc}")
+        print(f"[scrape_url] job {job_id}: board '{board}' failed ({type(exc).__name__})")
         return {}
+
+    if not fields.get("description"):
+        # One line per empty scrape: job id and board only, never the address or any page content.
+        print(f"[scrape_url] job {job_id}: board '{board}' returned no description")
+    else:
+        print(f"[scrape_url] job {job_id}: board '{board}' scraped")
 
     if fields:
         fields.pop("url", None)
         update_job_fields(db_path, job_id, fields)
-        print(f"[scrape_url] job {job_id}: scraped '{fields.get('title', '?')}' @ {fields.get('company', '?')}")
 
     return fields

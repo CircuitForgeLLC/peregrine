@@ -137,6 +137,7 @@ def _resume_struct_to_text(resume_struct: dict) -> str:
 
 from scripts.db import (
     DEFAULT_DB,
+    SCRAPE_EMPTY_RESULT,
     insert_task,
     save_optimized_resume,
     save_research,
@@ -361,7 +362,12 @@ def _run_task(db_path: Path, task_id: int, task_type: str, job_id: int,
             fields = scrape_job_url(db_path, job_id)
             title = fields.get("title") or job.get("url", "?")
             company = fields.get("company", "")
-            msg = f"{title}" + (f" @ {company}" if company else "")
+            if fields.get("description"):
+                msg = f"{title}" + (f" @ {company}" if company else "")
+            else:
+                # Finished, but nothing readable came back. Recorded distinctly so the job page can
+                # say so instead of showing "Importing" forever (peregrine#254).
+                msg = SCRAPE_EMPTY_RESULT
             update_task_status(db_path, task_id, "completed", error=msg)
             # Auto-enrich company/salary for Craigslist jobs
             conn = sqlite3.connect(db_path)

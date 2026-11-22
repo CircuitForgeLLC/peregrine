@@ -533,13 +533,15 @@ def update_job_fields(db_path: Path = DEFAULT_DB, job_id: int | None = None,
     conn.close()
 
 
+# A description shorter than this counts as missing (the LinkedIn backfill and the import state both use it).
+MIN_DESCRIPTION_CHARS = 50
 _FILLABLE_IF_EMPTY_COLS = ("title", "company", "location")
 _IMPORT_PLACEHOLDER_TITLES = ("Importing...", "Importing…")
 
 
 def fill_job_fields_if_empty(db_path: Path = DEFAULT_DB, job_id: int | None = None, *,
                              description: str = "", fields: dict | None = None,
-                             min_description_chars: int = 50) -> bool:
+                             min_description_chars: int = MIN_DESCRIPTION_CHARS) -> bool:
     """Fill a job's description and any still-empty title, company and location in ONE statement.
 
     The description is written only if the stored one is still shorter than min_description_chars
@@ -1055,6 +1057,44 @@ def get_active_tasks(db_path: Path = DEFAULT_DB) -> list[dict]:
     """).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# Task result recorded when a scrape finished but found no job description (peregrine#254).
+# It lives in background_tasks.error, the same free-text column other completed tasks use for their
+# summary, so no migration is needed.
+SCRAPE_EMPTY_RESULT = "empty_result"
+
+
+def _is_placeholder_title(title: str | None) -> bool:
+    value = (title or "").strip()
+    return value == "" or value in _IMPORT_PLACEHOLDER_TITLES
+
+
+def get_import_state(db_path: Path = DEFAULT_DB, job_id: int | None = None) -> str | None:
+    """Where an add-by-URL job stands: "importing", "needs_manual_entry" or None.
+
+    "importing": a scrape is queued or running and the job still has no real title.
+    "needs_manual_entry": no scrape is active and the page could not be read, meaning the title is
+    still the import placeholder, or the last scrape finished empty and there is still no
+    description. Both are derived from existing rows, so nothing extra is stored."""
+    if job_id is None:
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    job = conn.execute("SELECT title, description FROM jobs WHERE id=?", (job_id,)).fetchone()
+    conn.close()
+    if not job:
+        return None
+    task = get_task_for_job(db_path, "scrape_url", job_id)
+    placeholder = _is_placeholder_title(job["title"])
+    has_description = len((job["description"] or "").strip()) >= MIN_DESCRIPTION_CHARS
+    if task and task["status"] in ("queued", "running"):
+        return "importing" if placeholder else None
+    if placeholder and not has_description:
+        return "needs_manual_entry"
+    if task and task["error"] == SCRAPE_EMPTY_RESULT and not has_description:
+        return "needs_manual_entry"
+    return None
 
 
 def get_task_by_id(db_path: Path = DEFAULT_DB, task_id: int | None = None) -> dict | None:
