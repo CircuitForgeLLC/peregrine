@@ -10,6 +10,37 @@
     </div>
 
     <template v-else>
+      <!-- Link import status: still reading, or could not read (peregrine#254) -->
+      <div v-if="job.import_state === 'importing'" class="import-note" data-test="importing" role="status">
+        <span class="spinner" aria-hidden="true" />
+        <span>Reading this page. The details will appear here when it is done.</span>
+      </div>
+
+      <section
+        v-else-if="job.import_state === 'needs_manual_entry'"
+        class="import-note import-note--manual"
+        data-test="manual-entry"
+        aria-labelledby="manual-entry-heading"
+      >
+        <h2 id="manual-entry-heading" class="import-note__heading">We couldn't read this page automatically</h2>
+        <p class="import-note__text">
+          Some sites need a login or don't allow automatic reading. You can paste the job
+          description here and fill in the title and company yourself.
+        </p>
+        <form class="import-note__form" @submit.prevent="saveManualDetails">
+          <label for="manual-title">Job title</label>
+          <input id="manual-title" v-model="manualTitle" name="title" type="text" autocomplete="off" required />
+          <label for="manual-company">Company (optional)</label>
+          <input id="manual-company" v-model="manualCompany" name="company" type="text" autocomplete="off" />
+          <label for="manual-description">Job description</label>
+          <textarea id="manual-description" v-model="manualDescription" name="description" rows="8" required />
+          <p v-if="manualError" class="import-note__error" role="alert">{{ manualError }}</p>
+          <button type="submit" class="btn-generate" :disabled="manualSaving">
+            {{ manualSaving ? 'Saving…' : 'Save details' }}
+          </button>
+        </form>
+      </section>
+
       <!-- Two-panel layout: job details | cover letter + resume optimizer -->
       <div class="workspace__panels" :class="{ 'workspace__panels--collapsed': jobPanelCollapsed }">
 
@@ -638,6 +669,45 @@ async function fetchJob() {
   }
 }
 
+// ─── Link import status ───────────────────────────────────────────────────────
+
+const manualTitle       = ref('')
+const manualCompany     = ref('')
+const manualDescription = ref('')
+const manualSaving      = ref(false)
+const manualError       = ref<string | null>(null)
+
+async function saveManualDetails() {
+  if (!manualTitle.value.trim() || !manualDescription.value.trim()) {
+    manualError.value = 'Please add a title and a description.'
+    return
+  }
+  manualSaving.value = true
+  manualError.value  = null
+  const { data, error } = await useApiFetch<Job>(`/api/jobs/${props.jobId}/details`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title:       manualTitle.value.trim(),
+      company:     manualCompany.value.trim(),
+      description: manualDescription.value.trim(),
+    }),
+  })
+  manualSaving.value = false
+  if (error || !data) {
+    manualError.value = 'That did not save. Please try again.'
+    return
+  }
+  job.value = data
+}
+
+// While a link is still being read, check back quietly until it finishes.
+let importTimer = 0
+watch(() => job.value?.import_state, (state) => {
+  clearInterval(importTimer)
+  if (state === 'importing') importTimer = window.setInterval(fetchJob, 3000)
+}, { immediate: true })
+
 onMounted(async () => {
   await fetchJob()
   loadingJob.value = false
@@ -661,6 +731,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearInterval(importTimer)
   stopPolling()
   clearTimeout(toastTimer)
 })
@@ -1085,6 +1156,36 @@ declare module '../stores/review' {
 .btn-ghost--sm     { font-size: var(--text-xs); padding: var(--space-1) var(--space-3); min-height: 28px; }
 
 /* ── Spinner ─────────────────────────────────────────────────────────── */
+
+/* ── Link import status ──────────────────────────────────────────────── */
+
+.import-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.import-note--manual { flex-direction: column; align-items: stretch; }
+.import-note__heading { margin: 0; font-size: var(--text-base); }
+.import-note__text { margin: 0; color: var(--color-text-muted); }
+.import-note__form { display: flex; flex-direction: column; gap: var(--space-2); }
+.import-note__form input,
+.import-note__form textarea {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+.import-note__form button { align-self: flex-start; }
+.import-note__error { margin: 0; color: var(--color-text-muted); }
 
 .spinner {
   width: 1.2rem;
