@@ -1061,7 +1061,10 @@ def get_task_by_id(db_path: Path = DEFAULT_DB, task_id: int | None = None) -> di
     """Return one background task row by id, or None."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT * FROM background_tasks WHERE id=?", (task_id,)).fetchone()
+    row = conn.execute(
+        "SELECT id, task_type, status, stage, finished_at, error FROM background_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
     conn.close()
     return dict(row) if row else None
 

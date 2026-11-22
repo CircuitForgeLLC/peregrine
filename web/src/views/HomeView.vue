@@ -471,12 +471,18 @@ const taskStatusLines = computed(() => {
 
 async function finishTask(key: string, taskId: number) {
   const { name } = BACKGROUND_TASKS[key]
-  const { data } = await useApiFetch<{ status: string; error?: string | null }>(`/api/tasks/${taskId}`)
+  const { data } = await useApiFetch<{ status: string; message?: string | null }>(`/api/tasks/${taskId}`)
+  if (data && (data.status === 'queued' || data.status === 'running')) {
+    // A stale list said the task ended, but it is still going. Keep following it.
+    trackedTasks.value = { ...trackedTasks.value, [key]: taskId }
+    return
+  }
+  // The wording comes from the server, which never sends raw error text.
   taskResults.value = {
     ...taskResults.value,
-    [key]: data?.status === 'failed'
-      ? `${name} did not finish.${data.error ? ` ${data.error}` : ''} You can run it again.`
-      : `${name} finished.`,
+    [key]: data
+      ? (data.message || `${name} finished.`)
+      : `${name} has stopped. Refresh to see new listings.`,
   }
   store.refresh()
 }
@@ -571,7 +577,9 @@ const banners       = ref<Banner[]>([])
 let taskPollInterval: ReturnType<typeof setInterval> | null = null
 
 async function fetchActiveTasks() {
-  const { data } = await useApiFetch<TaskRow[]>('/api/tasks')
+  const { data, error } = await useApiFetch<TaskRow[]>('/api/tasks')
+  // A failed request says nothing about the tasks. Keep what we know and try again next poll.
+  if (error) return
   activeTasks.value = data ?? []
   reconcileTasks(activeTasks.value)
   // Metric counts otherwise only refresh on mount or after an explicit user

@@ -13,7 +13,8 @@ type Row = { id: number; task_type: string; status: string; job_id: number }
 
 // Server state the mocked API reads from, changed by each test.
 let active: Row[] = []
-let detail: Record<number, { id: number; status: string; error: string | null }> = {}
+let detail: Record<number, { id: number; status: string; message?: string | null; error?: string | null }> = {}
+let activeFails = false
 let posts: string[] = []
 
 function installApi() {
@@ -23,7 +24,11 @@ function installApi() {
       posts.push(url)
       return { data: { task_id: 7, is_new: true }, error: null }
     }
-    if (url === '/api/tasks') return { data: active, error: null }
+    if (url === '/api/tasks') {
+      return activeFails
+        ? { data: null, error: { kind: 'network', message: 'down' } }
+        : { data: active, error: null }
+    }
     const m = url.match(/^\/api\/tasks\/(\d+)$/)
     if (m) return { data: detail[Number(m[1])] ?? null, error: null }
     return { data: null, error: null }
@@ -60,6 +65,7 @@ describe('HomeView Run Discovery busy state (#264)', () => {
     vi.clearAllMocks()
     active = []
     detail = {}
+    activeFails = false
     posts = []
     installApi()
   })
@@ -78,7 +84,7 @@ describe('HomeView Run Discovery busy state (#264)', () => {
     const wrapper = await mountHome()
     await startDiscovery(wrapper)
     active = []
-    detail[7] = { id: 7, status: 'completed', error: null }
+    detail[7] = { id: 7, status: 'completed', message: 'Discovery finished.' }
     await tick()
     expect(btn(wrapper, 'Run Discovery').attributes('aria-busy')).toBe('false')
     expect(wrapper.find('[data-testid="task-status"]').text()).toContain('Discovery finished')
@@ -88,12 +94,62 @@ describe('HomeView Run Discovery busy state (#264)', () => {
     const wrapper = await mountHome()
     await startDiscovery(wrapper)
     active = []
-    detail[7] = { id: 7, status: 'failed', error: 'boom' }
+    detail[7] = {
+      id: 7, status: 'failed',
+      message: 'Discovery did not finish. You can run it again.',
+      error: 'boom /devl/user-data/x?api_key=SECRET',
+    }
     await tick()
     expect(btn(wrapper, 'Run Discovery').attributes('aria-busy')).toBe('false')
     const text = wrapper.find('[data-testid="task-status"]').text()
-    expect(text).toContain('Discovery did not finish')
-    expect(text).toContain('boom')
+    expect(text).toContain('Discovery did not finish. You can run it again.')
+    // The raw server error is never shown.
+    expect(text).not.toContain('boom')
+    expect(text).not.toContain('SECRET')
+  })
+
+  it('stays busy and says nothing new when the task list request fails', async () => {
+    const wrapper = await mountHome()
+    await startDiscovery(wrapper)
+    activeFails = true
+    await tick()
+    expect(btn(wrapper, 'Run Discovery').attributes('aria-busy')).toBe('true')
+    expect(wrapper.find('[data-testid="task-status"]').text()).not.toContain('finished')
+    // Recovers normally once the list loads again.
+    activeFails = false
+    active = []
+    detail[7] = { id: 7, status: 'completed', message: 'Discovery finished.' }
+    await tick()
+    expect(btn(wrapper, 'Run Discovery').attributes('aria-busy')).toBe('false')
+  })
+
+  it('stays busy if the detail still says running', async () => {
+    const wrapper = await mountHome()
+    await startDiscovery(wrapper)
+    active = []
+    detail[7] = { id: 7, status: 'running', message: null }
+    await tick()
+    expect(btn(wrapper, 'Run Discovery').attributes('aria-busy')).toBe('true')
+    expect(wrapper.find('[data-testid="task-status"]').text()).not.toContain('finished')
+  })
+
+  it('goes idle with a neutral line, never "finished", when the detail is unavailable', async () => {
+    const wrapper = await mountHome()
+    await startDiscovery(wrapper)
+    active = []
+    await tick()
+    expect(btn(wrapper, 'Run Discovery').attributes('aria-busy')).toBe('false')
+    const text = wrapper.find('[data-testid="task-status"]').text()
+    expect(text).toContain('Discovery has stopped. Refresh to see new listings.')
+    expect(text).not.toContain('finished')
+  })
+
+  it('the click handler itself does nothing while busy', async () => {
+    const wrapper = await mountHome()
+    await startDiscovery(wrapper)
+    await (wrapper.vm as any).runDiscovery()
+    await flushPromises()
+    expect(posts.filter(p => p === '/api/tasks/discovery')).toHaveLength(1)
   })
 
   it('resumes busy on mount when a discovery task is already running', async () => {
@@ -101,7 +157,7 @@ describe('HomeView Run Discovery busy state (#264)', () => {
     const wrapper = await mountHome()
     expect(btn(wrapper, 'Run Discovery').attributes('aria-busy')).toBe('true')
     active = []
-    detail[7] = { id: 7, status: 'completed', error: null }
+    detail[7] = { id: 7, status: 'completed', message: 'Discovery finished.' }
     await tick()
     expect(btn(wrapper, 'Run Discovery').attributes('aria-busy')).toBe('false')
     expect(wrapper.find('[data-testid="task-status"]').text()).toContain('Discovery finished')
