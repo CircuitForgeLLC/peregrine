@@ -98,7 +98,7 @@
         <p v-if="profileLoadFailed" class="contact-import" data-testid="profile-load-failed">
           We couldn't load My Profile just now. Please reload the page to try again.
         </p>
-        <p id="contact-status" ref="statusEl" class="contact-status" role="status" aria-live="polite" tabindex="-1"
+        <p id="contact-status" ref="statusEl" class="contact-status" :class="{ 'sr-only': !contactStatus }" role="status" aria-live="polite" tabindex="-1"
            data-testid="contact-status">{{ contactStatus }}</p>
         <div v-if="!contactEmpty" class="field-row">
           <div class="field-label-line">
@@ -448,8 +448,8 @@ onMounted(async () => {
   await Promise.all([
     store.load(),
     profileStore.load().then(() => {
-      profileLoadFailed.value = !!profileStore.loadError
-      profileReady.value = !profileStore.loadError
+      profileLoadFailed.value = !profileStore.loadError ? !profileStore.loaded : true
+      profileReady.value = !profileStore.loadError && profileStore.loaded
     }),
   ])
 })
@@ -554,7 +554,6 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
 }
 .contact-empty { margin-top: 0; }
 .contact-status { margin: 0 0 var(--space-3); font-size: 0.88rem; color: var(--color-text); }
-.contact-status:empty { display: none; }
 .contact-status:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .contact-import p { margin: 0 0 var(--space-2); }
 .contact-import button {

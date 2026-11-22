@@ -158,6 +158,31 @@ describe('ResumeProfileView, empty My Profile with a parsed resume', () => {
     expect(putTo('/api/settings/profile')).toBeUndefined()
   })
 
+  it('offers no button and saves nothing when the profile load returns no data and no error', async () => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/settings/profile') return Promise.resolve({ data: null, error: null }) as never
+      if (url === '/api/settings/resume') return Promise.resolve({ data: parsed, error: null }) as never
+      return Promise.resolve({ data: {}, error: null }) as never
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="use-resume-in-profile"]').exists()).toBe(false)
+    expect(putTo('/api/settings/profile')).toBeUndefined()
+  })
+
+  it('keeps the status line in the accessibility tree while empty, and shows it with text', async () => {
+    setup(emptyProfile, parsed)
+    const wrapper = mountView()
+    await flushPromises()
+    const status = wrapper.find('[data-testid="contact-status"]')
+    expect(status.classes()).toContain('sr-only')
+    await wrapper.find('[data-testid="use-resume-in-profile"]').trigger('click')
+    await flushPromises()
+    expect(status.classes()).not.toContain('sr-only')
+  })
+
   it('offers no button until the profile load has finished', async () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
