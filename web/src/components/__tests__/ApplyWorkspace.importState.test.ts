@@ -139,14 +139,27 @@ describe('ApplyWorkspace import state: fixes from review', () => {
     expect((w2.find('input[name="title"]').element as HTMLInputElement).value).toBe('')
   })
 
-  it('keeps one polite live region mounted across the importing to form switch', async () => {
-    respondWith({ ...BASE_JOB, import_state: 'importing' })
+  it('keeps the same polite live region mounted across the importing to form switch', async () => {
+    vi.useFakeTimers()
+    let state: string = 'importing'
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/jobs/1') return { data: { ...BASE_JOB, import_state: state }, error: null }
+      return { data: null, error: null }
+    })
     const w = factory()
     await flushPromises()
-    const region = w.find('[data-test="import-live"]')
-    expect(region.attributes('aria-live')).toBe('polite')
-    expect(region.find('[data-test="importing"]').exists()).toBe(true)
+    const before = w.find('[data-test="import-live"]').element
+    expect(before.getAttribute('aria-live')).toBe('polite')
+    expect(w.find('[data-test="importing"]').exists()).toBe(true)
     expect(w.find('[data-test="importing"]').attributes('role')).toBeUndefined()
+
+    state = 'needs_manual_entry'
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+    expect(w.find('[data-test="importing"]').exists()).toBe(false)
+    expect(w.find('[data-test="manual-entry"]').exists()).toBe(true)
+    // Same DOM node: a remounted wrapper would not be announced as an update.
+    expect(w.find('[data-test="import-live"]').element).toBe(before)
     w.unmount()
   })
 
