@@ -18,6 +18,7 @@ export interface Job {
   date_posted:   string | null
   shadow_score:  'shadow' | 'stale' | null
   status:        string
+  import_state?: 'importing' | 'needs_manual_entry' | null  // set by GET /api/jobs/:id only
 }
 
 interface UndoEntry {

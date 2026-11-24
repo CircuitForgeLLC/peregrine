@@ -22,6 +22,8 @@ export const useProfileStore = defineStore('settings/profile', () => {
   const saving = ref(false)
   const saveError = ref<string | null>(null)
   const loadError = ref<string | null>(null)
+  // True only once a real profile object has been received and assigned.
+  const loaded = ref(false)
 
   async function load() {
     loading.value = true
@@ -33,6 +35,7 @@ export const useProfileStore = defineStore('settings/profile', () => {
       return
     }
     if (!data) return
+    loaded.value = true
     name.value = String(data.name ?? '')
     email.value = String(data.email ?? '')
     phone.value = String(data.phone ?? '')
@@ -89,7 +92,7 @@ export const useProfileStore = defineStore('settings/profile', () => {
   return {
     name, email, phone, linkedin_url, career_summary, candidate_voice, inference_profile,
     mission_preferences, nda_companies, accessibility_focus, lgbtq_focus,
-    loading, saving, saveError, loadError,
+    loading, saving, saveError, loadError, loaded,
     load, save,
   }
 })

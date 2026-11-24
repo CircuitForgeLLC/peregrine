@@ -66,6 +66,14 @@ def _cloud_mode_from_env() -> bool:
 
 
 _CLOUD_MODE       = _cloud_mode_from_env()
+
+
+def _task_unavailable_detail(task_label: str, backend_id: str | None = None, cloud: bool | None = None) -> str:
+    """Error text for a task-scoped LLM call that could not run (cloud mode by default from _CLOUD_MODE)."""
+    from scripts.llm_router import task_unavailable_detail
+    return task_unavailable_detail(task_label, backend_id, cloud=_CLOUD_MODE if cloud is None else cloud)
+
+
 _CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
 _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
 
@@ -709,7 +717,41 @@ def get_job(job_id: int):
         raise HTTPException(404, "Job not found")
     d = _row_to_job(row)
     _add_document_status(d)
+    from scripts.db import get_import_state
+    d["import_state"] = get_import_state(Path(_request_db.get() or DB_PATH), job_id)
     return d
+
+
+class JobDetailsBody(BaseModel):
+    title: str = Field(max_length=300)
+    company: str = Field(default="", max_length=200)
+    description: str = Field(max_length=100000)
+
+
+@app.patch("/api/jobs/{job_id}/details")
+def save_job_details(job_id: int, body: JobDetailsBody):
+    """Fill in a job by hand when the page could not be read automatically (peregrine#254).
+
+    A blank company keeps the stored one. A description shorter than the shared minimum is refused,
+    because the LinkedIn backfill treats anything shorter as missing and could overwrite it."""
+    from scripts.db import MIN_DESCRIPTION_CHARS, get_import_state
+    title, description = body.title.strip(), body.description.strip()
+    if not title:
+        raise HTTPException(422, "Please add a job title.")
+    if len(description) < MIN_DESCRIPTION_CHARS:
+        raise HTTPException(422, "Please paste the whole job description, at least a few sentences.")
+    if get_import_state(Path(_request_db.get() or DB_PATH), job_id) == "importing":
+        raise HTTPException(409, "We're still reading this page. Please try again in a moment.")
+    db = _get_db()
+    cur = db.execute(
+        "UPDATE jobs SET title = ?, company = COALESCE(NULLIF(?, ''), company), description = ? WHERE id = ?",
+        (title, body.company.strip(), description, job_id),
+    )
+    db.commit()
+    db.close()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "Job not found")
+    return get_job(job_id)
 
 
 # ── POST /api/jobs/:id/applied ────────────────────────────────────────────────
@@ -2195,9 +2237,9 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
         answer = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt)
         return {"answer": answer.strip()}
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Chat"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Chat model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Chat", e.backend_id))
 
 
 # ── POST /api/jobs/:id/hired-feedback ─────────────────────────────────────────
@@ -2607,6 +2649,53 @@ def list_active_tasks_envelope():
     from scripts.db import get_active_tasks
     tasks = get_active_tasks(_db_path())
     return {"count": len(tasks), "tasks": tasks}
+
+
+_TASK_NAMES = {
+    "discovery": "Discovery",
+    "email_sync": "Email sync",
+    "enrich_descriptions": "Description fill",
+}
+_DISCOVERY_SUMMARY = re.compile(r"\d+ new listings? added")
+
+
+def _task_message(task: dict) -> str | None:
+    """Calm, user-facing line for a finished task.
+
+    The stored error text can hold file paths, SQL errors or URLs with keys, so it
+    is never returned. Only a few known strings are mapped to fixed wording.
+    """
+    status = task["status"]
+    if status not in ("completed", "failed"):
+        return None
+    name = _TASK_NAMES.get(task["task_type"], "The task")
+    stored = task.get("error") or ""
+    if status == "completed":
+        if task["task_type"] == "discovery" and _DISCOVERY_SUMMARY.fullmatch(stored):
+            return f"{name} finished. {stored}."
+        return f"{name} finished."
+    if stored == "Cancelled by user":
+        return f"{name} was stopped."
+    if stored.startswith("Discovery is disabled in the public demo"):
+        return "Discovery is turned off in the demo."
+    if stored.startswith("Email not configured"):
+        return "Email is not set up yet. You can add it in Settings."
+    return f"{name} did not finish. You can run it again."
+
+
+@app.get("/api/tasks/{task_id}")
+def get_task_status_by_id(task_id: int):
+    """Read-only status of one background task (queued, running, completed, failed)."""
+    from scripts.db import get_task_by_id
+    task = get_task_by_id(_db_path(), task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {
+        "id": task["id"],
+        "task_type": task["task_type"],
+        "status": task["status"],
+        "message": _task_message(task),
+    }
 
 
 @app.delete("/api/tasks/{task_id}")
@@ -3460,9 +3549,9 @@ def generate_career_summary():
         summary = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"summary": summary.strip()}
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
 
 
 @app.post("/api/settings/profile/generate-missions")
@@ -3482,9 +3571,9 @@ def generate_mission_preferences():
     try:
         raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
     items = _extract_json_array(raw, log_context="generate-missions")
     if items is None:
         # The assigned Research model answered, but not with usable structured
@@ -3492,6 +3581,7 @@ def generate_mission_preferences():
         # instead of hiding behind a generic "LLM generation failed".
         raise HTTPException(
             502,
+            _task_unavailable_detail("Research") if _CLOUD_MODE else
             "The model assigned to Research didn't return usable output — try a different model, "
             "or re-run its capability check in Settings → System → Model Assignments.",
         )
@@ -3522,9 +3612,9 @@ def generate_candidate_voice():
         voice = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"voice": voice.strip()}
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
 
 
 # ── Settings: Resume Profile endpoints ───────────────────────────────────────
@@ -4032,9 +4122,9 @@ def suggest_resume_tags(payload: ResumeTagSuggestPayload):
     try:
         raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
     try:
         suggestions = _extract_json_array(raw, log_context=f"suggest-tags:{payload.type}")
         if suggestions is None:
@@ -4085,9 +4175,9 @@ def suggest_search(payload: SearchSuggestPayload):
     try:
         raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
     try:
         suggestions = _extract_json_array(raw, log_context=f"suggest-search:{payload.type}")
         if suggestions is None:
@@ -5965,6 +6055,8 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
             return {
                 "ok": False,
                 "message": (
+                    "Ollama is not responding right now. You can continue and try again later."
+                    if _CLOUD_MODE else
                     "Ollama not responding — you can continue and configure it later "
                     "in Settings → System."
                 ),
@@ -6110,9 +6202,9 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
     try:
         response_text = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Chat"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Chat model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Chat", e.backend_id))
 
     try:
         parsed = json.loads(response_text)

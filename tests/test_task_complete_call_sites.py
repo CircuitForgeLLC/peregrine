@@ -220,3 +220,88 @@ def test_generate_missions_succeeds_on_valid_json_array(tmp_path, monkeypatch):
     assert resp.json()["mission_preferences"] == [
         {"industry": "Climate tech", "note": "Fits their systems work."}
     ]
+
+
+# -- #288: calm message in cloud mode, whole-chain walk for unassigned tasks --
+
+_CHAIN_CONFIG = {
+    "backends": {
+        "cf_text": {"type": "openai_compat", "base_url": "http://cf", "model": "cf-model", "enabled": True},
+        "ollama_research": {"type": "openai_compat", "base_url": "http://ol", "model": "llama-own", "enabled": True},
+    },
+    "research_fallback_order": ["cf_text", "ollama_research"],
+    "fallback_order": ["ollama_research"],
+}
+
+
+def test_task_unavailable_detail_self_hosted_wording_is_unchanged():
+    assert dev_api._task_unavailable_detail("Research", "cf_text", cloud=False) == (
+        "Can't reach the Research model (cf_text) — check it's running, or reassign in Settings → System."
+    )
+    assert dev_api._task_unavailable_detail("Chat", None, cloud=False) == (
+        "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments."
+    )
+
+
+def test_task_unavailable_detail_cloud_has_no_settings_or_backend_name():
+    for backend in ("cf_text", None):
+        msg = dev_api._task_unavailable_detail("Research", backend, cloud=True)
+        assert msg == "This feature is not available right now. Please try again in a few minutes."
+        assert "Settings" not in msg and "cf_text" not in msg
+
+
+def _suggest_tags_client(tmp_path, monkeypatch, cloud):
+    from scripts import llm_router as llm_router_module
+    cfg = _cfg_dir(tmp_path)
+    (cfg / "plain_text_resume.yaml").write_text(yaml.dump({"skills": ["Python"], "experience": [{"title": "Engineer"}]}))
+    (cfg / "llm.yaml").write_text(yaml.dump(_CHAIN_CONFIG))
+    monkeypatch.setattr(dev_api, "_config_dir", lambda: cfg)
+    monkeypatch.setattr(dev_api, "_resume_path", lambda: cfg / "plain_text_resume.yaml")
+    _redirect_llm_router_config(monkeypatch, cfg)
+    monkeypatch.setattr(llm_router_module, "CONFIG_PATH", cfg / "llm.yaml")
+    monkeypatch.setattr(dev_api, "_CLOUD_MODE", cloud)
+    monkeypatch.setattr(dev_api, "DB_PATH", tmp_path / "staging.db")
+    return TestClient(dev_api.app)
+
+
+def test_suggest_tags_cloud_first_backend_down_later_backend_answers(tmp_path, monkeypatch):
+    from scripts.llm_router import LLMRouter as RealLLMRouter
+    client = _suggest_tags_client(tmp_path, monkeypatch, cloud=True)
+    seen = []
+
+    def fake_complete(self, prompt, system=None, **kw):
+        # Emulate core: the dead first backend is skipped, the next one answers.
+        seen.append((kw.get("fallback_order"), kw.get("model_override")))
+        if "ollama_research" in (kw.get("fallback_order") or []):
+            return '["Python", "Docker"]'
+        raise RuntimeError("All LLM backends exhausted. Tried: cf_text: refused")
+
+    with patch.object(RealLLMRouter, "complete", fake_complete):
+        resp = client.post("/api/settings/resume/suggest-tags", json={"type": "skills"})
+    assert resp.status_code == 200
+    assert resp.json()["suggestions"] == ["Python", "Docker"]
+    assert seen[0] == (["cf_text", "ollama_research"], None)
+
+
+def test_suggest_tags_cloud_whole_chain_down_is_calm_502(tmp_path, monkeypatch):
+    from scripts.llm_router import LLMRouter as RealLLMRouter
+    client = _suggest_tags_client(tmp_path, monkeypatch, cloud=True)
+    with patch.object(RealLLMRouter, "complete", side_effect=RuntimeError("down")):
+        resp = client.post("/api/settings/resume/suggest-tags", json={"type": "skills"})
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert "Settings" not in detail and "cf_text" not in detail
+    assert "try again" in detail
+
+
+def test_generate_missions_unusable_output_cloud_is_calm(tmp_path, monkeypatch):
+    from scripts.llm_router import LLMRouter as RealLLMRouter
+    _mission_cfg(tmp_path, monkeypatch)
+    monkeypatch.setattr(dev_api, "_CLOUD_MODE", True)
+    client = TestClient(dev_api.app)
+    with patch.object(RealLLMRouter, "complete", return_value="I am afraid I cannot do that."):
+        resp = client.post("/api/settings/profile/generate-missions")
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert "Settings" not in detail
+    assert "try again" in detail

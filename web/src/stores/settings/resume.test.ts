@@ -33,6 +33,17 @@ describe('useResumeStore', () => {
     expect(store.email).toBe('a@b.com')
   })
 
+  it('syncFromProfile() never replaces a value with an empty profile field', () => {
+    const store = useResumeStore()
+    store.name = 'Pat'; store.surname = 'Lee'; store.email = 'p@x.com'
+    store.phone = '555'; store.linkedin_url = 'li.com/p'
+    store.syncFromProfile({ name: '', email: '', phone: '', linkedin_url: '' })
+    expect(store.name).toBe('Pat')
+    expect(store.email).toBe('p@x.com')
+    expect(store.phone).toBe('555')
+    expect(store.linkedin_url).toBe('li.com/p')
+  })
+
   it('load() empty-state when exists=false', async () => {
     mockFetch.mockResolvedValue({ data: { exists: false }, error: null })
     const store = useResumeStore()

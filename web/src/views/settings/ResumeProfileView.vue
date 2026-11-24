@@ -79,42 +79,61 @@
       <!-- Personal Information -->
       <section class="form-section">
         <h3>Personal Information</h3>
-        <p class="section-note">
-          Name, email, phone, and LinkedIn are managed on
+        <div role="group" aria-label="Contact details" :aria-describedby="contactEmpty ? 'contact-empty-note' : 'contact-group-note'" data-testid="contact-group">
+        <p v-if="!contactEmpty" id="contact-group-note" class="section-note">
+          Name, email, phone, and LinkedIn are kept in
           <RouterLink to="/settings/my-profile">My Profile</RouterLink> and shown here read-only,
           so this page can't drift out of sync with what your cover letters actually use.
+          Change them in My Profile.
         </p>
-        <div class="field-row">
+        <p v-if="contactEmpty" id="contact-empty-note" class="contact-empty" data-testid="contact-empty">
+          Nothing here yet. Add your name and contact details in
+          <RouterLink to="/settings/my-profile">My Profile</RouterLink>.
+        </p>
+        <div v-if="canImport" class="contact-import" data-testid="contact-import">
+          <p>We found these details in your resume. Use them in My Profile?</p>
+          <button type="button" :disabled="importing"
+                  data-testid="use-resume-in-profile" @click="useResumeInProfile">Use these details in My Profile</button>
+        </div>
+        <p v-if="profileLoadFailed" class="contact-import" data-testid="profile-load-failed">
+          We couldn't load My Profile just now. Please reload the page to try again.
+        </p>
+        <p id="contact-status" ref="statusEl" class="contact-status" :class="{ 'sr-only': !contactStatus }" role="status" aria-live="polite" tabindex="-1"
+           data-testid="contact-status">{{ contactStatus }}</p>
+        <div v-if="!contactEmpty" class="field-row">
           <div class="field-label-line">
             <label for="resume-first-name">First Name</label>
-            <RouterLink to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
+            <RouterLink v-if="profileFirstName" to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
           </div>
-          <input id="resume-first-name" class="synced-input" :value="firstName" readonly aria-readonly="true" data-testid="resume-name-input" />
+          <input id="resume-first-name" class="synced-input" :value="shownFirstName" readonly aria-readonly="true" data-testid="resume-name-input" />
         </div>
         <div class="field-row">
           <label>Last Name</label>
           <input v-model="store.surname" />
         </div>
+        <template v-if="!contactEmpty">
         <div class="field-row">
           <div class="field-label-line">
             <label for="resume-email">Email</label>
-            <RouterLink to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
+            <RouterLink v-if="profileStore.email" to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
           </div>
-          <input id="resume-email" class="synced-input" :value="profileStore.email" type="email" readonly aria-readonly="true" data-testid="resume-email-input" />
+          <input id="resume-email" class="synced-input" :value="shownEmail" type="email" readonly aria-readonly="true" data-testid="resume-email-input" />
         </div>
         <div class="field-row">
           <div class="field-label-line">
             <label for="resume-phone">Phone</label>
-            <RouterLink to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
+            <RouterLink v-if="profileStore.phone" to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
           </div>
-          <input id="resume-phone" class="synced-input" :value="profileStore.phone" type="tel" readonly aria-readonly="true" data-testid="resume-phone-input" />
+          <input id="resume-phone" class="synced-input" :value="shownPhone" type="tel" readonly aria-readonly="true" data-testid="resume-phone-input" />
         </div>
         <div class="field-row">
           <div class="field-label-line">
             <label for="resume-linkedin">LinkedIn URL</label>
-            <RouterLink to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
+            <RouterLink v-if="profileStore.linkedin_url" to="/settings/my-profile" class="sync-link">Edit in My Profile →</RouterLink>
           </div>
-          <input id="resume-linkedin" class="synced-input" :value="profileStore.linkedin_url" type="url" readonly aria-readonly="true" data-testid="resume-linkedin-input" />
+          <input id="resume-linkedin" class="synced-input" :value="shownLinkedin" type="url" readonly aria-readonly="true" data-testid="resume-linkedin-input" />
+        </div>
+        </template>
         </div>
         <div class="field-row">
           <label>Address</label>
@@ -353,7 +372,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { RouterLink } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useResumeStore } from '../../stores/settings/resume'
@@ -366,7 +385,55 @@ const profileStore = useProfileStore()
 const config = useAppConfigStore()
 const { loadError } = storeToRefs(store)
 // My Profile keeps one full name; the First Name box shows just its first word.
-const firstName = computed(() => profileStore.name.trim().split(/\s+/)[0] ?? '')
+const profileFirstName = computed(() => profileStore.name.trim().split(/\s+/)[0] ?? '')
+// My Profile wins. Where it is empty, show what the parsed resume holds instead of a blank box.
+const shownFirstName = computed(() => profileFirstName.value || store.name)
+const shownEmail = computed(() => profileStore.email || store.email)
+const shownPhone = computed(() => profileStore.phone || store.phone)
+const shownLinkedin = computed(() => profileStore.linkedin_url || store.linkedin_url)
+const contactEmpty = computed(() =>
+  !shownFirstName.value && !shownEmail.value && !shownPhone.value && !shownLinkedin.value)
+const resumeFullName = computed(() => [store.name, store.surname].map(x => x.trim()).filter(Boolean).join(' '))
+// The profile save sends every My Profile field, so the button is only offered once the
+// profile has loaded without error. Never from default or half-loaded store values.
+const profileReady = ref(false)
+const profileLoadFailed = ref(false)
+const importing = ref(false)
+const contactStatus = ref('')
+const statusEl = ref<HTMLElement | null>(null)
+const canImport = computed(() =>
+  profileReady.value && (importing.value
+  || (!profileStore.name.trim() && !!store.name.trim())
+  || (!profileStore.email && !!store.email)
+  || (!profileStore.phone && !!store.phone)
+  || (!profileStore.linkedin_url && !!store.linkedin_url)))
+
+// Fills only the empty My Profile fields, then saves them. Runs only when the person presses the button.
+async function useResumeInProfile() {
+  if (!profileReady.value || importing.value) return
+  importing.value = true
+  contactStatus.value = ''
+  const before = {
+    name: profileStore.name, email: profileStore.email,
+    phone: profileStore.phone, linkedin_url: profileStore.linkedin_url,
+  }
+  if (!profileStore.name.trim() && store.name.trim()) profileStore.name = resumeFullName.value
+  if (!profileStore.email && store.email) profileStore.email = store.email
+  if (!profileStore.phone && store.phone) profileStore.phone = store.phone
+  if (!profileStore.linkedin_url && store.linkedin_url) profileStore.linkedin_url = store.linkedin_url
+  await profileStore.save()
+  if (profileStore.saveError) {
+    profileStore.name = before.name; profileStore.email = before.email
+    profileStore.phone = before.phone; profileStore.linkedin_url = before.linkedin_url
+    contactStatus.value = "We couldn't save to My Profile just now. Your details are still here, so you can try again."
+    importing.value = false
+    return
+  }
+  contactStatus.value = 'Saved to My Profile.'
+  importing.value = false
+  await nextTick()
+  statusEl.value?.focus()
+}
 const showSelfId = ref(false)
 const skillInput = ref('')
 const domainInput = ref('')
@@ -378,7 +445,13 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const replaceFileInput = ref<HTMLInputElement | null>(null)
 
 onMounted(async () => {
-  await Promise.all([store.load(), profileStore.load()])
+  await Promise.all([
+    store.load(),
+    profileStore.load().then(() => {
+      profileLoadFailed.value = !profileStore.loadError ? !profileStore.loaded : true
+      profileReady.value = !profileStore.loadError && profileStore.loaded
+    }),
+  ])
 })
 
 // Contact fields (name/email/phone/linkedin_url) are read-only here, sourced
@@ -470,6 +543,24 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-3); }
   border-style: dashed;
   cursor: not-allowed;
 }
+.contact-empty, .contact-import {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+.contact-empty { margin-top: 0; }
+.contact-status { margin: 0 0 var(--space-3); font-size: 0.88rem; color: var(--color-text); }
+.contact-status:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.contact-import p { margin: 0 0 var(--space-2); }
+.contact-import button {
+  padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; min-height: 40px;
+  background: var(--color-accent); color: var(--color-text-inverse); border: none;
+}
+.contact-import button:disabled { opacity: 0.6; cursor: default; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 0.88rem; color: var(--color-text); cursor: pointer; }
 .experience-card { border: 1px solid var(--color-border); border-radius: 8px; padding: var(--space-4); margin-bottom: var(--space-4); }
 .remove-btn {
