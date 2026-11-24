@@ -93,6 +93,53 @@ class LLMRouter(_CoreLLMRouter):
                 return backend_id, model, backend
         return None
 
+    def _complete_task_via_chain(
+        self,
+        task: str,
+        prompt: str,
+        *,
+        system: str | None,
+        max_tokens: int | None,
+    ) -> str:
+        """Complete an UNASSIGNED task by walking its fallback chain in order.
+
+        Only backends the chain names are tried (never any other enabled
+        backend), disabled or model-less ones are skipped, and each backend
+        answers with its own configured model. A failure names the first
+        backend of the chain, the one a person would recognise.
+        """
+        backends = self.config.get("backends") or {}
+        first_id = ""
+        order: list[str] = []
+        # Same chain choice as _default_task_model: the first chain whose
+        # first entry names a configured backend that has a model.
+        for chain_key in self._TASK_FALLBACK_CHAINS.get(task, ("fallback_order",)):
+            chain = self.config.get(chain_key) or []
+            head = backends.get(chain[0]) if chain else None
+            if head is None or not head.get("model"):
+                continue
+            first_id = chain[0]
+            order = [
+                bid for bid in chain
+                if (b := backends.get(bid)) is not None
+                and b.get("model")
+                and b.get("enabled", True)
+            ]
+            break
+        if not first_id:
+            raise TaskModelNotAssignedError(task)
+        if not order:
+            raise TaskModelUnreachableError(task, first_id, "backend is disabled")
+        try:
+            return self.complete(
+                prompt,
+                system=system,
+                fallback_order=order,
+                max_tokens=max_tokens,
+            )
+        except RuntimeError as e:
+            raise TaskModelUnreachableError(task, first_id, str(e)) from e
+
     def complete_task(
         self,
         task: str,
@@ -104,10 +151,10 @@ class LLMRouter(_CoreLLMRouter):
         """Complete a prompt using the model assigned to `task` in
         config['task_models'] (e.g. 'primary' / 'research' / 'chat').
 
-        Unlike complete()'s general fallback_order, a task-scoped call
-        either has an assigned, working model or raises a specific,
-        classified error -- it never silently falls through to an
-        unrelated chain.
+        An EXPLICIT assignment is pinned: it either works or raises a
+        specific, classified error, and never falls through to another
+        backend. A task with no assignment walks its own fallback chain
+        (see _complete_task_via_chain) and never any backend outside it.
         """
         task_models = self.config.get("task_models") or {}
         assignment = task_models.get(task) or {}
@@ -123,10 +170,9 @@ class LLMRouter(_CoreLLMRouter):
             # than hard-fail every LLM feature until someone visits Settings,
             # degrade gracefully to this task's existing fallback chain --
             # which is what these call sites used before per-task assignment.
-            derived = self._default_task_model(task)
-            if derived is None:
-                raise TaskModelNotAssignedError(task)
-            backend_id, model, backend = derived
+            return self._complete_task_via_chain(
+                task, prompt, system=system, max_tokens=max_tokens,
+            )
 
         if not backend.get("enabled", True):
             raise TaskModelUnreachableError(task, backend_id, "backend is disabled")
