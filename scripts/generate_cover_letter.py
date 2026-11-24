@@ -338,13 +338,18 @@ def generate(
             resolved = CONFIG_PATH
         _router = LLMRouter(resolved)
 
-    from scripts.llm_router import TaskModelNotAssignedError, TaskModelUnreachableError
+    from scripts import safe_net
+    from scripts.llm_router import (
+        TaskModelNotAssignedError,
+        TaskModelUnreachableError,
+        task_unavailable_detail,
+    )
     try:
         result = _router.complete_task("primary", prompt, max_tokens=1200)
     except TaskModelNotAssignedError:
-        raise RuntimeError("No model is assigned to the Primary task yet — set one in Settings → System → Model Assignments.")
+        raise RuntimeError(task_unavailable_detail("Primary", cloud=safe_net.cloud_mode()))
     except TaskModelUnreachableError as e:
-        raise RuntimeError(f"Can't reach the Primary model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise RuntimeError(task_unavailable_detail("Primary", e.backend_id, cloud=safe_net.cloud_mode()))
     return _trim_to_letter_end(result, _prof)
 
 

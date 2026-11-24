@@ -66,6 +66,14 @@ def _cloud_mode_from_env() -> bool:
 
 
 _CLOUD_MODE       = _cloud_mode_from_env()
+
+
+def _task_unavailable_detail(task_label: str, backend_id: str | None = None, cloud: bool | None = None) -> str:
+    """Error text for a task-scoped LLM call that could not run (cloud mode by default from _CLOUD_MODE)."""
+    from scripts.llm_router import task_unavailable_detail
+    return task_unavailable_detail(task_label, backend_id, cloud=_CLOUD_MODE if cloud is None else cloud)
+
+
 _CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
 _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
 
@@ -2229,9 +2237,9 @@ def suggest_qa_answer(job_id: int, payload: QASuggestPayload, request: Request):
         answer = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt)
         return {"answer": answer.strip()}
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Chat"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Chat model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Chat", e.backend_id))
 
 
 # ── POST /api/jobs/:id/hired-feedback ─────────────────────────────────────────
@@ -3541,9 +3549,9 @@ def generate_career_summary():
         summary = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"summary": summary.strip()}
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
 
 
 @app.post("/api/settings/profile/generate-missions")
@@ -3563,9 +3571,9 @@ def generate_mission_preferences():
     try:
         raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
     items = _extract_json_array(raw, log_context="generate-missions")
     if items is None:
         # The assigned Research model answered, but not with usable structured
@@ -3573,6 +3581,7 @@ def generate_mission_preferences():
         # instead of hiding behind a generic "LLM generation failed".
         raise HTTPException(
             502,
+            _task_unavailable_detail("Research") if _CLOUD_MODE else
             "The model assigned to Research didn't return usable output — try a different model, "
             "or re-run its capability check in Settings → System → Model Assignments.",
         )
@@ -3603,9 +3612,9 @@ def generate_candidate_voice():
         voice = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
         return {"voice": voice.strip()}
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
 
 
 # ── Settings: Resume Profile endpoints ───────────────────────────────────────
@@ -4113,9 +4122,9 @@ def suggest_resume_tags(payload: ResumeTagSuggestPayload):
     try:
         raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
     try:
         suggestions = _extract_json_array(raw, log_context=f"suggest-tags:{payload.type}")
         if suggestions is None:
@@ -4166,9 +4175,9 @@ def suggest_search(payload: SearchSuggestPayload):
     try:
         raw = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("research", prompt)
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Research task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Research"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Research model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Research", e.backend_id))
     try:
         suggestions = _extract_json_array(raw, log_context=f"suggest-search:{payload.type}")
         if suggestions is None:
@@ -6046,6 +6055,8 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
             return {
                 "ok": False,
                 "message": (
+                    "Ollama is not responding right now. You can continue and try again later."
+                    if _CLOUD_MODE else
                     "Ollama not responding — you can continue and configure it later "
                     "in Settings → System."
                 ),
@@ -6191,9 +6202,9 @@ def wizard_ai_interview(request: Request, body: WizardInterviewRequest):
     try:
         response_text = router_for_tenant(Path(_request_db.get() or DB_PATH), _CLOUD_MODE).complete_task("chat", prompt, system=_AI_WIZARD_SYSTEM_PROMPT)
     except TaskModelNotAssignedError:
-        raise HTTPException(400, "No model is assigned to the Chat task yet — set one in Settings → System → Model Assignments.")
+        raise HTTPException(400, _task_unavailable_detail("Chat"))
     except TaskModelUnreachableError as e:
-        raise HTTPException(502, f"Can't reach the Chat model ({e.backend_id}) — check it's running, or reassign in Settings → System.")
+        raise HTTPException(502, _task_unavailable_detail("Chat", e.backend_id))
 
     try:
         parsed = json.loads(response_text)

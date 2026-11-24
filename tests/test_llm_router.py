@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -249,8 +250,9 @@ def test_complete_task_falls_back_to_research_fallback_order_when_unassigned():
     )
     with patch.object(router, "complete", return_value="result") as mock_complete:
         assert router.complete_task("research", "prompt") == "result"
+    # Derived path: each backend answers with its own model, no override.
     mock_complete.assert_called_once_with(
-        "prompt", system=None, fallback_order=["cf_text"], model_override="cf-text", max_tokens=None,
+        "prompt", system=None, fallback_order=["cf_text"], max_tokens=None,
     )
 
 
@@ -263,7 +265,8 @@ def test_complete_task_chat_falls_back_to_research_fallback_order_too():
     )
     with patch.object(router, "complete", return_value="hi") as mock_complete:
         assert router.complete_task("chat", "prompt") == "hi"
-    assert mock_complete.call_args.kwargs["model_override"] == "cf-text"
+    assert mock_complete.call_args.kwargs["fallback_order"] == ["cf_text"]
+    assert "model_override" not in mock_complete.call_args.kwargs
 
 
 def test_complete_task_falls_back_to_fallback_order_when_no_research_chain():
@@ -276,7 +279,7 @@ def test_complete_task_falls_back_to_fallback_order_when_no_research_chain():
     with patch.object(router, "complete", return_value="result") as mock_complete:
         assert router.complete_task("research", "prompt") == "result"
     assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama"]
-    assert mock_complete.call_args.kwargs["model_override"] == "llama3.2:3b"
+    assert "model_override" not in mock_complete.call_args.kwargs
 
 
 def test_complete_task_primary_falls_back_to_fallback_order_not_research_chain():
@@ -311,15 +314,29 @@ def test_complete_task_explicit_assignment_wins_over_fallback():
     )
 
 
-def test_complete_task_fallback_derived_disabled_backend_is_unreachable_not_skipped():
-    """One candidate per task, predictably named -- a disabled derived backend
-    surfaces as TaskModelUnreachableError rather than silently sliding to the
-    next chain entry."""
+def test_complete_task_fallback_derived_disabled_backend_is_skipped_in_chain():
+    """A disabled backend in the derived chain is skipped, the next one in the
+    chain is tried (the old one-candidate behaviour is gone, see #288)."""
+    from unittest.mock import patch
     router = _router_with_task_models(
         task_models={},
         backends={
             "cf_text": {"type": "openai_compat", "base_url": "http://x", "model": "cf-text", "enabled": False},
             "ollama": {"type": "openai_compat", "base_url": "http://y", "model": "llama3.2:3b", "enabled": True},
+        },
+        extra_config={"fallback_order": ["ollama"], "research_fallback_order": ["cf_text", "ollama"]},
+    )
+    with patch.object(router, "complete", return_value="ok") as mock_complete:
+        assert router.complete_task("research", "prompt") == "ok"
+    assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama"]
+
+
+def test_complete_task_fallback_derived_all_disabled_names_first_backend():
+    router = _router_with_task_models(
+        task_models={},
+        backends={
+            "cf_text": {"type": "openai_compat", "base_url": "http://x", "model": "cf-text", "enabled": False},
+            "ollama": {"type": "openai_compat", "base_url": "http://y", "model": "llama3.2:3b", "enabled": False},
         },
         extra_config={"fallback_order": ["ollama"], "research_fallback_order": ["cf_text", "ollama"]},
     )
@@ -449,3 +466,161 @@ def test_two_tenants_get_isolated_task_models(tmp_path):
 
     assert router_a.config["task_models"]["primary"]["model"] == "model-a"
     assert router_b.config["task_models"]["primary"]["model"] == "model-b"
+
+
+# ── Unassigned task walks its whole fallback chain (#288) ───────────────────
+# A task with no explicit assignment used to try only the FIRST backend of its
+# chain, so one dead first backend failed the feature for everyone. These tests
+# drive the real core complete() loop with fake network edges.
+
+
+class _FakeOpenAI:
+    """Records the (base_url, model) each backend call used."""
+    calls: ClassVar[list] = []
+
+    def __init__(self, base_url=None, **_kw):
+        self.base_url = base_url
+
+    @property
+    def chat(self):
+        return self
+
+    @property
+    def completions(self):
+        return self
+
+    def create(self, model, messages, **_kw):
+        _FakeOpenAI.calls.append((self.base_url, model))
+        msg = MagicMock()
+        msg.content = f"answer from {self.base_url}"
+        return MagicMock(choices=[MagicMock(message=msg)])
+
+
+def _walk_router(task_models, backends, extra_config, dead_urls):
+    router = _router_with_task_models(task_models, backends, extra_config)
+    router._is_reachable = lambda url: url not in dead_urls
+    router._try_cf_orch_alloc = lambda backend: None
+    router._resolve_model = lambda client, model: model
+    _FakeOpenAI.calls = []
+    return router
+
+
+def _be(url, model, enabled=True):
+    return {"type": "openai_compat", "base_url": url, "model": model, "enabled": enabled}
+
+
+def test_unassigned_task_skips_dead_first_backend_and_uses_later_backends_own_model():
+    router = _walk_router(
+        {},
+        {"cf_text": _be("http://cf", "cf-model"), "ollama_research": _be("http://ol", "llama-own")},
+        {"research_fallback_order": ["cf_text", "ollama_research"], "fallback_order": []},
+        dead_urls={"http://cf"},
+    )
+    with patch("circuitforge_core.llm.router.OpenAI", _FakeOpenAI):
+        assert router.complete_task("research", "p") == "answer from http://ol"
+    assert _FakeOpenAI.calls == [("http://ol", "llama-own")]
+
+
+def test_unassigned_task_never_touches_backend_outside_the_chain():
+    router = _walk_router(
+        {},
+        {
+            "cf_text": _be("http://cf", "cf-model"),
+            "ollama_research": _be("http://ol", "llama-own"),
+            "cloud_other": _be("http://cloud", "big-model"),
+        },
+        {"research_fallback_order": ["cf_text", "ollama_research"], "fallback_order": ["cloud_other"]},
+        dead_urls={"http://cf", "http://ol"},
+    )
+    with patch("circuitforge_core.llm.router.OpenAI", _FakeOpenAI), pytest.raises(TaskModelUnreachableError):
+        router.complete_task("research", "p")
+    assert _FakeOpenAI.calls == []
+
+
+def test_unassigned_task_skips_disabled_backend_in_chain():
+    router = _walk_router(
+        {},
+        {"cf_text": _be("http://cf", "cf-model", enabled=False), "ollama": _be("http://ol", "llama-own")},
+        {"research_fallback_order": ["cf_text", "ollama"], "fallback_order": []},
+        dead_urls=set(),
+    )
+    with patch("circuitforge_core.llm.router.OpenAI", _FakeOpenAI):
+        assert router.complete_task("research", "p") == "answer from http://ol"
+    assert _FakeOpenAI.calls == [("http://ol", "llama-own")]
+
+
+def test_unassigned_task_whole_chain_dead_names_first_backend():
+    router = _walk_router(
+        {},
+        {"cf_text": _be("http://cf", "a"), "ollama": _be("http://ol", "b")},
+        {"research_fallback_order": ["cf_text", "ollama"], "fallback_order": []},
+        dead_urls={"http://cf", "http://ol"},
+    )
+    with patch("circuitforge_core.llm.router.OpenAI", _FakeOpenAI), pytest.raises(TaskModelUnreachableError) as ei:
+        router.complete_task("research", "p")
+    assert ei.value.backend_id == "cf_text"
+
+
+def test_explicit_assignment_with_dead_backend_does_not_fall_through():
+    router = _walk_router(
+        {"research": {"backend": "cf_text", "model": "pinned"}},
+        {"cf_text": _be("http://cf", "cf-model"), "ollama": _be("http://ol", "llama-own")},
+        {"research_fallback_order": ["cf_text", "ollama"], "fallback_order": ["ollama"]},
+        dead_urls={"http://cf"},
+    )
+    with patch("circuitforge_core.llm.router.OpenAI", _FakeOpenAI), pytest.raises(TaskModelUnreachableError) as ei:
+        router.complete_task("research", "p")
+    assert ei.value.backend_id == "cf_text"
+    assert _FakeOpenAI.calls == []
+
+
+# ── Chain selection: a bad head must not move the walk to another chain ─────
+
+
+def test_unassigned_task_ghost_chain_head_still_walks_own_chain_not_other_chain():
+    """Privacy (#288 review M2): research [ghost, ollama_research] with a
+    different fallback_order must send the prompt to ollama_research only."""
+    router = _walk_router(
+        {},
+        {
+            "ollama_research": _be("http://ol", "local"),
+            "anthropic": _be("http://cloud", "claude"),
+        },
+        {"research_fallback_order": ["ghost", "ollama_research"], "fallback_order": ["anthropic"]},
+        dead_urls=set(),
+    )
+    with patch("circuitforge_core.llm.router.OpenAI", _FakeOpenAI):
+        assert router.complete_task("research", "p") == "answer from http://ol"
+    assert _FakeOpenAI.calls == [("http://ol", "local")]
+
+
+def test_unassigned_task_modelless_chain_head_still_walks_own_chain():
+    router = _router_with_task_models(
+        task_models={},
+        backends={
+            "cf_text": {"type": "openai_compat", "base_url": "http://x", "enabled": True},
+            "ollama_research": _be("http://ol", "local"),
+            "anthropic": _be("http://cloud", "claude"),
+        },
+        extra_config={"research_fallback_order": ["cf_text", "ollama_research"], "fallback_order": ["anthropic"]},
+    )
+    with patch.object(router, "complete", return_value="ok") as mock_complete:
+        router.complete_task("research", "p")
+    assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama_research"]
+
+
+def test_stale_explicit_assignment_is_treated_as_unassigned_and_walks_chain():
+    """Owner ruling D1 (#288): an assignment naming a backend that no longer
+    exists is treated as unassigned. It walks only the operator's chain."""
+    router = _router_with_task_models(
+        task_models={"research": {"backend": "renamed_local", "model": "m"}},
+        backends={
+            "ollama_research": _be("http://ol", "local"),
+            "anthropic": _be("http://cloud", "claude"),
+        },
+        extra_config={"research_fallback_order": ["ollama_research"], "fallback_order": ["anthropic"]},
+    )
+    with patch.object(router, "complete", return_value="ok") as mock_complete:
+        router.complete_task("research", "p")
+    assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama_research"]
+    assert "model_override" not in mock_complete.call_args.kwargs
