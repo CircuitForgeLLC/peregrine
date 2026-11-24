@@ -292,3 +292,16 @@ def test_suggest_tags_cloud_whole_chain_down_is_calm_502(tmp_path, monkeypatch):
     detail = resp.json()["detail"]
     assert "Settings" not in detail and "cf_text" not in detail
     assert "try again" in detail
+
+
+def test_generate_missions_unusable_output_cloud_is_calm(tmp_path, monkeypatch):
+    from scripts.llm_router import LLMRouter as RealLLMRouter
+    _mission_cfg(tmp_path, monkeypatch)
+    monkeypatch.setattr(dev_api, "_CLOUD_MODE", True)
+    client = TestClient(dev_api.app)
+    with patch.object(RealLLMRouter, "complete", return_value="I am afraid I cannot do that."):
+        resp = client.post("/api/settings/profile/generate-missions")
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert "Settings" not in detail
+    assert "try again" in detail

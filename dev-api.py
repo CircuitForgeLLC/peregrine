@@ -68,21 +68,12 @@ def _cloud_mode_from_env() -> bool:
 _CLOUD_MODE       = _cloud_mode_from_env()
 
 
-_TASK_UNAVAILABLE_CLOUD_TEXT = "This feature is not available right now. Please try again in a few minutes."
-
-
 def _task_unavailable_detail(task_label: str, backend_id: str | None = None, cloud: bool | None = None) -> str:
-    """Error text for a task-scoped LLM call that could not run.
+    """Error text for a task-scoped LLM call that could not run (cloud mode by default from _CLOUD_MODE)."""
+    from scripts.llm_router import task_unavailable_detail
+    return task_unavailable_detail(task_label, backend_id, cloud=_CLOUD_MODE if cloud is None else cloud)
 
-    backend_id is None when no model is assigned. Hosted users have no
-    Settings page and no business knowing backend names, so cloud mode gets
-    one calm message. Self-hosted wording points at Settings.
-    """
-    if _CLOUD_MODE if cloud is None else cloud:
-        return _TASK_UNAVAILABLE_CLOUD_TEXT
-    if backend_id is None:
-        return f"No model is assigned to the {task_label} task yet — set one in Settings → System → Model Assignments."
-    return f"Can't reach the {task_label} model ({backend_id}) — check it's running, or reassign in Settings → System."
+
 _CLOUD_DATA_ROOT  = Path(os.environ.get("CLOUD_DATA_ROOT", "/devl/menagerie-data"))
 _DIRECTUS_SECRET  = os.environ.get("DIRECTUS_JWT_SECRET", "")
 
@@ -3590,6 +3581,7 @@ def generate_mission_preferences():
         # instead of hiding behind a generic "LLM generation failed".
         raise HTTPException(
             502,
+            _task_unavailable_detail("Research") if _CLOUD_MODE else
             "The model assigned to Research didn't return usable output — try a different model, "
             "or re-run its capability check in Settings → System → Model Assignments.",
         )
@@ -6063,6 +6055,8 @@ def wizard_test_inference(payload: WizardInferenceTestPayload):
             return {
                 "ok": False,
                 "message": (
+                    "Ollama is not responding right now. You can continue and try again later."
+                    if _CLOUD_MODE else
                     "Ollama not responding — you can continue and configure it later "
                     "in Settings → System."
                 ),

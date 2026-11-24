@@ -1,6 +1,8 @@
 # tests/test_cover_letter.py
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # ── prepare_training_data tests ──────────────────────────────────────────────
 
 def test_extract_role_from_text():
@@ -151,3 +153,33 @@ def test_build_prompt_no_jobgether_framing_by_default():
         examples=[],
     )
     assert "Your client" not in prompt
+
+
+def test_generate_cloud_unreachable_primary_message_is_calm(monkeypatch):
+    """#288: hosted users never see a backend name or a Settings pointer."""
+    from scripts.generate_cover_letter import generate
+    from scripts.llm_router import TaskModelUnreachableError
+
+    monkeypatch.setenv("CLOUD_MODE", "true")
+    mock_router = MagicMock()
+    mock_router.complete_task.side_effect = TaskModelUnreachableError("primary", "cf_text", "down")
+    corpus = [{"company": "A", "text": "x"}]
+    with patch("scripts.generate_cover_letter.load_corpus", return_value=corpus), pytest.raises(RuntimeError) as ei:
+        generate("CSM", "TestCo", "desc", _router=mock_router)
+    msg = str(ei.value)
+    assert "Settings" not in msg and "cf_text" not in msg
+    assert "try again" in msg
+
+
+def test_generate_self_hosted_unreachable_primary_message_unchanged(monkeypatch):
+    from scripts.generate_cover_letter import generate
+    from scripts.llm_router import TaskModelUnreachableError
+
+    monkeypatch.delenv("CLOUD_MODE", raising=False)
+    mock_router = MagicMock()
+    mock_router.complete_task.side_effect = TaskModelUnreachableError("primary", "cf_text", "down")
+    corpus = [{"company": "A", "text": "x"}]
+    with patch("scripts.generate_cover_letter.load_corpus", return_value=corpus), pytest.raises(RuntimeError) as ei:
+        generate("CSM", "TestCo", "desc", _router=mock_router)
+    assert "Can't reach the Primary model (cf_text)" in str(ei.value)
+    assert "Settings" in str(ei.value)

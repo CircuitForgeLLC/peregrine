@@ -34,6 +34,23 @@ class TaskModelUnreachableError(Exception):
         super().__init__(f"Backend '{backend_id}' for task '{task}' is unreachable: {detail}")
 
 
+TASK_UNAVAILABLE_CLOUD_TEXT = "This feature is not available right now. Please try again in a few minutes."
+
+
+def task_unavailable_detail(task_label: str, backend_id: str | None = None, *, cloud: bool) -> str:
+    """Message for a task-scoped LLM call that could not run.
+
+    backend_id is None when no model is assigned. Hosted users have no
+    Settings page and no business knowing backend names, so cloud gets one
+    calm message. Self-hosted wording points at Settings.
+    """
+    if cloud:
+        return TASK_UNAVAILABLE_CLOUD_TEXT
+    if backend_id is None:
+        return f"No model is assigned to the {task_label} task yet — set one in Settings → System → Model Assignments."
+    return f"Can't reach the {task_label} model ({backend_id}) — check it's running, or reassign in Settings → System."
+
+
 class LLMRouter(_CoreLLMRouter):
     """Peregrine-specific LLMRouter — tri-level config path priority.
 
@@ -74,12 +91,11 @@ class LLMRouter(_CoreLLMRouter):
         """Derive a sensible (backend_id, model, backend) for `task` from the
         existing fallback chains, for installs that have never assigned one.
 
-        Deliberately picks exactly ONE candidate -- the first entry of the
-        first chain that names a backend which exists and has a model -- and
-        does not skip a disabled backend. That keeps behavior predictable and
-        keeps the caller's "unreachable" error naming the backend a user would
-        actually recognise, instead of silently re-implementing complete()'s
-        whole-chain-with-skip semantics.
+        Picks the NAMING candidate only: the first entry of the first chain
+        that names a backend which exists and has a model, disabled or not.
+        complete_task() no longer calls only this one backend. It walks the
+        whole chain (see _complete_task_via_chain) and uses this candidate
+        for the backend name a person would recognise in an error.
         """
         backends = self.config.get("backends") or {}
         for chain_key in self._TASK_FALLBACK_CHAINS.get(task, ("fallback_order",)):
@@ -111,20 +127,19 @@ class LLMRouter(_CoreLLMRouter):
         backends = self.config.get("backends") or {}
         first_id = ""
         order: list[str] = []
-        # Same chain choice as _default_task_model: the first chain whose
-        # first entry names a configured backend that has a model.
+        # The task's own chain is the first one holding ANY configured backend
+        # that has a model. A missing or model-less entry is skipped inside the
+        # chain, it never moves the walk to a different chain.
         for chain_key in self._TASK_FALLBACK_CHAINS.get(task, ("fallback_order",)):
             chain = self.config.get(chain_key) or []
-            head = backends.get(chain[0]) if chain else None
-            if head is None or not head.get("model"):
-                continue
-            first_id = chain[0]
-            order = [
+            known = [
                 bid for bid in chain
-                if (b := backends.get(bid)) is not None
-                and b.get("model")
-                and b.get("enabled", True)
+                if (b := backends.get(bid)) is not None and b.get("model")
             ]
+            if not known:
+                continue
+            first_id = known[0]
+            order = [bid for bid in known if backends[bid].get("enabled", True)]
             break
         if not first_id:
             raise TaskModelNotAssignedError(task)
@@ -155,6 +170,9 @@ class LLMRouter(_CoreLLMRouter):
         specific, classified error, and never falls through to another
         backend. A task with no assignment walks its own fallback chain
         (see _complete_task_via_chain) and never any backend outside it.
+        An assignment naming a backend that no longer exists counts as
+        unassigned (owner ruling), because the chosen backend is gone and the
+        walk only touches backends the operator listed in the chain.
         """
         task_models = self.config.get("task_models") or {}
         assignment = task_models.get(task) or {}

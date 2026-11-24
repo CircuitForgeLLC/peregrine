@@ -572,3 +572,55 @@ def test_explicit_assignment_with_dead_backend_does_not_fall_through():
         router.complete_task("research", "p")
     assert ei.value.backend_id == "cf_text"
     assert _FakeOpenAI.calls == []
+
+
+# ── Chain selection: a bad head must not move the walk to another chain ─────
+
+
+def test_unassigned_task_ghost_chain_head_still_walks_own_chain_not_other_chain():
+    """Privacy (#288 review M2): research [ghost, ollama_research] with a
+    different fallback_order must send the prompt to ollama_research only."""
+    router = _walk_router(
+        {},
+        {
+            "ollama_research": _be("http://ol", "local"),
+            "anthropic": _be("http://cloud", "claude"),
+        },
+        {"research_fallback_order": ["ghost", "ollama_research"], "fallback_order": ["anthropic"]},
+        dead_urls=set(),
+    )
+    with patch("circuitforge_core.llm.router.OpenAI", _FakeOpenAI):
+        assert router.complete_task("research", "p") == "answer from http://ol"
+    assert _FakeOpenAI.calls == [("http://ol", "local")]
+
+
+def test_unassigned_task_modelless_chain_head_still_walks_own_chain():
+    router = _router_with_task_models(
+        task_models={},
+        backends={
+            "cf_text": {"type": "openai_compat", "base_url": "http://x", "enabled": True},
+            "ollama_research": _be("http://ol", "local"),
+            "anthropic": _be("http://cloud", "claude"),
+        },
+        extra_config={"research_fallback_order": ["cf_text", "ollama_research"], "fallback_order": ["anthropic"]},
+    )
+    with patch.object(router, "complete", return_value="ok") as mock_complete:
+        router.complete_task("research", "p")
+    assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama_research"]
+
+
+def test_stale_explicit_assignment_is_treated_as_unassigned_and_walks_chain():
+    """Owner ruling D1 (#288): an assignment naming a backend that no longer
+    exists is treated as unassigned. It walks only the operator's chain."""
+    router = _router_with_task_models(
+        task_models={"research": {"backend": "renamed_local", "model": "m"}},
+        backends={
+            "ollama_research": _be("http://ol", "local"),
+            "anthropic": _be("http://cloud", "claude"),
+        },
+        extra_config={"research_fallback_order": ["ollama_research"], "fallback_order": ["anthropic"]},
+    )
+    with patch.object(router, "complete", return_value="ok") as mock_complete:
+        router.complete_task("research", "p")
+    assert mock_complete.call_args.kwargs["fallback_order"] == ["ollama_research"]
+    assert "model_override" not in mock_complete.call_args.kwargs
